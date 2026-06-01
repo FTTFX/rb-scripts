@@ -42,6 +42,57 @@ end
 cacheChar(LP.Character)
 bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
 
+-- ==================== WATCH (camera lock หาศัตรู — ยกมาจาก 06RB) ====================
+-- เปิด ON ตลอด เพื่อทดสอบว่ากล้อง (aim) กับ body (touch) แยกกันได้ไหม
+local WatchOn      = true
+local SHOOT_MAX_SQ = 400 * 400
+local cf_lookAt    = CFrame.lookAt
+local v3_new       = Vector3.new
+local math_huge    = math.huge
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function getTeamID(p)
+    local id = p:GetAttribute("TeamID")
+    if id and id ~= "" then return id end
+    if p.Team then return "T_"..p.Team.Name end
+    return nil
+end
+
+-- หา head ศัตรูใกล้สุดที่มี LOS (ไม่ล็อคเพื่อนทีมเดียวกัน)
+local function findTarget()
+    if not LPRoot then return nil end
+    local fromPos = LPRoot.Position
+    local myID = getTeamID(LP)
+    local ignore = {LPChar}
+    rayParams.FilterDescendantsInstances = ignore
+    local bestHead, bestSq = nil, math_huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            local hum  = p.Character:FindFirstChildOfClass("Humanoid")
+            local head = p.Character:FindFirstChild("Head")
+            if hum and head and hum.Health > 0 and not (myID and getTeamID(p) == myID) then
+                local d = (head.Position - fromPos)
+                local sq = d.X*d.X + d.Y*d.Y + d.Z*d.Z
+                if sq < bestSq and sq <= SHOOT_MAX_SQ then
+                    bestSq, bestHead = sq, head
+                end
+            end
+        end
+    end
+    return bestHead
+end
+
+local watchTarget = nil
+bind(RunService.RenderStepped, function()
+    if not WatchOn or not LPRoot then return end
+    local head = findTarget()
+    watchTarget = head
+    if head then
+        Camera.CFrame = cf_lookAt(Camera.CFrame.Position, head.Position)
+    end
+end)
+
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
 gui.Name = "TSSPYGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
@@ -146,8 +197,9 @@ bind(RunService.RenderStepped, function()
     lastYaw = yaw
     local av = LPRoot.AssemblyAngularVelocity
     readout.Text = string.format(
-        "yaw: %6.1f°  Δ%+.1f/f\nAngVel Y: %+.2f\nAnchored:%s PlatformStand:%s",
-        yaw, dy, av.Y,
+        "yaw: %6.1f°  Δ%+.1f/f   Watch[E]:%s\nAngVel Y: %+.2f   Target:%s\nAnchored:%s PlatformStand:%s",
+        yaw, dy, (WatchOn and "ON" or "OFF"), av.Y,
+        (watchTarget and watchTarget.Parent and watchTarget.Parent.Name or "-"),
         tostring(LPRoot.Anchored),
         tostring(LPHum and LPHum.PlatformStand))
 end)
@@ -293,9 +345,14 @@ bind(UIS.InputBegan, function(i, gp)
     if i.KeyCode == Enum.KeyCode.J then testTouch()
     elseif i.KeyCode == Enum.KeyCode.K then swipeCal()
     elseif i.KeyCode == Enum.KeyCode.L then scanConstraints()
+    elseif i.KeyCode == Enum.KeyCode.E then
+        WatchOn = not WatchOn
+        log("Watch (camera lock) "..(WatchOn and "ON" or "OFF"), WatchOn and COk or CWarn)
     end
 end)
 
 log("=== Touch+Rotation Spy พร้อม ===", COk)
-log("J=TestTouch  K=TestSpin  L=Scan", CInfo)
+log("J=Touch K=SwipeCal L=Scan E=Watch(ON)", CInfo)
+log("ทดสอบ: Watch ON อยู่ → กล้องจะ lock หาศัตรู", CInfo)
+log("ลอง swipe (K) ดูว่า body หมุนแต่กล้องยัง lock ศัตรูไหม", CWarn)
 print("[63RB] Touch+Rotation Spy loaded")
