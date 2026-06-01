@@ -89,7 +89,6 @@ local FACELOCK_ON  = false  -- O = หันหน้าเข้าหาศั
 local GOD_OFFSET = 4    -- ห่างด้านข้าง (X) studs
 local GOD_HEIGHT = 150  -- สูงเหนือเป้า studs (จะลดถ้ามีเพดาน)
 local GOD_DIST       = 10   -- ระยะห่างตามหลังเพื่อน (studs) — ปรับได้ผ่าน GUI
-local BACKFACE_SENS  = 180  -- pixels per radian สำหรับ touch swipe (ปรับถ้าหมุนเร็ว/ช้าไป)
 -- Y clamp: ถ้าเพื่อนต่ำกว่าเรา → ลอยอยู่ที่ Y ปัจจุบันของเรา (ไม่ลงตาม) ถ้าเพื่อนสูงกว่า → ขึ้นตามไม่จำกัด
 
 local lockedPlayer = nil
@@ -1036,59 +1035,23 @@ end)
 
 updS() updJ() updGod()
 
--- ==================== BackFace Task (touch swipe simulation) ====================
--- จำลองนิ้วปัดจอด้านขวา เพื่อหมุนตัวละครให้หลังหันเข้าหาศัตรู
--- เกม mobile อ่าน touch input โดยตรง → ไม่ต้องสู้กับ camera system
-task.spawn(function()
-    local TOUCH_ID = 77   -- touch ID ที่ไม่ชนกับ input อื่น
-    local DEAD_ANGLE = 0.05  -- ~3° ไม่หมุนถ้าใกล้พอแล้ว
-    local INTERVAL   = 0.10  -- วินาที ระหว่างแต่ละ swipe
-
-    while task.wait(INTERVAL) do
-        if not _G.RB06_CONNS or _G.RB06_CONNS ~= CONNS then return end
-        if not FACELOCK_ON or not VIM then continue end
-        if not LPRoot or not LPHum or LPHum.Health <= 0 then continue end
-
-        local flHead = findBestTarget(false)
-        if not flHead then continue end
-
-        local tp    = flHead.Position
-        local myPos = LPRoot.Position
-        local toEnemy = v3_new(tp.X - myPos.X, 0, tp.Z - myPos.Z)
-        if toEnemy.Magnitude < 0.5 then continue end
-
-        -- ทิศที่อยากให้หน้าชี้ = ตรงข้ามศัตรู (หลังจะหันเข้าหาศัตรู)
-        local desired = (-toEnemy).Unit
-        local curLook = LPRoot.CFrame.LookVector
-        local curFlat = v3_new(curLook.X, 0, curLook.Z)
-        if curFlat.Magnitude < 0.01 then continue end
-        curFlat = curFlat.Unit
-
-        -- มุมที่ต้องหมุน (ค่าลบ = ซ้าย, บวก = ขวา)
-        local cross = curFlat:Cross(desired)
-        local dot   = math_clamp(curFlat:Dot(desired), -1, 1)
-        local angle = math.atan2(cross.Y, dot)
-        if math.abs(angle) < DEAD_ANGLE then continue end
-
-        -- แปลงมุม → pixels สำหรับ swipe
-        -- negative เพราะ drag ซ้าย = rotate ซ้าย (ถ้าหมุนผิดทาง → เปลี่ยน BACKFACE_SENS เป็นลบ)
-        local vs     = Camera.ViewportSize
-        local tx     = vs.X * 0.75   -- touch area ขวา 75% ของจอ
-        local ty     = vs.Y * 0.50
-        local deltaX = -angle * BACKFACE_SENS
-
-        pcall(function()
-            VIM:SendTouchEvent(TOUCH_ID, Enum.UserInputState.Begin,  tx,          ty, game, 0)
-        end)
-        task.wait(0.01)
-        pcall(function()
-            VIM:SendTouchEvent(TOUCH_ID, Enum.UserInputState.Change, tx + deltaX, ty, game, 0)
-        end)
-        task.wait(0.01)
-        pcall(function()
-            VIM:SendTouchEvent(TOUCH_ID, Enum.UserInputState.End,    tx + deltaX, ty, game, 0)
-        end)
+-- ==================== BackFace (task.defer — รันหลัง script ทุกตัวในเฟรม) ====================
+-- task.defer = ต่อท้าย queue ของเฟรมนั้น → เกมเซ็ต CFrame ก่อน → เราเขียนทับทีหลังเสมอ
+local function doFaceLock()
+    if not FACELOCK_ON or not LPRoot or not LPHum or LPHum.Health <= 0 then return end
+    local flHead = findBestTarget(false)
+    if not flHead then return end
+    local tp    = flHead.Position
+    local myPos = LPRoot.Position
+    local dx, dz = tp.X - myPos.X, tp.Z - myPos.Z
+    if dx*dx + dz*dz > 0.25 then
+        -- หน้าชี้ออกจากศัตรู = หลังหันเข้าหาศัตรู
+        LPRoot.CFrame = cf_lookAt(myPos, v3_new(myPos.X - dx, myPos.Y, myPos.Z - dz))
     end
+end
+
+bind(RunService.Heartbeat, function()
+    if FACELOCK_ON then task.defer(doFaceLock) end
 end)
 
 -- ==================== INIT (เรียกหลัง define ทุกฟังก์ชันแล้ว — กัน nil crash) ====================
