@@ -1,0 +1,260 @@
+-- 63RB_touchspy.txt v1 — Touch & Rotation Debug Spy
+-- เป้าหมาย: พิสูจน์ว่าเกมล็อค rotation/CFrame ยังไง + touch input ทำงานไหม
+--           เพื่อหาจุด hook ที่ถูกต้อง (ทำไม BackFace หมุนได้แต่ hitbox ไม่ตาม)
+--
+-- ปุ่มในจอ:
+--   [TEST TOUCH] = ยิง SendTouchEvent (swipe) → ดูว่าเกมรับ touch ไหม
+--   [TEST SPIN]  = หมุน HRP 90° → จับเวลา (ms) จนถูก server reset = พิสูจน์ server-lock
+--   [SCAN]       = สแกน constraint/มอเตอร์ที่คุม rotation ในตัวละคร
+--   [C]          = clear log
+--   [X]          = ปิด
+-- Hotkey: J = TEST TOUCH | K = TEST SPIN | L = SCAN
+
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS        = game:GetService("UserInputService")
+local LP         = Players.LocalPlayer
+local Camera     = workspace.CurrentCamera
+local VIM
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+
+-- ==================== Single-Instance Guard ====================
+if _G.TS_SPY_CONNS then
+    for _, c in pairs(_G.TS_SPY_CONNS) do pcall(function() c:Disconnect() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("TSSPYGUI")
+        if cg then cg:Destroy() end
+    end)
+end
+_G.TS_SPY_CONNS = {}
+local CONNS = _G.TS_SPY_CONNS
+local function bind(sig, fn)
+    local c = sig:Connect(fn); CONNS[#CONNS+1] = c; return c
+end
+
+-- ==================== Char cache ====================
+local LPChar, LPRoot, LPHum
+local function cacheChar(c)
+    LPChar = c
+    LPRoot = c and c:FindFirstChild("HumanoidRootPart")
+    LPHum  = c and c:FindFirstChildOfClass("Humanoid")
+end
+cacheChar(LP.Character)
+bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "TSSPYGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 380, 0, 420)
+frame.Position = UDim2.new(0, 20, 0, 60)
+frame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+frame.BackgroundTransparency = 0.08
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(60,160,255); stk.Thickness = 1
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-30,0,22); title.Position = UDim2.new(0,8,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(120,200,255)
+title.Text = "63RB Touch+Rotation Spy"; title.Font = Enum.Font.GothamBold
+title.TextSize = 13; title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = frame
+
+local closeB = Instance.new("TextButton")
+closeB.Size = UDim2.new(0,22,0,20); closeB.Position = UDim2.new(1,-26,0,2)
+closeB.BackgroundColor3 = Color3.fromRGB(120,20,20); closeB.TextColor3 = Color3.new(1,1,1)
+closeB.Text = "X"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12; closeB.BorderSizePixel = 0
+closeB.Parent = frame
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
+closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- live readout (rotation)
+local readout = Instance.new("TextLabel")
+readout.Size = UDim2.new(1,-12,0,52); readout.Position = UDim2.new(0,6,0,26)
+readout.BackgroundColor3 = Color3.fromRGB(4,4,8); readout.BackgroundTransparency = 0.2
+readout.TextColor3 = Color3.fromRGB(120,255,160); readout.Font = Enum.Font.Code
+readout.TextSize = 12; readout.TextXAlignment = Enum.TextXAlignment.Left
+readout.TextYAlignment = Enum.TextYAlignment.Top; readout.Text = "..."
+readout.Parent = frame
+Instance.new("UICorner", readout).CornerRadius = UDim.new(0,4)
+
+-- button row
+local function mkBtn(x, w, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,24); b.Position = UDim2.new(0,x,0,82)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+local touchB = mkBtn(6,   95, "TEST TOUCH [J]", Color3.fromRGB(30,100,160))
+local spinB  = mkBtn(105, 90, "TEST SPIN [K]",  Color3.fromRGB(150,90,20))
+local scanB  = mkBtn(199, 80, "SCAN [L]",       Color3.fromRGB(90,40,140))
+local clrB   = mkBtn(283, 90, "CLEAR",          Color3.fromRGB(60,60,90))
+
+-- log scroll
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-12,1,-118); scroll.Position = UDim2.new(0,6,0,112)
+scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0,6); pad.PaddingTop = UDim.new(0,2); pad.Parent = scroll
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+
+local logOrder = 0
+local function log(txt, col)
+    logOrder += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
+    l.BackgroundTransparency = 1; l.Font = Enum.Font.Code; l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+    l.TextColor3 = col or Color3.fromRGB(200,200,200)
+    l.Text = txt; l.LayoutOrder = logOrder; l.Parent = scroll
+    task.defer(function()
+        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
+        scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+    end)
+end
+clrB.MouseButton1Click:Connect(function()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    logOrder = 0
+end)
+
+local CErr  = Color3.fromRGB(255,90,90)
+local CWarn = Color3.fromRGB(255,190,70)
+local COk   = Color3.fromRGB(120,255,160)
+local CInfo = Color3.fromRGB(150,180,255)
+
+-- ==================== Live rotation readout ====================
+local function yawDeg(cf)
+    local _, y, _ = cf:ToOrientation()
+    return math.deg(y)
+end
+local lastYaw = nil
+bind(RunService.RenderStepped, function()
+    if not LPRoot then readout.Text = "no HRP"; return end
+    local cf = LPRoot.CFrame
+    local yaw = yawDeg(cf)
+    local dy = lastYaw and (yaw - lastYaw) or 0
+    lastYaw = yaw
+    local av = LPRoot.AssemblyAngularVelocity
+    readout.Text = string.format(
+        "yaw: %6.1f°  Δ%+.1f/f\nAngVel Y: %+.2f\nAnchored:%s PlatformStand:%s",
+        yaw, dy, av.Y,
+        tostring(LPRoot.Anchored),
+        tostring(LPHum and LPHum.PlatformStand))
+end)
+
+-- ==================== TEST TOUCH ====================
+-- ยิง touch swipe ขวา + listen ว่าเกมรับไหม
+local touchHits = 0
+bind(UIS.TouchStarted, function(t, gp) touchHits += 1; log("  ↳ TouchStarted hit#"..touchHits.." gp="..tostring(gp), COk) end)
+bind(UIS.InputBegan, function(i, gp)
+    if i.UserInputType == Enum.UserInputType.Touch then
+        log("  ↳ InputBegan(Touch) pos="..math.floor(i.Position.X)..","..math.floor(i.Position.Y), COk)
+    end
+end)
+
+local function testTouch()
+    log("── TEST TOUCH ──", CInfo)
+    log("TouchEnabled="..tostring(UIS.TouchEnabled).." | VIM="..tostring(VIM ~= nil), CWarn)
+    if not VIM then log("VIM nil → executor ไม่ support SendTouchEvent", CErr); return end
+    local vs = Camera.ViewportSize
+    local x, y = vs.X * 0.7, vs.Y * 0.5
+    local before = touchHits
+    local ok, err = pcall(function()
+        VIM:SendTouchEvent(99, Enum.UserInputState.Begin,  x,     y, game, 0)
+        task.wait(0.02)
+        VIM:SendTouchEvent(99, Enum.UserInputState.Change, x+120, y, game, 0)
+        task.wait(0.02)
+        VIM:SendTouchEvent(99, Enum.UserInputState.End,    x+120, y, game, 0)
+    end)
+    if not ok then log("SendTouchEvent ERROR: "..tostring(err), CErr); return end
+    task.wait(0.1)
+    if touchHits > before then
+        log("✅ เกมรับ touch! ("..(touchHits-before).." events)", COk)
+    else
+        log("❌ ยิง touch แล้วแต่ไม่มี event ตอบ — เกมไม่รับ synthetic touch", CErr)
+    end
+end
+
+-- ==================== TEST SPIN (พิสูจน์ server-lock) ====================
+-- หมุน HRP 90° แล้ววัดว่าอยู่กี่ ms ก่อนถูก reset กลับ
+local function testSpin()
+    if not LPRoot then log("no HRP", CErr); return end
+    log("── TEST SPIN (90°) ──", CInfo)
+    local startYaw = yawDeg(LPRoot.CFrame)
+    local target = LPRoot.CFrame * CFrame.Angles(0, math.rad(90), 0)
+    LPRoot.CFrame = target
+    local setYaw = yawDeg(LPRoot.CFrame)
+    log(string.format("set yaw %.0f° → %.0f°", startYaw, setYaw), CWarn)
+
+    -- จับเวลาจนกว่ามันจะ drift กลับเข้าใกล้ startYaw
+    task.spawn(function()
+        local t0 = os.clock()
+        local heldMs = 0
+        for i = 1, 120 do  -- ~2 วินาที
+            RunService.RenderStepped:Wait()
+            local cur = yawDeg(LPRoot.CFrame)
+            local backDiff = math.abs(cur - startYaw)
+            if backDiff < 20 then
+                heldMs = (os.clock() - t0) * 1000
+                break
+            end
+        end
+        if heldMs > 0 then
+            log(string.format("⚠ ถูก reset กลับใน %.0f ms → SERVER ล็อค rotation", heldMs), CErr)
+            log("→ หมุน client ได้แต่ server เขียนทับ (ต้องใช้ touch input จริง)", CWarn)
+        else
+            log("✅ หมุนค้างได้ >2s → rotation เป็น client-side (CFrame hook ใช้ได้)", COk)
+        end
+    end)
+end
+
+-- ==================== SCAN constraints ====================
+local function scanConstraints()
+    log("── SCAN constraints/motors ──", CInfo)
+    if not LPChar then log("no char", CErr); return end
+    local found = 0
+    local CLASSES = {
+        BodyGyro=true, BodyAngularVelocity=true, AlignOrientation=true,
+        BodyPosition=true, AlignPosition=true, LinearVelocity=true,
+        AngularVelocity=true, VectorForce=true,
+    }
+    for _, d in ipairs(LPChar:GetDescendants()) do
+        if CLASSES[d.ClassName] then
+            found += 1
+            log(string.format("• %s : %s", d.ClassName, d:GetFullName():gsub(LPChar.Name, "Char")), CWarn)
+        end
+    end
+    -- network owner hint
+    if LPRoot then
+        log("HRP.ReceiveAge="..string.format("%.3f", LPRoot.ReceiveAge).." (สูง=server คุม)", CInfo)
+        log("HRP.Anchored="..tostring(LPRoot.Anchored), CInfo)
+    end
+    if found == 0 then log("ไม่เจอ constraint คุมการหมุน (rotation อาจคุมจาก server-side script)", CWarn) end
+    log("รวม "..found.." constraint", COk)
+end
+
+touchB.MouseButton1Click:Connect(testTouch)
+spinB.MouseButton1Click:Connect(testSpin)
+scanB.MouseButton1Click:Connect(scanConstraints)
+
+bind(UIS.InputBegan, function(i, gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.J then testTouch()
+    elseif i.KeyCode == Enum.KeyCode.K then testSpin()
+    elseif i.KeyCode == Enum.KeyCode.L then scanConstraints()
+    end
+end)
+
+log("=== Touch+Rotation Spy พร้อม ===", COk)
+log("J=TestTouch  K=TestSpin  L=Scan", CInfo)
+print("[63RB] Touch+Rotation Spy loaded")
