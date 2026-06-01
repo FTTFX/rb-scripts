@@ -88,7 +88,7 @@ local GOD_ON     = false
 local GOD_OFFSET = 4    -- ห่างด้านข้าง (X) studs
 local GOD_HEIGHT = 150  -- สูงเหนือเป้า studs (จะลดถ้ามีเพดาน)
 local GOD_DIST       = 10   -- ระยะห่างตามหลังเพื่อน (studs) — ปรับได้ผ่าน GUI
-local GOD_FALL_LIMIT = 10   -- ตกได้ไม่เกินกี่ studs จาก Y ปัจจุบัน (กัน BodyPosition ลากลงหน้าผา)
+-- Y clamp: ถ้าเพื่อนต่ำกว่าเรา → ลอยอยู่ที่ Y ปัจจุบันของเรา (ไม่ลงตาม) ถ้าเพื่อนสูงกว่า → ขึ้นตามไม่จำกัด
 
 local lockedPlayer = nil
 local lockedHead   = nil
@@ -604,8 +604,8 @@ bind(RunService.Heartbeat, function()
     -- ตำแหน่งหลังเพื่อน 10 studs (ตาม LookVector ของเพื่อน)
     local look = nearestRoot.CFrame.LookVector
     local tp   = nearestRoot.Position
-    -- clamp Y: ตามเพื่อนขึ้นได้เสมอ แต่ลงได้ไม่เกิน GOD_FALL_LIMIT studs จาก Y เรา
-    local clampedY  = math_max(tp.Y, LPRoot.Position.Y - GOD_FALL_LIMIT)
+    -- clamp Y: ถ้าเพื่อนต่ำกว่าเรา → ลอยที่ Y เราเอง | ถ้าเพื่อนสูงกว่า → ขึ้นตามไม่จำกัด
+    local clampedY  = math_max(tp.Y, LPRoot.Position.Y)
     local targetPos = v3_new(tp.X - look.X * GOD_DIST, clampedY, tp.Z - look.Z * GOD_DIST)
 
     if not bpGod or not bpGod.Parent then
