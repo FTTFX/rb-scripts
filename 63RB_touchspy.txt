@@ -6,12 +6,13 @@
 --   B = BackFace (หันหลังให้ศัตรู ผ่าน touch)
 --   J = Test touch | K = Swipe calibrate | L = Scan constraints
 --
+-- v1.5: ย้าย touch ไปขวาบนสุด (0.72,0.15) เหนือปุ่มทั้งหมด — กันยิง
 -- v1.4: ย้าย touch area 0.7→0.5 (หลบปุ่มยิง) + ใส่เลข version บน title
 -- v1.3: BackFace closed-loop (2.3px/°)
 -- v1.2: + Watch (camera lock หาศัตรู)
 -- v1.1: touch signature probe (พบ id,int,x,y)
 
-local VERSION    = "1.4"
+local VERSION    = "1.5"
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
@@ -49,10 +50,10 @@ bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
 local WatchOn      = true
 local BACKFACE_ON  = false        -- B = หันหลังให้ศัตรูเสมอ (ผ่าน touch)
 local PX_PER_DEG   = 2.3          -- จาก SWIPE CAL: 2.3px ต่อ 1°
--- touch area สำหรับ "look/หมุน" — ต้องหลบปุ่มยิง(0.7) + ปุ่มวิ่ง(ขวาล่าง) + joystick(ซ้ายล่าง)
--- โซนท้องฟ้ากลางจอค่อนบน = ปลอดภัยสุด
-local LOOK_FX      = 0.50         -- x: 0=ซ้าย 1=ขวา
-local LOOK_FY      = 0.30         -- y: 0=บน 1=ล่าง
+-- touch area สำหรับ "look/หมุน" — ต้องหลบปุ่มยิง + ทุกปุ่ม + โซนยิง
+-- v1.5: ลองมุมขวาบนสุด (เหนือปุ่มยิง) เผื่อหมุนได้โดยไม่ยิง
+local LOOK_FX      = 0.72         -- x: 0=ซ้าย 1=ขวา
+local LOOK_FY      = 0.15         -- y: 0=บน 1=ล่าง (บนสุด)
 local SHOOT_MAX_SQ = 400 * 400
 local cf_lookAt    = CFrame.lookAt
 local v3_new       = Vector3.new
