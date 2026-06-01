@@ -47,6 +47,10 @@ bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
 local WatchOn      = true
 local BACKFACE_ON  = false        -- B = หันหลังให้ศัตรูเสมอ (ผ่าน touch)
 local PX_PER_DEG   = 2.3          -- จาก SWIPE CAL: 2.3px ต่อ 1°
+-- touch area สำหรับ "look/หมุน" — ต้องหลบปุ่มยิง(0.7) + ปุ่มวิ่ง(ขวาล่าง) + joystick(ซ้ายล่าง)
+-- โซนท้องฟ้ากลางจอค่อนบน = ปลอดภัยสุด
+local LOOK_FX      = 0.50         -- x: 0=ซ้าย 1=ขวา
+local LOOK_FY      = 0.30         -- y: 0=บน 1=ล่าง
 local SHOOT_MAX_SQ = 400 * 400
 local cf_lookAt    = CFrame.lookAt
 local v3_new       = Vector3.new
@@ -280,7 +284,7 @@ local function swipeCal()
     if not LPRoot then log("no HRP", CErr); return end
     log("── SWIPE CAL (+"..SWIPE_PX.."px ขวา) ──", CInfo)
     local vs = Camera.ViewportSize
-    local cx, cy = vs.X * 0.7, vs.Y * 0.5
+    local cx, cy = vs.X * LOOK_FX, vs.Y * LOOK_FY
     local yaw0 = yawDeg(LPRoot.CFrame)
     local camY0 = math.deg(select(2, Camera.CFrame:ToOrientation()))
 
@@ -340,9 +344,9 @@ task.spawn(function()
         local errDeg = math.deg(math.atan2(cross.Y, dot))
         if math.abs(errDeg) < DEAD_DEG then continue end   -- หันถูกแล้ว
 
-        local deltaPx = math.clamp(-errDeg * PX_PER_DEG, -220, 220)
+        local deltaPx = math.clamp(-errDeg * PX_PER_DEG, -120, 120)
         local vs = Camera.ViewportSize
-        local cx, cy = vs.X * 0.7, vs.Y * 0.5
+        local cx, cy = vs.X * LOOK_FX, vs.Y * LOOK_FY
 
         sendTouch(88, 0, cx, cy)               -- Begin
         task.wait(0.012)
