@@ -45,6 +45,8 @@ bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
 -- ==================== WATCH (camera lock หาศัตรู — ยกมาจาก 06RB) ====================
 -- เปิด ON ตลอด เพื่อทดสอบว่ากล้อง (aim) กับ body (touch) แยกกันได้ไหม
 local WatchOn      = true
+local BACKFACE_ON  = false        -- B = หันหลังให้ศัตรูเสมอ (ผ่าน touch)
+local PX_PER_DEG   = 2.3          -- จาก SWIPE CAL: 2.3px ต่อ 1°
 local SHOOT_MAX_SQ = 400 * 400
 local cf_lookAt    = CFrame.lookAt
 local v3_new       = Vector3.new
@@ -197,8 +199,8 @@ bind(RunService.RenderStepped, function()
     lastYaw = yaw
     local av = LPRoot.AssemblyAngularVelocity
     readout.Text = string.format(
-        "yaw: %6.1f°  Δ%+.1f/f   Watch[E]:%s\nAngVel Y: %+.2f   Target:%s\nAnchored:%s PlatformStand:%s",
-        yaw, dy, (WatchOn and "ON" or "OFF"), av.Y,
+        "yaw: %6.1f°  Watch[E]:%s  Back[B]:%s\nAngVel Y: %+.2f   Target:%s\nAnchored:%s PlatformStand:%s",
+        yaw, (WatchOn and "ON" or "OFF"), (BACKFACE_ON and "ON" or "OFF"), av.Y,
         (watchTarget and watchTarget.Parent and watchTarget.Parent.Name or "-"),
         tostring(LPRoot.Anchored),
         tostring(LPHum and LPHum.PlatformStand))
@@ -311,6 +313,47 @@ local function swipeCal()
     end)
 end
 
+-- ==================== BackFace closed-loop (touch swipe) ====================
+-- หันหลังให้ศัตรูเสมอ: คำนวณ error องศา → swipe ตามทิศ → iterate จนหันถูก
+-- ทิศจาก CAL: swipe ขวา(+px) → yaw ลด → ต้องเพิ่ม yaw ต้อง swipe ซ้าย(-px)
+local DEAD_DEG = 6   -- ใกล้พอแล้ว ไม่ต้อง swipe
+task.spawn(function()
+    while task.wait(0.07) do
+        if not _G.TS_SPY_CONNS or _G.TS_SPY_CONNS ~= CONNS then return end
+        if not BACKFACE_ON or not VIM or not LPRoot then continue end
+        local head = watchTarget or findTarget()
+        if not head then continue end
+
+        local myPos = LPRoot.Position
+        local toE   = head.Position - myPos
+        local flat  = v3_new(toE.X, 0, toE.Z)
+        if flat.Magnitude < 1 then continue end
+        local desired = (flat * -1).Unit          -- หน้าชี้ออกจากศัตรู = หลังเข้าหา
+
+        local lv  = LPRoot.CFrame.LookVector
+        local cur = v3_new(lv.X, 0, lv.Z)
+        if cur.Magnitude < 0.01 then continue end
+        cur = cur.Unit
+
+        local cross = cur:Cross(desired)
+        local dot   = math.clamp(cur:Dot(desired), -1, 1)
+        local errDeg = math.deg(math.atan2(cross.Y, dot))
+        if math.abs(errDeg) < DEAD_DEG then continue end   -- หันถูกแล้ว
+
+        local deltaPx = math.clamp(-errDeg * PX_PER_DEG, -220, 220)
+        local vs = Camera.ViewportSize
+        local cx, cy = vs.X * 0.7, vs.Y * 0.5
+
+        sendTouch(88, 0, cx, cy)               -- Begin
+        task.wait(0.012)
+        sendTouch(88, 1, cx + deltaPx*0.5, cy) -- Change (กลางทาง)
+        task.wait(0.012)
+        sendTouch(88, 1, cx + deltaPx, cy)     -- Change (สุด)
+        task.wait(0.012)
+        sendTouch(88, 2, cx + deltaPx, cy)     -- End
+    end
+end)
+
 -- ==================== SCAN constraints ====================
 local function scanConstraints()
     log("── SCAN constraints/motors ──", CInfo)
@@ -348,11 +391,14 @@ bind(UIS.InputBegan, function(i, gp)
     elseif i.KeyCode == Enum.KeyCode.E then
         WatchOn = not WatchOn
         log("Watch (camera lock) "..(WatchOn and "ON" or "OFF"), WatchOn and COk or CWarn)
+    elseif i.KeyCode == Enum.KeyCode.B then
+        BACKFACE_ON = not BACKFACE_ON
+        log("BackFace (หันหลังหาศัตรู) "..(BACKFACE_ON and "ON" or "OFF"), BACKFACE_ON and COk or CWarn)
     end
 end)
 
 log("=== Touch+Rotation Spy พร้อม ===", COk)
-log("J=Touch K=SwipeCal L=Scan E=Watch(ON)", CInfo)
-log("ทดสอบ: Watch ON อยู่ → กล้องจะ lock หาศัตรู", CInfo)
-log("ลอง swipe (K) ดูว่า body หมุนแต่กล้องยัง lock ศัตรูไหม", CWarn)
+log("E=Watch(ON)  B=BackFace  J=Touch K=Cal L=Scan", CInfo)
+log("กด B → หันหลังให้ศัตรูเสมอ (ผ่าน touch)", COk)
+log("Watch lock กล้องหาศัตรู + Back หมุน body = พร้อมกัน", CWarn)
 print("[63RB] Touch+Rotation Spy loaded")
