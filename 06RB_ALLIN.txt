@@ -89,6 +89,7 @@ local FACELOCK_ON  = false  -- O = หันหน้าเข้าหาศั
 local GOD_OFFSET = 4    -- ห่างด้านข้าง (X) studs
 local GOD_HEIGHT = 150  -- สูงเหนือเป้า studs (จะลดถ้ามีเพดาน)
 local GOD_DIST       = 10   -- ระยะห่างตามหลังเพื่อน (studs) — ปรับได้ผ่าน GUI
+local bgFace = nil          -- BodyGyro สำหรับ BackFace (สร้างตอน toggle ON)
 -- Y clamp: ถ้าเพื่อนต่ำกว่าเรา → ลอยอยู่ที่ Y ปัจจุบันของเรา (ไม่ลงตาม) ถ้าเพื่อนสูงกว่า → ขึ้นตามไม่จำกัด
 
 local lockedPlayer = nil
@@ -163,8 +164,9 @@ bind(LP.CharacterAdded, function(c)
     godJumpTrack = nil
     -- คืนค่า AutoRotate ตาม FaceLock state หลัง respawn
     if LPHum then LPHum.AutoRotate = not FACELOCK_ON end
+    if FACELOCK_ON then setupBGFace() end   -- สร้าง BodyGyro ใหม่หลัง respawn
 end)
-bind(LP.CharacterRemoving, function() cacheLPChar(nil) stopGodAnims() end)
+bind(LP.CharacterRemoving, function() cacheLPChar(nil) stopGodAnims() destroyBGFace() end)
 
 -- ==================== TeamCheck ====================
 local function getTeamID(p)
@@ -517,15 +519,17 @@ bind(RunService.RenderStepped, function()
             end
         end
     end
-    -- FaceLock: หันหลังตรงกับกล้อง
-    -- Camera.LookVector ชี้ไปหาศัตรู (aimbot ควบคุมกล้องอยู่แล้ว)
-    -- → ตัวละครหันหน้าสวนกล้อง = หลังชี้ตามกล้อง = หลังหันเข้าหาศัตรูพอดี
+    -- FaceLock: หันหลังเข้าหาศัตรู ด้วย BodyGyro (override rotation ของเกม mobile)
     if FACELOCK_ON and LPRoot and LPHum and LPHum.Health > 0 then
-        local lv = Camera.CFrame.LookVector
-        local dx, dz = -lv.X, -lv.Z   -- ทิศตรงข้ามกล้อง = ทิศที่หน้าตัวละครชี้
-        if dx*dx + dz*dz > 0.01 then
-            LPRoot.CFrame = cf_lookAt(LPRoot.Position,
-                LPRoot.Position + v3_new(dx, 0, dz))
+        local flHead = findBestTarget(false)
+        if flHead and bgFace and bgFace.Parent then
+            local tp    = flHead.Position
+            local myPos = LPRoot.Position
+            local dx, dz = tp.X - myPos.X, tp.Z - myPos.Z
+            if dx*dx + dz*dz > 0.25 then
+                -- หน้าชี้ออกจากศัตรู = หลังหันเข้าหาศัตรู
+                bgFace.CFrame = cf_lookAt(myPos, v3_new(myPos.X - dx, myPos.Y, myPos.Z - dz))
+            end
         end
     end
 end)
@@ -987,10 +991,29 @@ godBtn.MouseButton1Click:Connect(function()
     updGod()
 end)
 
+local function destroyBGFace()
+    if bgFace then pcall(function() bgFace:Destroy() end) bgFace = nil end
+end
+
+local function setupBGFace()
+    destroyBGFace()
+    if not LPRoot then return end
+    bgFace = Instance.new("BodyGyro")
+    bgFace.MaxTorque = v3_new(0, 1e6, 0)   -- หมุนแค่แกน Y (yaw)
+    bgFace.P         = 2e5                  -- แรงหมุน — สูงพอสู้ระบบเกม mobile
+    bgFace.D         = 300
+    bgFace.CFrame    = LPRoot.CFrame
+    bgFace.Parent    = LPRoot
+end
+
 local function toggleFaceLock()
     FACELOCK_ON = not FACELOCK_ON
-    -- ปิด AutoRotate ตอน ON ไม่งั้น Roblox จะสลับทิศเองตามการเดิน
     if LPHum then LPHum.AutoRotate = not FACELOCK_ON end
+    if FACELOCK_ON then
+        setupBGFace()
+    else
+        destroyBGFace()
+    end
     faceLockBtn.BackgroundColor3 = FACELOCK_ON
         and Color3.fromRGB(180,60,20) or Color3.fromRGB(50,50,80)
     faceLockBtn.Text = "BackFace "..(FACELOCK_ON and "ON" or "OFF").." [O]"
