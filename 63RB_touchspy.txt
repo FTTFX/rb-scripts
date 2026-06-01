@@ -6,13 +6,14 @@
 --   B = BackFace (หันหลังให้ศัตรู ผ่าน touch)
 --   J = Test touch | K = Swipe calibrate | L = Scan constraints
 --
+-- v1.6: marker วงกลม ↻ ลากได้ = จุด touch — ลากหาโซนหมุนได้-ไม่ยิงเอง
 -- v1.5: ย้าย touch ไปขวาบนสุด (0.72,0.15) เหนือปุ่มทั้งหมด — กันยิง
 -- v1.4: ย้าย touch area 0.7→0.5 (หลบปุ่มยิง) + ใส่เลข version บน title
 -- v1.3: BackFace closed-loop (2.3px/°)
 -- v1.2: + Watch (camera lock หาศัตรู)
 -- v1.1: touch signature probe (พบ id,int,x,y)
 
-local VERSION    = "1.5"
+local VERSION    = "1.6"
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
@@ -133,6 +134,46 @@ closeB.Parent = frame
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
 closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
 
+-- ==================== TOUCH MARKER (ลากหา sweet spot) ====================
+-- วงกลมเหลือง = จุดที่ touch จะลง พี่ลากไปวางตรงไหน backface/swipecal ก็ยิงตรงนั้น
+local marker = Instance.new("TextLabel")
+marker.Size = UDim2.new(0, 48, 0, 48)
+marker.Position = UDim2.new(LOOK_FX, -24, LOOK_FY, -24)
+marker.BackgroundColor3 = Color3.fromRGB(255, 225, 0)
+marker.BackgroundTransparency = 0.4
+marker.Text = "↻"; marker.TextScaled = true
+marker.TextColor3 = Color3.fromRGB(50, 35, 0); marker.Font = Enum.Font.GothamBold
+marker.ZIndex = 50; marker.Active = true; marker.Parent = gui
+Instance.new("UICorner", marker).CornerRadius = UDim.new(1, 0)
+local mStroke = Instance.new("UIStroke", marker)
+mStroke.Color = Color3.fromRGB(255, 120, 0); mStroke.Thickness = 2
+
+-- manual drag (รองรับทั้ง mouse + touch)
+local mDrag, mStart, mPos0 = false, nil, nil
+marker.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        mDrag = true; mStart = i.Position; mPos0 = marker.Position
+    end
+end)
+marker.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        mDrag = false
+    end
+end)
+bind(UIS.InputChanged, function(i)
+    if mDrag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local d = i.Position - mStart
+        marker.Position = UDim2.new(0, mPos0.X.Offset + d.X, 0, mPos0.Y.Offset + d.Y)
+    end
+end)
+
+-- จุด touch = กึ่งกลาง marker (absolute pixel)
+local function getTouchPoint()
+    local c = marker.AbsolutePosition
+    local s = marker.AbsoluteSize
+    return c.X + s.X * 0.5, c.Y + s.Y * 0.5
+end
+
 -- live readout (rotation)
 local readout = Instance.new("TextLabel")
 readout.Size = UDim2.new(1,-12,0,52); readout.Position = UDim2.new(0,6,0,26)
@@ -205,12 +246,13 @@ bind(RunService.RenderStepped, function()
     local dy = lastYaw and (yaw - lastYaw) or 0
     lastYaw = yaw
     local av = LPRoot.AssemblyAngularVelocity
+    local mx, my = getTouchPoint()
+    local vs2 = Camera.ViewportSize
     readout.Text = string.format(
-        "yaw: %6.1f°  Watch[E]:%s  Back[B]:%s\nAngVel Y: %+.2f   Target:%s\nAnchored:%s PlatformStand:%s",
-        yaw, (WatchOn and "ON" or "OFF"), (BACKFACE_ON and "ON" or "OFF"), av.Y,
+        "yaw: %6.1f°  Watch[E]:%s  Back[B]:%s\nTarget:%s   Touch@ %.2f , %.2f\nลาก ↻ หาจุดหมุนได้-ไม่ยิง แล้วจำเลขนี้",
+        yaw, (WatchOn and "ON" or "OFF"), (BACKFACE_ON and "ON" or "OFF"),
         (watchTarget and watchTarget.Parent and watchTarget.Parent.Name or "-"),
-        tostring(LPRoot.Anchored),
-        tostring(LPHum and LPHum.PlatformStand))
+        mx / vs2.X, my / vs2.Y)
 end)
 
 -- ==================== TEST TOUCH ====================
@@ -286,8 +328,7 @@ local function swipeCal()
     if not VIM then log("VIM nil", CErr); return end
     if not LPRoot then log("no HRP", CErr); return end
     log("── SWIPE CAL (+"..SWIPE_PX.."px ขวา) ──", CInfo)
-    local vs = Camera.ViewportSize
-    local cx, cy = vs.X * LOOK_FX, vs.Y * LOOK_FY
+    local cx, cy = getTouchPoint()
     local yaw0 = yawDeg(LPRoot.CFrame)
     local camY0 = math.deg(select(2, Camera.CFrame:ToOrientation()))
 
@@ -348,8 +389,7 @@ task.spawn(function()
         if math.abs(errDeg) < DEAD_DEG then continue end   -- หันถูกแล้ว
 
         local deltaPx = math.clamp(-errDeg * PX_PER_DEG, -120, 120)
-        local vs = Camera.ViewportSize
-        local cx, cy = vs.X * LOOK_FX, vs.Y * LOOK_FY
+        local cx, cy = getTouchPoint()
 
         sendTouch(88, 0, cx, cy)               -- Begin
         task.wait(0.012)
@@ -406,6 +446,6 @@ end)
 
 log("=== TouchSpy v"..VERSION.." พร้อม ===", COk)
 log("E=Watch(ON)  B=BackFace  J=Touch K=Cal L=Scan", CInfo)
-log("กด B → หันหลังให้ศัตรูเสมอ (ผ่าน touch)", COk)
-log("Watch lock กล้องหาศัตรู + Back หมุน body = พร้อมกัน", CWarn)
+log("ลากวงกลม ↻ สีเหลือง = ย้ายจุด touch", COk)
+log("ลากไปจุดที่ swipe(K)แล้วหมุนได้-ไม่ยิง → กด B", CWarn)
 print("[63RB] Touch+Rotation Spy loaded")
