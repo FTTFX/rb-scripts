@@ -94,7 +94,7 @@ local function mkBtn(x, w, txt, col)
     return b
 end
 local touchB = mkBtn(6,   95, "TEST TOUCH [J]", Color3.fromRGB(30,100,160))
-local spinB  = mkBtn(105, 90, "TEST SPIN [K]",  Color3.fromRGB(150,90,20))
+local spinB  = mkBtn(105, 90, "SWIPE CAL [K]",  Color3.fromRGB(150,90,20))
 local scanB  = mkBtn(199, 80, "SCAN [L]",       Color3.fromRGB(90,40,140))
 local clrB   = mkBtn(283, 90, "CLEAR",          Color3.fromRGB(60,60,90))
 
@@ -212,35 +212,49 @@ local function testTouch()
     log("❌ ลองครบทุก signature แล้ว — executor นี้ส่ง touch ไม่ได้", CErr)
 end
 
--- ==================== TEST SPIN (พิสูจน์ server-lock) ====================
--- หมุน HRP 90° แล้ววัดว่าอยู่กี่ ms ก่อนถูก reset กลับ
-local function testSpin()
-    if not LPRoot then log("no HRP", CErr); return end
-    log("── TEST SPIN (90°) ──", CInfo)
-    local startYaw = yawDeg(LPRoot.CFrame)
-    local target = LPRoot.CFrame * CFrame.Angles(0, math.rad(90), 0)
-    LPRoot.CFrame = target
-    local setYaw = yawDeg(LPRoot.CFrame)
-    log(string.format("set yaw %.0f° → %.0f°", startYaw, setYaw), CWarn)
+-- ==================== sendTouch (signature ที่พิสูจน์แล้วว่าใช้ได้) ====================
+-- VIM:SendTouchEvent(id, stateInt, x, y)  state: 0=Begin 1=Change 2=End
+local function sendTouch(id, state, x, y)
+    pcall(function() VIM:SendTouchEvent(id, state, x, y) end)
+end
 
-    -- จับเวลาจนกว่ามันจะ drift กลับเข้าใกล้ startYaw
+-- ==================== SWIPE CAL (swipe จริง → วัด yaw ที่หมุน) ====================
+-- พิสูจน์ว่า swipe หมุน "อะไร" + calibrate กี่ px = กี่องศา
+local SWIPE_PX = 250  -- ระยะ swipe ขวา (px)
+local function swipeCal()
+    if not VIM then log("VIM nil", CErr); return end
+    if not LPRoot then log("no HRP", CErr); return end
+    log("── SWIPE CAL (+"..SWIPE_PX.."px ขวา) ──", CInfo)
+    local vs = Camera.ViewportSize
+    local cx, cy = vs.X * 0.7, vs.Y * 0.5
+    local yaw0 = yawDeg(LPRoot.CFrame)
+    local camY0 = math.deg(select(2, Camera.CFrame:ToOrientation()))
+
     task.spawn(function()
-        local t0 = os.clock()
-        local heldMs = 0
-        for i = 1, 120 do  -- ~2 วินาที
-            RunService.RenderStepped:Wait()
-            local cur = yawDeg(LPRoot.CFrame)
-            local backDiff = math.abs(cur - startYaw)
-            if backDiff < 20 then
-                heldMs = (os.clock() - t0) * 1000
-                break
-            end
+        sendTouch(99, 0, cx, cy)         -- Begin
+        task.wait(0.02)
+        for s = 1, 10 do                  -- 10 step drag ขวา (smooth)
+            sendTouch(99, 1, cx + (SWIPE_PX * s / 10), cy)
+            task.wait(0.012)
         end
-        if heldMs > 0 then
-            log(string.format("⚠ ถูก reset กลับใน %.0f ms → SERVER ล็อค rotation", heldMs), CErr)
-            log("→ หมุน client ได้แต่ server เขียนทับ (ต้องใช้ touch input จริง)", CWarn)
+        sendTouch(99, 2, cx + SWIPE_PX, cy)  -- End
+        task.wait(0.15)
+
+        local yaw1  = yawDeg(LPRoot.CFrame)
+        local camY1 = math.deg(select(2, Camera.CFrame:ToOrientation()))
+        local dChar = yaw1 - yaw0
+        local dCam  = camY1 - camY0
+        log(string.format("ตัวละคร yaw: %.0f° → %.0f°  (Δ%+.0f°)", yaw0, yaw1, dChar),
+            math.abs(dChar) > 3 and COk or CWarn)
+        log(string.format("กล้อง   yaw: Δ%+.0f°", dCam), CInfo)
+        if math.abs(dChar) > 3 then
+            log(string.format("✅ swipe หมุนตัวละคร! %dpx = %.0f° → %.1f px/°",
+                SWIPE_PX, dChar, SWIPE_PX / math.abs(dChar)), COk)
+            log("→ เอาค่า px/° นี้ไปใส่ BackFace ใน 06RB ได้", COk)
+        elseif math.abs(dCam) > 3 then
+            log("△ swipe หมุนแค่กล้อง ไม่หมุนตัวละคร", CWarn)
         else
-            log("✅ หมุนค้างได้ >2s → rotation เป็น client-side (CFrame hook ใช้ได้)", COk)
+            log("❌ swipe ไม่หมุนอะไรเลย — touch area อาจผิด (ลองเปลี่ยนตำแหน่ง)", CErr)
         end
     end)
 end
@@ -271,13 +285,13 @@ local function scanConstraints()
 end
 
 touchB.MouseButton1Click:Connect(testTouch)
-spinB.MouseButton1Click:Connect(testSpin)
+spinB.MouseButton1Click:Connect(swipeCal)
 scanB.MouseButton1Click:Connect(scanConstraints)
 
 bind(UIS.InputBegan, function(i, gp)
     if gp then return end
     if i.KeyCode == Enum.KeyCode.J then testTouch()
-    elseif i.KeyCode == Enum.KeyCode.K then testSpin()
+    elseif i.KeyCode == Enum.KeyCode.K then swipeCal()
     elseif i.KeyCode == Enum.KeyCode.L then scanConstraints()
     end
 end)
