@@ -1,0 +1,958 @@
+-- 06RB ALL IN.txt — Frame-Perfect Aimbot + Movement (Unified)
+-- Version: 3.3.2 "Fix forward-reference crash"
+-- H=ESP | Q=Shoot | E=Watch | T=TeamCheck | R=Rescan | F=Speed | G=Jump | P=GodMode
+--
+-- v3.3.2:
+--   * FIX: cacheLPChar เรียก updateShieldIgnoreList() ที่ define ทีหลัง → ตอนรันเป็น nil → crash
+--     ทำให้ "อยู่ๆ ใช้ไม่ได้" (พังเมื่อ character โหลดอยู่แล้วตอนรัน)
+--   * แก้ 2 ชั้น:
+--     1) forward-declare: updateShieldIgnoreList / stopGodAnims / godWalkTrack / godJumpTrack
+--     2) ⭐ ย้าย "การเรียก" cacheLPChar(LP.Character) ครั้งแรกไปท้ายไฟล์ (INIT)
+--        — เพราะ forward-declare ทำให้เป็น upvalue nil อยู่ดี ถ้าเรียกก่อน define body
+--
+-- v3.3.1:
+--   * God Mode เปลี่ยนจาก CFrame teleport → BodyPosition (ผลักด้วยฟิสิกส์)
+--     - นุ่ม, เป็นธรรมชาติแบบฟิสิกส์, server detect ยากกว่า teleport
+--     - P=1e4, D=1250 → ตามไว+ไม่สั่น, MaxForce=4e5 (override gravity)
+--   * Cleanup BodyPosition ตอน toggle OFF + single-instance guard
+
+--
+-- v3.2.0:
+--   * Merge 38RB_movement v3 เข้ามา (Speed BodyVelocity + Jump AssemblyLinearVelocity Impulse)
+--   * GUI compact ขึ้น (ขนาด 130x300, ปุ่มเล็กลง)
+--   * Factory defaults: ESP=ON Shoot=ON Watch=OFF Team=ON Speed=ON(31) Jump=ON(31)
+
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS        = game:GetService("UserInputService")
+local VIM
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+
+local LP         = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local Camera     = workspace.CurrentCamera
+local World      = workspace
+
+-- ==================== LOCAL ALIASES ====================
+local math_clamp = math.clamp
+local math_min   = math.min
+local math_sqrt  = math.sqrt
+local math_max   = math.max
+local math_huge  = math.huge
+local v3_new     = Vector3.new
+local cf_lookAt  = CFrame.lookAt
+local clock      = os.clock
+
+-- ==================== SINGLE-INSTANCE GUARD ====================
+if _G.RB06_CONNS then
+    for i = 1, #_G.RB06_CONNS do pcall(function() _G.RB06_CONNS[i]:Disconnect() end) end
+    for _, hl in pairs(_G.RB06_HL or {}) do pcall(function() hl:Destroy() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("HLGUI")
+        if cg then cg:Destroy() end
+        local pg = LP and LP:FindFirstChild("PlayerGui")
+        if pg and pg:FindFirstChild("HLGUI") then pg.HLGUI:Destroy() end
+    end)
+    if _G.RB06_BV then pcall(function() _G.RB06_BV:Destroy() end) end
+    if _G.RB06_GOD_BP then pcall(function() _G.RB06_GOD_BP:Destroy() end) end
+end
+_G.RB06_CONNS = {}
+_G.RB06_HL    = {}
+local CONNS      = _G.RB06_CONNS
+local Highlights = _G.RB06_HL
+
+local function bind(sig, fn)
+    local c = sig:Connect(fn)
+    CONNS[#CONNS+1] = c
+    return c
+end
+
+-- ==================== STATE (Factory Defaults) ====================
+local ESPOn      = true
+local ShootOn    = false     -- ON by default
+local WatchOn    = true
+local TeamCheck  = true     -- ON by default
+local SPEED_ON   = true     -- ON by default
+local JUMP_ON    = true     -- ON by default
+local SPEED_VAL  = 35
+local JUMP_VAL   = 15
+local lastShot   = 0
+local FIRE_RATE  = 0
+
+-- God Mode (Anti-Hacker): P = วาปไปด้านบนศัตรูใกล้สุด
+local GOD_ON     = false
+local GOD_OFFSET = 4    -- ห่างด้านข้าง (X) studs
+local GOD_HEIGHT = 150  -- สูงเหนือเป้า studs (จะลดถ้ามีเพดาน)
+
+local lockedPlayer = nil
+local lockedHead   = nil
+local lockedRoot   = nil
+local lockedHum    = nil
+
+-- ==================== NETCODE CONFIG ====================
+local NETCODE_MODE      = "CLIENT_HITREG"
+local BULLET_SPEED      = 1000
+local SHOOT_MAX_DIST    = 400
+local SHOOT_MAX_DIST_SQ = SHOOT_MAX_DIST * SHOOT_MAX_DIST
+local PREAIM_MAX_ITER   = 12
+local LOS_REFRESH_FRAMES= 2
+
+-- ==================== Hot-loop caches ====================
+local LPHead, LPRoot, LPChar, LPHum = nil, nil, nil, nil
+local bv = nil  -- BodyVelocity for speed
+local viewportX, viewportY = 0, 0
+
+local pCacheHead = {}
+local pCacheRoot = {}
+local pCacheHum  = {}
+local losCache   = {}
+
+local activeTargets = {}
+local targetCount   = 0
+
+local function refreshViewport()
+    local vs = Camera.ViewportSize
+    viewportX = vs.X * 0.5
+    viewportY = vs.Y * 0.5
+end
+refreshViewport()
+bind(Camera:GetPropertyChangedSignal("ViewportSize"), refreshViewport)
+
+-- ==================== FORWARD DECLARE (กัน forward-reference → เรียก nil) ====================
+-- ฟังก์ชัน/ตัวแปรที่ถูกเรียกใน closure ก่อนถูก define จริงด้านล่าง
+local updateShieldIgnoreList
+local stopGodAnims
+local godWalkTrack, godJumpTrack
+
+-- ==================== LP Char + BodyVelocity setup ====================
+local function setupBV(char)
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if bv then pcall(function() bv:Destroy() end) end
+    bv = Instance.new("BodyVelocity")
+    bv.MaxForce = v3_new(0, 0, 0)
+    bv.Velocity = v3_new(0, 0, 0)
+    bv.Parent   = hrp
+    _G.RB06_BV  = bv
+end
+
+local function cacheLPChar(char)
+    LPChar = char
+    if not char then LPHead, LPRoot, LPHum = nil, nil, nil return end
+    LPRoot = char:FindFirstChild("HumanoidRootPart")
+    LPHead = char:FindFirstChild("Head")
+    LPHum  = char:FindFirstChildOfClass("Humanoid")
+    setupBV(char)
+    updateShieldIgnoreList()
+end
+-- หมายเหตุ: เรียก cacheLPChar(LP.Character) ครั้งแรก "ทีหลัง" (ดูท้ายไฟล์ INIT)
+-- เพราะมันเรียก updateShieldIgnoreList() ที่ define หลังจุดนี้ — เรียกตรงนี้ = nil crash
+bind(LP.CharacterAdded, function(c)
+    task.wait(0.3)
+    cacheLPChar(c)
+    -- รีเซ็ต animation track เมื่อ respawn (track เก่าใช้ไม่ได้แล้ว)
+    godWalkTrack = nil
+    godJumpTrack = nil
+end)
+bind(LP.CharacterRemoving, function() cacheLPChar(nil) stopGodAnims() end)
+
+-- ==================== TeamCheck ====================
+local function getTeamID(p)
+    local id = p:GetAttribute("TeamID")
+    if id and id ~= "" then return id end
+    if p.Team then return "T_"..p.Team.Name end
+    return nil
+end
+
+-- ==================== Highlight ====================
+local COL_ENEMY    = Color3.fromRGB(255, 50, 50)
+local COL_TEAMMATE = Color3.fromRGB(50, 255, 80)
+local COL_WHITE    = Color3.fromRGB(255, 255, 255)
+
+local function getColor(p, myID)
+    if TeamCheck and myID and getTeamID(p) == myID then return COL_TEAMMATE end
+    return COL_ENEMY
+end
+
+local function addHL(p)
+    if p == LP or not p.Character then return end
+    if Highlights[p.Name] then
+        pcall(function() Highlights[p.Name]:Destroy() end)
+        Highlights[p.Name] = nil
+    end
+    local myID = TeamCheck and getTeamID(LP) or nil
+    local hl = Instance.new("Highlight")
+    hl.FillColor           = getColor(p, myID)
+    hl.OutlineColor        = COL_WHITE
+    hl.FillTransparency    = 0.5
+    hl.OutlineTransparency = 0
+    hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee             = p.Character
+    hl.Parent              = p.Character
+    hl.Enabled             = ESPOn
+    Highlights[p.Name]     = hl
+end
+
+local function rebuildColors()
+    local myID = TeamCheck and getTeamID(LP) or nil
+    for i = 1, targetCount do
+        local p = activeTargets[i]
+        local hl = Highlights[p.Name]
+        if hl then pcall(function() hl.FillColor = getColor(p, myID) end) end
+    end
+end
+
+local function removeHL(name)
+    if Highlights[name] then
+        pcall(function() Highlights[name]:Destroy() end)
+        Highlights[name] = nil
+    end
+end
+
+local function setAllEnabled(val)
+    for _, hl in pairs(Highlights) do
+        pcall(function() hl.Enabled = val end)
+    end
+end
+
+-- ==================== Active targets incremental ====================
+local function activeAdd(p)
+    for i = 1, targetCount do
+        if activeTargets[i] == p then return end
+    end
+    targetCount = targetCount + 1
+    activeTargets[targetCount] = p
+end
+
+local function activeRemove(p)
+    for i = 1, targetCount do
+        if activeTargets[i] == p then
+            activeTargets[i] = activeTargets[targetCount]
+            activeTargets[targetCount] = nil
+            targetCount = targetCount - 1
+            return
+        end
+    end
+end
+
+-- ==================== Raycast filter ====================
+local rayParams = RaycastParams.new()
+rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local function updateIgnoreList()
+    local chars = {}
+    if LPChar then chars[1] = LPChar end
+    for i = 1, targetCount do
+        local ch = activeTargets[i].Character
+        if ch then chars[#chars+1] = ch end
+    end
+    rayParams.FilterDescendantsInstances = chars
+end
+
+-- ==================== Shield Detection ====================
+-- raycast ชุดนี้ exclude แค่ตัวเราเอง → เจอ part ของศัตรู (รวม tool/shield) ได้
+local shieldRayParams = RaycastParams.new()
+shieldRayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+local SHIELD_KEYWORDS = {"shield", "barrier", "wall", "block", "guard", "riot"}
+
+local function isShieldPart(inst)
+    if not inst then return false end
+    local name = inst.Name:lower()
+    for _, kw in ipairs(SHIELD_KEYWORDS) do
+        if name:find(kw) then return true end
+    end
+    -- เช็ค Tool ancestor (ถ้าโล่เป็น Tool)
+    local tool = inst:FindFirstAncestorOfClass("Tool")
+    if tool then
+        local tname = tool.Name:lower()
+        for _, kw in ipairs(SHIELD_KEYWORDS) do
+            if tname:find(kw) then return true end
+        end
+    end
+    return false
+end
+
+local function isShielded(fromPos, headPos)
+    local result = World:Raycast(fromPos, headPos - fromPos, shieldRayParams)
+    if not result then return false end          -- path โล่ง
+    if isShieldPart(result.Instance) then
+        return true                              -- โดนโล่งดัก
+    end
+    return false  -- โดนกำแพง/พื้น = แค่ไม่มี LOS ปกติ (ไม่ใช่โล่)
+end
+
+function updateShieldIgnoreList()
+    shieldRayParams.FilterDescendantsInstances = LPChar and {LPChar} or {}
+end
+
+-- ==================== Player Cache ====================
+local function cacheChar(p, char)
+    if not char then
+        pCacheHead[p] = nil
+        pCacheRoot[p] = nil
+        pCacheHum[p]  = nil
+        losCache[p]   = nil
+        activeRemove(p)
+        if lockedPlayer == p then
+            lockedPlayer, lockedHead, lockedRoot, lockedHum = nil, nil, nil, nil
+        end
+        updateIgnoreList()
+        return
+    end
+    local head = char:FindFirstChild("Head")
+    local root = char.PrimaryPart or char:FindFirstChild("HumanoidRootPart")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    pCacheHead[p] = head
+    pCacheRoot[p] = root
+    pCacheHum[p]  = hum
+    if head and root and hum then activeAdd(p) end
+    updateIgnoreList()
+end
+
+local function rescan()
+    for name in pairs(Highlights) do removeHL(name) end
+    table.clear(activeTargets); targetCount = 0
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            addHL(p)
+            cacheChar(p, p.Character)
+        end
+    end
+    print("[06RB v3.2] Rescan:", targetCount, "players")
+end
+
+local function setupPlayer(p)
+    if p == LP then return end
+    if p.Character then
+        task.spawn(function()
+            task.wait(0.4)
+            addHL(p)
+            cacheChar(p, p.Character)
+        end)
+    end
+    bind(p.CharacterAdded, function(char)
+        task.wait(0.4)
+        addHL(p)
+        cacheChar(p, char)
+    end)
+    bind(p.CharacterRemoving, function() cacheChar(p, nil) end)
+    bind(p:GetAttributeChangedSignal("TeamID"), function()
+        if TeamCheck then rebuildColors() end
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do setupPlayer(p) end
+bind(Players.PlayerAdded,    function(p) task.wait(0.3) setupPlayer(p) end)
+bind(Players.PlayerRemoving, function(p)
+    removeHL(p.Name)
+    cacheChar(p, nil)
+end)
+updateIgnoreList()
+
+task.spawn(function()
+    while task.wait(2) do
+        if not _G.RB06_CONNS or _G.RB06_CONNS ~= CONNS then return end
+        if not ESPOn then continue end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP and p.Character then
+                local hl = Highlights[p.Name]
+                if not hl or not hl.Parent then addHL(p) end
+                local h = pCacheHead[p]
+                if not h or not h.Parent then cacheChar(p, p.Character) end
+            end
+        end
+    end
+end)
+
+-- ==================== Predict + PreAim ====================
+local function predictHead(headPos, velX, velY, velZ, fromPos)
+    if NETCODE_MODE == "CLIENT_HITREG" or NETCODE_MODE == "LAG_COMP" then
+        return headPos
+    end
+    local ping = 0
+    local ok, p = pcall(LP.GetNetworkPing, LP)
+    if ok and p then ping = p end
+    local travelTime = ping * 2
+    if NETCODE_MODE == "SERVER_PROJECTILE" then
+        travelTime = travelTime + (fromPos - headPos).Magnitude / BULLET_SPEED
+    end
+    return headPos + v3_new(velX * travelTime, velY * 0.3 * travelTime, velZ * travelTime)
+end
+
+local function getPreAimPosition(fromPos, headPos, velX, velZ)
+    local speedSq = velX*velX + velZ*velZ
+    if speedSq < 4 then return headPos end
+    local speed = math_sqrt(speedSq)
+    local step  = math_clamp(1 / speed, 0.04, 0.1)
+    local maxT  = math_min(0.8, step * PREAIM_MAX_ITER)
+    local flatVel = v3_new(velX, 0, velZ)
+    for t = step, maxT, step do
+        local checkPos = headPos + flatVel * t
+        if not World:Raycast(fromPos, checkPos - fromPos, rayParams) then
+            return checkPos
+        end
+    end
+    return headPos
+end
+
+local frameCounter = 0
+
+-- ==================== Target scan ====================
+local function findBestTarget(refreshLOS)
+    if not LPRoot then return nil end
+    local fromPos = LPRoot.Position
+    local fpx, fpy, fpz = fromPos.X, fromPos.Y, fromPos.Z
+    local myID = TeamCheck and getTeamID(LP) or nil
+
+    if lockedPlayer and lockedHum and lockedHum.Health > 0 and lockedHead and lockedRoot then
+        local rp = lockedRoot.Position
+        local dx, dy, dz = rp.X - fpx, rp.Y - fpy, rp.Z - fpz
+        if dx*dx + dy*dy + dz*dz <= SHOOT_MAX_DIST_SQ then
+            local hp = lockedHead.Position
+            if not World:Raycast(fromPos, hp - fromPos, rayParams) then
+                losCache[lockedPlayer] = true
+                -- LOS ยังอยู่ → คง lock ไว้ (ไม่สวิตช์แม้มีคนอื่นใกล้กว่า)
+                return lockedHead, true, lockedHead.AssemblyLinearVelocity, lockedPlayer
+            end
+            -- เป้าหลบแล้ว → clear lock → สวิตช์ไปคนถัดไปที่มี LOS
+        end
+        lockedPlayer, lockedHead, lockedRoot, lockedHum = nil, nil, nil, nil
+    end
+
+    local bestLOS_h, bestLOS_v, bestLOS_p
+    local bestAny_h, bestAny_v, bestAny_p
+    local bestLOS_dSq = SHOOT_MAX_DIST_SQ + 1
+    local bestAny_dSq = math_huge
+
+    for i = 1, targetCount do
+        local p = activeTargets[i]
+        local hum = pCacheHum[p]
+        if hum and hum.Health > 0 and not (myID and getTeamID(p) == myID) then
+            local root = pCacheRoot[p]
+            local head = pCacheHead[p]
+            local rp = root.Position
+            local dx, dy, dz = rp.X - fpx, rp.Y - fpy, rp.Z - fpz
+            local dSq = dx*dx + dy*dy + dz*dz
+
+            if dSq < bestAny_dSq then
+                bestAny_dSq, bestAny_h, bestAny_v, bestAny_p =
+                    dSq, head, head.AssemblyLinearVelocity, p
+            end
+
+            if dSq < bestLOS_dSq and dSq <= SHOOT_MAX_DIST_SQ then
+                local hasLOS
+                if refreshLOS or losCache[p] == nil then
+                    local hp = head.Position
+                    hasLOS = World:Raycast(fromPos, hp - fromPos, rayParams) == nil
+                    losCache[p] = hasLOS
+                else
+                    hasLOS = losCache[p]
+                end
+                if hasLOS then
+                    bestLOS_dSq, bestLOS_h, bestLOS_v, bestLOS_p =
+                        dSq, head, head.AssemblyLinearVelocity, p
+                end
+            end
+        end
+    end
+
+    if bestLOS_h then return bestLOS_h, true,  bestLOS_v, bestLOS_p end
+    return            bestAny_h, false, bestAny_v, bestAny_p
+end
+
+_G.RB06_FIND = function() return (findBestTarget(true)) end
+
+-- ==================== Main loop (Aimbot + Speed) ====================
+bind(RunService.RenderStepped, function()
+    -- Aim
+    if (ShootOn or WatchOn) and LPRoot then
+        frameCounter = frameCounter + 1
+        local refreshLOS = (frameCounter % LOS_REFRESH_FRAMES == 0)
+
+        local head, hasLOS, vel, targetPlayer = findBestTarget(refreshLOS)
+        if head then
+            local shielded = ShootOn and hasLOS and isShielded(LPRoot.Position, head.Position)
+            local canShoot = ShootOn and hasLOS and not shielded
+            -- Lock ทันทีที่เจอ LOS (sticky จาก findBestTarget จะคง lock จนเป้าหลบ)
+            if canShoot and targetPlayer then
+                lockedPlayer = targetPlayer
+                lockedHead   = head
+                lockedRoot   = pCacheRoot[targetPlayer]
+                lockedHum    = pCacheHum[targetPlayer]
+            end
+
+            local fromPos = LPRoot.Position
+            local aimPos
+            if canShoot then
+                aimPos = predictHead(head.Position, vel.X, vel.Y, vel.Z, fromPos)
+            elseif WatchOn then
+                aimPos = getPreAimPosition(fromPos, head.Position, vel.X, vel.Z)
+            end
+
+            if aimPos then
+                Camera.CFrame = cf_lookAt(Camera.CFrame.Position, aimPos)
+                if canShoot then
+                    local now = clock()
+                    if now - lastShot >= FIRE_RATE then
+                        lastShot = now
+                        if VIM then
+                            pcall(function()
+                                VIM:SendMouseButtonEvent(viewportX, viewportY, 0, true,  game, 0)
+                                VIM:SendMouseButtonEvent(viewportX, viewportY, 0, false, game, 0)
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- ==================== Speed loop (Heartbeat) ====================
+bind(RunService.Heartbeat, function()
+    if not bv or not bv.Parent or not LPHum or LPHum.Health <= 0 then return end
+    if SPEED_ON then
+        local dir = LPHum.MoveDirection
+        if dir.Magnitude > 0.1 then
+            bv.MaxForce = v3_new(1e5, 0, 1e5)
+            bv.Velocity = dir * SPEED_VAL
+        else
+            bv.MaxForce = v3_new(0, 0, 0)
+            bv.Velocity = v3_new(0, 0, 0)
+        end
+    else
+        bv.MaxForce = v3_new(0, 0, 0)
+        bv.Velocity = v3_new(0, 0, 0)
+    end
+end)
+
+-- ==================== Follow Friend (Anti-Hacker) — P key ====================
+-- ตามหลังเพื่อน (teammate) ที่ใกล้สุด ห่าง 10 studs ด้านหลัง
+-- ใช้ BodyPosition (ผลักด้วยฟิสิกส์)
+local bpGod = nil
+
+-- Animation tracks สำหรับ follow mode (forward-declared ด้านบนแล้ว)
+godWalkTrack = nil
+godJumpTrack = nil
+local GOD_ANIM_RUN  = "rbxassetid://507767714"  -- Roblox default run
+local GOD_ANIM_JUMP = "rbxassetid://507765000"  -- Roblox default jump
+
+local function loadGodAnims()
+    if not LPChar then return end
+    local hum = LPChar:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    local aRun  = Instance.new("Animation"); aRun.AnimationId  = GOD_ANIM_RUN
+    local aJump = Instance.new("Animation"); aJump.AnimationId = GOD_ANIM_JUMP
+    godWalkTrack = hum:LoadAnimation(aRun)
+    godJumpTrack = hum:LoadAnimation(aJump)
+    godWalkTrack.Priority  = Enum.AnimationPriority.Action
+    godJumpTrack.Priority  = Enum.AnimationPriority.Action
+end
+
+function stopGodAnims()
+    pcall(function() if godWalkTrack and godWalkTrack.IsPlaying then godWalkTrack:Stop(0.2) end end)
+    pcall(function() if godJumpTrack and godJumpTrack.IsPlaying then godJumpTrack:Stop(0.1) end end)
+end
+
+local function destroyGodBP()
+    if bpGod then pcall(function() bpGod:Destroy() end); bpGod = nil end
+    _G.RB06_GOD_BP = nil
+    stopGodAnims()
+end
+
+bind(RunService.Heartbeat, function()
+    if not GOD_ON then
+        if bpGod then destroyGodBP() end
+        return
+    end
+    if not LPRoot or not LPHum or LPHum.Health <= 0 then
+        if bpGod then destroyGodBP() end
+        return
+    end
+
+    -- หาเพื่อน (teammate) ที่ใกล้สุด
+    local fromPos = LPRoot.Position
+    local fpx, fpy, fpz = fromPos.X, fromPos.Y, fromPos.Z
+    local myID = getTeamID(LP)
+    local nearestRoot, nearestDSq = nil, math_huge
+    for i = 1, targetCount do
+        local p = activeTargets[i]
+        local hum = pCacheHum[p]
+        if hum and hum.Health > 0 and myID and getTeamID(p) == myID then
+            local root = pCacheRoot[p]
+            if root then
+                local rp = root.Position
+                local dx, dy, dz = rp.X - fpx, rp.Y - fpy, rp.Z - fpz
+                local dSq = dx*dx + dy*dy + dz*dz
+                if dSq < nearestDSq then nearestDSq, nearestRoot = dSq, root end
+            end
+        end
+    end
+    if not nearestRoot then
+        if bpGod then destroyGodBP() end
+        return
+    end
+
+    -- ตำแหน่งหลังเพื่อน 10 studs (ตาม LookVector ของเพื่อน)
+    local look = nearestRoot.CFrame.LookVector
+    local tp   = nearestRoot.Position
+    local targetPos = v3_new(tp.X - look.X * 10, tp.Y, tp.Z - look.Z * 10)
+
+    if not bpGod or not bpGod.Parent then
+        if bpGod then pcall(function() bpGod:Destroy() end) end
+        bpGod = Instance.new("BodyPosition")
+        bpGod.MaxForce = v3_new(4e5, 4e5, 4e5)
+        bpGod.P        = 1e4
+        bpGod.D        = 1250
+        bpGod.Parent   = LPRoot
+        _G.RB06_GOD_BP = bpGod
+        -- โหลด animation ครั้งแรก
+        loadGodAnims()
+    end
+    bpGod.Position = targetPos
+
+    -- Animation: เดิน / กระโดด / หยุด
+    if godWalkTrack and godJumpTrack then
+        local myPos   = LPRoot.Position
+        local moveDist = math_sqrt(
+            (myPos.X - targetPos.X)^2 +
+            (myPos.Z - targetPos.Z)^2
+        )
+        local heightDiff = targetPos.Y - myPos.Y
+
+        if heightDiff > 3 then
+            -- ต้องขึ้นสูง → jump animation
+            if not godJumpTrack.IsPlaying then
+                if godWalkTrack.IsPlaying then godWalkTrack:Stop(0.1) end
+                godJumpTrack:Play(0.1)
+            end
+        elseif moveDist > 1.5 then
+            -- กำลังเดินตาม → walk/run animation
+            if not godWalkTrack.IsPlaying then
+                if godJumpTrack.IsPlaying then godJumpTrack:Stop(0.1) end
+                godWalkTrack:Play(0.2)
+            end
+        else
+            -- ถึงที่แล้ว → หยุด
+            stopGodAnims()
+        end
+    end
+end)
+
+-- ==================== GUI (Compact 130x290) ====================
+local sg = Instance.new("ScreenGui")
+sg.Name = "HLGUI"
+sg.ResetOnSpawn = false
+
+-- Use CoreGui if available (safer from anti-cheat), otherwise fallback to PlayerGui
+local successCore = pcall(function()
+    sg.Parent = game:GetService("CoreGui")
+end)
+if not successCore then
+    sg.Parent = LP:WaitForChild("PlayerGui", 5) or LP:FindFirstChild("PlayerGui")
+end
+
+local f = Instance.new("Frame")
+f.Size = UDim2.new(0, 130, 0, 290)
+f.Position = UDim2.new(0, 8, 0.5, -145)
+f.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+f.BackgroundTransparency = 0.1
+f.Parent = sg
+Instance.new("UICorner", f).CornerRadius = UDim.new(0, 5)
+local stk = Instance.new("UIStroke", f)
+stk.Color = Color3.fromRGB(180, 30, 30)
+stk.Thickness = 1
+
+local titleL = Instance.new("TextLabel")
+titleL.Size = UDim2.new(1,-18,0,14)
+titleL.Position = UDim2.new(0,2,0,1)
+titleL.BackgroundTransparency = 1
+titleL.TextColor3 = Color3.fromRGB(255,100,100)
+titleL.Text = "06RB v3.2"
+titleL.TextScaled = true
+titleL.Font = Enum.Font.GothamBold
+titleL.Parent = f
+
+local cX = Instance.new("TextButton")
+cX.Size = UDim2.new(0,14,0,14)
+cX.Position = UDim2.new(1,-15,0,1)
+cX.Text = "X"
+cX.TextColor3 = Color3.fromRGB(255,60,60)
+cX.BackgroundColor3 = Color3.fromRGB(50,10,10)
+cX.TextScaled = true
+cX.Font = Enum.Font.GothamBold
+cX.Parent = f
+Instance.new("UICorner", cX).CornerRadius = UDim.new(0,2)
+cX.MouseButton1Click:Connect(function() sg:Destroy() end)
+
+local function mkBtn(parent, x, y, w, h, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,h)
+    b.Position = UDim2.new(0,x,0,y)
+    b.BackgroundColor3 = col
+    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.Text = txt
+    b.TextScaled = true
+    b.Font = Enum.Font.GothamBold
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,3)
+    return b
+end
+
+local function mkToggle(y, txt, col)
+    return mkBtn(f, 3, y, 124, 16, txt, col)
+end
+
+-- Aim toggles
+local togBtn    = mkToggle(17, "ESP ON [H]",    Color3.fromRGB(180,30,30))
+local shootBtn  = mkToggle(35, "Shoot ON [Q]",  Color3.fromRGB(200,60,0))
+local watchBtn  = mkToggle(53, "Watch OFF [E]", Color3.fromRGB(40,60,40))
+local teamBtn   = mkToggle(71, "Team ON [T]",   Color3.fromRGB(30,80,150))
+local rescanBtn = mkToggle(89, "Rescan [R]",    Color3.fromRGB(40,60,100))
+
+-- Divider
+local divM = Instance.new("Frame")
+divM.Size = UDim2.new(1,-6,0,1)
+divM.Position = UDim2.new(0,3,0,109)
+divM.BackgroundColor3 = Color3.fromRGB(80,80,80)
+divM.BorderSizePixel = 0
+divM.Parent = f
+
+-- Speed row
+local sLbl = Instance.new("TextLabel")
+sLbl.Size = UDim2.new(0,40,0,12)
+sLbl.Position = UDim2.new(0,3,0,113)
+sLbl.BackgroundTransparency = 1
+sLbl.TextColor3 = Color3.fromRGB(100,200,255)
+sLbl.Text = "SPEED"
+sLbl.TextScaled = true
+sLbl.Font = Enum.Font.GothamBold
+sLbl.TextXAlignment = Enum.TextXAlignment.Left
+sLbl.Parent = f
+
+local sValL = Instance.new("TextLabel")
+sValL.Size = UDim2.new(0,36,0,14)
+sValL.Position = UDim2.new(1,-39,0,112)
+sValL.BackgroundColor3 = Color3.fromRGB(20,20,40)
+sValL.TextColor3 = Color3.fromRGB(255,255,255)
+sValL.Text = tostring(SPEED_VAL)
+sValL.TextScaled = true
+sValL.Font = Enum.Font.GothamBold
+sValL.Parent = f
+Instance.new("UICorner", sValL).CornerRadius = UDim.new(0,3)
+
+local sm10 = mkBtn(f, 3,   128, 28, 14, "-10", Color3.fromRGB(120,30,30))
+local sm1  = mkBtn(f, 33,  128, 28, 14, "-1",  Color3.fromRGB(80,30,30))
+local sp1  = mkBtn(f, 65,  128, 28, 14, "+1",  Color3.fromRGB(30,80,30))
+local sp10 = mkBtn(f, 95,  128, 32, 14, "+10", Color3.fromRGB(30,120,30))
+local sTog = mkBtn(f, 3,   144, 124, 16, "Speed ON [F]", Color3.fromRGB(30,120,220))
+
+-- Divider 2
+local divM2 = Instance.new("Frame")
+divM2.Size = UDim2.new(1,-6,0,1)
+divM2.Position = UDim2.new(0,3,0,164)
+divM2.BackgroundColor3 = Color3.fromRGB(80,80,80)
+divM2.BorderSizePixel = 0
+divM2.Parent = f
+
+-- Jump row
+local jLbl = Instance.new("TextLabel")
+jLbl.Size = UDim2.new(0,40,0,12)
+jLbl.Position = UDim2.new(0,3,0,168)
+jLbl.BackgroundTransparency = 1
+jLbl.TextColor3 = Color3.fromRGB(255,200,80)
+jLbl.Text = "JUMP"
+jLbl.TextScaled = true
+jLbl.Font = Enum.Font.GothamBold
+jLbl.TextXAlignment = Enum.TextXAlignment.Left
+jLbl.Parent = f
+
+local jValL = Instance.new("TextLabel")
+jValL.Size = UDim2.new(0,36,0,14)
+jValL.Position = UDim2.new(1,-39,0,167)
+jValL.BackgroundColor3 = Color3.fromRGB(20,20,40)
+jValL.TextColor3 = Color3.fromRGB(255,255,255)
+jValL.Text = tostring(JUMP_VAL)
+jValL.TextScaled = true
+jValL.Font = Enum.Font.GothamBold
+jValL.Parent = f
+Instance.new("UICorner", jValL).CornerRadius = UDim.new(0,3)
+
+local jm10 = mkBtn(f, 3,   183, 28, 14, "-10", Color3.fromRGB(120,60,20))
+local jm1  = mkBtn(f, 33,  183, 28, 14, "-1",  Color3.fromRGB(80,50,20))
+local jp1  = mkBtn(f, 65,  183, 28, 14, "+1",  Color3.fromRGB(30,80,30))
+local jp10 = mkBtn(f, 95,  183, 32, 14, "+10", Color3.fromRGB(30,120,30))
+local jTog = mkBtn(f, 3,   199, 124, 16, "Jump ON [G]", Color3.fromRGB(180,110,10))
+
+-- Status
+local divM3 = Instance.new("Frame")
+divM3.Size = UDim2.new(1,-6,0,1)
+divM3.Position = UDim2.new(0,3,0,219)
+divM3.BackgroundColor3 = Color3.fromRGB(80,80,80)
+divM3.BorderSizePixel = 0
+divM3.Parent = f
+
+local modeL = Instance.new("TextLabel")
+modeL.Size = UDim2.new(1,-4,0,12)
+modeL.Position = UDim2.new(0,2,0,224)
+modeL.BackgroundTransparency = 1
+modeL.TextColor3 = Color3.fromRGB(200,200,100)
+modeL.Text = NETCODE_MODE
+modeL.TextScaled = true
+modeL.Font = Enum.Font.Gotham
+modeL.Parent = f
+
+local cntL = Instance.new("TextLabel")
+cntL.Size = UDim2.new(1,-4,0,12)
+cntL.Position = UDim2.new(0,2,0,238)
+cntL.BackgroundTransparency = 1
+cntL.TextColor3 = Color3.fromRGB(150,150,150)
+cntL.Text = "P:0 T:- 0ms"
+cntL.TextScaled = true
+cntL.Font = Enum.Font.Gotham
+cntL.Parent = f
+
+-- Drag
+local drag,dS,fS = false
+f.InputBegan:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true dS=i.Position fS=f.Position end
+end)
+f.InputEnded:Connect(function(i)
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end
+end)
+bind(UIS.InputChanged, function(i)
+    if drag and i.UserInputType==Enum.UserInputType.MouseMovement then
+        local d=i.Position-dS
+        f.Position=UDim2.new(fS.X.Scale,fS.X.Offset+d.X,fS.Y.Scale,fS.Y.Offset+d.Y)
+    end
+end)
+
+-- ==================== Logic ====================
+local function toggleESP()
+    ESPOn = not ESPOn
+    setAllEnabled(ESPOn)
+    togBtn.BackgroundColor3 = ESPOn and Color3.fromRGB(180,30,30) or Color3.fromRGB(50,50,50)
+    togBtn.Text = "ESP "..(ESPOn and "ON" or "OFF").." [H]"
+end
+
+local function toggleShoot()
+    ShootOn = not ShootOn
+    shootBtn.BackgroundColor3 = ShootOn and Color3.fromRGB(200,60,0) or Color3.fromRGB(40,40,80)
+    shootBtn.Text = "Shoot "..(ShootOn and "ON" or "OFF").." [Q]"
+end
+
+local function toggleWatch()
+    WatchOn = not WatchOn
+    watchBtn.BackgroundColor3 = WatchOn and Color3.fromRGB(30,120,30) or Color3.fromRGB(40,60,40)
+    watchBtn.Text = "Watch "..(WatchOn and "ON" or "OFF").." [E]"
+end
+
+local function toggleTeam()
+    TeamCheck = not TeamCheck
+    teamBtn.BackgroundColor3 = TeamCheck and Color3.fromRGB(30,80,150) or Color3.fromRGB(50,50,50)
+    teamBtn.Text = "Team "..(TeamCheck and "ON" or "OFF").." [T]"
+    rebuildColors()
+end
+
+local function updS()
+    sValL.Text = tostring(SPEED_VAL)
+    if SPEED_ON then
+        sTog.BackgroundColor3 = Color3.fromRGB(30,120,220)
+        sTog.Text = "Speed ON [F] ="..SPEED_VAL
+    else
+        sTog.BackgroundColor3 = Color3.fromRGB(40,40,80)
+        sTog.Text = "Speed OFF [F]"
+    end
+end
+
+local function updJ()
+    jValL.Text = tostring(JUMP_VAL)
+    if JUMP_ON then
+        jTog.BackgroundColor3 = Color3.fromRGB(180,110,10)
+        jTog.Text = "Jump ON [G] ="..JUMP_VAL
+    else
+        jTog.BackgroundColor3 = Color3.fromRGB(40,40,80)
+        jTog.Text = "Jump OFF [G]"
+    end
+end
+
+local function togS() SPEED_ON = not SPEED_ON updS() end
+local function togJ() JUMP_ON  = not JUMP_ON  updJ() end
+
+togBtn.MouseButton1Click:Connect(toggleESP)
+shootBtn.MouseButton1Click:Connect(toggleShoot)
+watchBtn.MouseButton1Click:Connect(toggleWatch)
+teamBtn.MouseButton1Click:Connect(toggleTeam)
+
+rescanBtn.MouseButton1Click:Connect(function()
+    rescan()
+    rescanBtn.Text = "Done!"
+    rescanBtn.BackgroundColor3 = Color3.fromRGB(30,100,30)
+    task.delay(1.2, function()
+        rescanBtn.Text = "Rescan [R]"
+        rescanBtn.BackgroundColor3 = Color3.fromRGB(40,60,100)
+    end)
+end)
+
+sm10.MouseButton1Click:Connect(function() SPEED_VAL=math_max(1,SPEED_VAL-10) updS() end)
+sm1.MouseButton1Click:Connect(function()  SPEED_VAL=math_max(1,SPEED_VAL-1)  updS() end)
+sp1.MouseButton1Click:Connect(function()  SPEED_VAL=SPEED_VAL+1  updS() end)
+sp10.MouseButton1Click:Connect(function() SPEED_VAL=SPEED_VAL+10 updS() end)
+sTog.MouseButton1Click:Connect(togS)
+
+jm10.MouseButton1Click:Connect(function() JUMP_VAL=math_max(1,JUMP_VAL-10) updJ() end)
+jm1.MouseButton1Click:Connect(function()  JUMP_VAL=math_max(1,JUMP_VAL-1)  updJ() end)
+jp1.MouseButton1Click:Connect(function()  JUMP_VAL=JUMP_VAL+1  updJ() end)
+jp10.MouseButton1Click:Connect(function() JUMP_VAL=JUMP_VAL+10 updJ() end)
+jTog.MouseButton1Click:Connect(togJ)
+
+-- ==================== Hotkeys ====================
+bind(UIS.InputBegan, function(input, gp)
+    if gp then return end
+    local kc = input.KeyCode
+    if kc == Enum.KeyCode.H then toggleESP()
+    elseif kc == Enum.KeyCode.Q then toggleShoot()
+    elseif kc == Enum.KeyCode.E then toggleWatch()
+    elseif kc == Enum.KeyCode.T then toggleTeam()
+    elseif kc == Enum.KeyCode.R then
+        rescan()
+        rescanBtn.Text = "Done!"
+        task.delay(1.2, function() rescanBtn.Text = "Rescan [R]" end)
+    elseif kc == Enum.KeyCode.F then togS()
+    elseif kc == Enum.KeyCode.G then togJ()
+    elseif kc == Enum.KeyCode.P then
+        GOD_ON = not GOD_ON
+        print("[06RB] GOD MODE "..(GOD_ON and "ON" or "OFF"))
+    elseif kc == Enum.KeyCode.Space and JUMP_ON then
+        -- Instant impulse jump (AssemblyLinearVelocity)
+        if LPRoot and LPHum and LPHum.Health > 0 then
+            local v = LPRoot.AssemblyLinearVelocity
+            LPRoot.AssemblyLinearVelocity = v3_new(v.X, JUMP_VAL, v.Z)
+            LPHum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- ==================== Status updater ====================
+local lastMyTeam = nil
+task.spawn(function()
+    while task.wait(1) do
+        if not _G.RB06_CONNS or _G.RB06_CONNS ~= CONNS then return end
+        local t = getTeamID(LP) or "-"
+        local pingMs = 0
+        pcall(function() pingMs = math.floor(LP:GetNetworkPing() * 1000) end)
+        cntL.Text = "P:"..targetCount.." T:"..tostring(t).." "..pingMs.."ms"
+        if TeamCheck and t ~= lastMyTeam then
+            lastMyTeam = t
+            rebuildColors()
+        end
+    end
+end)
+
+updS() updJ()
+
+-- ==================== INIT (เรียกหลัง define ทุกฟังก์ชันแล้ว — กัน nil crash) ====================
+cacheLPChar(LP.Character)
+
+print("[06RB v3.3.2 Unified] Aim+Move loaded | Netcode:", NETCODE_MODE)
