@@ -1,15 +1,17 @@
--- 63RB_touchspy.txt v1 — Touch & Rotation Debug Spy
--- เป้าหมาย: พิสูจน์ว่าเกมล็อค rotation/CFrame ยังไง + touch input ทำงานไหม
---           เพื่อหาจุด hook ที่ถูกต้อง (ทำไม BackFace หมุนได้แต่ hitbox ไม่ตาม)
+-- 63RB_touchspy.txt v1.4 — Touch & Rotation Debug Spy + BackFace
+-- เป้าหมาย: หันหลังให้ศัตรูเสมอ (ผ่าน touch swipe) + เล็งด้วยกล้องพร้อมกัน
 --
--- ปุ่มในจอ:
---   [TEST TOUCH] = ยิง SendTouchEvent (swipe) → ดูว่าเกมรับ touch ไหม
---   [TEST SPIN]  = หมุน HRP 90° → จับเวลา (ms) จนถูก server reset = พิสูจน์ server-lock
---   [SCAN]       = สแกน constraint/มอเตอร์ที่คุม rotation ในตัวละคร
---   [C]          = clear log
---   [X]          = ปิด
--- Hotkey: J = TEST TOUCH | K = TEST SPIN | L = SCAN
+-- Hotkey:
+--   E = Watch (กล้อง lock หาศัตรู)  | default ON
+--   B = BackFace (หันหลังให้ศัตรู ผ่าน touch)
+--   J = Test touch | K = Swipe calibrate | L = Scan constraints
+--
+-- v1.4: ย้าย touch area 0.7→0.5 (หลบปุ่มยิง) + ใส่เลข version บน title
+-- v1.3: BackFace closed-loop (2.3px/°)
+-- v1.2: + Watch (camera lock หาศัตรู)
+-- v1.1: touch signature probe (พบ id,int,x,y)
 
+local VERSION    = "1.4"
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
@@ -118,7 +120,7 @@ local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(60,160,2
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,-30,0,22); title.Position = UDim2.new(0,8,0,2)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(120,200,255)
-title.Text = "63RB Touch+Rotation Spy"; title.Font = Enum.Font.GothamBold
+title.Text = "63RB TouchSpy v"..VERSION; title.Font = Enum.Font.GothamBold
 title.TextSize = 13; title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = frame
 
@@ -401,7 +403,7 @@ bind(UIS.InputBegan, function(i, gp)
     end
 end)
 
-log("=== Touch+Rotation Spy พร้อม ===", COk)
+log("=== TouchSpy v"..VERSION.." พร้อม ===", COk)
 log("E=Watch(ON)  B=BackFace  J=Touch K=Cal L=Scan", CInfo)
 log("กด B → หันหลังให้ศัตรูเสมอ (ผ่าน touch)", COk)
 log("Watch lock กล้องหาศัตรู + Back หมุน body = พร้อมกัน", CWarn)
