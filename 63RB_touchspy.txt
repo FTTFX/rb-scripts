@@ -162,27 +162,54 @@ bind(UIS.InputBegan, function(i, gp)
     end
 end)
 
+-- จาก log: executor ต้องการ "int" (Enum.UserInputState cast ไม่ได้)
+-- → state ใช้ integer: Begin=0 Change=1 End=2
+-- ลองหลาย signature เพื่อหาอันที่ executor รับ แล้วบอกให้รู้
+local SIG = {
+    {name="(id,int,x,y)",        fn=function(id,s,x,y) VIM:SendTouchEvent(id,s,x,y) end},
+    {name="(id,int,x,y,game,0)", fn=function(id,s,x,y) VIM:SendTouchEvent(id,s,x,y,game,0) end},
+    {name="(id,int,x,y,0)",      fn=function(id,s,x,y) VIM:SendTouchEvent(id,s,x,y,0) end},
+}
+_G.TS_SPY_TOUCHSIG = _G.TS_SPY_TOUCHSIG  -- จำ signature ที่ work ไว้
+
+local function tryTouchSwipe(variant, x, y)
+    -- swipe ขวา 120px: Begin(0) → Change(1) → End(2)
+    local ok, err = pcall(function()
+        variant.fn(99, 0, x,     y)
+        task.wait(0.02)
+        variant.fn(99, 1, x+120, y)
+        task.wait(0.02)
+        variant.fn(99, 2, x+120, y)
+    end)
+    return ok, err
+end
+
 local function testTouch()
     log("── TEST TOUCH ──", CInfo)
     log("TouchEnabled="..tostring(UIS.TouchEnabled).." | VIM="..tostring(VIM ~= nil), CWarn)
     if not VIM then log("VIM nil → executor ไม่ support SendTouchEvent", CErr); return end
     local vs = Camera.ViewportSize
     local x, y = vs.X * 0.7, vs.Y * 0.5
-    local before = touchHits
-    local ok, err = pcall(function()
-        VIM:SendTouchEvent(99, Enum.UserInputState.Begin,  x,     y, game, 0)
-        task.wait(0.02)
-        VIM:SendTouchEvent(99, Enum.UserInputState.Change, x+120, y, game, 0)
-        task.wait(0.02)
-        VIM:SendTouchEvent(99, Enum.UserInputState.End,    x+120, y, game, 0)
-    end)
-    if not ok then log("SendTouchEvent ERROR: "..tostring(err), CErr); return end
-    task.wait(0.1)
-    if touchHits > before then
-        log("✅ เกมรับ touch! ("..(touchHits-before).." events)", COk)
-    else
-        log("❌ ยิง touch แล้วแต่ไม่มี event ตอบ — เกมไม่รับ synthetic touch", CErr)
+
+    for idx, variant in ipairs(SIG) do
+        local before = touchHits
+        local ok, err = tryTouchSwipe(variant, x, y)
+        if not ok then
+            log("✗ "..variant.name.." → "..tostring(err):sub(1,40), CErr)
+        else
+            task.wait(0.1)
+            if touchHits > before then
+                log("✅ ใช้ได้! "..variant.name.." ("..(touchHits-before).." events)", COk)
+                log("→ จำ signature นี้ไว้ใช้ใน BackFace", COk)
+                _G.TS_SPY_TOUCHSIG = variant.name
+                return
+            else
+                log("△ "..variant.name.." ไม่ throw แต่ไม่มี event", CWarn)
+            end
+        end
+        task.wait(0.05)
     end
+    log("❌ ลองครบทุก signature แล้ว — executor นี้ส่ง touch ไม่ได้", CErr)
 end
 
 -- ==================== TEST SPIN (พิสูจน์ server-lock) ====================
