@@ -1,6 +1,11 @@
 -- 06RB ALL IN.txt — Frame-Perfect Aimbot + Movement (Unified)
--- Version: 3.3.2 "Fix forward-reference crash"
--- H=ESP | Q=Shoot | E=Watch | T=TeamCheck | R=Rescan | F=Speed | G=Jump | P=GodMode
+-- Version: 3.4.0 "Follow Distance GUI"
+-- H=ESP | Q=Shoot | E=Watch | T=TeamCheck | R=Rescan | F=Speed | G=Jump | P=Follow
+--
+-- v3.4.0:
+--   * Follow system: ระยะห่าง (GOD_DIST) ปรับได้ผ่าน GUI -10/-1/+1/+10
+--   * เพิ่มปุ่ม "Follow ON/OFF [P]" ใน GUI (ก่อนหน้านี้มีแค่ hotkey)
+--   * Follow แสดงค่า dist ใน status button เมื่อ ON
 --
 -- v3.3.2:
 --   * FIX: cacheLPChar เรียก updateShieldIgnoreList() ที่ define ทีหลัง → ตอนรันเป็น nil → crash
@@ -82,6 +87,7 @@ local FIRE_RATE  = 0
 local GOD_ON     = false
 local GOD_OFFSET = 4    -- ห่างด้านข้าง (X) studs
 local GOD_HEIGHT = 150  -- สูงเหนือเป้า studs (จะลดถ้ามีเพดาน)
+local GOD_DIST   = 10   -- ระยะห่างตามหลังเพื่อน (studs) — ปรับได้ผ่าน GUI
 
 local lockedPlayer = nil
 local lockedHead   = nil
@@ -597,7 +603,7 @@ bind(RunService.Heartbeat, function()
     -- ตำแหน่งหลังเพื่อน 10 studs (ตาม LookVector ของเพื่อน)
     local look = nearestRoot.CFrame.LookVector
     local tp   = nearestRoot.Position
-    local targetPos = v3_new(tp.X - look.X * 10, tp.Y, tp.Z - look.Z * 10)
+    local targetPos = v3_new(tp.X - look.X * GOD_DIST, tp.Y, tp.Z - look.Z * GOD_DIST)
 
     if not bpGod or not bpGod.Parent then
         if bpGod then pcall(function() bpGod:Destroy() end) end
@@ -654,7 +660,7 @@ if not successCore then
 end
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 130, 0, 290)
+f.Size = UDim2.new(0, 130, 0, 320)
 f.Position = UDim2.new(0, 8, 0.5, -145)
 f.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
 f.BackgroundTransparency = 0.1
@@ -669,7 +675,7 @@ titleL.Size = UDim2.new(1,-18,0,14)
 titleL.Position = UDim2.new(0,2,0,1)
 titleL.BackgroundTransparency = 1
 titleL.TextColor3 = Color3.fromRGB(255,100,100)
-titleL.Text = "06RB v3.2"
+titleL.Text = "06RB v3.4"
 titleL.TextScaled = true
 titleL.Font = Enum.Font.GothamBold
 titleL.Parent = f
@@ -785,7 +791,7 @@ local jp1  = mkBtn(f, 65,  183, 28, 14, "+1",  Color3.fromRGB(30,80,30))
 local jp10 = mkBtn(f, 95,  183, 32, 14, "+10", Color3.fromRGB(30,120,30))
 local jTog = mkBtn(f, 3,   199, 124, 16, "Jump ON [G]", Color3.fromRGB(180,110,10))
 
--- Status
+-- Follow section
 local divM3 = Instance.new("Frame")
 divM3.Size = UDim2.new(1,-6,0,1)
 divM3.Position = UDim2.new(0,3,0,219)
@@ -793,9 +799,45 @@ divM3.BackgroundColor3 = Color3.fromRGB(80,80,80)
 divM3.BorderSizePixel = 0
 divM3.Parent = f
 
+local gLbl = Instance.new("TextLabel")
+gLbl.Size = UDim2.new(0,54,0,12)
+gLbl.Position = UDim2.new(0,3,0,224)
+gLbl.BackgroundTransparency = 1
+gLbl.TextColor3 = Color3.fromRGB(120,220,180)
+gLbl.Text = "FOLLOW"
+gLbl.TextScaled = true
+gLbl.Font = Enum.Font.GothamBold
+gLbl.TextXAlignment = Enum.TextXAlignment.Left
+gLbl.Parent = f
+
+local gValL = Instance.new("TextLabel")
+gValL.Size = UDim2.new(0,36,0,14)
+gValL.Position = UDim2.new(1,-39,0,223)
+gValL.BackgroundColor3 = Color3.fromRGB(20,20,40)
+gValL.TextColor3 = Color3.fromRGB(255,255,255)
+gValL.Text = tostring(GOD_DIST)
+gValL.TextScaled = true
+gValL.Font = Enum.Font.GothamBold
+gValL.Parent = f
+Instance.new("UICorner", gValL).CornerRadius = UDim.new(0,3)
+
+local gm10 = mkBtn(f, 3,   239, 28, 14, "-10", Color3.fromRGB(100,40,80))
+local gm1  = mkBtn(f, 33,  239, 28, 14, "-1",  Color3.fromRGB(70,30,60))
+local gp1  = mkBtn(f, 65,  239, 28, 14, "+1",  Color3.fromRGB(30,80,60))
+local gp10 = mkBtn(f, 95,  239, 32, 14, "+10", Color3.fromRGB(30,120,80))
+local godBtn = mkBtn(f, 3, 255, 124, 16, "Follow OFF [P]", Color3.fromRGB(50,50,80))
+
+-- Status
+local divM4 = Instance.new("Frame")
+divM4.Size = UDim2.new(1,-6,0,1)
+divM4.Position = UDim2.new(0,3,0,275)
+divM4.BackgroundColor3 = Color3.fromRGB(80,80,80)
+divM4.BorderSizePixel = 0
+divM4.Parent = f
+
 local modeL = Instance.new("TextLabel")
 modeL.Size = UDim2.new(1,-4,0,12)
-modeL.Position = UDim2.new(0,2,0,224)
+modeL.Position = UDim2.new(0,2,0,279)
 modeL.BackgroundTransparency = 1
 modeL.TextColor3 = Color3.fromRGB(200,200,100)
 modeL.Text = NETCODE_MODE
@@ -805,7 +847,7 @@ modeL.Parent = f
 
 local cntL = Instance.new("TextLabel")
 cntL.Size = UDim2.new(1,-4,0,12)
-cntL.Position = UDim2.new(0,2,0,238)
+cntL.Position = UDim2.new(0,2,0,293)
 cntL.BackgroundTransparency = 1
 cntL.TextColor3 = Color3.fromRGB(150,150,150)
 cntL.Text = "P:0 T:- 0ms"
@@ -880,6 +922,17 @@ end
 local function togS() SPEED_ON = not SPEED_ON updS() end
 local function togJ() JUMP_ON  = not JUMP_ON  updJ() end
 
+local function updGod()
+    gValL.Text = tostring(GOD_DIST)
+    if GOD_ON then
+        godBtn.BackgroundColor3 = Color3.fromRGB(30,150,100)
+        godBtn.Text = "Follow ON [P] ="..GOD_DIST
+    else
+        godBtn.BackgroundColor3 = Color3.fromRGB(50,50,80)
+        godBtn.Text = "Follow OFF [P]"
+    end
+end
+
 togBtn.MouseButton1Click:Connect(toggleESP)
 shootBtn.MouseButton1Click:Connect(toggleShoot)
 watchBtn.MouseButton1Click:Connect(toggleWatch)
@@ -907,6 +960,15 @@ jp1.MouseButton1Click:Connect(function()  JUMP_VAL=JUMP_VAL+1  updJ() end)
 jp10.MouseButton1Click:Connect(function() JUMP_VAL=JUMP_VAL+10 updJ() end)
 jTog.MouseButton1Click:Connect(togJ)
 
+gm10.MouseButton1Click:Connect(function() GOD_DIST = math_max(2, GOD_DIST-10) updGod() end)
+gm1.MouseButton1Click:Connect(function()  GOD_DIST = math_max(2, GOD_DIST-1)  updGod() end)
+gp1.MouseButton1Click:Connect(function()  GOD_DIST = GOD_DIST+1  updGod() end)
+gp10.MouseButton1Click:Connect(function() GOD_DIST = GOD_DIST+10 updGod() end)
+godBtn.MouseButton1Click:Connect(function()
+    GOD_ON = not GOD_ON
+    updGod()
+end)
+
 -- ==================== Hotkeys ====================
 bind(UIS.InputBegan, function(input, gp)
     if gp then return end
@@ -923,7 +985,8 @@ bind(UIS.InputBegan, function(input, gp)
     elseif kc == Enum.KeyCode.G then togJ()
     elseif kc == Enum.KeyCode.P then
         GOD_ON = not GOD_ON
-        print("[06RB] GOD MODE "..(GOD_ON and "ON" or "OFF"))
+        updGod()
+        print("[06RB] FOLLOW "..(GOD_ON and "ON" or "OFF").." dist="..GOD_DIST)
     elseif kc == Enum.KeyCode.Space and JUMP_ON then
         -- Instant impulse jump (AssemblyLinearVelocity)
         if LPRoot and LPHum and LPHum.Health > 0 then
@@ -950,9 +1013,9 @@ task.spawn(function()
     end
 end)
 
-updS() updJ()
+updS() updJ() updGod()
 
 -- ==================== INIT (เรียกหลัง define ทุกฟังก์ชันแล้ว — กัน nil crash) ====================
 cacheLPChar(LP.Character)
 
-print("[06RB v3.3.2 Unified] Aim+Move loaded | Netcode:", NETCODE_MODE)
+print("[06RB v3.4.0 Unified] Aim+Move+Follow loaded | Netcode:", NETCODE_MODE)
