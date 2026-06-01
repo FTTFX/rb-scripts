@@ -84,7 +84,8 @@ local lastShot   = 0
 local FIRE_RATE  = 0
 
 -- God Mode (Anti-Hacker): P = วาปไปด้านบนศัตรูใกล้สุด
-local GOD_ON     = false
+local GOD_ON       = false
+local FACELOCK_ON  = false  -- O = หันหน้าเข้าหาศัตรูใกล้สุดเสมอ (กัน backstab)
 local GOD_OFFSET = 4    -- ห่างด้านข้าง (X) studs
 local GOD_HEIGHT = 150  -- สูงเหนือเป้า studs (จะลดถ้ามีเพดาน)
 local GOD_DIST       = 10   -- ระยะห่างตามหลังเพื่อน (studs) — ปรับได้ผ่าน GUI
@@ -160,6 +161,8 @@ bind(LP.CharacterAdded, function(c)
     -- รีเซ็ต animation track เมื่อ respawn (track เก่าใช้ไม่ได้แล้ว)
     godWalkTrack = nil
     godJumpTrack = nil
+    -- คืนค่า AutoRotate ตาม FaceLock state หลัง respawn
+    if LPHum then LPHum.AutoRotate = not FACELOCK_ON end
 end)
 bind(LP.CharacterRemoving, function() cacheLPChar(nil) stopGodAnims() end)
 
@@ -514,6 +517,20 @@ bind(RunService.RenderStepped, function()
             end
         end
     end
+    -- FaceLock: หันหลังให้ศัตรูใกล้สุด (เกราะหลังหนากว่า → โดนน้อย)
+    if FACELOCK_ON and LPRoot and LPHum and LPHum.Health > 0 then
+        local flHead = findBestTarget(false)
+        if flHead then
+            local tp    = flHead.Position
+            local myPos = LPRoot.Position
+            local dx, dz = tp.X - myPos.X, tp.Z - myPos.Z
+            if dx*dx + dz*dz > 0.25 then
+                -- หันหลัง = LookVector ชี้ออกจากศัตรู (ทิศตรงข้าม)
+                LPRoot.CFrame = cf_lookAt(myPos,
+                    v3_new(myPos.X - dx, myPos.Y, myPos.Z - dz))
+            end
+        end
+    end
 end)
 
 -- ==================== Speed loop (Heartbeat) ====================
@@ -663,7 +680,7 @@ if not successCore then
 end
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 130, 0, 320)
+f.Size = UDim2.new(0, 130, 0, 338)
 f.Position = UDim2.new(0, 8, 0.5, -145)
 f.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
 f.BackgroundTransparency = 0.1
@@ -828,19 +845,20 @@ local gm10 = mkBtn(f, 3,   239, 28, 14, "-10", Color3.fromRGB(100,40,80))
 local gm1  = mkBtn(f, 33,  239, 28, 14, "-1",  Color3.fromRGB(70,30,60))
 local gp1  = mkBtn(f, 65,  239, 28, 14, "+1",  Color3.fromRGB(30,80,60))
 local gp10 = mkBtn(f, 95,  239, 32, 14, "+10", Color3.fromRGB(30,120,80))
-local godBtn = mkBtn(f, 3, 255, 124, 16, "Follow OFF [P]", Color3.fromRGB(50,50,80))
+local godBtn      = mkBtn(f, 3, 255, 124, 16, "Follow OFF [P]",   Color3.fromRGB(50,50,80))
+local faceLockBtn = mkBtn(f, 3, 273, 124, 16, "BackFace OFF [O]", Color3.fromRGB(50,50,80))
 
 -- Status
 local divM4 = Instance.new("Frame")
 divM4.Size = UDim2.new(1,-6,0,1)
-divM4.Position = UDim2.new(0,3,0,275)
+divM4.Position = UDim2.new(0,3,0,293)
 divM4.BackgroundColor3 = Color3.fromRGB(80,80,80)
 divM4.BorderSizePixel = 0
 divM4.Parent = f
 
 local modeL = Instance.new("TextLabel")
 modeL.Size = UDim2.new(1,-4,0,12)
-modeL.Position = UDim2.new(0,2,0,279)
+modeL.Position = UDim2.new(0,2,0,297)
 modeL.BackgroundTransparency = 1
 modeL.TextColor3 = Color3.fromRGB(200,200,100)
 modeL.Text = NETCODE_MODE
@@ -850,7 +868,7 @@ modeL.Parent = f
 
 local cntL = Instance.new("TextLabel")
 cntL.Size = UDim2.new(1,-4,0,12)
-cntL.Position = UDim2.new(0,2,0,293)
+cntL.Position = UDim2.new(0,2,0,311)
 cntL.BackgroundTransparency = 1
 cntL.TextColor3 = Color3.fromRGB(150,150,150)
 cntL.Text = "P:0 T:- 0ms"
@@ -972,6 +990,16 @@ godBtn.MouseButton1Click:Connect(function()
     updGod()
 end)
 
+local function toggleFaceLock()
+    FACELOCK_ON = not FACELOCK_ON
+    -- ปิด AutoRotate ตอน ON ไม่งั้น Roblox จะสลับทิศเองตามการเดิน
+    if LPHum then LPHum.AutoRotate = not FACELOCK_ON end
+    faceLockBtn.BackgroundColor3 = FACELOCK_ON
+        and Color3.fromRGB(180,60,20) or Color3.fromRGB(50,50,80)
+    faceLockBtn.Text = "BackFace "..(FACELOCK_ON and "ON" or "OFF").." [O]"
+end
+faceLockBtn.MouseButton1Click:Connect(toggleFaceLock)
+
 -- ==================== Hotkeys ====================
 bind(UIS.InputBegan, function(input, gp)
     if gp then return end
@@ -990,6 +1018,9 @@ bind(UIS.InputBegan, function(input, gp)
         GOD_ON = not GOD_ON
         updGod()
         print("[06RB] FOLLOW "..(GOD_ON and "ON" or "OFF").." dist="..GOD_DIST)
+    elseif kc == Enum.KeyCode.O then
+        toggleFaceLock()
+        print("[06RB] BACKFACE "..(FACELOCK_ON and "ON" or "OFF"))
     elseif kc == Enum.KeyCode.Space and JUMP_ON then
         -- Instant impulse jump (AssemblyLinearVelocity)
         if LPRoot and LPHum and LPHum.Health > 0 then
