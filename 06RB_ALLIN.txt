@@ -74,11 +74,11 @@ end
 -- ==================== STATE (Factory Defaults) ====================
 local ESPOn      = true
 local ShootOn    = false     -- ON by default
-local WatchOn    = true
+local WatchOn    = false
 local TeamCheck  = true     -- ON by default
-local SPEED_ON   = true     -- ON by default
-local JUMP_ON    = true     -- ON by default
-local SPEED_VAL  = 35
+local SPEED_ON   = false     -- ON by default
+local JUMP_ON    = false     -- ON by default
+local SPEED_VAL  = 20
 local JUMP_VAL   = 15
 local lastShot   = 0
 local FIRE_RATE  = 0
