@@ -7,7 +7,8 @@
 --   2. กด REPLAY → ส่ง args เดิมซ้ำ → ดูว่าตัวหันตามไหม (= server รับ synthetic)
 --   3. ถ้ารับ → ขั้นต่อไปทำ FireServer ด้วยทิศที่เราอยาก (BackFace แท้)
 
-local VERSION = "1.3"
+local VERSION = "1.4"
+local Camera = workspace.CurrentCamera
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -254,11 +255,12 @@ end)
 
 -- ==================== Drain queue → render + แสดง yaw ====================
 bind(RunService.Heartbeat, function()
-    -- live yaw readout
+    -- live calibrate readout: camera yaw จริง (จาก Camera.CFrame) เทียบ byte ที่เกมส่ง
     if S.camYaw then
-        local deg = math.floor(S.camYaw / 256 * 360)
-        statL.Text = string.format("yaw:%d (%d°) pitch:%d %s",
-            S.camYaw, deg, S.camPitch or 0, S.camBack and "| หันหลัง ON" or "")
+        local lv = Camera.CFrame.LookVector
+        local camDeg = math.floor(math.deg(math.atan2(lv.X, lv.Z)))
+        statL.Text = string.format("byte yaw:%d pitch:%d | กล้องจริง:%d°",
+            S.camYaw, S.camPitch or 0, camDeg)
     end
     local q = S.queue
     if #q == 0 then return end
