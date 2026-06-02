@@ -11,12 +11,13 @@
 --   • Physics: Instance.new(BodyGyro/BodyVelocity/AlignOrientation/Highlight...)
 --   • Raycast: Raycast / FindPartOnRay*
 -- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | FREEZE(F) หยุดอ่าน | COPY | CLEAR | X=ปิด
+-- v1.5: + ปุ่ม STATS = ตารางสรุปนับครั้ง (ไม่ไหล อ่านง่าย) เห็น remote ไหนยิงเยอะสุด
 -- v1.4: Remote แสดง args เต็ม (เห็น position/rotation ที่ส่ง) + ตัดชื่อ path ให้สั้น
 -- v1.3: แก้เด้ง! Raycast ไม่ format params (ตัวการ lag) + dedup ใน push (count ไม่ format ซ้ำ)
 -- v1.2: dedup spam ซ้ำ→รวม ×N + FREEZE + COPY (กัน raycast ท่วม Loader)
 -- v1.1: + Loader (ดัก loadstring/HttpGet → ดึง code หลักผ่าน key system)
 
-local VERSION = "1.4"
+local VERSION = "1.5"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -35,18 +36,24 @@ _G.HK_SPY = _G.HK_SPY or {}
 local S = _G.HK_SPY
 S.enabled = true
 S.queue   = S.queue or {}          -- hook push เข้านี่, GUI poll ออก
+S.stats   = S.stats or {}          -- สรุปนับ: sig → {cat,text,count} (STATS view)
 S.filters = S.filters or {Loader=true, Input=true, Remote=true, Physics=true, Raycast=true}
 local MAXQ = 200
 
--- push + dedup: ถ้า signature ซ้ำ entry ล่าสุด → แค่ count++ (ไม่เพิ่ม entry = เบา)
+-- push: เก็บทั้ง queue (LOG view) + stats (STATS view = นับครั้ง)
 local function push(cat, sig, text)
     if not S.enabled then return end
     if not S.filters[cat] then return end
+    -- STATS: นับครั้ง + เก็บ args ล่าสุด
+    local st = S.stats[sig]
+    if st then st.count = st.count + 1; st.text = text
+    else S.stats[sig] = {cat = cat, text = text, count = 1} end
+    -- LOG queue (dedup ซ้ำ → count++)
     local q = S.queue
     local last = q[#q]
     if last and last.sig == sig then
         last.count = (last.count or 1) + 1
-        return                       -- ซ้ำ → count++
+        return
     end
     q[#q+1] = {cat = cat, text = text, sig = sig, count = 1}
     if #q > MAXQ then table.remove(q, 1) end
@@ -283,12 +290,13 @@ local function mkBtn2(x, w, txt, col)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
     return b
 end
-local freezeB = mkBtn2(6,   110, "FREEZE [F]", Color3.fromRGB(120,90,30))
-local copyB   = mkBtn2(120, 110, "COPY ทั้งหมด", Color3.fromRGB(30,110,60))
+local viewB   = mkBtn2(6,   140, "📊 STATS (สรุปนับ)", Color3.fromRGB(40,90,160))
+local freezeB = mkBtn2(150,  90, "FREEZE [F]", Color3.fromRGB(120,90,30))
+local copyB   = mkBtn2(244,  90, "COPY", Color3.fromRGB(30,110,60))
 local hintL = Instance.new("TextLabel")
-hintL.Size = UDim2.new(0,190,0,22); hintL.Position = UDim2.new(0,234,0,50)
+hintL.Size = UDim2.new(0,90,0,22); hintL.Position = UDim2.new(0,338,0,50)
 hintL.BackgroundTransparency = 1; hintL.TextColor3 = Color3.fromRGB(150,150,150)
-hintL.Text = "ซ้ำ→รวม ×N | FREEZE หยุดอ่าน"; hintL.Font = Enum.Font.Code
+hintL.Text = "นับมากสุด=บน"; hintL.Font = Enum.Font.Code
 hintL.TextSize = 10; hintL.TextXAlignment = Enum.TextXAlignment.Left; hintL.Parent = frame
 
 -- log scroll
@@ -356,13 +364,61 @@ copyB.MouseButton1Click:Connect(function()
         or (getgenv and getgenv().setclipboard)
     local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
     copyB.Text = ok and "Copied!" or "ไม่รองรับ"
-    task.delay(2, function() if copyB.Parent then copyB.Text = "COPY ทั้งหมด" end end)
+    task.delay(2, function() if copyB.Parent then copyB.Text = "COPY" end end)
 end)
 
--- ==================== Poll queue → render (drain ทุกเฟรม) ====================
+-- ==================== STATS view (สรุปนับ ไม่เลื่อน) ====================
+-- แสดง remote/event แต่ละตัว 1 บรรทัด เรียงตามจำนวนครั้ง (มากสุด=บน) → ดูง่าย ไม่ไหล
+local function renderStats()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    local arr = {}
+    for _, st in pairs(S.stats) do arr[#arr+1] = st end
+    table.sort(arr, function(a, b) return a.count > b.count end)
+    for i = 1, math.min(#arr, 50) do
+        local st = arr[i]
+        local l = Instance.new("TextLabel")
+        l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
+        l.BackgroundTransparency = 1; l.Font = Enum.Font.Code; l.TextSize = 11
+        l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+        l.TextColor3 = CAT_COL[st.cat] or Color3.fromRGB(200,200,200)
+        l.Text = string.format("×%-5d [%s] %s", st.count, st.cat:sub(1,3), st.text)
+        l.LayoutOrder = i; l.Parent = scroll
+    end
+    scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
+end
+
+local function clearStats()
+    table.clear(S.stats)
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+end
+
+viewB.MouseButton1Click:Connect(function()
+    S.statsMode = not S.statsMode
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    table.clear(S.queue)
+    if S.statsMode then
+        viewB.Text = "📜 LOG (ไหลตามจริง)"; viewB.BackgroundColor3 = Color3.fromRGB(90,60,140)
+        renderStats()
+    else
+        viewB.Text = "📊 STATS (สรุปนับ)"; viewB.BackgroundColor3 = Color3.fromRGB(40,90,160)
+    end
+end)
+-- CLEAR ใน STATS mode = ล้าง stats ด้วย
+clrB.MouseButton1Click:Connect(function() if S.statsMode then clearStats() end end)
+
+-- ==================== Heartbeat: render ตาม mode ====================
 local autoScroll = true
+local statsFrame = 0
 bind(RunService.Heartbeat, function()
     if S.frozen then return end
+    if S.statsMode then
+        -- STATS: rebuild ทุก ~0.5s (เบา, นิ่ง อ่านง่าย)
+        statsFrame += 1
+        if statsFrame >= 30 then statsFrame = 0; renderStats() end
+        table.clear(S.queue)
+        return
+    end
+    -- LOG: drain ตามจริง
     local q = S.queue
     if #q == 0 then return end
     for i = 1, #q do addLine(q[i].cat, q[i].text, q[i].count, q[i].sig) end
