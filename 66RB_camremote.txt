@@ -7,7 +7,7 @@
 --   2. กด REPLAY → ส่ง args เดิมซ้ำ → ดูว่าตัวหันตามไหม (= server รับ synthetic)
 --   3. ถ้ารับ → ขั้นต่อไปทำ FireServer ด้วยทิศที่เราอยาก (BackFace แท้)
 
-local VERSION = "1.2"
+local VERSION = "1.3"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -68,6 +68,19 @@ if okHooks and not S.hooked then
         if ok and (method == "FireServer" or method == "InvokeServer") then
             local name = ""
             pcall(function() name = self:GetFullName() end)
+            -- ⭐ INTERCEPT หันหลัง: ดักตอนเกมส่ง UpdateCameraRotation → แก้ yaw → ส่งต่อ
+            if S.camBack and name:find("UpdateCameraRotation") then
+                local s = (...)
+                if type(s) == "string" then
+                    local cps = {}
+                    pcall(function() for _, c in utf8.codes(s) do cps[#cps+1] = c end end)
+                    if cps[1] and cps[2] then
+                        S.camPitch = cps[1]; S.camYaw = cps[2]
+                        local okE, ns = pcall(utf8.char, cps[1], (cps[2] + (S.yawOff or 128)) % 256)
+                        if okE then return oldNc(self, ns, select(2, ...)) end
+                    end
+                end
+            end
             for _, kw in ipairs(WATCH) do
                 if name:find(kw) then
                     -- เก็บ remote + args ล่าสุด (สำหรับ replay)
@@ -219,29 +232,14 @@ bind(RunService.Heartbeat, function()
     pcall(function() S.stateRemote:FireServer(first, val) end)
 end)
 
--- ==================== หันหลัง: ส่ง UpdateCameraRotation yaw+128 (180°) ====================
-local CAM_BACK = false
-local YAW_OFFSET = 128   -- 128 = +180° (หันหลัง) — ปรับได้ถ้าทิศไม่ตรง
+-- ==================== หันหลัง: เปิด intercept (hook แก้ yaw+128 ตอนเกมส่ง) ====================
+S.yawOff = S.yawOff or 128   -- 128 = +180° (หันหลัง) — ปรับได้ถ้าทิศไม่ตรง
 backB.MouseButton1Click:Connect(function()
-    CAM_BACK = not CAM_BACK
-    backB.BackgroundColor3 = CAM_BACK and Color3.fromRGB(220,40,160) or Color3.fromRGB(140,40,120)
-    backB.Text = CAM_BACK and "🔄 หันหลัง ON" or "🔄 หันหลัง LOOP"
-    if CAM_BACK and not S.camRemote then
-        addLine(">> ยังไม่ดัก Camera remote — หมุนกล้องก่อน", Color3.fromRGB(255,120,120))
-    end
-end)
-
--- loop ส่ง yaw+offset ทุก Heartbeat (หลังเกมส่ง yaw จริง → เราทับ)
-bind(RunService.Heartbeat, function()
-    if not CAM_BACK or not S.camRemote or not S.camPitch then return end
-    local newYaw = (S.camYaw + YAW_OFFSET) % 256
-    local okC, newStr = pcall(utf8.char, S.camPitch, newYaw)
-    if not okC then return end
-    local a = S.camArgs
-    pcall(function()
-        if a then a[1] = newStr; S.camRemote:FireServer(table.unpack(a, 1, a.n))
-        else S.camRemote:FireServer(newStr) end
-    end)
+    S.camBack = not S.camBack
+    backB.BackgroundColor3 = S.camBack and Color3.fromRGB(220,40,160) or Color3.fromRGB(140,40,120)
+    backB.Text = S.camBack and "🔄 หันหลัง ON" or "🔄 หันหลัง LOOP"
+    addLine(">> หันหลัง "..(S.camBack and "ON (intercept yaw+"..S.yawOff..")" or "OFF"),
+        S.camBack and Color3.fromRGB(120,255,160) or Color3.fromRGB(200,200,200))
 end)
 clrB.MouseButton1Click:Connect(function()
     for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
@@ -260,7 +258,7 @@ bind(RunService.Heartbeat, function()
     if S.camYaw then
         local deg = math.floor(S.camYaw / 256 * 360)
         statL.Text = string.format("yaw:%d (%d°) pitch:%d %s",
-            S.camYaw, deg, S.camPitch or 0, CAM_BACK and "| หันหลัง ON" or "")
+            S.camYaw, deg, S.camPitch or 0, S.camBack and "| หันหลัง ON" or "")
     end
     local q = S.queue
     if #q == 0 then return end
