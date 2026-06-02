@@ -1,0 +1,233 @@
+-- 67RB_shootspy.txt v1.0 — Shoot Remote Spy (สำหรับทำ Silent Aim)
+-- ดักว่าตอน "ยิงปืน" เกมส่ง FireServer อะไร + args อะไร (target/hit position)
+-- → เอา format ไปทำ silent aim (ส่ง FireServer ด้วย head ศัตรู = ยิงแม่น)
+--
+-- วิธีใช้: รัน → เล็งศัตรูแล้วยิง 2-3 นัด → ดู remote + args ที่ส่ง
+-- ปุ่ม: ONLY SHOOT (จับเฉพาะตอนยิง) | FREEZE | COPY | CLEAR
+
+local VERSION = "1.0"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+
+-- ==================== Executor hook ====================
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local okHooks  = hookmeta and getnc
+
+-- ==================== Persistent state ====================
+_G.SS_SPY = _G.SS_SPY or {}
+local S = _G.SS_SPY
+S.queue = S.queue or {}
+S.onlyShoot = (S.onlyShoot ~= false)   -- default ON
+S.shootUntil = S.shootUntil or 0
+local MAXQ = 100
+
+-- ==================== Guard ====================
+if _G.SS_CONNS then
+    for _, c in pairs(_G.SS_CONNS) do pcall(function() c:Disconnect() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("SSGUI")
+        if cg then cg:Destroy() end
+    end)
+end
+_G.SS_CONNS = {}
+local CONNS = _G.SS_CONNS
+local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
+
+-- ==================== Arg formatter (ละเอียด — เน้น aim data) ====================
+local function fmt(v)
+    local t = typeof(v)
+    if t == "Instance" then
+        -- target! แสดง class + name + path สั้น
+        local par = v.Parent and v.Parent.Name or "?"
+        return "🎯"..v.ClassName..":"..v.Name.."(in "..par..")"
+    elseif t == "Vector3" then
+        return "📍V3("..math.floor(v.X)..","..math.floor(v.Y)..","..math.floor(v.Z)..")"
+    elseif t == "CFrame" then
+        local p = v.Position
+        return "📐CF("..math.floor(p.X)..","..math.floor(p.Y)..","..math.floor(p.Z)..")"
+    elseif t == "string" then
+        if #v > 30 then return '"'..v:sub(1,30)..'..."' end
+        return '"'..v..'"'
+    elseif t == "number" then return tostring(v)
+    elseif t == "boolean" then return tostring(v)
+    elseif t == "table" then
+        local n = 0; for _ in pairs(v) do n += 1 end
+        return "{table x"..n.."}"
+    else return t end
+end
+local function fmtArgs(...)
+    local n = select("#", ...)
+    if n == 0 then return "(ไม่มี args)" end
+    local parts = {}
+    for i = 1, math.min(n, 8) do parts[i] = fmt(select(i, ...)) end
+    return table.concat(parts, "  |  ")
+end
+
+-- ==================== Shoot detection ====================
+-- กดยิง (mouse1 / touch) → mark ช่วง 350ms ว่า "กำลังยิง"
+bind(UIS.InputBegan, function(i, gp)
+    local ut = i.UserInputType
+    if ut == Enum.UserInputType.MouseButton1 or ut == Enum.UserInputType.Touch then
+        S.shootUntil = os.clock() + 0.35
+    end
+end)
+
+-- ==================== HOOK FireServer ====================
+if okHooks and not S.hooked then
+    S.hooked = true
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local ok, method = pcall(getnc)
+        if ok and (method == "FireServer" or method == "InvokeServer") then
+            local shooting = os.clock() < S.shootUntil
+            if (not S.onlyShoot) or shooting then
+                local name = ""
+                pcall(function() name = self:GetFullName() end)
+                local short = name:gsub("^.-Remotes%.", ""):gsub("^ReplicatedStorage%.", "")
+                -- ข้าม remote ที่รู้ว่าไม่ใช่ยิง (state/camera spam)
+                if not (name:find("UpdateState") or name:find("CameraRotation") or name:find("Spectating")) then
+                    local mark = shooting and "🔫 " or ""
+                    S.queue[#S.queue+1] = mark..short.." | "..fmtArgs(...)
+                    if #S.queue > MAXQ then table.remove(S.queue, 1) end
+                end
+            end
+        end
+        return oldNc(self, ...)
+    end))
+    S.restore = oldNc
+end
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "SSGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 480, 0, 340)
+frame.Position = UDim2.new(0, 20, 0, 50)
+frame.BackgroundColor3 = Color3.fromRGB(10, 8, 8)
+frame.BackgroundTransparency = 0.08
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(255,80,60); stk.Thickness = 1
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-30,0,22); title.Position = UDim2.new(0,8,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(255,140,110)
+title.Text = "67RB ShootSpy v"..VERSION..(okHooks and "" or " [NO HOOK!]")
+title.Font = Enum.Font.GothamBold; title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeB = Instance.new("TextButton")
+closeB.Size = UDim2.new(0,22,0,20); closeB.Position = UDim2.new(1,-26,0,2)
+closeB.BackgroundColor3 = Color3.fromRGB(120,20,20); closeB.TextColor3 = Color3.new(1,1,1)
+closeB.Text = "X"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12; closeB.BorderSizePixel = 0
+closeB.Parent = frame
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
+closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+local function mkBtn(x, w, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,24); b.Position = UDim2.new(0,x,0,26)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+local onlyB   = mkBtn(6,   150, "🔫 ONLY SHOOT", Color3.fromRGB(180,50,40))
+local freezeB = mkBtn(160, 100, "FREEZE [F]", Color3.fromRGB(120,90,30))
+local clrB    = mkBtn(264, 80,  "CLEAR", Color3.fromRGB(60,60,90))
+local copyB   = mkBtn(348, 110, "COPY", Color3.fromRGB(40,90,140))
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-12,1,-58); scroll.Position = UDim2.new(0,6,0,52)
+scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0,6); pad.PaddingTop = UDim.new(0,2); pad.Parent = scroll
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+
+local order = 0
+local copyLines = {}
+local MAXSHOW = 100
+local lastText, lastLbl, lastN = nil, nil, 0
+local function addLine(txt)
+    if txt == lastText and lastLbl and lastLbl.Parent then
+        lastN += 1; lastLbl.Text = txt.."   ×"..lastN
+        copyLines[#copyLines] = lastLbl.Text
+        return
+    end
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
+    l.BackgroundTransparency = 1; l.Font = Enum.Font.Code; l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+    l.TextColor3 = txt:find("🔫") and Color3.fromRGB(255,200,120) or Color3.fromRGB(180,200,255)
+    l.Text = txt; l.LayoutOrder = order; l.Parent = scroll
+    lastText = txt; lastLbl = l; lastN = 1
+    copyLines[#copyLines+1] = txt
+    local cnt = 0
+    for _, c in ipairs(scroll:GetChildren()) do if c:IsA("TextLabel") then cnt += 1 end end
+    if cnt > MAXSHOW then
+        for _, c in ipairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() break end end
+    end
+end
+
+-- ==================== Buttons ====================
+local function updOnly()
+    onlyB.BackgroundColor3 = S.onlyShoot and Color3.fromRGB(180,50,40) or Color3.fromRGB(60,60,90)
+    onlyB.Text = S.onlyShoot and "🔫 ONLY SHOOT" or "ALL remotes"
+end
+onlyB.MouseButton1Click:Connect(function() S.onlyShoot = not S.onlyShoot updOnly() end)
+
+local function toggleFreeze()
+    S.frozen = not S.frozen
+    freezeB.Text = S.frozen and "FROZEN [F]" or "FREEZE [F]"
+    freezeB.BackgroundColor3 = S.frozen and Color3.fromRGB(180,40,40) or Color3.fromRGB(120,90,30)
+end
+freezeB.MouseButton1Click:Connect(toggleFreeze)
+bind(UIS.InputBegan, function(i, gp)
+    if not gp and i.KeyCode == Enum.KeyCode.F then toggleFreeze() end
+end)
+
+clrB.MouseButton1Click:Connect(function()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    order = 0; lastText = nil; table.clear(copyLines)
+end)
+copyB.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard
+    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
+    copyB.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(2, function() if copyB.Parent then copyB.Text = "COPY" end end)
+end)
+
+-- ==================== Drain ====================
+bind(RunService.Heartbeat, function()
+    if S.frozen then return end
+    local q = S.queue
+    if #q == 0 then return end
+    for i = 1, #q do addLine(q[i]) end
+    table.clear(q)
+    task.defer(function()
+        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
+        scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+    end)
+end)
+
+updOnly()
+addLine("=== ShootSpy v"..VERSION.." พร้อม ===")
+if okHooks then
+    addLine("เล็งศัตรู → ยิง 2-3 นัด → ดู remote 🔫 + args")
+    addLine("🎯=target Instance | 📍=hit position | กรอง state/camera ออกแล้ว")
+else
+    addLine("❌ executor ไม่มี hook API")
+end
+print("[67RB ShootSpy v"..VERSION.."] loaded | hooks:", okHooks and "ON" or "OFF")
