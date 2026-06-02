@@ -1,0 +1,243 @@
+-- 68RB_silentaim.txt v1.0 — Silent Aim + Watch (ผ่าน UpdateCameraRotation)
+-- E = Watch (กล้องตามศัตรู เห็นเป้า แบบ 06) | Q = Silent Aim (ยิงโดนจริงผ่าน remote)
+--
+-- หลักการ: เกมยิง = server raycast จากทิศ UpdateCameraRotation (ไม่ใช่ Camera.CFrame)
+--   → Silent: ดักแก้ UpdateCameraRotation ให้ชี้ head ศัตรู → server hit
+--   → auto-calibrate: เรียนรู้ mapping (มุมกล้อง ↔ byte) ตอน Silent OFF
+--
+-- ⚠ ทดลอง: ถ้า aim ผิดทิศ → ปรับ sign/offset (ปุ่มในจอ)
+
+local VERSION = "1.0"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local World = workspace
+
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local okHooks  = hookmeta and getnc
+
+-- ==================== State ====================
+_G.SLA = _G.SLA or {}
+local S = _G.SLA
+S.yawScale  = S.yawScale  or (256/360)   -- byte ต่อองศา (256/360 = 1 รอบ)
+S.yawOffset = S.yawOffset or 0
+S.yawSign   = S.yawSign   or 1            -- ทิศ (ถ้า aim สวน → -1)
+local WatchOn  = true
+local SilentOn = false
+local SHOOT_MAX_SQ = 500 * 500
+
+-- ==================== Guard ====================
+if _G.SLA_CONNS then
+    for _, c in pairs(_G.SLA_CONNS) do pcall(function() c:Disconnect() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("SLAGUI")
+        if cg then cg:Destroy() end
+    end)
+end
+_G.SLA_CONNS = {}
+local CONNS = _G.SLA_CONNS
+local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
+
+-- ==================== Char + target ====================
+local LPChar, LPRoot
+local function cacheLP(c) LPChar = c; LPRoot = c and c:FindFirstChild("HumanoidRootPart") end
+cacheLP(LP.Character)
+bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheLP(c) end)
+
+local rayP = RaycastParams.new()
+rayP.FilterType = Enum.RaycastFilterType.Exclude
+
+local function getTeamID(p)
+    local id = p:GetAttribute("TeamID")
+    if id and id ~= "" then return id end
+    if p.Team then return "T_"..p.Team.Name end
+    return nil
+end
+
+local curTarget = nil
+local function findTarget()
+    if not LPRoot then return nil end
+    local from = LPRoot.Position
+    local myID = getTeamID(LP)
+    rayP.FilterDescendantsInstances = {LPChar}
+    local best, bestSq = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            local hum  = p.Character:FindFirstChildOfClass("Humanoid")
+            local head = p.Character:FindFirstChild("Head")
+            if hum and head and hum.Health > 0 and not (myID and getTeamID(p) == myID) then
+                local d = head.Position - from
+                local sq = d.X*d.X + d.Y*d.Y + d.Z*d.Z
+                if sq < bestSq and sq <= SHOOT_MAX_SQ then bestSq, best = sq, head end
+            end
+        end
+    end
+    return best
+end
+
+-- ==================== yaw helpers ====================
+-- มุม yaw ของกล้องจริง (จาก Camera.CFrame) — องศา -180..180
+local function camYawDeg()
+    local lv = Camera.CFrame.LookVector
+    return math.deg(math.atan2(lv.X, lv.Z))
+end
+-- มุม yaw จาก LPRoot ไป head เป้า
+local function targetYawDeg(head)
+    local d = head.Position - Camera.CFrame.Position
+    return math.deg(math.atan2(d.X, d.Z))
+end
+-- แปลงองศา → yaw byte (ใช้ mapping ที่เรียนรู้)
+local function yawToByte(deg)
+    return math.floor((deg * S.yawScale * S.yawSign + S.yawOffset) % 256 + 0.5) % 256
+end
+
+-- ==================== HOOK UpdateCameraRotation ====================
+if okHooks and not S.hooked then
+    S.hooked = true
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local ok, method = pcall(getnc)
+        if ok and (method == "FireServer" or method == "InvokeServer") then
+            local name = ""
+            pcall(function() name = self:GetFullName() end)
+            if name:find("UpdateCameraRotation") then
+                local s = (...)
+                if type(s) == "string" then
+                    local cps = {}
+                    pcall(function() for _, c in utf8.codes(s) do cps[#cps+1] = c end end)
+                    local pitch, yaw = cps[1], cps[2]
+                    if pitch and yaw then
+                        S.lastPitch = pitch; S.lastYaw = yaw
+                        if not S.silent then
+                            -- LEARN mapping: byte yaw = camYaw*scale*sign + offset
+                            local cd = camYawDeg()
+                            S.yawOffset = (yaw - cd * S.yawScale * S.yawSign) % 256
+                            S.learnCam = math.floor(cd)
+                        elseif S.tgtHead then
+                            -- SILENT: แทน yaw byte ให้ชี้ head เป้า
+                            local want = yawToByte(targetYawDeg(S.tgtHead))
+                            local okE, ns = pcall(utf8.char, pitch, want)
+                            if okE then
+                                S.aimByte = want
+                                return oldNc(self, ns, select(2, ...))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return oldNc(self, ...)
+    end))
+    S.restore = oldNc
+end
+
+-- ==================== Watch loop (E) ====================
+bind(RunService.RenderStepped, function()
+    curTarget = (WatchOn or SilentOn) and findTarget() or nil
+    S.tgtHead = SilentOn and curTarget or nil
+    S.silent  = SilentOn
+    if WatchOn and curTarget then
+        Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, curTarget.Position)
+    end
+end)
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "SLAGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 230)
+frame.Position = UDim2.new(0, 20, 0.5, -115)
+frame.BackgroundColor3 = Color3.fromRGB(8, 10, 16)
+frame.BackgroundTransparency = 0.08
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(255,80,60); stk.Thickness = 1
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-24,0,18); title.Position = UDim2.new(0,6,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(255,140,110)
+title.Text = "68RB SilentAim v"..VERSION..(okHooks and "" or " [NOHOOK]")
+title.Font = Enum.Font.GothamBold; title.TextSize = 12
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeB = Instance.new("TextButton")
+closeB.Size = UDim2.new(0,18,0,16); closeB.Position = UDim2.new(1,-22,0,2)
+closeB.BackgroundColor3 = Color3.fromRGB(120,20,20); closeB.TextColor3 = Color3.new(1,1,1)
+closeB.Text = "X"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 11; closeB.BorderSizePixel = 0
+closeB.Parent = frame
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,3)
+closeB.MouseButton1Click:Connect(function() WatchOn=false SilentOn=false S.silent=false gui:Destroy() end)
+
+local function mkBtn(x, y, w, h, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,h); b.Position = UDim2.new(0,x,0,y)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+
+local watchB  = mkBtn(6,  22, 100, 26, "E: Watch ON", Color3.fromRGB(30,120,30))
+local silentB = mkBtn(112,22, 102, 26, "Q: Silent OFF", Color3.fromRGB(60,40,60))
+local signB   = mkBtn(6,  52, 100, 22, "ทิศ: +", Color3.fromRGB(40,80,140))
+local offM    = mkBtn(112,52, 30, 22, "-8", Color3.fromRGB(120,40,40))
+local offP    = mkBtn(146,52, 30, 22, "+8", Color3.fromRGB(40,120,40))
+local off0    = mkBtn(180,52, 34, 22, "R", Color3.fromRGB(80,60,90))
+
+local statL = Instance.new("TextLabel")
+statL.Size = UDim2.new(1,-12,0,150); statL.Position = UDim2.new(0,6,0,80)
+statL.BackgroundColor3 = Color3.fromRGB(4,4,8); statL.BackgroundTransparency = 0.3
+statL.TextColor3 = Color3.fromRGB(120,255,160); statL.Font = Enum.Font.Code
+statL.TextSize = 11; statL.TextXAlignment = Enum.TextXAlignment.Left
+statL.TextYAlignment = Enum.TextYAlignment.Top; statL.Text = "..."
+statL.TextWrapped = true; statL.Parent = frame
+Instance.new("UICorner", statL).CornerRadius = UDim.new(0,4)
+
+-- ==================== Logic ====================
+local function updW()
+    watchB.Text = "E: Watch "..(WatchOn and "ON" or "OFF")
+    watchB.BackgroundColor3 = WatchOn and Color3.fromRGB(30,120,30) or Color3.fromRGB(50,50,50)
+end
+local function updS()
+    silentB.Text = "Q: Silent "..(SilentOn and "ON" or "OFF")
+    silentB.BackgroundColor3 = SilentOn and Color3.fromRGB(200,50,40) or Color3.fromRGB(60,40,60)
+end
+local function updSign() signB.Text = "ทิศ: "..(S.yawSign > 0 and "+" or "-") end
+
+watchB.MouseButton1Click:Connect(function() WatchOn = not WatchOn updW() end)
+silentB.MouseButton1Click:Connect(function() SilentOn = not SilentOn updS() end)
+signB.MouseButton1Click:Connect(function() S.yawSign = -S.yawSign updSign() end)
+offM.MouseButton1Click:Connect(function() S.yawOffset = (S.yawOffset - 8) % 256 end)
+offP.MouseButton1Click:Connect(function() S.yawOffset = (S.yawOffset + 8) % 256 end)
+off0.MouseButton1Click:Connect(function() S.yawOffset = 0 end)
+
+bind(UIS.InputBegan, function(i, gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.E then WatchOn = not WatchOn updW()
+    elseif i.KeyCode == Enum.KeyCode.Q then SilentOn = not SilentOn updS() end
+end)
+
+-- status updater
+task.spawn(function()
+    while task.wait(0.2) do
+        if not _G.SLA_CONNS or _G.SLA_CONNS ~= CONNS then return end
+        local tgt = curTarget and curTarget.Parent and curTarget.Parent.Name or "-"
+        local tyaw = curTarget and math.floor(targetYawDeg(curTarget)) or 0
+        statL.Text = string.format(
+            "Target: %s\n\n[เรียนรู้] กล้อง:%s° byte:%s\noffset:%d sign:%d\n\n[Silent] เป้า yaw:%d°\n→ byte ที่ส่ง:%s\n\nวิธี: Silent OFF เดินยิงปกติ\nให้มันเรียน → เปิด Silent",
+            tgt, tostring(S.learnCam or "?"), tostring(S.lastYaw or "?"),
+            S.yawOffset, S.yawSign, tyaw, tostring(S.aimByte or "?"))
+    end
+end)
+
+updW() updS() updSign()
+print("[68RB SilentAim v"..VERSION.."] loaded | hooks:", okHooks and "ON" or "OFF")
