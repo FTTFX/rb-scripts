@@ -1,0 +1,257 @@
+-- 64RB_hookspy.txt v1.0 — Universal Runtime Hook Spy
+-- ดักดูว่า script ไหน (รวม aimbot คนอื่น/obfuscate) เรียกอะไรตอนทำงานจริง
+-- → เรียนรู้เทคนิคโดยไม่ต้องแกะ source
+--
+-- วิธีใช้: รัน "ตัวนี้ก่อน" → แล้วรัน script ที่จะแกะ → ดู log ว่ามันเรียกอะไร
+--
+-- ดักอะไร:
+--   • Input  : SendTouchEvent / SendMouseButtonEvent / SendMouseMoveEvent / SendKeyEvent
+--   • Remote : FireServer / InvokeServer
+--   • Physics: Instance.new(BodyGyro/BodyVelocity/AlignOrientation/Highlight...)
+--   • Raycast: Raycast / FindPartOnRay*
+-- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | C=clear | X=ปิด
+
+local VERSION = "1.0"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+
+-- ==================== Executor function detection ====================
+local hookmeta  = hookmetamethod
+local hookfunc  = hookfunction or replaceclosure
+local getnc     = getnamecallmethod
+local newcc     = newcclosure or function(f) return f end
+local okHooks   = hookmeta and getnc and hookfunc
+-- ถ้า executor ไม่มี hook → แจ้งแล้วยังโชว์ GUI (จะ log ไม่ได้)
+
+-- ==================== Persistent state (hook ครั้งเดียวตลอด session) ====================
+_G.HK_SPY = _G.HK_SPY or {}
+local S = _G.HK_SPY
+S.enabled = true
+S.queue   = S.queue or {}          -- hook push เข้านี่, GUI poll ออก
+S.filters = S.filters or {Input=true, Remote=true, Physics=true, Raycast=true}
+local MAXQ = 200
+
+local function push(cat, text)
+    if not S.enabled then return end
+    if not S.filters[cat] then return end
+    local q = S.queue
+    q[#q+1] = {cat = cat, text = text}
+    if #q > MAXQ then table.remove(q, 1) end
+end
+S.push = push
+
+-- ==================== Single-Instance Guard (GUI only — hook ปล่อยถาวร) ====================
+if _G.HK_SPY_CONNS then
+    for _, c in pairs(_G.HK_SPY_CONNS) do pcall(function() c:Disconnect() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("HKSPYGUI")
+        if cg then cg:Destroy() end
+    end)
+end
+_G.HK_SPY_CONNS = {}
+local CONNS = _G.HK_SPY_CONNS
+local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
+
+-- ==================== Value formatter (เบา — ใช้ใน hook) ====================
+local function fmt(v, depth)
+    depth = depth or 0
+    local t = typeof(v)
+    if t == "Instance" then return v.ClassName..":"..v.Name
+    elseif t == "Vector3" then return string.format("V3(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then
+        local p = v.Position
+        return string.format("CF(%.0f,%.0f,%.0f)", p.X, p.Y, p.Z)
+    elseif t == "EnumItem" then return tostring(v)
+    elseif t == "table" then
+        if depth > 1 then return "{...}" end
+        local parts = {}
+        local n = 0
+        for k, val in pairs(v) do
+            n += 1; if n > 4 then parts[#parts+1] = "..."; break end
+            parts[#parts+1] = fmt(val, depth+1)
+        end
+        return "{"..table.concat(parts, ",").."}"
+    elseif t == "string" then
+        if #v > 24 then return '"'..v:sub(1,24)..'..."' end
+        return '"'..v..'"'
+    elseif t == "number" then return string.format("%.4g", v)
+    else return tostring(v) end
+end
+
+local function fmtArgs(...)
+    local n = select("#", ...)
+    local parts = {}
+    for i = 1, math.min(n, 6) do parts[i] = fmt(select(i, ...)) end
+    if n > 6 then parts[#parts+1] = "(+"..(n-6)..")" end
+    return table.concat(parts, ", ")
+end
+
+-- ==================== HOOKS (ครั้งเดียวตลอด session) ====================
+local INPUT_METHODS = {
+    SendTouchEvent=true, SendMouseButtonEvent=true,
+    SendMouseMoveEvent=true, SendKeyEvent=true, SendMouseWheelEvent=true,
+}
+local REMOTE_METHODS = { FireServer=true, InvokeServer=true, fireServer=true, invokeServer=true }
+local RAYCAST_METHODS = {
+    Raycast=true, FindPartOnRay=true,
+    FindPartOnRayWithWhitelist=true, FindPartOnRayWithIgnoreList=true, Blockcast=true,
+}
+local PHYSICS_CLASSES = {
+    BodyGyro=true, BodyVelocity=true, BodyPosition=true, BodyAngularVelocity=true,
+    AlignOrientation=true, AlignPosition=true, LinearVelocity=true, AngularVelocity=true,
+    VectorForce=true, Highlight=true,
+}
+
+if okHooks and not S.hooked then
+    S.hooked = true
+
+    -- __namecall: ดัก method call (input/remote/raycast)
+    local oldNamecall
+    oldNamecall = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local ok, method = pcall(getnc)
+        if ok and method then
+            if INPUT_METHODS[method] then
+                push("Input", method.."("..fmtArgs(...)..")")
+            elseif REMOTE_METHODS[method] then
+                local name = "?"
+                pcall(function() name = self:GetFullName() end)
+                push("Remote", method.." @"..name.." | "..fmtArgs(...))
+            elseif RAYCAST_METHODS[method] then
+                push("Raycast", method.."("..fmtArgs(...)..")")
+            end
+        end
+        return oldNamecall(self, ...)
+    end))
+    S.restoreNamecall = oldNamecall
+
+    -- Instance.new: ดักสร้าง physics/highlight
+    local oldNew
+    oldNew = hookfunc(Instance.new, newcc(function(className, ...)
+        if type(className) == "string" and PHYSICS_CLASSES[className] then
+            push("Physics", "Instance.new('"..className.."')")
+        end
+        return oldNew(className, ...)
+    end))
+    S.restoreNew = oldNew
+end
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "HKSPYGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 440, 0, 400)
+frame.Position = UDim2.new(0, 20, 0, 50)
+frame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
+frame.BackgroundTransparency = 0.08
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(255,140,40); stk.Thickness = 1
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-30,0,22); title.Position = UDim2.new(0,8,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(255,180,90)
+title.Text = "64RB HookSpy v"..VERSION..(okHooks and "" or "  [NO HOOK API!]")
+title.Font = Enum.Font.GothamBold; title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeB = Instance.new("TextButton")
+closeB.Size = UDim2.new(0,22,0,20); closeB.Position = UDim2.new(1,-26,0,2)
+closeB.BackgroundColor3 = Color3.fromRGB(120,20,20); closeB.TextColor3 = Color3.new(1,1,1)
+closeB.Text = "X"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12; closeB.BorderSizePixel = 0
+closeB.Parent = frame
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
+closeB.MouseButton1Click:Connect(function() S.enabled = false gui:Destroy() end)
+
+-- filter buttons
+local CAT_COL = {
+    Input   = Color3.fromRGB(40,120,200),
+    Remote  = Color3.fromRGB(200,60,60),
+    Physics = Color3.fromRGB(150,90,200),
+    Raycast = Color3.fromRGB(60,160,90),
+}
+local function mkFilter(x, cat)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,84,0,22); b.Position = UDim2.new(0,x,0,26)
+    b.BackgroundColor3 = CAT_COL[cat]; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = cat; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    b.MouseButton1Click:Connect(function()
+        S.filters[cat] = not S.filters[cat]
+        b.BackgroundTransparency = S.filters[cat] and 0 or 0.65
+    end)
+    return b
+end
+mkFilter(6, "Input"); mkFilter(94, "Remote"); mkFilter(182, "Physics"); mkFilter(270, "Raycast")
+
+local clrB = Instance.new("TextButton")
+clrB.Size = UDim2.new(0,74,0,22); clrB.Position = UDim2.new(0,358,0,26)
+clrB.BackgroundColor3 = Color3.fromRGB(60,60,90); clrB.TextColor3 = Color3.new(1,1,1)
+clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 11; clrB.BorderSizePixel = 0
+clrB.Parent = frame
+Instance.new("UICorner", clrB).CornerRadius = UDim.new(0,4)
+
+-- log scroll
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-12,1,-78); scroll.Position = UDim2.new(0,6,0,52)
+scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0,6); pad.PaddingTop = UDim.new(0,2); pad.Parent = scroll
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+
+local renderOrder = 0
+local renderCount = 0
+local MAXSHOW = 150
+local function addLine(cat, text)
+    renderOrder += 1; renderCount += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
+    l.BackgroundTransparency = 1; l.Font = Enum.Font.Code; l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+    l.TextColor3 = CAT_COL[cat] or Color3.fromRGB(200,200,200)
+    l.Text = "["..cat:sub(1,3).."] "..text
+    l.LayoutOrder = renderOrder; l.Parent = scroll
+    -- ลบบรรทัดเก่าเกิน
+    if renderCount > MAXSHOW then
+        for _, c in ipairs(scroll:GetChildren()) do
+            if c:IsA("TextLabel") then c:Destroy() renderCount -= 1 break end
+        end
+    end
+end
+local function clearLog()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    renderCount = 0
+end
+clrB.MouseButton1Click:Connect(clearLog)
+
+-- ==================== Poll queue → render (drain ทุกเฟรม) ====================
+local autoScroll = true
+bind(RunService.Heartbeat, function()
+    local q = S.queue
+    if #q == 0 then return end
+    for i = 1, #q do addLine(q[i].cat, q[i].text) end
+    table.clear(q)
+    task.defer(function()
+        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
+        if autoScroll then scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y) end
+    end)
+end)
+
+-- ==================== Intro ====================
+addLine("Input", "=== HookSpy v"..VERSION.." พร้อม ===")
+if okHooks then
+    addLine("Input", "hook ติดตั้งแล้ว — รัน script ที่จะแกะได้เลย")
+    addLine("Remote", "ปิด filter หมวดที่ไม่อยากดูได้ (กดปุ่มสีๆ)")
+else
+    addLine("Remote", "❌ executor ไม่มี hook API (hookmetamethod/hookfunction)")
+    addLine("Remote", "→ ใช้ executor ที่แรงกว่า (Synapse/Script-Ware/Wave/Delta)")
+end
+print("[64RB HookSpy v"..VERSION.."] loaded | hooks:", okHooks and "ON" or "UNAVAILABLE")
