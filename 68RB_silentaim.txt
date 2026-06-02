@@ -1,4 +1,4 @@
--- 68RB_silentaim.txt v1.0 — Silent Aim + Watch (ผ่าน UpdateCameraRotation)
+-- 68RB_silentaim.txt v1.1 — Silent Aim + Watch (ผ่าน UpdateCameraRotation)
 -- E = Watch (กล้องตามศัตรู เห็นเป้า แบบ 06) | Q = Silent Aim (ยิงโดนจริงผ่าน remote)
 --
 -- หลักการ: เกมยิง = server raycast จากทิศ UpdateCameraRotation (ไม่ใช่ Camera.CFrame)
@@ -7,7 +7,7 @@
 --
 -- ⚠ ทดลอง: ถ้า aim ผิดทิศ → ปรับ sign/offset (ปุ่มในจอ)
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -112,6 +112,7 @@ if okHooks and not S.hooked then
                     local pitch, yaw = cps[1], cps[2]
                     if pitch and yaw then
                         S.lastPitch = pitch; S.lastYaw = yaw
+                        S.camRemote = self; S.camArgs = table.pack(...)  -- เก็บ ref ไว้ force send
                         if not S.silent then
                             -- LEARN mapping: byte yaw = camYaw*scale*sign + offset
                             local cd = camYawDeg()
@@ -143,6 +144,21 @@ bind(RunService.RenderStepped, function()
     if WatchOn and curTarget then
         Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, curTarget.Position)
     end
+end)
+
+-- ==================== FORCE SEND (Silent) — ส่ง UpdateCameraRotation เอง ไม่รอเกม ====================
+bind(RunService.Heartbeat, function()
+    if not SilentOn or not curTarget or not S.camRemote then return end
+    local want = yawToByte(targetYawDeg(curTarget))
+    local pitch = S.lastPitch or 252
+    local okE, ns = pcall(utf8.char, pitch, want)
+    if not okE then return end
+    S.aimByte = want
+    local a = S.camArgs
+    pcall(function()
+        if a then a[1] = ns; S.camRemote:FireServer(table.unpack(a, 1, a.n))
+        else S.camRemote:FireServer(ns) end
+    end)
 end)
 
 -- ==================== GUI ====================
