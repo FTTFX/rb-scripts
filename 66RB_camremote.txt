@@ -7,7 +7,7 @@
 --   2. กด REPLAY → ส่ง args เดิมซ้ำ → ดูว่าตัวหันตามไหม (= server รับ synthetic)
 --   3. ถ้ารับ → ขั้นต่อไปทำ FireServer ด้วยทิศที่เราอยาก (BackFace แท้)
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -79,6 +79,18 @@ if okHooks and not S.hooked then
                         S.stateRemote = self; S.stateArgs = table.pack(...)
                     elseif name:find("Camera") or name:find("Rotation") then
                         S.camRemote = self; S.camArgs = table.pack(...)
+                        -- decode pitch/yaw จาก arg แรก (UTF-8 codepoints = [pitch, yaw])
+                        local s = (...)
+                        if type(s) == "string" then
+                            local ok2, cps = pcall(function()
+                                local t = {}
+                                for _, c in utf8.codes(s) do t[#t+1] = c end
+                                return t
+                            end)
+                            if ok2 and cps[1] then
+                                S.camPitch = cps[1]; S.camYaw = cps[2] or 0
+                            end
+                        end
                     end
                     -- ทำ text ละเอียด
                     local parts = {}
@@ -138,14 +150,14 @@ end
 -- แถว 1: ทดสอบ State (สมมติฐาน God Mode)
 local stateOffB = mkBtn(6,   26, 150, "🛡 LOOP State=OFF", Color3.fromRGB(40,140,90))
 local stateOnB  = mkBtn(160, 26, 140, "LOOP State=ON", Color3.fromRGB(150,90,30))
-local replayB   = mkBtn(304, 26, 90,  "REPLAY", Color3.fromRGB(60,90,140))
+local backB     = mkBtn(304, 26, 150, "🔄 หันหลัง LOOP", Color3.fromRGB(140,40,120))
 -- แถว 2: util
 local clrB    = mkBtn(6,   52, 80,  "CLEAR", Color3.fromRGB(60,60,90))
 local copyB   = mkBtn(90,  52, 80,  "COPY", Color3.fromRGB(40,90,140))
 local statL   = Instance.new("TextLabel")
 statL.Size = UDim2.new(0,280,0,24); statL.Position = UDim2.new(0,174,0,52)
 statL.BackgroundTransparency = 1; statL.TextColor3 = Color3.fromRGB(255,210,120)
-statL.Text = "กด LOOP=OFF → ให้สีเหลืองยิง"; statL.Font = Enum.Font.Code
+statL.Text = "หมุนกล้อง → ดู yaw | กด หันหลัง"; statL.Font = Enum.Font.Code
 statL.TextSize = 11; statL.TextXAlignment = Enum.TextXAlignment.Left; statL.Parent = frame
 
 local scroll = Instance.new("ScrollingFrame")
@@ -207,16 +219,29 @@ bind(RunService.Heartbeat, function()
     pcall(function() S.stateRemote:FireServer(first, val) end)
 end)
 
--- REPLAY: ส่ง remote ล่าสุดซ้ำ (cam ถ้ามี)
-replayB.MouseButton1Click:Connect(function()
-    local rem = S.camRemote or S.lastRemote
-    local a   = S.camArgs or S.lastArgs
-    if not rem or not a then
-        addLine(">> ยังไม่มี remote (หมุนกล้องก่อน)", Color3.fromRGB(255,120,120)); return
+-- ==================== หันหลัง: ส่ง UpdateCameraRotation yaw+128 (180°) ====================
+local CAM_BACK = false
+local YAW_OFFSET = 128   -- 128 = +180° (หันหลัง) — ปรับได้ถ้าทิศไม่ตรง
+backB.MouseButton1Click:Connect(function()
+    CAM_BACK = not CAM_BACK
+    backB.BackgroundColor3 = CAM_BACK and Color3.fromRGB(220,40,160) or Color3.fromRGB(140,40,120)
+    backB.Text = CAM_BACK and "🔄 หันหลัง ON" or "🔄 หันหลัง LOOP"
+    if CAM_BACK and not S.camRemote then
+        addLine(">> ยังไม่ดัก Camera remote — หมุนกล้องก่อน", Color3.fromRGB(255,120,120))
     end
-    local okR = pcall(function() rem:FireServer(table.unpack(a, 1, a.n)) end)
-    addLine(">> REPLAY → "..(okR and "ส่งแล้ว ✓" or "ERROR"),
-        okR and Color3.fromRGB(120,255,160) or Color3.fromRGB(255,120,120))
+end)
+
+-- loop ส่ง yaw+offset ทุก Heartbeat (หลังเกมส่ง yaw จริง → เราทับ)
+bind(RunService.Heartbeat, function()
+    if not CAM_BACK or not S.camRemote or not S.camPitch then return end
+    local newYaw = (S.camYaw + YAW_OFFSET) % 256
+    local okC, newStr = pcall(utf8.char, S.camPitch, newYaw)
+    if not okC then return end
+    local a = S.camArgs
+    pcall(function()
+        if a then a[1] = newStr; S.camRemote:FireServer(table.unpack(a, 1, a.n))
+        else S.camRemote:FireServer(newStr) end
+    end)
 end)
 clrB.MouseButton1Click:Connect(function()
     for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
@@ -229,8 +254,14 @@ copyB.MouseButton1Click:Connect(function()
     task.delay(2, function() if copyB.Parent then copyB.Text = "COPY" end end)
 end)
 
--- ==================== Drain queue → render ====================
+-- ==================== Drain queue → render + แสดง yaw ====================
 bind(RunService.Heartbeat, function()
+    -- live yaw readout
+    if S.camYaw then
+        local deg = math.floor(S.camYaw / 256 * 360)
+        statL.Text = string.format("yaw:%d (%d°) pitch:%d %s",
+            S.camYaw, deg, S.camPitch or 0, CAM_BACK and "| หันหลัง ON" or "")
+    end
     local q = S.queue
     if #q == 0 then return end
     for i = 1, #q do addLine(q[i]) end
