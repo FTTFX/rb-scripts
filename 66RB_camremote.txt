@@ -1,0 +1,221 @@
+-- 66RB_camremote.txt v1.0 — Camera Rotation Remote Catcher + Replay
+-- ดัก UpdateCameraRotation (และ Fighter.* remote) → ดูว่าส่ง args อะไร
+-- แล้วลอง FireServer ส่งเอง (REPLAY) → ถ้า server รับ = เราคุมการหันตัวได้!
+--
+-- วิธีใช้:
+--   1. รันตัวนี้ → หมุนกล้อง/เดิน → ดู args ที่ remote ส่ง (ละเอียด type+value)
+--   2. กด REPLAY → ส่ง args เดิมซ้ำ → ดูว่าตัวหันตามไหม (= server รับ synthetic)
+--   3. ถ้ารับ → ขั้นต่อไปทำ FireServer ด้วยทิศที่เราอยาก (BackFace แท้)
+
+local VERSION = "1.0"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+
+-- ==================== Executor hook detection ====================
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local okHooks  = hookmeta and getnc
+
+-- ==================== Persistent state ====================
+_G.CR_SPY = _G.CR_SPY or {}
+local S = _G.CR_SPY
+S.queue = S.queue or {}
+-- remote ที่สนใจ (ชื่อมีคำพวกนี้)
+local WATCH = {"UpdateCameraRotation", "Camera", "Rotation", "Fighter"}
+
+-- ==================== Single-Instance Guard (GUI only) ====================
+if _G.CR_CONNS then
+    for _, c in pairs(_G.CR_CONNS) do pcall(function() c:Disconnect() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("CRGUI")
+        if cg then cg:Destroy() end
+    end)
+end
+_G.CR_CONNS = {}
+local CONNS = _G.CR_CONNS
+local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
+
+-- ==================== Arg formatter (ละเอียด — type + value เต็ม) ====================
+local function detailVal(v)
+    local t = typeof(v)
+    if t == "string" then
+        -- แสดง string + ความยาว + เผื่อ encoded (hex 8 ตัวแรก)
+        local hex = ""
+        for i = 1, math.min(#v, 8) do hex = hex..string.format("%02X ", v:byte(i)) end
+        return string.format('str[%d] "%s"  hex:%s', #v, v:sub(1,40), hex)
+    elseif t == "number" then return "num "..tostring(v)
+    elseif t == "boolean" then return "bool "..tostring(v)
+    elseif t == "Vector3" then return string.format("V3(%.2f,%.2f,%.2f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then
+        local p = v.Position
+        return string.format("CFrame pos(%.1f,%.1f,%.1f)", p.X, p.Y, p.Z)
+    elseif t == "table" then
+        local parts = {}
+        for k, val in pairs(v) do parts[#parts+1] = tostring(k).."="..typeof(val) end
+        return "{"..table.concat(parts, ",").."}"
+    else return t.." "..tostring(v) end
+end
+
+-- ==================== HOOK (ครั้งเดียว) ====================
+if okHooks and not S.hooked then
+    S.hooked = true
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local ok, method = pcall(getnc)
+        if ok and (method == "FireServer" or method == "InvokeServer") then
+            local name = ""
+            pcall(function() name = self:GetFullName() end)
+            for _, kw in ipairs(WATCH) do
+                if name:find(kw) then
+                    -- เก็บ remote + args ล่าสุด (สำหรับ replay)
+                    S.lastRemote = self
+                    S.lastArgs   = table.pack(...)
+                    S.lastName   = name
+                    -- ทำ text ละเอียด
+                    local parts = {}
+                    for i = 1, select("#", ...) do parts[i] = detailVal(select(i, ...)) end
+                    local short = name:gsub("^.-Fighter%.", ""):gsub("^.-Remotes%.", "")
+                    S.queue[#S.queue+1] = short.." | "..table.concat(parts, "  ||  ")
+                    if #S.queue > 60 then table.remove(S.queue, 1) end
+                    break
+                end
+            end
+        end
+        return oldNc(self, ...)
+    end))
+    S.restore = oldNc
+end
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "CRGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 460, 0, 320)
+frame.Position = UDim2.new(0, 20, 0, 50)
+frame.BackgroundColor3 = Color3.fromRGB(8, 10, 16)
+frame.BackgroundTransparency = 0.08
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(80,200,255); stk.Thickness = 1
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-30,0,22); title.Position = UDim2.new(0,8,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(120,210,255)
+title.Text = "66RB CamRemote v"..VERSION..(okHooks and "" or " [NO HOOK!]")
+title.Font = Enum.Font.GothamBold; title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeB = Instance.new("TextButton")
+closeB.Size = UDim2.new(0,22,0,20); closeB.Position = UDim2.new(1,-26,0,2)
+closeB.BackgroundColor3 = Color3.fromRGB(120,20,20); closeB.TextColor3 = Color3.new(1,1,1)
+closeB.Text = "X"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12; closeB.BorderSizePixel = 0
+closeB.Parent = frame
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
+closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+local function mkBtn(x, w, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,24); b.Position = UDim2.new(0,x,0,26)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+local replayB = mkBtn(6,   120, "REPLAY ล่าสุด", Color3.fromRGB(40,140,90))
+local spamB   = mkBtn(130, 120, "SPAM x20", Color3.fromRGB(150,90,30))
+local clrB    = mkBtn(254, 80,  "CLEAR", Color3.fromRGB(60,60,90))
+local copyB   = mkBtn(338, 110, "COPY", Color3.fromRGB(40,90,140))
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-12,1,-58); scroll.Position = UDim2.new(0,6,0,52)
+scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0,6); pad.PaddingTop = UDim.new(0,2); pad.Parent = scroll
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+
+local order = 0
+local copyLines = {}
+local MAXSHOW = 80
+local lastText, lastLbl, lastN = nil, nil, 0
+local function addLine(txt, col)
+    if txt == lastText and lastLbl and lastLbl.Parent then
+        lastN += 1; lastLbl.Text = txt.."   ×"..lastN
+        copyLines[#copyLines] = lastLbl.Text
+        return
+    end
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
+    l.BackgroundTransparency = 1; l.Font = Enum.Font.Code; l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+    l.TextColor3 = col or Color3.fromRGB(200,220,255)
+    l.Text = txt; l.LayoutOrder = order; l.Parent = scroll
+    lastText = txt; lastLbl = l; lastN = 1
+    copyLines[#copyLines+1] = txt
+    local cnt = 0
+    for _, c in ipairs(scroll:GetChildren()) do if c:IsA("TextLabel") then cnt += 1 end end
+    if cnt > MAXSHOW then
+        for _, c in ipairs(scroll:GetChildren()) do
+            if c:IsA("TextLabel") then c:Destroy() break end
+        end
+    end
+end
+
+-- ==================== REPLAY: FireServer ส่ง args เดิมซ้ำ ====================
+local function replay(times)
+    if not S.lastRemote or not S.lastArgs then
+        addLine(">> ยังไม่มี remote ที่ดักได้ (หมุนกล้องก่อน)", Color3.fromRGB(255,120,120))
+        return
+    end
+    local a = S.lastArgs
+    local okR = pcall(function()
+        for _ = 1, (times or 1) do
+            S.lastRemote:FireServer(table.unpack(a, 1, a.n))
+        end
+    end)
+    addLine(">> REPLAY "..(times or 1).."x → "..(okR and "ส่งแล้ว ✓" or "ERROR"),
+        okR and Color3.fromRGB(120,255,160) or Color3.fromRGB(255,120,120))
+end
+replayB.MouseButton1Click:Connect(function() replay(1) end)
+spamB.MouseButton1Click:Connect(function() replay(20) end)
+clrB.MouseButton1Click:Connect(function()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    order = 0; lastText = nil; table.clear(copyLines)
+end)
+copyB.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard
+    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
+    copyB.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(2, function() if copyB.Parent then copyB.Text = "COPY" end end)
+end)
+
+-- ==================== Drain queue → render ====================
+bind(RunService.Heartbeat, function()
+    local q = S.queue
+    if #q == 0 then return end
+    for i = 1, #q do addLine(q[i]) end
+    table.clear(q)
+    task.defer(function()
+        scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
+        scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+    end)
+end)
+
+addLine("=== CamRemote v"..VERSION.." พร้อม ===", Color3.fromRGB(120,255,160))
+if okHooks then
+    addLine("หมุนกล้อง/เดิน → ดู args ที่ remote ส่ง", Color3.fromRGB(180,200,255))
+    addLine("แล้วกด REPLAY → ดูว่าตัวหันตามไหม", Color3.fromRGB(255,210,120))
+else
+    addLine("❌ executor ไม่มี hook API", Color3.fromRGB(255,120,120))
+end
+print("[66RB CamRemote v"..VERSION.."] loaded | hooks:", okHooks and "ON" or "OFF")
