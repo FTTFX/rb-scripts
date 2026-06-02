@@ -7,7 +7,7 @@
 --
 -- ⚠ ทดลอง: ถ้า aim ผิดทิศ → ปรับ sign/offset (ปุ่มในจอ)
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -41,6 +41,18 @@ end
 _G.SLA_CONNS = {}
 local CONNS = _G.SLA_CONNS
 local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
+
+-- หา UpdateCameraRotation remote โดยตรง (ไม่ต้องรอเกม fire)
+local function findCamRemote()
+    local rs = game:GetService("ReplicatedStorage")
+    local ok, rem = pcall(function() return rs.Remotes.Replication.Fighter.UpdateCameraRotation end)
+    if ok and rem then return rem end
+    for _, d in ipairs(rs:GetDescendants()) do
+        if d.Name == "UpdateCameraRotation" then return d end
+    end
+    return nil
+end
+S.camRemote = S.camRemote or findCamRemote()
 
 -- ==================== Char + target ====================
 local LPChar, LPRoot
@@ -249,8 +261,9 @@ task.spawn(function()
         local tgt = curTarget and curTarget.Parent and curTarget.Parent.Name or "-"
         local tyaw = curTarget and math.floor(targetYawDeg(curTarget)) or 0
         statL.Text = string.format(
-            "Target: %s\n\n[เรียนรู้] กล้อง:%s° byte:%s\noffset:%d sign:%d\n\n[Silent] เป้า yaw:%d°\n→ byte ที่ส่ง:%s\n\nวิธี: Silent OFF เดินยิงปกติ\nให้มันเรียน → เปิด Silent",
-            tgt, tostring(S.learnCam or "?"), tostring(S.lastYaw or "?"),
+            "Target: %s | remote:%s\n\n[เรียนรู้] กล้อง:%s° byte:%s\noffset:%d sign:%d\n\n[Silent] เป้า yaw:%d°\n→ byte ที่ส่ง:%s\n\nลากจอหมุนรอบ → เรียน mapping\nแล้วเปิด Q",
+            tgt, (S.camRemote and "เจอ✓" or "ไม่เจอ✗"),
+            tostring(S.learnCam or "?"), tostring(S.lastYaw or "?"),
             S.yawOffset, S.yawSign, tyaw, tostring(S.aimByte or "?"))
     end
 end)
