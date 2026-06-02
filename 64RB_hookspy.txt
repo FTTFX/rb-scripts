@@ -10,10 +10,11 @@
 --   • Remote : FireServer / InvokeServer
 --   • Physics: Instance.new(BodyGyro/BodyVelocity/AlignOrientation/Highlight...)
 --   • Raycast: Raycast / FindPartOnRay*
--- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | CLEAR | X=ปิด
+-- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | FREEZE(F) หยุดอ่าน | COPY | CLEAR | X=ปิด
+-- v1.2: dedup spam ซ้ำ→รวม ×N + FREEZE + COPY (กัน raycast ท่วม Loader)
 -- v1.1: + Loader (ดัก loadstring/HttpGet → ดึง code หลักผ่าน key system)
 
-local VERSION = "1.1"
+local VERSION = "1.2"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -250,9 +251,27 @@ clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 11; clrB.
 clrB.Parent = frame
 Instance.new("UICorner", clrB).CornerRadius = UDim.new(0,4)
 
+-- row 2: FREEZE + COPY
+local function mkBtn2(x, w, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,22); b.Position = UDim2.new(0,x,0,50)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+local freezeB = mkBtn2(6,   110, "FREEZE [F]", Color3.fromRGB(120,90,30))
+local copyB   = mkBtn2(120, 110, "COPY ทั้งหมด", Color3.fromRGB(30,110,60))
+local hintL = Instance.new("TextLabel")
+hintL.Size = UDim2.new(0,190,0,22); hintL.Position = UDim2.new(0,234,0,50)
+hintL.BackgroundTransparency = 1; hintL.TextColor3 = Color3.fromRGB(150,150,150)
+hintL.Text = "ซ้ำ→รวม ×N | FREEZE หยุดอ่าน"; hintL.Font = Enum.Font.Code
+hintL.TextSize = 10; hintL.TextXAlignment = Enum.TextXAlignment.Left; hintL.Parent = frame
+
 -- log scroll
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-12,1,-78); scroll.Position = UDim2.new(0,6,0,52)
+scroll.Size = UDim2.new(1,-12,1,-102); scroll.Position = UDim2.new(0,6,0,76)
 scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.Parent = frame
@@ -263,7 +282,18 @@ local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.L
 local renderOrder = 0
 local renderCount = 0
 local MAXSHOW = 150
+local copyLines = {}
+-- dedup: ถ้า signature (cat+ชื่อ method) เหมือนบรรทัดล่าสุด → รวม ×N ไม่เพิ่มบรรทัด
+local lastSig, lastLabel, lastCount = nil, nil, 0
 local function addLine(cat, text)
+    local sig = cat..":"..(text:match("^[%w_]+") or text)
+    -- Loader = event สำคัญ ไม่รวม (เห็นทุกครั้ง) | หมวดอื่น spam → รวม ×N
+    if cat ~= "Loader" and sig == lastSig and lastLabel and lastLabel.Parent then
+        lastCount += 1
+        lastLabel.Text = "["..cat:sub(1,3).."] "..text.."   ×"..lastCount
+        copyLines[#copyLines] = lastLabel.Text
+        return
+    end
     renderOrder += 1; renderCount += 1
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
@@ -272,7 +302,8 @@ local function addLine(cat, text)
     l.TextColor3 = CAT_COL[cat] or Color3.fromRGB(200,200,200)
     l.Text = "["..cat:sub(1,3).."] "..text
     l.LayoutOrder = renderOrder; l.Parent = scroll
-    -- ลบบรรทัดเก่าเกิน
+    lastSig = sig; lastLabel = l; lastCount = 1
+    copyLines[#copyLines+1] = l.Text
     if renderCount > MAXSHOW then
         for _, c in ipairs(scroll:GetChildren()) do
             if c:IsA("TextLabel") then c:Destroy() renderCount -= 1 break end
@@ -281,13 +312,34 @@ local function addLine(cat, text)
 end
 local function clearLog()
     for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
-    renderCount = 0
+    renderCount = 0; lastSig = nil; lastLabel = nil; table.clear(copyLines)
 end
 clrB.MouseButton1Click:Connect(clearLog)
+
+-- FREEZE: หยุด render (queue ค้างไว้) เพื่ออ่าน
+local function toggleFreeze()
+    S.frozen = not S.frozen
+    freezeB.Text = S.frozen and "FROZEN [F]" or "FREEZE [F]"
+    freezeB.BackgroundColor3 = S.frozen and Color3.fromRGB(180,40,40) or Color3.fromRGB(120,90,30)
+end
+freezeB.MouseButton1Click:Connect(toggleFreeze)
+bind(UIS.InputBegan, function(i, gp)
+    if not gp and i.KeyCode == Enum.KeyCode.F then toggleFreeze() end
+end)
+
+-- COPY: setclipboard ทุกบรรทัด (จาก spy template)
+copyB.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard
+        or (getgenv and getgenv().setclipboard)
+    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
+    copyB.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(2, function() if copyB.Parent then copyB.Text = "COPY ทั้งหมด" end end)
+end)
 
 -- ==================== Poll queue → render (drain ทุกเฟรม) ====================
 local autoScroll = true
 bind(RunService.Heartbeat, function()
+    if S.frozen then return end
     local q = S.queue
     if #q == 0 then return end
     for i = 1, #q do addLine(q[i].cat, q[i].text) end
