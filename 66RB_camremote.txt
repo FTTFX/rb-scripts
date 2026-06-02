@@ -7,7 +7,7 @@
 --   2. กด REPLAY → ส่ง args เดิมซ้ำ → ดูว่าตัวหันตามไหม (= server รับ synthetic)
 --   3. ถ้ารับ → ขั้นต่อไปทำ FireServer ด้วยทิศที่เราอยาก (BackFace แท้)
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -74,6 +74,12 @@ if okHooks and not S.hooked then
                     S.lastRemote = self
                     S.lastArgs   = table.pack(...)
                     S.lastName   = name
+                    -- แยกเก็บตามชนิด (สำหรับ loop ทดสอบ)
+                    if name:find("UpdateState") then
+                        S.stateRemote = self; S.stateArgs = table.pack(...)
+                    elseif name:find("Camera") or name:find("Rotation") then
+                        S.camRemote = self; S.camArgs = table.pack(...)
+                    end
                     -- ทำ text ละเอียด
                     local parts = {}
                     for i = 1, select("#", ...) do parts[i] = detailVal(select(i, ...)) end
@@ -120,22 +126,30 @@ closeB.Parent = frame
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
 closeB.MouseButton1Click:Connect(function() gui:Destroy() end)
 
-local function mkBtn(x, w, txt, col)
+local function mkBtn(x, y, w, txt, col)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0,w,0,24); b.Position = UDim2.new(0,x,0,26)
+    b.Size = UDim2.new(0,w,0,24); b.Position = UDim2.new(0,x,0,y)
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
     b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
     b.Parent = frame
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
     return b
 end
-local replayB = mkBtn(6,   120, "REPLAY ล่าสุด", Color3.fromRGB(40,140,90))
-local spamB   = mkBtn(130, 120, "SPAM x20", Color3.fromRGB(150,90,30))
-local clrB    = mkBtn(254, 80,  "CLEAR", Color3.fromRGB(60,60,90))
-local copyB   = mkBtn(338, 110, "COPY", Color3.fromRGB(40,90,140))
+-- แถว 1: ทดสอบ State (สมมติฐาน God Mode)
+local stateOffB = mkBtn(6,   26, 150, "🛡 LOOP State=OFF", Color3.fromRGB(40,140,90))
+local stateOnB  = mkBtn(160, 26, 140, "LOOP State=ON", Color3.fromRGB(150,90,30))
+local replayB   = mkBtn(304, 26, 90,  "REPLAY", Color3.fromRGB(60,90,140))
+-- แถว 2: util
+local clrB    = mkBtn(6,   52, 80,  "CLEAR", Color3.fromRGB(60,60,90))
+local copyB   = mkBtn(90,  52, 80,  "COPY", Color3.fromRGB(40,90,140))
+local statL   = Instance.new("TextLabel")
+statL.Size = UDim2.new(0,280,0,24); statL.Position = UDim2.new(0,174,0,52)
+statL.BackgroundTransparency = 1; statL.TextColor3 = Color3.fromRGB(255,210,120)
+statL.Text = "กด LOOP=OFF → ให้สีเหลืองยิง"; statL.Font = Enum.Font.Code
+statL.TextSize = 11; statL.TextXAlignment = Enum.TextXAlignment.Left; statL.Parent = frame
 
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-12,1,-58); scroll.Position = UDim2.new(0,6,0,52)
+scroll.Size = UDim2.new(1,-12,1,-84); scroll.Position = UDim2.new(0,6,0,78)
 scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.Parent = frame
@@ -171,23 +185,39 @@ local function addLine(txt, col)
     end
 end
 
--- ==================== REPLAY: FireServer ส่ง args เดิมซ้ำ ====================
-local function replay(times)
-    if not S.lastRemote or not S.lastArgs then
-        addLine(">> ยังไม่มี remote ที่ดักได้ (หมุนกล้องก่อน)", Color3.fromRGB(255,120,120))
-        return
-    end
-    local a = S.lastArgs
-    local okR = pcall(function()
-        for _ = 1, (times or 1) do
-            S.lastRemote:FireServer(table.unpack(a, 1, a.n))
-        end
-    end)
-    addLine(">> REPLAY "..(times or 1).."x → "..(okR and "ส่งแล้ว ✓" or "ERROR"),
-        okR and Color3.fromRGB(120,255,160) or Color3.fromRGB(255,120,120))
+-- ==================== State LOOP (ทดสอบ God Mode) ====================
+-- ส่ง UpdateState ค่าที่ตั้ง (true/false) ต่อเนื่องทุกเฟรม → ดูว่ายิงไม่เข้าไหม
+local LOOP = nil  -- nil | "off" | "on"
+local function setLoop(mode)
+    LOOP = (LOOP == mode) and nil or mode
+    stateOffB.BackgroundColor3 = LOOP=="off" and Color3.fromRGB(20,200,120) or Color3.fromRGB(40,140,90)
+    stateOnB.BackgroundColor3  = LOOP=="on"  and Color3.fromRGB(220,140,40) or Color3.fromRGB(150,90,30)
+    stateOffB.Text = LOOP=="off" and "🛡 OFF กำลังส่ง..." or "🛡 LOOP State=OFF"
+    stateOnB.Text  = LOOP=="on"  and "ON กำลังส่ง..." or "LOOP State=ON"
 end
-replayB.MouseButton1Click:Connect(function() replay(1) end)
-spamB.MouseButton1Click:Connect(function() replay(20) end)
+stateOffB.MouseButton1Click:Connect(function() setLoop("off") end)
+stateOnB.MouseButton1Click:Connect(function() setLoop("on") end)
+
+-- loop ส่ง UpdateState ทุก Heartbeat
+bind(RunService.Heartbeat, function()
+    if not LOOP or not S.stateRemote then return end
+    local val = (LOOP == "on")
+    -- ใช้ arg แรกที่ดักได้ ("3") + bool ที่เราเลือก
+    local first = S.stateArgs and S.stateArgs[1] or "3"
+    pcall(function() S.stateRemote:FireServer(first, val) end)
+end)
+
+-- REPLAY: ส่ง remote ล่าสุดซ้ำ (cam ถ้ามี)
+replayB.MouseButton1Click:Connect(function()
+    local rem = S.camRemote or S.lastRemote
+    local a   = S.camArgs or S.lastArgs
+    if not rem or not a then
+        addLine(">> ยังไม่มี remote (หมุนกล้องก่อน)", Color3.fromRGB(255,120,120)); return
+    end
+    local okR = pcall(function() rem:FireServer(table.unpack(a, 1, a.n)) end)
+    addLine(">> REPLAY → "..(okR and "ส่งแล้ว ✓" or "ERROR"),
+        okR and Color3.fromRGB(120,255,160) or Color3.fromRGB(255,120,120))
+end)
 clrB.MouseButton1Click:Connect(function()
     for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
     order = 0; lastText = nil; table.clear(copyLines)
