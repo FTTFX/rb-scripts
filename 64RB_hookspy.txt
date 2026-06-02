@@ -11,11 +11,12 @@
 --   • Physics: Instance.new(BodyGyro/BodyVelocity/AlignOrientation/Highlight...)
 --   • Raycast: Raycast / FindPartOnRay*
 -- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | FREEZE(F) หยุดอ่าน | COPY | CLEAR | X=ปิด
+-- v1.4: Remote แสดง args เต็ม (เห็น position/rotation ที่ส่ง) + ตัดชื่อ path ให้สั้น
 -- v1.3: แก้เด้ง! Raycast ไม่ format params (ตัวการ lag) + dedup ใน push (count ไม่ format ซ้ำ)
 -- v1.2: dedup spam ซ้ำ→รวม ×N + FREEZE + COPY (กัน raycast ท่วม Loader)
 -- v1.1: + Loader (ดัก loadstring/HttpGet → ดึง code หลักผ่าน key system)
 
-local VERSION = "1.3"
+local VERSION = "1.4"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -65,7 +66,7 @@ local CONNS = _G.HK_SPY_CONNS
 local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
 
 -- ==================== Value formatter (เบา — ใช้ใน hook) ====================
-local function fmt(v, depth)
+local function fmt(v, depth, full)
     depth = depth or 0
     local t = typeof(v)
     if t == "Instance" then return v.ClassName..":"..v.Name
@@ -75,16 +76,17 @@ local function fmt(v, depth)
         return string.format("CF(%.0f,%.0f,%.0f)", p.X, p.Y, p.Z)
     elseif t == "EnumItem" then return tostring(v)
     elseif t == "table" then
-        if depth > 1 then return "{...}" end
+        if depth > 2 then return "{...}" end
         local parts = {}
         local n = 0
         for k, val in pairs(v) do
-            n += 1; if n > 4 then parts[#parts+1] = "..."; break end
-            parts[#parts+1] = fmt(val, depth+1)
+            n += 1; if n > 8 then parts[#parts+1] = "..."; break end
+            parts[#parts+1] = tostring(k).."="..fmt(val, depth+1, full)
         end
         return "{"..table.concat(parts, ",").."}"
     elseif t == "string" then
-        if #v > 24 then return '"'..v:sub(1,24)..'..."' end
+        local max = full and 180 or 24
+        if #v > max then return '"'..v:sub(1,max)..'..."' end
         return '"'..v..'"'
     elseif t == "number" then return string.format("%.4g", v)
     else return tostring(v) end
@@ -95,6 +97,15 @@ local function fmtArgs(...)
     local parts = {}
     for i = 1, math.min(n, 6) do parts[i] = fmt(select(i, ...)) end
     if n > 6 then parts[#parts+1] = "(+"..(n-6)..")" end
+    return table.concat(parts, ", ")
+end
+
+-- เวอร์ชันเต็ม (ไม่ truncate) สำหรับ remote — เห็น args ที่ส่ง position/rotation
+local function fmtArgsFull(...)
+    local n = select("#", ...)
+    local parts = {}
+    for i = 1, math.min(n, 8) do parts[i] = fmt(select(i, ...), 0, true) end
+    if n > 8 then parts[#parts+1] = "(+"..(n-8)..")" end
     return table.concat(parts, ", ")
 end
 
@@ -180,7 +191,9 @@ if okHooks and not S.hooked then
             elseif REMOTE_METHODS[method] then
                 local name = "?"
                 pcall(function() name = self:GetFullName() end)
-                push("Remote", "Rm"..method..name, method.." @"..name.." | "..fmtArgs(...))
+                -- ตัด ReplicatedStorage. ออกให้สั้น + args เต็ม (เห็น position/rotation)
+                local short = name:gsub("^.-Remotes%.", ""):gsub("^ReplicatedStorage%.", "")
+                push("Remote", "Rm"..method..name, method.." @"..short.." | "..fmtArgsFull(...))
             end
         end
         return oldNamecall(self, ...)
