@@ -5,13 +5,15 @@
 -- วิธีใช้: รัน "ตัวนี้ก่อน" → แล้วรัน script ที่จะแกะ → ดู log ว่ามันเรียกอะไร
 --
 -- ดักอะไร:
+--   • Loader : loadstring (=code หลักหลังใส่ key) + HttpGet/request (=URL+key) → dump ไฟล์
 --   • Input  : SendTouchEvent / SendMouseButtonEvent / SendMouseMoveEvent / SendKeyEvent
 --   • Remote : FireServer / InvokeServer
 --   • Physics: Instance.new(BodyGyro/BodyVelocity/AlignOrientation/Highlight...)
 --   • Raycast: Raycast / FindPartOnRay*
--- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | C=clear | X=ปิด
+-- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | CLEAR | X=ปิด
+-- v1.1: + Loader (ดัก loadstring/HttpGet → ดึง code หลักผ่าน key system)
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -30,7 +32,7 @@ _G.HK_SPY = _G.HK_SPY or {}
 local S = _G.HK_SPY
 S.enabled = true
 S.queue   = S.queue or {}          -- hook push เข้านี่, GUI poll ออก
-S.filters = S.filters or {Input=true, Remote=true, Physics=true, Raycast=true}
+S.filters = S.filters or {Loader=true, Input=true, Remote=true, Physics=true, Raycast=true}
 local MAXQ = 200
 
 local function push(cat, text)
@@ -104,15 +106,64 @@ local PHYSICS_CLASSES = {
     VectorForce=true, Highlight=true,
 }
 
+-- dump code หลัก (ที่ loadstring กำลังจะรัน = decrypt แล้ว) ลงไฟล์ + clipboard
+local function dumpSource(src)
+    S.dumpN = (S.dumpN or 0) + 1
+    local n = S.dumpN
+    push("Loader", "★ loadstring #"..n.." ("..#src.." chars) = CODE หลัก!")
+    local fname = "HK_dump_"..n..".lua"
+    local saved = false
+    pcall(function()
+        if writefile then writefile(fname, src) saved = true
+            push("Loader", "   → เซฟไฟล์: "..fname) end
+    end)
+    pcall(function()
+        if setclipboard then setclipboard(src)
+            push("Loader", "   → copy clipboard แล้ว (paste ได้)") end
+    end)
+    if not saved and not setclipboard then
+        push("Loader", "   ⚠ executor ไม่มี writefile/setclipboard")
+    end
+end
+
 if okHooks and not S.hooked then
     S.hooked = true
+
+    -- loadstring: ดัก source ที่กำลังจะรัน (= code หลักหลัง decrypt key)
+    if loadstring then
+        local oldLoad
+        oldLoad = hookfunc(loadstring, newcc(function(src, ...)
+            if type(src) == "string" and #src > 50 then
+                pcall(dumpSource, src)
+            end
+            return oldLoad(src, ...)
+        end))
+        S.restoreLoad = oldLoad
+    end
+
+    -- executor http (request/http_request) — ดัก URL + header (มักมี key)
+    local reqFn = rawget(getfenv(), "request") or rawget(getfenv(), "http_request")
+    if type(reqFn) == "function" then
+        pcall(function()
+            local oldReq
+            oldReq = hookfunc(reqFn, newcc(function(opts, ...)
+                if type(opts) == "table" and opts.Url then
+                    push("Loader", "request → "..tostring(opts.Url))
+                end
+                return oldReq(opts, ...)
+            end))
+            S.restoreReq = oldReq
+        end)
+    end
 
     -- __namecall: ดัก method call (input/remote/raycast)
     local oldNamecall
     oldNamecall = hookmeta(game, "__namecall", newcc(function(self, ...)
         local ok, method = pcall(getnc)
         if ok and method then
-            if INPUT_METHODS[method] then
+            if method == "HttpGet" or method == "HttpGetAsync" then
+                push("Loader", method.." → "..tostring((select(1, ...))))
+            elseif INPUT_METHODS[method] then
                 push("Input", method.."("..fmtArgs(...)..")")
             elseif REMOTE_METHODS[method] then
                 local name = "?"
@@ -170,6 +221,7 @@ closeB.MouseButton1Click:Connect(function() S.enabled = false gui:Destroy() end)
 
 -- filter buttons
 local CAT_COL = {
+    Loader  = Color3.fromRGB(230,190,40),
     Input   = Color3.fromRGB(40,120,200),
     Remote  = Color3.fromRGB(200,60,60),
     Physics = Color3.fromRGB(150,90,200),
@@ -177,9 +229,9 @@ local CAT_COL = {
 }
 local function mkFilter(x, cat)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0,84,0,22); b.Position = UDim2.new(0,x,0,26)
+    b.Size = UDim2.new(0,67,0,22); b.Position = UDim2.new(0,x,0,26)
     b.BackgroundColor3 = CAT_COL[cat]; b.TextColor3 = Color3.new(1,1,1)
-    b.Text = cat; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Text = cat; b.Font = Enum.Font.GothamBold; b.TextSize = 10; b.BorderSizePixel = 0
     b.Parent = frame
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
     b.MouseButton1Click:Connect(function()
@@ -188,10 +240,11 @@ local function mkFilter(x, cat)
     end)
     return b
 end
-mkFilter(6, "Input"); mkFilter(94, "Remote"); mkFilter(182, "Physics"); mkFilter(270, "Raycast")
+mkFilter(6, "Loader"); mkFilter(76, "Input"); mkFilter(146, "Remote")
+mkFilter(216, "Physics"); mkFilter(286, "Raycast")
 
 local clrB = Instance.new("TextButton")
-clrB.Size = UDim2.new(0,74,0,22); clrB.Position = UDim2.new(0,358,0,26)
+clrB.Size = UDim2.new(0,68,0,22); clrB.Position = UDim2.new(0,364,0,26)
 clrB.BackgroundColor3 = Color3.fromRGB(60,60,90); clrB.TextColor3 = Color3.new(1,1,1)
 clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 11; clrB.BorderSizePixel = 0
 clrB.Parent = frame
@@ -248,8 +301,9 @@ end)
 -- ==================== Intro ====================
 addLine("Input", "=== HookSpy v"..VERSION.." พร้อม ===")
 if okHooks then
-    addLine("Input", "hook ติดตั้งแล้ว — รัน script ที่จะแกะได้เลย")
-    addLine("Remote", "ปิด filter หมวดที่ไม่อยากดูได้ (กดปุ่มสีๆ)")
+    addLine("Loader", "★ ดัก loadstring = ดึง CODE หลัก (หลังใส่ key)")
+    addLine("Loader", "★ ดัก HttpGet = เห็น URL (key/token)")
+    addLine("Input", "รัน script ที่จะแกะได้เลย → code dump ลงไฟล์ HK_dump_N.lua")
 else
     addLine("Remote", "❌ executor ไม่มี hook API (hookmetamethod/hookfunction)")
     addLine("Remote", "→ ใช้ executor ที่แรงกว่า (Synapse/Script-Ware/Wave/Delta)")
