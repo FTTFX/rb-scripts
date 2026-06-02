@@ -5,10 +5,11 @@
 -- หลักการ: set HRP.CFrame ไป offset ตอน Stepped (ก่อน physics replicate)
 --          แล้ว set กลับตอน Heartbeat (หลัง render) → จอเราปกติ แต่ server เห็น offset
 --
--- Key: V=เปิด/ปิด | โหมด Vertical/Horizontal/Both | slider ระยะ
+-- Key: V=เปิด/ปิด | โหมด Horizontal(✅รอด)/Spin/Vertical(⚠ตกแผนที่) | slider ระยะ
+-- v1.1: default Horizontal + Spin(วนรอบ) + กัน drift (Vertical ตกแผนที่ จากผลทดสอบ)
 -- ⚠ เป็น EXPERIMENT — แต่ละเกมตอบสนองต่างกัน ลองดูผล 2 เครื่องแล้วปรับ
 
-local VERSION = "1.0"
+local VERSION = "1.1"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -29,7 +30,7 @@ local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c retur
 -- ==================== State ====================
 local DS_ON   = false
 local AMP     = 8        -- ระยะ offset (studs)
-local MODE    = "Vertical"   -- Vertical | Horizontal | Both
+local MODE    = "Horizontal"  -- Horizontal | Spin | Vertical(⚠ตกแผนที่)
 local v3_new  = Vector3.new
 
 -- ==================== Char cache ====================
@@ -42,26 +43,37 @@ cacheChar(LP.Character)
 bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
 
 -- ==================== Desync core ====================
--- คำนวณ offset ตามโหมด
+-- spin angle (วนรอบ horizontal) — เดินด้วย tick ผ่าน frame counter กัน drift
+local spinA = 0
+-- คำนวณ offset ตามโหมด (horizontal = ไม่ตกแผนที่)
 local function getOffset()
-    if MODE == "Vertical" then
-        return v3_new(0, AMP, 0)
-    elseif MODE == "Horizontal" then
+    if MODE == "Horizontal" then
         return v3_new(AMP, 0, 0)
-    else -- Both
-        return v3_new(AMP, AMP, 0)
+    elseif MODE == "Spin" then
+        -- วนรอบตัวบนระนาบ XZ → คนอื่นเห็นเรากระจายรอบ aimbot lock มั่ว
+        return v3_new(math.cos(spinA)*AMP, 0, math.sin(spinA)*AMP)
+    else -- Vertical (⚠ ตกแผนที่ — ไม่แนะนำ)
+        return v3_new(0, AMP, 0)
     end
 end
+
+-- ⭐ กัน drift/ตกแผนที่: เก็บ offset ที่ใช้ตอน Stepped → set กลับตัวเดียวกันตอน Heartbeat
+local appliedOffset = nil
 
 -- Stepped = ก่อน physics step → set ไป offset (server/คนอื่นจะ sample ตรงนี้)
 bind(RunService.Stepped, function()
     if not DS_ON or not HRP or not HUM or HUM.Health <= 0 then return end
-    HRP.CFrame = HRP.CFrame + getOffset()
+    spinA = spinA + 0.6
+    appliedOffset = getOffset()
+    HRP.CFrame = HRP.CFrame + appliedOffset
 end)
--- Heartbeat = หลัง physics/render → set กลับ (จอเราเห็นปกติ)
+-- Heartbeat = หลัง physics/render → set กลับ offset เดิมเป๊ะ (จอเราปกติ ไม่ drift)
 bind(RunService.Heartbeat, function()
-    if not DS_ON or not HRP or not HUM or HUM.Health <= 0 then return end
-    HRP.CFrame = HRP.CFrame - getOffset()
+    if not DS_ON or not HRP or not HUM or HUM.Health <= 0 then appliedOffset = nil return end
+    if appliedOffset then
+        HRP.CFrame = HRP.CFrame - appliedOffset
+        appliedOffset = nil
+    end
 end)
 
 -- ==================== GUI ====================
@@ -126,9 +138,9 @@ modeL.BackgroundTransparency = 1; modeL.TextColor3 = Color3.fromRGB(180,180,180)
 modeL.Text = "โหมด:"; modeL.Font = Enum.Font.Gotham; modeL.TextSize = 11
 modeL.TextXAlignment = Enum.TextXAlignment.Left; modeL.Parent = frame
 
-local mVert = mkBtn(6,  94, 60, 22, "Vertical", Color3.fromRGB(40,100,160))
-local mHor  = mkBtn(70, 94, 64, 22, "Horizontal", Color3.fromRGB(60,60,90))
-local mBoth = mkBtn(138,94, 56, 22, "Both", Color3.fromRGB(60,60,90))
+local mHor  = mkBtn(6,  94, 70, 22, "Horizontal", Color3.fromRGB(40,100,160))
+local mSpin = mkBtn(80, 94, 50, 22, "Spin", Color3.fromRGB(60,60,90))
+local mVert = mkBtn(134,94, 60, 22, "Vert⚠", Color3.fromRGB(60,60,90))
 
 -- status
 local statL = Instance.new("TextLabel")
@@ -153,9 +165,9 @@ local function updTog()
     togB.BackgroundColor3 = DS_ON and Color3.fromRGB(200,40,120) or Color3.fromRGB(60,40,60)
 end
 local function updMode()
-    mVert.BackgroundColor3 = MODE=="Vertical"   and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
     mHor.BackgroundColor3  = MODE=="Horizontal" and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
-    mBoth.BackgroundColor3 = MODE=="Both"       and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
+    mSpin.BackgroundColor3 = MODE=="Spin"       and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
+    mVert.BackgroundColor3 = MODE=="Vertical"   and Color3.fromRGB(160,60,40) or Color3.fromRGB(60,60,90)
 end
 local function updAmp() ampL.Text = "ระยะ: "..AMP end
 
@@ -164,9 +176,9 @@ am5.MouseButton1Click:Connect(function() AMP = math.max(1, AMP-5) updAmp() end)
 am1.MouseButton1Click:Connect(function() AMP = math.max(1, AMP-1) updAmp() end)
 ap1.MouseButton1Click:Connect(function() AMP = AMP+1 updAmp() end)
 ap5.MouseButton1Click:Connect(function() AMP = AMP+5 updAmp() end)
-mVert.MouseButton1Click:Connect(function() MODE = "Vertical" updMode() end)
 mHor.MouseButton1Click:Connect(function() MODE = "Horizontal" updMode() end)
-mBoth.MouseButton1Click:Connect(function() MODE = "Both" updMode() end)
+mSpin.MouseButton1Click:Connect(function() MODE = "Spin" updMode() end)
+mVert.MouseButton1Click:Connect(function() MODE = "Vertical" updMode() end)
 
 bind(UIS.InputBegan, function(i, gp)
     if not gp and i.KeyCode == Enum.KeyCode.V then DS_ON = not DS_ON updTog() end
