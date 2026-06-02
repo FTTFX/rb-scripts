@@ -1,0 +1,187 @@
+-- 65RB_desync.txt v1.0 — Desync / Anti-Aim Test
+-- ทำให้คนอื่นเห็นเรา "ผิดตำแหน่ง" → aimbot/silent aim ยิงไม่โดน
+-- ทดสอบด้วย 2 เครื่อง: เครื่อง B รันตัวนี้ → เครื่อง A ดูว่าเห็นเรายังไง
+--
+-- หลักการ: set HRP.CFrame ไป offset ตอน Stepped (ก่อน physics replicate)
+--          แล้ว set กลับตอน Heartbeat (หลัง render) → จอเราปกติ แต่ server เห็น offset
+--
+-- Key: V=เปิด/ปิด | โหมด Vertical/Horizontal/Both | slider ระยะ
+-- ⚠ เป็น EXPERIMENT — แต่ละเกมตอบสนองต่างกัน ลองดูผล 2 เครื่องแล้วปรับ
+
+local VERSION = "1.0"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LP = Players.LocalPlayer
+
+-- ==================== Single-Instance Guard ====================
+if _G.DS_CONNS then
+    for _, c in pairs(_G.DS_CONNS) do pcall(function() c:Disconnect() end) end
+    pcall(function()
+        local cg = game:GetService("CoreGui"):FindFirstChild("DSGUI")
+        if cg then cg:Destroy() end
+    end)
+end
+_G.DS_CONNS = {}
+local CONNS = _G.DS_CONNS
+local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
+
+-- ==================== State ====================
+local DS_ON   = false
+local AMP     = 8        -- ระยะ offset (studs)
+local MODE    = "Vertical"   -- Vertical | Horizontal | Both
+local v3_new  = Vector3.new
+
+-- ==================== Char cache ====================
+local HRP, HUM
+local function cacheChar(c)
+    HRP = c and c:WaitForChild("HumanoidRootPart", 5)
+    HUM = c and c:FindFirstChildOfClass("Humanoid")
+end
+cacheChar(LP.Character)
+bind(LP.CharacterAdded, function(c) task.wait(0.3) cacheChar(c) end)
+
+-- ==================== Desync core ====================
+-- คำนวณ offset ตามโหมด
+local function getOffset()
+    if MODE == "Vertical" then
+        return v3_new(0, AMP, 0)
+    elseif MODE == "Horizontal" then
+        return v3_new(AMP, 0, 0)
+    else -- Both
+        return v3_new(AMP, AMP, 0)
+    end
+end
+
+-- Stepped = ก่อน physics step → set ไป offset (server/คนอื่นจะ sample ตรงนี้)
+bind(RunService.Stepped, function()
+    if not DS_ON or not HRP or not HUM or HUM.Health <= 0 then return end
+    HRP.CFrame = HRP.CFrame + getOffset()
+end)
+-- Heartbeat = หลัง physics/render → set กลับ (จอเราเห็นปกติ)
+bind(RunService.Heartbeat, function()
+    if not DS_ON or not HRP or not HUM or HUM.Health <= 0 then return end
+    HRP.CFrame = HRP.CFrame - getOffset()
+end)
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "DSGUI"; gui.ResetOnSpawn = false; gui.DisplayOrder = 9999
+pcall(function() gui.Parent = game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 200, 0, 200)
+frame.Position = UDim2.new(0, 20, 0.5, -100)
+frame.BackgroundColor3 = Color3.fromRGB(10, 8, 16)
+frame.BackgroundTransparency = 0.08
+frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(200,40,120); stk.Thickness = 1
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-24,0,18); title.Position = UDim2.new(0,6,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(255,100,180)
+title.Text = "65RB Desync v"..VERSION; title.Font = Enum.Font.GothamBold
+title.TextSize = 13; title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeB = Instance.new("TextButton")
+closeB.Size = UDim2.new(0,18,0,16); closeB.Position = UDim2.new(1,-22,0,2)
+closeB.BackgroundColor3 = Color3.fromRGB(120,20,20); closeB.TextColor3 = Color3.new(1,1,1)
+closeB.Text = "X"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 11; closeB.BorderSizePixel = 0
+closeB.Parent = frame
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,3)
+closeB.MouseButton1Click:Connect(function() DS_ON = false gui:Destroy() end)
+
+local function mkBtn(x, y, w, h, txt, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,h); b.Position = UDim2.new(0,x,0,y)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11; b.BorderSizePixel = 0
+    b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+
+-- main toggle
+local togB = mkBtn(6, 24, 188, 26, "DESYNC OFF [V]", Color3.fromRGB(60,40,60))
+
+-- amount
+local ampL = Instance.new("TextLabel")
+ampL.Size = UDim2.new(0,80,0,16); ampL.Position = UDim2.new(0,6,0,56)
+ampL.BackgroundTransparency = 1; ampL.TextColor3 = Color3.fromRGB(255,180,220)
+ampL.Text = "ระยะ: "..AMP; ampL.Font = Enum.Font.GothamBold; ampL.TextSize = 12
+ampL.TextXAlignment = Enum.TextXAlignment.Left; ampL.Parent = frame
+
+local am5 = mkBtn(90, 54, 24, 18, "-5", Color3.fromRGB(120,40,40))
+local am1 = mkBtn(116, 54, 22, 18, "-1", Color3.fromRGB(80,40,40))
+local ap1 = mkBtn(140, 54, 22, 18, "+1", Color3.fromRGB(40,80,40))
+local ap5 = mkBtn(164, 54, 30, 18, "+5", Color3.fromRGB(40,120,40))
+
+-- mode selector
+local modeL = Instance.new("TextLabel")
+modeL.Size = UDim2.new(1,-12,0,14); modeL.Position = UDim2.new(0,6,0,78)
+modeL.BackgroundTransparency = 1; modeL.TextColor3 = Color3.fromRGB(180,180,180)
+modeL.Text = "โหมด:"; modeL.Font = Enum.Font.Gotham; modeL.TextSize = 11
+modeL.TextXAlignment = Enum.TextXAlignment.Left; modeL.Parent = frame
+
+local mVert = mkBtn(6,  94, 60, 22, "Vertical", Color3.fromRGB(40,100,160))
+local mHor  = mkBtn(70, 94, 64, 22, "Horizontal", Color3.fromRGB(60,60,90))
+local mBoth = mkBtn(138,94, 56, 22, "Both", Color3.fromRGB(60,60,90))
+
+-- status
+local statL = Instance.new("TextLabel")
+statL.Size = UDim2.new(1,-12,0,40); statL.Position = UDim2.new(0,6,0,122)
+statL.BackgroundColor3 = Color3.fromRGB(4,4,8); statL.BackgroundTransparency = 0.3
+statL.TextColor3 = Color3.fromRGB(120,255,160); statL.Font = Enum.Font.Code
+statL.TextSize = 11; statL.TextXAlignment = Enum.TextXAlignment.Left
+statL.TextYAlignment = Enum.TextYAlignment.Top
+statL.Text = "..."; statL.TextWrapped = true; statL.Parent = frame
+Instance.new("UICorner", statL).CornerRadius = UDim.new(0,4)
+
+local hintL = Instance.new("TextLabel")
+hintL.Size = UDim2.new(1,-12,0,28); hintL.Position = UDim2.new(0,6,0,166)
+hintL.BackgroundTransparency = 1; hintL.TextColor3 = Color3.fromRGB(150,150,150)
+hintL.Text = "ทดสอบ: เปิดแล้วให้อีกเครื่องยิงดู\nถ้าไม่โดน = ได้ผล! ปรับระยะหา sweet spot"
+hintL.Font = Enum.Font.Gotham; hintL.TextSize = 10; hintL.TextWrapped = true
+hintL.TextYAlignment = Enum.TextYAlignment.Top; hintL.Parent = frame
+
+-- ==================== Logic ====================
+local function updTog()
+    togB.Text = "DESYNC "..(DS_ON and "ON" or "OFF").." [V]"
+    togB.BackgroundColor3 = DS_ON and Color3.fromRGB(200,40,120) or Color3.fromRGB(60,40,60)
+end
+local function updMode()
+    mVert.BackgroundColor3 = MODE=="Vertical"   and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
+    mHor.BackgroundColor3  = MODE=="Horizontal" and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
+    mBoth.BackgroundColor3 = MODE=="Both"       and Color3.fromRGB(40,100,160) or Color3.fromRGB(60,60,90)
+end
+local function updAmp() ampL.Text = "ระยะ: "..AMP end
+
+togB.MouseButton1Click:Connect(function() DS_ON = not DS_ON updTog() end)
+am5.MouseButton1Click:Connect(function() AMP = math.max(1, AMP-5) updAmp() end)
+am1.MouseButton1Click:Connect(function() AMP = math.max(1, AMP-1) updAmp() end)
+ap1.MouseButton1Click:Connect(function() AMP = AMP+1 updAmp() end)
+ap5.MouseButton1Click:Connect(function() AMP = AMP+5 updAmp() end)
+mVert.MouseButton1Click:Connect(function() MODE = "Vertical" updMode() end)
+mHor.MouseButton1Click:Connect(function() MODE = "Horizontal" updMode() end)
+mBoth.MouseButton1Click:Connect(function() MODE = "Both" updMode() end)
+
+bind(UIS.InputBegan, function(i, gp)
+    if not gp and i.KeyCode == Enum.KeyCode.V then DS_ON = not DS_ON updTog() end
+end)
+
+-- status updater
+task.spawn(function()
+    while task.wait(0.3) do
+        if not _G.DS_CONNS or _G.DS_CONNS ~= CONNS then return end
+        local pos = HRP and HRP.Position or Vector3.zero
+        statL.Text = string.format(
+            "%s | %s | ระยะ%d\npos: %.0f,%.0f,%.0f",
+            DS_ON and "● ON" or "○ OFF", MODE, AMP, pos.X, pos.Y, pos.Z)
+    end
+end)
+
+updTog() updMode() updAmp()
+print("[65RB Desync v"..VERSION.."] loaded — V=toggle")
