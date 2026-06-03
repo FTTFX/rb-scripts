@@ -1,66 +1,51 @@
--- 64RB_hookspy.txt v1.0 — Universal Runtime Hook Spy
--- ดักดูว่า script ไหน (รวม aimbot คนอื่น/obfuscate) เรียกอะไรตอนทำงานจริง
--- → เรียนรู้เทคนิคโดยไม่ต้องแกะ source
+-- 64RB_hookspy.txt v2.0 — Universal Runtime Hook Spy (LEAN — เร็ว ไม่ค้าง)
+-- ดักดูว่า script ไหน (รวม aimbot คนอื่น) เรียกอะไรตอนทำงานจริง
 --
--- วิธีใช้: รัน "ตัวนี้ก่อน" → แล้วรัน script ที่จะแกะ → ดู log ว่ามันเรียกอะไร
+-- วิธีใช้: รัน "ตัวนี้ก่อน" → แล้วรัน script ที่จะแกะ → ดู log
 --
 -- ดักอะไร:
---   • Loader : loadstring (=code หลักหลังใส่ key) + HttpGet/request (=URL+key) → dump ไฟล์
---   • Input  : SendTouchEvent / SendMouseButtonEvent / SendMouseMoveEvent / SendKeyEvent
---   • Remote : FireServer / InvokeServer
---   • Physics: Instance.new(BodyGyro/BodyVelocity/AlignOrientation/Highlight...)
---   • Raycast: Raycast / FindPartOnRay*
--- ปุ่ม: filter เปิด/ปิดแต่ละหมวด | FREEZE(F) หยุดอ่าน | COPY | CLEAR | X=ปิด
--- v1.5: + ปุ่ม STATS = ตารางสรุปนับครั้ง (ไม่ไหล อ่านง่าย) เห็น remote ไหนยิงเยอะสุด
--- v1.4: Remote แสดง args เต็ม (เห็น position/rotation ที่ส่ง) + ตัดชื่อ path ให้สั้น
--- v1.3: แก้เด้ง! Raycast ไม่ format params (ตัวการ lag) + dedup ใน push (count ไม่ format ซ้ำ)
--- v1.2: dedup spam ซ้ำ→รวม ×N + FREEZE + COPY (กัน raycast ท่วม Loader)
--- v1.1: + Loader (ดัก loadstring/HttpGet → ดึง code หลักผ่าน key system)
+--   • Loader : loadstring (=code หลัง key) + HttpGet (=URL+key) → dump ไฟล์
+--   • Remote : FireServer / InvokeServer + args เต็ม
+--   • Input  : SendTouchEvent / SendMouseButtonEvent / SendKeyEvent
+--   • Raycast: Raycast / FindPartOnRay* (default OFF — spam)
+--
+-- v2.0 ยกเครื่องให้เร็ว: ตัด Instance.new hook (ตัวค้าง) + cache ชื่อ remote
+--   + getnamecallmethod ไม่ pcall + early-return ถ้า method ไม่สน + Raycast default OFF
 
-local VERSION = "1.5"
+local VERSION = "2.0"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
--- ==================== Executor function detection ====================
-local hookmeta  = hookmetamethod
-local hookfunc  = hookfunction or replaceclosure
-local getnc     = getnamecallmethod
-local newcc     = newcclosure or function(f) return f end
-local okHooks   = hookmeta and getnc and hookfunc
--- ถ้า executor ไม่มี hook → แจ้งแล้วยังโชว์ GUI (จะ log ไม่ได้)
+-- ==================== Executor hook ====================
+local hookmeta = hookmetamethod
+local hookfunc = hookfunction or replaceclosure
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local okHooks  = hookmeta and getnc and hookfunc
 
--- ==================== Persistent state (hook ครั้งเดียวตลอด session) ====================
+-- ==================== State (hook ครั้งเดียวตลอด session) ====================
 _G.HK_SPY = _G.HK_SPY or {}
 local S = _G.HK_SPY
-S.enabled = true
-S.queue   = S.queue or {}          -- hook push เข้านี่, GUI poll ออก
-S.stats   = S.stats or {}          -- สรุปนับ: sig → {cat,text,count} (STATS view)
-S.filters = S.filters or {Loader=true, Input=true, Remote=true, Physics=true, Raycast=true}
-local MAXQ = 200
+S.queue   = S.queue or {}
+-- default: Raycast OFF (spam หนัก) — เปิดเองถ้าต้องการ
+if S.filters == nil then S.filters = {Loader=true, Input=true, Remote=true, Raycast=false} end
+local MAXQ = 150
 
--- push: เก็บทั้ง queue (LOG view) + stats (STATS view = นับครั้ง)
+-- push + dedup ใน hook (sig ซ้ำ → count++ ไม่เพิ่ม entry)
 local function push(cat, sig, text)
     if not S.enabled then return end
     if not S.filters[cat] then return end
-    -- STATS: นับครั้ง + เก็บ args ล่าสุด
-    local st = S.stats[sig]
-    if st then st.count = st.count + 1; st.text = text
-    else S.stats[sig] = {cat = cat, text = text, count = 1} end
-    -- LOG queue (dedup ซ้ำ → count++)
     local q = S.queue
     local last = q[#q]
-    if last and last.sig == sig then
-        last.count = (last.count or 1) + 1
-        return
-    end
-    q[#q+1] = {cat = cat, text = text, sig = sig, count = 1}
+    if last and last.sig == sig then last.count = (last.count or 1) + 1 return end
+    q[#q+1] = {cat=cat, sig=sig, text=text, count=1}
     if #q > MAXQ then table.remove(q, 1) end
 end
 S.push = push
 
--- ==================== Single-Instance Guard (GUI only — hook ปล่อยถาวร) ====================
+-- ==================== Guard (GUI only — hook ถาวร) ====================
 if _G.HK_SPY_CONNS then
     for _, c in pairs(_G.HK_SPY_CONNS) do pcall(function() c:Disconnect() end) end
     pcall(function()
@@ -72,150 +57,99 @@ _G.HK_SPY_CONNS = {}
 local CONNS = _G.HK_SPY_CONNS
 local function bind(sig, fn) local c = sig:Connect(fn) CONNS[#CONNS+1] = c return c end
 
--- ==================== Value formatter (เบา — ใช้ใน hook) ====================
-local function fmt(v, depth, full)
-    depth = depth or 0
+-- ==================== Value formatter (เบา) ====================
+local function fmt(v, full)
     local t = typeof(v)
     if t == "Instance" then return v.ClassName..":"..v.Name
     elseif t == "Vector3" then return string.format("V3(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z)
-    elseif t == "CFrame" then
-        local p = v.Position
-        return string.format("CF(%.0f,%.0f,%.0f)", p.X, p.Y, p.Z)
-    elseif t == "EnumItem" then return tostring(v)
-    elseif t == "table" then
-        if depth > 2 then return "{...}" end
-        local parts = {}
-        local n = 0
-        for k, val in pairs(v) do
-            n += 1; if n > 8 then parts[#parts+1] = "..."; break end
-            parts[#parts+1] = tostring(k).."="..fmt(val, depth+1, full)
-        end
-        return "{"..table.concat(parts, ",").."}"
+    elseif t == "CFrame" then local p=v.Position return string.format("CF(%.0f,%.0f,%.0f)", p.X,p.Y,p.Z)
     elseif t == "string" then
-        local max = full and 180 or 24
-        if #v > max then return '"'..v:sub(1,max)..'..."' end
+        local mx = full and 160 or 24
+        if #v > mx then return '"'..v:sub(1,mx)..'..."' end
         return '"'..v..'"'
     elseif t == "number" then return string.format("%.4g", v)
-    else return tostring(v) end
+    elseif t == "boolean" then return tostring(v)
+    else return t end
 end
-
 local function fmtArgs(...)
     local n = select("#", ...)
-    local parts = {}
-    for i = 1, math.min(n, 6) do parts[i] = fmt(select(i, ...)) end
-    if n > 6 then parts[#parts+1] = "(+"..(n-6)..")" end
-    return table.concat(parts, ", ")
+    if n == 0 then return "(ไม่มี args)" end
+    local p = {}
+    for i = 1, math.min(n, 8) do p[i] = fmt(select(i, ...), true) end
+    return table.concat(p, " | ")
 end
 
--- เวอร์ชันเต็ม (ไม่ truncate) สำหรับ remote — เห็น args ที่ส่ง position/rotation
-local function fmtArgsFull(...)
-    local n = select("#", ...)
-    local parts = {}
-    for i = 1, math.min(n, 8) do parts[i] = fmt(select(i, ...), 0, true) end
-    if n > 8 then parts[#parts+1] = "(+"..(n-8)..")" end
-    return table.concat(parts, ", ")
+-- ==================== Name cache (กัน GetFullName ทุก call) ====================
+local nameCache = setmetatable({}, {__mode = "k"})
+local function getName(r)
+    local n = nameCache[r]
+    if n == nil then
+        local ok, full = pcall(function() return r:GetFullName() end)
+        n = ok and full or "?"
+        nameCache[r] = n
+    end
+    return n
 end
 
--- ==================== HOOKS (ครั้งเดียวตลอด session) ====================
-local INPUT_METHODS = {
-    SendTouchEvent=true, SendMouseButtonEvent=true,
-    SendMouseMoveEvent=true, SendKeyEvent=true, SendMouseWheelEvent=true,
-}
-local REMOTE_METHODS = { FireServer=true, InvokeServer=true, fireServer=true, invokeServer=true }
-local RAYCAST_METHODS = {
-    Raycast=true, FindPartOnRay=true,
-    FindPartOnRayWithWhitelist=true, FindPartOnRayWithIgnoreList=true, Blockcast=true,
-}
-local PHYSICS_CLASSES = {
-    BodyGyro=true, BodyVelocity=true, BodyPosition=true, BodyAngularVelocity=true,
-    AlignOrientation=true, AlignPosition=true, LinearVelocity=true, AngularVelocity=true,
-    VectorForce=true, Highlight=true,
+-- ==================== Method → category (lookup เร็ว) ====================
+local CAT = {
+    FireServer="Remote", InvokeServer="Remote",
+    HttpGet="Loader", HttpGetAsync="Loader",
+    SendTouchEvent="Input", SendMouseButtonEvent="Input",
+    SendMouseMoveEvent="Input", SendKeyEvent="Input",
+    Raycast="Raycast", FindPartOnRay="Raycast",
+    FindPartOnRayWithWhitelist="Raycast", FindPartOnRayWithIgnoreList="Raycast", Blockcast="Raycast",
 }
 
--- dump code หลัก (ที่ loadstring กำลังจะรัน = decrypt แล้ว) ลงไฟล์ + clipboard
+-- ==================== dump loadstring (code หลัง key) ====================
 local function dumpSource(src)
     S.dumpN = (S.dumpN or 0) + 1
     local n = S.dumpN
     push("Loader", "ls"..n, "★ loadstring #"..n.." ("..#src.." chars) = CODE หลัก!")
-    local fname = "HK_dump_"..n..".lua"
-    local saved = false
-    pcall(function()
-        if writefile then writefile(fname, src) saved = true
-            push("Loader", "lsf"..n, "   → เซฟไฟล์: "..fname) end
-    end)
-    pcall(function()
-        if setclipboard then setclipboard(src)
-            push("Loader", "lsc"..n, "   → copy clipboard แล้ว (paste ได้)") end
-    end)
-    if not saved and not setclipboard then
-        push("Loader", "lsx"..n, "   ⚠ executor ไม่มี writefile/setclipboard")
-    end
+    pcall(function() if writefile then writefile("HK_dump_"..n..".lua", src)
+        push("Loader", "lf"..n, "   → เซฟ: HK_dump_"..n..".lua") end end)
+    pcall(function() if setclipboard then setclipboard(src)
+        push("Loader", "lc"..n, "   → copy clipboard") end end)
 end
 
+-- ==================== HOOKS (ครั้งเดียว) ====================
 if okHooks and not S.hooked then
     S.hooked = true
 
-    -- loadstring: ดัก source ที่กำลังจะรัน (= code หลักหลัง decrypt key)
+    -- loadstring (Loader) — global function
     if loadstring then
         local oldLoad
         oldLoad = hookfunc(loadstring, newcc(function(src, ...)
-            if type(src) == "string" and #src > 50 then
-                pcall(dumpSource, src)
-            end
+            if type(src) == "string" and #src > 50 then pcall(dumpSource, src) end
             return oldLoad(src, ...)
         end))
         S.restoreLoad = oldLoad
     end
 
-    -- executor http (request/http_request) — ดัก URL + header (มักมี key)
-    local reqFn = rawget(getfenv(), "request") or rawget(getfenv(), "http_request")
-    if type(reqFn) == "function" then
-        pcall(function()
-            local oldReq
-            oldReq = hookfunc(reqFn, newcc(function(opts, ...)
-                if type(opts) == "table" and opts.Url then
-                    push("Loader", "req"..tostring(opts.Url), "request → "..tostring(opts.Url))
-                end
-                return oldReq(opts, ...)
-            end))
-            S.restoreReq = oldReq
-        end)
-    end
-
-    -- __namecall: ดัก method call (input/remote/raycast)
-    local oldNamecall
-    oldNamecall = hookmeta(game, "__namecall", newcc(function(self, ...)
-        local ok, method = pcall(getnc)
-        if ok and method then
-            if RAYCAST_METHODS[method] then
-                -- ⭐ เบาสุด: ไม่ format RaycastParams (ตัวการ crash) — แค่นับ
-                push("Raycast", "Ry"..method, method.." (ยิงหาเป้า)")
-            elseif method == "HttpGet" or method == "HttpGetAsync" then
+    -- __namecall (LEAN) — getnc ไม่ pcall + early-return
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local m = getnc()
+        local cat = CAT[m]
+        if cat and S.filters[cat] and S.enabled then
+            if cat == "Raycast" then
+                push("Raycast", "Ry"..m, m.." (ยิงหาเป้า)")        -- เบาสุด ไม่ format
+            elseif cat == "Loader" then
                 local url = tostring((select(1, ...)))
-                push("Loader", "hg"..url, method.." → "..url)
-            elseif INPUT_METHODS[method] then
-                push("Input", "In"..method, method.."("..fmtArgs(...)..")")
-            elseif REMOTE_METHODS[method] then
-                local name = "?"
-                pcall(function() name = self:GetFullName() end)
-                -- ตัด ReplicatedStorage. ออกให้สั้น + args เต็ม (เห็น position/rotation)
-                local short = name:gsub("^.-Remotes%.", ""):gsub("^ReplicatedStorage%.", "")
-                push("Remote", "Rm"..method..name, method.." @"..short.." | "..fmtArgsFull(...))
+                push("Loader", "hg"..url, m.." → "..url)
+            elseif cat == "Input" then
+                push("Input", "In"..m, m.."("..fmtArgs(...)..")")
+            else  -- Remote
+                local nm = getName(self)
+                if not (nm:find("UpdateState") or nm:find("CameraRotation") or nm:find("Spectating")) then
+                    local short = nm:gsub("^.-Remotes%.", "")
+                    push("Remote", "Rm"..m..nm, m.." @"..short.." | "..fmtArgs(...))
+                end
             end
         end
-        return oldNamecall(self, ...)
+        return oldNc(self, ...)
     end))
-    S.restoreNamecall = oldNamecall
-
-    -- Instance.new: ดักสร้าง physics/highlight
-    local oldNew
-    oldNew = hookfunc(Instance.new, newcc(function(className, ...)
-        if type(className) == "string" and PHYSICS_CLASSES[className] then
-            push("Physics", "P"..className, "Instance.new('"..className.."')")
-        end
-        return oldNew(className, ...)
-    end))
-    S.restoreNew = oldNew
+    S.restoreNc = oldNc
 end
 
 -- ==================== GUI ====================
@@ -225,7 +159,7 @@ pcall(function() gui.Parent = game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 440, 0, 400)
+frame.Size = UDim2.new(0, 440, 0, 350)
 frame.Position = UDim2.new(0, 20, 0, 50)
 frame.BackgroundColor3 = Color3.fromRGB(8, 8, 14)
 frame.BackgroundTransparency = 0.08
@@ -237,7 +171,7 @@ local stk = Instance.new("UIStroke", frame); stk.Color = Color3.fromRGB(255,140,
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,-30,0,22); title.Position = UDim2.new(0,8,0,2)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(255,180,90)
-title.Text = "64RB HookSpy v"..VERSION..(okHooks and "" or "  [NO HOOK API!]")
+title.Text = "64RB HookSpy v"..VERSION.." LEAN"..(okHooks and "" or " [NOHOOK]")
 title.Font = Enum.Font.GothamBold; title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
 
@@ -249,39 +183,26 @@ closeB.Parent = frame
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
 closeB.MouseButton1Click:Connect(function() S.enabled = false gui:Destroy() end)
 
--- filter buttons
 local CAT_COL = {
-    Loader  = Color3.fromRGB(230,190,40),
-    Input   = Color3.fromRGB(40,120,200),
-    Remote  = Color3.fromRGB(200,60,60),
-    Physics = Color3.fromRGB(150,90,200),
-    Raycast = Color3.fromRGB(60,160,90),
+    Loader  = Color3.fromRGB(230,190,40), Input = Color3.fromRGB(40,120,200),
+    Remote  = Color3.fromRGB(200,60,60),  Raycast = Color3.fromRGB(60,160,90),
 }
 local function mkFilter(x, cat)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0,67,0,22); b.Position = UDim2.new(0,x,0,26)
+    b.Size = UDim2.new(0,84,0,22); b.Position = UDim2.new(0,x,0,26)
     b.BackgroundColor3 = CAT_COL[cat]; b.TextColor3 = Color3.new(1,1,1)
     b.Text = cat; b.Font = Enum.Font.GothamBold; b.TextSize = 10; b.BorderSizePixel = 0
+    b.BackgroundTransparency = S.filters[cat] and 0 or 0.65
     b.Parent = frame
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
     b.MouseButton1Click:Connect(function()
         S.filters[cat] = not S.filters[cat]
         b.BackgroundTransparency = S.filters[cat] and 0 or 0.65
     end)
-    return b
 end
-mkFilter(6, "Loader"); mkFilter(76, "Input"); mkFilter(146, "Remote")
-mkFilter(216, "Physics"); mkFilter(286, "Raycast")
+mkFilter(6, "Loader"); mkFilter(94, "Input"); mkFilter(182, "Remote"); mkFilter(270, "Raycast")
 
-local clrB = Instance.new("TextButton")
-clrB.Size = UDim2.new(0,68,0,22); clrB.Position = UDim2.new(0,364,0,26)
-clrB.BackgroundColor3 = Color3.fromRGB(60,60,90); clrB.TextColor3 = Color3.new(1,1,1)
-clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 11; clrB.BorderSizePixel = 0
-clrB.Parent = frame
-Instance.new("UICorner", clrB).CornerRadius = UDim.new(0,4)
-
--- row 2: FREEZE + COPY
-local function mkBtn2(x, w, txt, col)
+local function mkB(x, w, txt, col)
     local b = Instance.new("TextButton")
     b.Size = UDim2.new(0,w,0,22); b.Position = UDim2.new(0,x,0,50)
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
@@ -290,18 +211,12 @@ local function mkBtn2(x, w, txt, col)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
     return b
 end
-local viewB   = mkBtn2(6,   140, "📊 STATS (สรุปนับ)", Color3.fromRGB(40,90,160))
-local freezeB = mkBtn2(150,  90, "FREEZE [F]", Color3.fromRGB(120,90,30))
-local copyB   = mkBtn2(244,  90, "COPY", Color3.fromRGB(30,110,60))
-local hintL = Instance.new("TextLabel")
-hintL.Size = UDim2.new(0,90,0,22); hintL.Position = UDim2.new(0,338,0,50)
-hintL.BackgroundTransparency = 1; hintL.TextColor3 = Color3.fromRGB(150,150,150)
-hintL.Text = "นับมากสุด=บน"; hintL.Font = Enum.Font.Code
-hintL.TextSize = 10; hintL.TextXAlignment = Enum.TextXAlignment.Left; hintL.Parent = frame
+local freezeB = mkB(6,   100, "FREEZE [F]", Color3.fromRGB(120,90,30))
+local copyB   = mkB(110, 100, "COPY", Color3.fromRGB(40,90,140))
+local clrB    = mkB(214, 100, "CLEAR", Color3.fromRGB(60,60,90))
 
--- log scroll
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-12,1,-102); scroll.Position = UDim2.new(0,6,0,76)
+scroll.Size = UDim2.new(1,-12,1,-82); scroll.Position = UDim2.new(0,6,0,76)
 scroll.BackgroundColor3 = Color3.fromRGB(4,4,8); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.Parent = frame
@@ -309,16 +224,12 @@ Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
 local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0,6); pad.PaddingTop = UDim.new(0,2); pad.Parent = scroll
 local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
 
-local renderOrder = 0
-local renderCount = 0
-local MAXSHOW = 150
+local renderOrder, renderCount, MAXSHOW = 0, 0, 120
 local copyLines = {}
--- dedup: ถ้า signature (cat+ชื่อ method) เหมือนบรรทัดล่าสุด → รวม ×N ไม่เพิ่มบรรทัด
 local lastSig, lastLabel, lastCount = nil, nil, 0
 local function addLine(cat, text, count, sig)
     count = count or 1
-    sig = sig or (cat..":"..(text:match("^[%w_]+") or text))
-    -- Loader = event สำคัญ ไม่รวม (เห็นทุกครั้ง) | หมวดอื่น spam → รวม ×N
+    sig = sig or (cat..text)
     if cat ~= "Loader" and sig == lastSig and lastLabel and lastLabel.Parent then
         lastCount += count
         lastLabel.Text = "["..cat:sub(1,3).."] "..text.."   ×"..lastCount
@@ -333,7 +244,7 @@ local function addLine(cat, text, count, sig)
     l.TextColor3 = CAT_COL[cat] or Color3.fromRGB(200,200,200)
     l.Text = "["..cat:sub(1,3).."] "..text..(count > 1 and ("   ×"..count) or "")
     l.LayoutOrder = renderOrder; l.Parent = scroll
-    lastSig = sig; lastLabel = l; lastCount = count
+    lastSig, lastLabel, lastCount = sig, l, count
     copyLines[#copyLines+1] = l.Text
     if renderCount > MAXSHOW then
         for _, c in ipairs(scroll:GetChildren()) do
@@ -341,102 +252,46 @@ local function addLine(cat, text, count, sig)
         end
     end
 end
-local function clearLog()
-    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
-    renderCount = 0; lastSig = nil; lastLabel = nil; table.clear(copyLines)
-end
-clrB.MouseButton1Click:Connect(clearLog)
 
--- FREEZE: หยุด render (queue ค้างไว้) เพื่ออ่าน
 local function toggleFreeze()
     S.frozen = not S.frozen
     freezeB.Text = S.frozen and "FROZEN [F]" or "FREEZE [F]"
     freezeB.BackgroundColor3 = S.frozen and Color3.fromRGB(180,40,40) or Color3.fromRGB(120,90,30)
 end
 freezeB.MouseButton1Click:Connect(toggleFreeze)
-bind(UIS.InputBegan, function(i, gp)
-    if not gp and i.KeyCode == Enum.KeyCode.F then toggleFreeze() end
-end)
+bind(UIS.InputBegan, function(i, gp) if not gp and i.KeyCode == Enum.KeyCode.F then toggleFreeze() end end)
 
--- COPY: setclipboard ทุกบรรทัด (จาก spy template)
+clrB.MouseButton1Click:Connect(function()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    renderOrder, renderCount, lastSig, lastLabel = 0, 0, nil, nil
+    table.clear(copyLines)
+end)
 copyB.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard or write_clipboard
-        or (getgenv and getgenv().setclipboard)
     local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
     copyB.Text = ok and "Copied!" or "ไม่รองรับ"
     task.delay(2, function() if copyB.Parent then copyB.Text = "COPY" end end)
 end)
 
--- ==================== STATS view (สรุปนับ ไม่เลื่อน) ====================
--- แสดง remote/event แต่ละตัว 1 บรรทัด เรียงตามจำนวนครั้ง (มากสุด=บน) → ดูง่าย ไม่ไหล
-local function renderStats()
-    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
-    local arr = {}
-    for _, st in pairs(S.stats) do arr[#arr+1] = st end
-    table.sort(arr, function(a, b) return a.count > b.count end)
-    for i = 1, math.min(#arr, 50) do
-        local st = arr[i]
-        local l = Instance.new("TextLabel")
-        l.Size = UDim2.new(1,-10,0,14); l.AutomaticSize = Enum.AutomaticSize.Y
-        l.BackgroundTransparency = 1; l.Font = Enum.Font.Code; l.TextSize = 11
-        l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
-        l.TextColor3 = CAT_COL[st.cat] or Color3.fromRGB(200,200,200)
-        l.Text = string.format("×%-5d [%s] %s", st.count, st.cat:sub(1,3), st.text)
-        l.LayoutOrder = i; l.Parent = scroll
-    end
-    scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
-end
-
-local function clearStats()
-    table.clear(S.stats)
-    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
-end
-
-viewB.MouseButton1Click:Connect(function()
-    S.statsMode = not S.statsMode
-    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
-    table.clear(S.queue)
-    if S.statsMode then
-        viewB.Text = "📜 LOG (ไหลตามจริง)"; viewB.BackgroundColor3 = Color3.fromRGB(90,60,140)
-        renderStats()
-    else
-        viewB.Text = "📊 STATS (สรุปนับ)"; viewB.BackgroundColor3 = Color3.fromRGB(40,90,160)
-    end
-end)
--- CLEAR ใน STATS mode = ล้าง stats ด้วย
-clrB.MouseButton1Click:Connect(function() if S.statsMode then clearStats() end end)
-
--- ==================== Heartbeat: render ตาม mode ====================
-local autoScroll = true
-local statsFrame = 0
+-- ==================== Drain ====================
 bind(RunService.Heartbeat, function()
     if S.frozen then return end
-    if S.statsMode then
-        -- STATS: rebuild ทุก ~0.5s (เบา, นิ่ง อ่านง่าย)
-        statsFrame += 1
-        if statsFrame >= 30 then statsFrame = 0; renderStats() end
-        table.clear(S.queue)
-        return
-    end
-    -- LOG: drain ตามจริง
     local q = S.queue
     if #q == 0 then return end
     for i = 1, #q do addLine(q[i].cat, q[i].text, q[i].count, q[i].sig) end
     table.clear(q)
     task.defer(function()
         scroll.CanvasSize = UDim2.new(0,0,0,layout.AbsoluteContentSize.Y + 6)
-        if autoScroll then scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y) end
+        scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
     end)
 end)
 
--- ==================== Intro ====================
-addLine("Input", "=== HookSpy v"..VERSION.." พร้อม ===")
+S.enabled = true
+addLine("Loader", "=== HookSpy v"..VERSION.." LEAN พร้อม ===")
 if okHooks then
-    addLine("Loader", "★ ดัก loadstring = ดึง CODE หลัก (หลังใส่ key)")
-    addLine("Loader", "★ ดัก HttpGet = เห็น URL (key/token)")
-    addLine("Input", "รัน script ที่จะแกะได้เลย → code dump ลงไฟล์ HK_dump_N.lua")
+    addLine("Loader", "★ Raycast ปิดไว้ (spam) เปิดเองถ้าต้องการ")
+    addLine("Remote", "รัน script ที่จะแกะได้เลย — เบา ไม่ค้าง")
 else
-    addLine("Remote", "❌ executor ไม่มี hook API (hookmetamethod/hookfunction)")
-    addLine("Remote", "→ ใช้ executor ที่แรงกว่า (Synapse/Script-Ware/Wave/Delta)")
+    addLine("Remote", "❌ executor ไม่มี hook API")
 end
-print("[64RB HookSpy v"..VERSION.."] loaded | hooks:", okHooks and "ON" or "UNAVAILABLE")
+print("[64RB HookSpy v"..VERSION.." LEAN] loaded | hooks:", okHooks and "ON" or "OFF")
