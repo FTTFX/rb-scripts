@@ -12,7 +12,7 @@
 -- v2.0 ยกเครื่องให้เร็ว: ตัด Instance.new hook (ตัวค้าง) + cache ชื่อ remote
 --   + getnamecallmethod ไม่ pcall + early-return ถ้า method ไม่สน + Raycast default OFF
 
-local VERSION = "2.0"
+local VERSION = "2.1"
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
@@ -141,7 +141,15 @@ if okHooks and not S.hooked then
                 push("Input", "In"..m, m.."("..fmtArgs(...)..")")
             else  -- Remote
                 local nm = getName(self)
-                if not (nm:find("UpdateState") or nm:find("CameraRotation") or nm:find("Spectating")) then
+                if nm:find("UpdateCameraRotation") then
+                    -- decode byte (ดูว่า aimbot ส่ง yaw ชี้เป้าไหม)
+                    local s = (select(1, ...))
+                    if type(s) == "string" then
+                        local cps = {}
+                        pcall(function() for _, c in utf8.codes(s) do cps[#cps+1] = c end end)
+                        push("Remote", "cam", "📷 CAM pitch:"..tostring(cps[1] or "?").." yaw:"..tostring(cps[2] or "?"))
+                    end
+                elseif not (nm:find("UpdateState") or nm:find("Spectating")) then
                     local short = nm:gsub("^.-Remotes%.", "")
                     push("Remote", "Rm"..m..nm, m.." @"..short.." | "..fmtArgs(...))
                 end
