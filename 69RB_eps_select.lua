@@ -1,6 +1,6 @@
--- 69RB_eps_select.lua  v1.0.0
+-- 69RB_eps_select.lua  v1.0.1
 -- EPS AimLock + เลือกเป้าเอง
--- [P] = เปิด/ปิดล็อค  |  คลิกชื่อ = เลือกเป้า  |  AUTO = ล็อคอัตโนมัติใน FOV
+-- [E] = เปิด/ปิดล็อค  |  คลิกชื่อ = เลือกเป้า  |  AUTO = ล็อคอัตโนมัติใน FOV
 
 -- ==================== Single-Instance Guard ====================
 if _G.EPS69_CONNS then
@@ -10,7 +10,7 @@ if _G.EPS69_GUI  then pcall(function() _G.EPS69_GUI:Destroy() end) end
 if _G.EPS69_DRAW then pcall(function() _G.EPS69_DRAW:Remove() end) end
 _G.EPS69_CONNS = {}
 
-local V = "1.0.0"
+local V = "1.0.1"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -24,7 +24,7 @@ local CFG = {
     Sensitivity = 100,    -- pixels/radian
     AimPart     = "Head", -- "Head" | "HumanoidRootPart" | "UpperTorso"
     MaxDist     = 1000,
-    Key         = Enum.KeyCode.P,
+    Key         = Enum.KeyCode.E,
     FOVRadius   = 180,    -- px radius วงกลม auto-select
 }
 
@@ -346,4 +346,4 @@ if Drawing then
 end
 
 updateStatus()
-print("[EPS69] AimLock v" .. V .. " loaded | [P] toggle | click name to pick target")
+print("[EPS69] AimLock v" .. V .. " loaded | [E] toggle | click name to pick target")
