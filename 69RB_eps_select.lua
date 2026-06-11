@@ -1,4 +1,5 @@
--- 69RB_eps_select.lua  v2.2.0
+-- 69RB_eps_select.lua  v2.3.0
+-- [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป | [E] = เปิด/ปิดล็อค
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
 -- ESP ทุกคน (แดง=คนอื่น เขียว=เป้าที่เลือก) | คลิกชื่อ = เลือกเป้า | AUTO = ใกล้สุดที่เห็น
 -- เล็งส่วนร่างกายที่ "ไม่โดนกำแพงบัง" อัตโนมัติ (Head → Torso → แขนขา)
@@ -16,7 +17,7 @@ _G.EPS69_CONNS = {}
 _G.EPS69_HLS   = {}
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.2.0"
+local V = "2.3.0"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -266,7 +267,7 @@ hintLbl.Size  = UDim2.new(1, -12, 0, 16)
 hintLbl.Position = UDim2.new(0, 6, 1, -20)
 hintLbl.BackgroundTransparency = 1
 hintLbl.TextColor3 = Color3.fromRGB(55, 55, 75)
-hintLbl.Text  = "คลิกชื่อ=เลือก | คลิกซ้ำ=ยกเลิก"
+hintLbl.Text  = "คลิกชื่อ=เลือก | [,]=ก่อนหน้า [.]=ถัดไป"
 hintLbl.TextScaled = true
 hintLbl.Font  = Enum.Font.Gotham
 hintLbl.Parent = panel
@@ -436,12 +437,43 @@ table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function(dt)
     end
 end))
 
--- ==================== Key Toggle (IsKeyDown polling) ====================
-local keyWasDown = false
+-- ==================== Target Cycle [,] [.] ====================
+local function cycleTarget(dir)
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP then list[#list+1] = p end
+    end
+    if #list == 0 then return end
+    if autoMode then
+        autoMode = false
+        modeBtn.Text = "Mode: MANUAL"
+        modeBtn.BackgroundColor3 = Color3.fromRGB(35, 55, 90)
+        modeBtn.TextColor3 = Color3.fromRGB(110, 170, 255)
+    end
+    local idx = 0
+    for i, p in ipairs(list) do
+        if p == target then idx = i break end
+    end
+    idx = idx + dir
+    if idx < 1 then idx = #list elseif idx > #list then idx = 1 end
+    target = list[idx]
+    rebuildList()
+    updateStatus()
+end
+
+-- ==================== Keys (IsKeyDown polling) ====================
+-- [E] = toggle lock | [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป
+local keyWas = {}
+local function pollKey(kc, fn)
+    local isDown = UIS:IsKeyDown(kc)
+    if isDown and not keyWas[kc] then fn() end
+    keyWas[kc] = isDown
+end
+
 table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function()
-    local isDown = UIS:IsKeyDown(CFG.Key)
-    if isDown and not keyWasDown then toggle() end
-    keyWasDown = isDown
+    pollKey(CFG.Key, toggle)
+    pollKey(Enum.KeyCode.Comma,  function() cycleTarget(-1) end)
+    pollKey(Enum.KeyCode.Period, function() cycleTarget(1)  end)
 end))
 
 updateStatus()
