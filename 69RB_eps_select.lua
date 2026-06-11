@@ -1,4 +1,4 @@
--- 69RB_eps_select.lua  v2.3.0
+-- 69RB_eps_select.lua  v2.3.1
 -- [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป | [E] = เปิด/ปิดล็อค
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
 -- ESP ทุกคน (แดง=คนอื่น เขียว=เป้าที่เลือก) | คลิกชื่อ = เลือกเป้า | AUTO = ใกล้สุดที่เห็น
@@ -17,7 +17,7 @@ _G.EPS69_CONNS = {}
 _G.EPS69_HLS   = {}
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.3.0"
+local V = "2.3.1"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -95,6 +95,9 @@ local HLS = _G.EPS69_HLS
 local function colorHL(p)
     local hl = HLS[p]
     if not hl then return end
+    -- บังคับทะลุกำแพงซ้ำทุกรอบ กันเกม/script อื่น override
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Enabled   = true
     if target == p then
         hl.FillColor    = Color3.fromRGB(40, 255, 90)    -- เป้าที่เลือก = เขียว
         hl.OutlineColor = Color3.fromRGB(180, 255, 200)
