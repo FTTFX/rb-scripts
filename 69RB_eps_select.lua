@@ -1,4 +1,4 @@
--- 69RB_eps_select.lua  v2.0.0
+-- 69RB_eps_select.lua  v2.1.0
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
 -- [E] = เปิด/ปิดล็อค | คลิกชื่อ = เลือกเป้า | AUTO = ล็อคคนใกล้สุดที่มองเห็น
 -- เล็งส่วนร่างกายที่ "ไม่โดนกำแพงบัง" อัตโนมัติ (Head → Torso → แขนขา)
@@ -12,7 +12,7 @@ if _G.EPS69_DRAW then pcall(function() _G.EPS69_DRAW:Remove() end) end
 _G.EPS69_CONNS = {}
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.0.0"
+local V = "2.1.0"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -126,8 +126,8 @@ sg.Parent = LP.PlayerGui
 _G.EPS69_GUI = sg
 
 local panel = Instance.new("Frame")
-panel.Size     = UDim2.new(0, 185, 0, 320)
-panel.Position = UDim2.new(0, 10, 0.5, -160)
+panel.Size     = UDim2.new(0, 185, 0, 352)
+panel.Position = UDim2.new(0, 10, 0.5, -176)
 panel.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 panel.BackgroundTransparency = 0.05
 panel.BorderSizePixel = 0
@@ -182,10 +182,23 @@ modeBtn.BorderSizePixel = 0
 modeBtn.Parent = panel
 Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 5)
 
+-- ปุ่ม STOP ฉุกเฉิน — ปิด 69 + ปิด 06 ALL IN ด้วย
+local stopBtn = Instance.new("TextButton")
+stopBtn.Size   = UDim2.new(1, -12, 0, 28)
+stopBtn.Position = UDim2.new(0, 6, 0, 95)
+stopBtn.BackgroundColor3 = Color3.fromRGB(140, 25, 25)
+stopBtn.TextColor3 = Color3.fromRGB(255, 200, 200)
+stopBtn.Text   = "■ STOP ปิดทุกอย่าง (รวม 06)"
+stopBtn.TextScaled = true
+stopBtn.Font   = Enum.Font.GothamBold
+stopBtn.BorderSizePixel = 0
+stopBtn.Parent = panel
+Instance.new("UICorner", stopBtn).CornerRadius = UDim.new(0, 5)
+
 -- สถานะเป้า (เล็งส่วนไหนอยู่)
 local aimLbl = Instance.new("TextLabel")
 aimLbl.Size  = UDim2.new(1, -12, 0, 16)
-aimLbl.Position = UDim2.new(0, 6, 0, 95)
+aimLbl.Position = UDim2.new(0, 6, 0, 127)
 aimLbl.BackgroundTransparency = 1
 aimLbl.TextColor3 = Color3.fromRGB(80, 80, 110)
 aimLbl.Text  = "aim: -"
@@ -197,7 +210,7 @@ aimLbl.Parent = panel
 -- รายชื่อ
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size   = UDim2.new(1, -12, 0, 178)
-scroll.Position = UDim2.new(0, 6, 0, 113)
+scroll.Position = UDim2.new(0, 6, 0, 145)
 scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 scroll.BackgroundTransparency = 0.2
 scroll.BorderSizePixel = 0
@@ -239,7 +252,7 @@ local function toggle()
     updateStatus()
 end
 
-togBtn.MouseButton1Click:Connect(toggle)
+togBtn.Activated:Connect(toggle)
 
 -- ==================== Player List ====================
 local pBtns = {}
@@ -264,7 +277,7 @@ local function rebuildList()
             btn.Parent = scroll
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
 
-            btn.MouseButton1Click:Connect(function()
+            btn.Activated:Connect(function()
                 if autoMode then
                     autoMode = false
                     modeBtn.Text = "Mode: MANUAL"
@@ -281,7 +294,29 @@ local function rebuildList()
 end
 rebuildList()
 
-modeBtn.MouseButton1Click:Connect(function()
+-- STOP: ปิด 69 + ฆ่า 06 ALL IN ทั้งตัว (camera lock, shoot, speed, ESP)
+stopBtn.Activated:Connect(function()
+    enabled = false
+    target  = nil
+    _G.EPS69_AIM_CFRAME = nil
+    -- ฆ่า 06 ALL IN ถ้ารันอยู่
+    _G.RB06_AIM_CFRAME = nil
+    if _G.RB06_CONNS then
+        for _, c in pairs(_G.RB06_CONNS) do pcall(function() c:Disconnect() end) end
+        _G.RB06_CONNS = nil
+    end
+    for _, hl in pairs(_G.RB06_HL or {}) do pcall(function() hl:Destroy() end) end
+    _G.RB06_HL = nil
+    if _G.RB06_BV then pcall(function() _G.RB06_BV:Destroy() end) _G.RB06_BV = nil end
+    local g06 = LP.PlayerGui:FindFirstChild("HLGUI")
+    if g06 then g06:Destroy() end
+    rebuildList()
+    updateStatus()
+    stopBtn.Text = "✓ ปิดหมดแล้ว"
+    task.delay(1.5, function() stopBtn.Text = "■ STOP ปิดทุกอย่าง (รวม 06)" end)
+end)
+
+modeBtn.Activated:Connect(function()
     autoMode = not autoMode
     if autoMode then
         target = nil
