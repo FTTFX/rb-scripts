@@ -1,18 +1,22 @@
--- 69RB_eps_select.lua  v2.1.0
+-- 69RB_eps_select.lua  v2.2.0
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
--- [E] = เปิด/ปิดล็อค | คลิกชื่อ = เลือกเป้า | AUTO = ล็อคคนใกล้สุดที่มองเห็น
+-- ESP ทุกคน (แดง=คนอื่น เขียว=เป้าที่เลือก) | คลิกชื่อ = เลือกเป้า | AUTO = ใกล้สุดที่เห็น
 -- เล็งส่วนร่างกายที่ "ไม่โดนกำแพงบัง" อัตโนมัติ (Head → Torso → แขนขา)
 
 -- ==================== Single-Instance Guard ====================
 if _G.EPS69_CONNS then
     for _, c in pairs(_G.EPS69_CONNS) do pcall(function() c:Disconnect() end) end
 end
+if _G.EPS69_HLS then
+    for _, hl in pairs(_G.EPS69_HLS) do pcall(function() hl:Destroy() end) end
+end
 if _G.EPS69_GUI  then pcall(function() _G.EPS69_GUI:Destroy() end) end
 if _G.EPS69_DRAW then pcall(function() _G.EPS69_DRAW:Remove() end) end
 _G.EPS69_CONNS = {}
+_G.EPS69_HLS   = {}
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.1.0"
+local V = "2.2.0"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -82,6 +86,42 @@ local function isAlive(p)
     if not p or not p.Character then return false end
     local h = p.Character:FindFirstChildOfClass("Humanoid")
     return h ~= nil and h.Health > 0
+end
+
+-- ==================== ESP (Highlight ทุกคน) ====================
+local HLS = _G.EPS69_HLS
+
+local function colorHL(p)
+    local hl = HLS[p]
+    if not hl then return end
+    if target == p then
+        hl.FillColor    = Color3.fromRGB(40, 255, 90)    -- เป้าที่เลือก = เขียว
+        hl.OutlineColor = Color3.fromRGB(180, 255, 200)
+    else
+        hl.FillColor    = Color3.fromRGB(255, 40, 40)    -- คนอื่น = แดง
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+    end
+end
+
+local function addHL(p)
+    local char = p.Character
+    if not char then return end
+    local hl = HLS[p]
+    if hl and hl.Parent == char then colorHL(p) return end
+    if hl then pcall(function() hl:Destroy() end) end
+    hl = Instance.new("Highlight")
+    hl.Adornee = char
+    hl.FillTransparency = 0.5
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = char
+    HLS[p] = hl
+    colorHL(p)
+end
+
+local function removeHL(p)
+    local hl = HLS[p]
+    if hl then pcall(function() hl:Destroy() end) HLS[p] = nil end
 end
 
 -- หา "ส่วนที่มองเห็น" (ไม่โดนกำแพงบัง) ตามลำดับ priority
@@ -262,6 +302,7 @@ local function rebuildList()
     pBtns = {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP then
+            addHL(p)   -- ESP ทุกคน + สีตามเป้าที่เลือก
             local sel   = (target == p)
             local alive = isAlive(p)
             local btn = Instance.new("TextButton")
@@ -335,6 +376,7 @@ end)
 table.insert(_G.EPS69_CONNS, Players.PlayerAdded:Connect(rebuildList))
 table.insert(_G.EPS69_CONNS, Players.PlayerRemoving:Connect(function(p)
     if target == p then target = nil end
+    removeHL(p)
     rebuildList()
     updateStatus()
 end))
@@ -354,6 +396,7 @@ table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function(dt)
                 btn.Text = (sel and "► " or "  ") .. (alive and "● " or "○ ") .. p.Name
                 btn.TextColor3 = sel and Color3.fromRGB(60, 230, 100)
                     or (alive and Color3.fromRGB(165, 165, 185) or Color3.fromRGB(110, 70, 70))
+                addHL(p)   -- ซ่อม ESP หลัง respawn + อัปสี
             end
         end
     end
