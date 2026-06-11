@@ -1,6 +1,6 @@
--- 69RB_eps_select.lua  v1.0.1
+-- 69RB_eps_select.lua  v1.0.2
 -- EPS AimLock + เลือกเป้าเอง
--- [E] = เปิด/ปิดล็อค  |  คลิกชื่อ = เลือกเป้า  |  AUTO = ล็อคอัตโนมัติใน FOV
+-- [E] = เปิด/ปิดล็อค  |  คลิก ON/OFF = toggle  |  คลิกชื่อ = เลือกเป้า
 
 -- ==================== Single-Instance Guard ====================
 if _G.EPS69_CONNS then
@@ -10,7 +10,7 @@ if _G.EPS69_GUI  then pcall(function() _G.EPS69_GUI:Destroy() end) end
 if _G.EPS69_DRAW then pcall(function() _G.EPS69_DRAW:Remove() end) end
 _G.EPS69_CONNS = {}
 
-local V = "1.0.1"
+local V = "1.0.2"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -74,22 +74,25 @@ titleLbl.Font  = Enum.Font.GothamBold
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left
 titleLbl.Parent = titleBar
 
--- Status
-local statusLbl = Instance.new("TextLabel")
-statusLbl.Size  = UDim2.new(1, -12, 0, 20)
+-- Toggle button (คลิกได้ด้วย)
+local statusLbl = Instance.new("TextButton")
+statusLbl.Size  = UDim2.new(1, -12, 0, 24)
 statusLbl.Position = UDim2.new(0, 6, 0, 36)
-statusLbl.BackgroundTransparency = 1
+statusLbl.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+statusLbl.BackgroundTransparency = 0.1
 statusLbl.TextColor3 = Color3.fromRGB(140, 140, 140)
-statusLbl.Text  = "OFF  [P]"
+statusLbl.Text  = "[ OFF ]  tap to toggle"
 statusLbl.TextScaled = true
-statusLbl.Font  = Enum.Font.Gotham
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+statusLbl.Font  = Enum.Font.GothamBold
+statusLbl.TextXAlignment = Enum.TextXAlignment.Center
+statusLbl.BorderSizePixel = 0
 statusLbl.Parent = panel
+Instance.new("UICorner", statusLbl).CornerRadius = UDim.new(0, 5)
 
 -- Mode button (MANUAL / AUTO toggle)
 local modeBtn = Instance.new("TextButton")
 modeBtn.Size   = UDim2.new(1, -12, 0, 24)
-modeBtn.Position = UDim2.new(0, 6, 0, 60)
+modeBtn.Position = UDim2.new(0, 6, 0, 64)
 modeBtn.BackgroundColor3 = Color3.fromRGB(35, 55, 90)
 modeBtn.TextColor3 = Color3.fromRGB(110, 170, 255)
 modeBtn.Text   = "Mode: MANUAL"
@@ -102,7 +105,7 @@ Instance.new("UICorner", modeBtn).CornerRadius = UDim.new(0, 5)
 -- List header
 local listHdr = Instance.new("TextLabel")
 listHdr.Size  = UDim2.new(1, -12, 0, 16)
-listHdr.Position = UDim2.new(0, 6, 0, 88)
+listHdr.Position = UDim2.new(0, 6, 0, 92)
 listHdr.BackgroundTransparency = 1
 listHdr.TextColor3 = Color3.fromRGB(80, 80, 110)
 listHdr.Text  = "Target List:"
@@ -114,7 +117,7 @@ listHdr.Parent = panel
 -- Scrolling player list
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size   = UDim2.new(1, -12, 0, 175)
-scroll.Position = UDim2.new(0, 6, 0, 108)
+scroll.Position = UDim2.new(0, 6, 0, 112)
 scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 scroll.BackgroundTransparency = 0.2
 scroll.BorderSizePixel = 0
@@ -185,16 +188,24 @@ end
 -- ==================== Status display ====================
 local function updateStatus()
     if not enabled then
-        statusLbl.Text       = "OFF  [" .. CFG.Key.Name .. "]"
-        statusLbl.TextColor3 = Color3.fromRGB(140, 140, 140)
-        titleLbl.TextColor3  = Color3.fromRGB(160, 160, 255)
+        statusLbl.Text            = "[ OFF ]  tap / [" .. CFG.Key.Name .. "]"
+        statusLbl.TextColor3      = Color3.fromRGB(140, 140, 140)
+        statusLbl.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+        titleLbl.TextColor3       = Color3.fromRGB(160, 160, 255)
     else
         local tName = autoMode and "AUTO" or (target and target.Name or "none")
-        statusLbl.Text       = "ON  → " .. tName
-        statusLbl.TextColor3 = Color3.fromRGB(60, 255, 110)
-        titleLbl.TextColor3  = Color3.fromRGB(60, 255, 110)
+        statusLbl.Text            = "[ ON ]  → " .. tName
+        statusLbl.TextColor3      = Color3.fromRGB(60, 255, 110)
+        statusLbl.BackgroundColor3 = Color3.fromRGB(20, 55, 30)
+        titleLbl.TextColor3       = Color3.fromRGB(60, 255, 110)
     end
 end
+
+-- คลิก ON/OFF button ตรงๆ
+statusLbl.MouseButton1Click:Connect(function()
+    enabled = not enabled
+    updateStatus()
+end)
 
 -- ==================== Player List ====================
 local pBtns = {}
@@ -317,13 +328,15 @@ table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function(dt)
     if mousemoverel then mousemoverel(dx, dy) end
 end))
 
--- ==================== Key Toggle ====================
-table.insert(_G.EPS69_CONNS, UIS.InputBegan:Connect(function(inp, gp)
-    if gp then return end
-    if inp.KeyCode == CFG.Key then
+-- ==================== Key Toggle (IsKeyDown polling) ====================
+local keyWasDown = false
+table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function()
+    local isDown = UIS:IsKeyDown(CFG.Key)
+    if isDown and not keyWasDown then
         enabled = not enabled
         updateStatus()
     end
+    keyWasDown = isDown
 end))
 
 -- ==================== FOV Circle (Drawing API) ====================
@@ -346,4 +359,4 @@ if Drawing then
 end
 
 updateStatus()
-print("[EPS69] AimLock v" .. V .. " loaded | [E] toggle | click name to pick target")
+print("[EPS69] AimLock v" .. V .. " loaded | click [OFF] button or [E] to toggle")
