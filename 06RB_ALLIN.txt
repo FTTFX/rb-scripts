@@ -1,6 +1,12 @@
 -- 06RB ALL IN.txt — Frame-Perfect Aimbot + Movement (Unified)
--- Version: 3.4.0 "Follow Distance GUI"
+-- Version: 3.5.0 "Perf"
 -- H=ESP | Q=Shoot | E=Watch | T=TeamCheck | R=Rescan | F=Speed | G=Jump | P=Follow
+--
+-- v3.5.0 (perf):
+--   * FaceLock เลิก scan เป้าซ้ำ → ใช้ frameTargetHead จาก RenderStepped (ลด scan ครึ่งนึง)
+--   * รวม 3 Heartbeat (Speed/Follow/FaceLock) → bind เดียว (dispatch 1 ครั้ง/เฟรม)
+--   * isShielded gate ตาม LOS_REFRESH_FRAMES + cache (ลด raycast ครึ่งนึงตอนยิง)
+--   * cache getTeamID(LP) → curMyID ต่อเฟรม (เลิกคำนวณซ้ำใน findBestTarget)
 --
 -- v3.4.0:
 --   * Follow system: ระยะห่าง (GOD_DIST) ปรับได้ผ่าน GUI -10/-1/+1/+10
@@ -407,13 +413,16 @@ local function getPreAimPosition(fromPos, headPos, velX, velZ)
 end
 
 local frameCounter = 0
+local curMyID          = nil   -- team id ของเรา cache ต่อเฟรม
+local frameTargetHead  = nil   -- เป้าที่ scan แล้วในเฟรมนี้ (FaceLock ใช้ร่วม ไม่ scan ซ้ำ)
+local lastShielded     = nil   -- cache ผล shield raycast (gate ตาม LOS_REFRESH)
 
 -- ==================== Target scan ====================
 local function findBestTarget(refreshLOS)
     if not LPRoot then return nil end
     local fromPos = LPRoot.Position
     local fpx, fpy, fpz = fromPos.X, fromPos.Y, fromPos.Z
-    local myID = TeamCheck and getTeamID(LP) or nil
+    local myID = curMyID
 
     if lockedPlayer and lockedHum and lockedHum.Health > 0 and lockedHead and lockedRoot then
         local rp = lockedRoot.Position
@@ -473,55 +482,70 @@ end
 
 _G.RB06_FIND = function() return (findBestTarget(true)) end
 
--- ==================== Main loop (Aimbot + Speed) ====================
+-- ==================== Main loop (Aimbot) ====================
 bind(RunService.RenderStepped, function()
-    -- Aim
-    if (ShootOn or WatchOn) and LPRoot then
-        frameCounter = frameCounter + 1
-        local refreshLOS = (frameCounter % LOS_REFRESH_FRAMES == 0)
+    if not LPRoot then frameTargetHead = nil return end
+    curMyID = TeamCheck and getTeamID(LP) or nil   -- cache 1 ครั้ง/เฟรม (findBestTarget + FaceLock ใช้ร่วม)
 
-        local head, hasLOS, vel, targetPlayer = findBestTarget(refreshLOS)
-        if head then
-            local shielded = ShootOn and hasLOS and isShielded(LPRoot.Position, head.Position)
-            local canShoot = ShootOn and hasLOS and not shielded
-            -- Lock ทันทีที่เจอ LOS (sticky จาก findBestTarget จะคง lock จนเป้าหลบ)
-            if canShoot and targetPlayer then
-                lockedPlayer = targetPlayer
-                lockedHead   = head
-                lockedRoot   = pCacheRoot[targetPlayer]
-                lockedHum    = pCacheHum[targetPlayer]
+    if not (ShootOn or WatchOn or FACELOCK_ON) then frameTargetHead = nil return end
+
+    frameCounter = frameCounter + 1
+    local refreshLOS = (frameCounter % LOS_REFRESH_FRAMES == 0)
+
+    local head, hasLOS, vel, targetPlayer = findBestTarget(refreshLOS)
+    frameTargetHead = head   -- ให้ FaceLock (Heartbeat) ใช้ต่อ → ไม่ scan ซ้ำ
+
+    if head and (ShootOn or WatchOn) then
+        local shielded = false
+        if ShootOn and hasLOS then
+            -- gate shield raycast ตาม LOS_REFRESH → ยิง ray ครึ่งเดียว
+            if refreshLOS or lastShielded == nil then
+                lastShielded = isShielded(LPRoot.Position, head.Position)
             end
+            shielded = lastShielded
+        else
+            lastShielded = nil
+        end
+        local canShoot = ShootOn and hasLOS and not shielded
+        -- Lock ทันทีที่เจอ LOS (sticky จาก findBestTarget จะคง lock จนเป้าหลบ)
+        if canShoot and targetPlayer then
+            lockedPlayer = targetPlayer
+            lockedHead   = head
+            lockedRoot   = pCacheRoot[targetPlayer]
+            lockedHum    = pCacheHum[targetPlayer]
+        end
 
-            local fromPos = LPRoot.Position
-            local aimPos
+        local fromPos = LPRoot.Position
+        local aimPos
+        if canShoot then
+            aimPos = predictHead(head.Position, vel.X, vel.Y, vel.Z, fromPos)
+        elseif WatchOn then
+            aimPos = getPreAimPosition(fromPos, head.Position, vel.X, vel.Z)
+        end
+
+        if aimPos then
+            Camera.CFrame = cf_lookAt(Camera.CFrame.Position, aimPos)
             if canShoot then
-                aimPos = predictHead(head.Position, vel.X, vel.Y, vel.Z, fromPos)
-            elseif WatchOn then
-                aimPos = getPreAimPosition(fromPos, head.Position, vel.X, vel.Z)
-            end
-
-            if aimPos then
-                Camera.CFrame = cf_lookAt(Camera.CFrame.Position, aimPos)
-                if canShoot then
-                    local now = clock()
-                    if now - lastShot >= FIRE_RATE then
-                        lastShot = now
-                        if VIM then
-                            pcall(function()
-                                VIM:SendMouseButtonEvent(viewportX, viewportY, 0, true,  game, 0)
-                                VIM:SendMouseButtonEvent(viewportX, viewportY, 0, false, game, 0)
-                            end)
-                        end
+                local now = clock()
+                if now - lastShot >= FIRE_RATE then
+                    lastShot = now
+                    if VIM then
+                        pcall(function()
+                            VIM:SendMouseButtonEvent(viewportX, viewportY, 0, true,  game, 0)
+                            VIM:SendMouseButtonEvent(viewportX, viewportY, 0, false, game, 0)
+                        end)
                     end
                 end
             end
         end
+    else
+        lastShielded = nil
     end
-    -- (FaceLock ทำงานใน task แยก ด้านล่าง)
+    -- (FaceLock ทำงานใน Heartbeat รวม ด้านล่าง — ใช้ frameTargetHead นี้)
 end)
 
--- ==================== Speed loop (Heartbeat) ====================
-bind(RunService.Heartbeat, function()
+-- ==================== Speed step (รวมใน Heartbeat เดียวท้ายไฟล์) ====================
+local function speedStep()
     if not bv or not bv.Parent or not LPHum or LPHum.Health <= 0 then return end
     if SPEED_ON then
         local dir = LPHum.MoveDirection
@@ -536,7 +560,7 @@ bind(RunService.Heartbeat, function()
         bv.MaxForce = v3_new(0, 0, 0)
         bv.Velocity = v3_new(0, 0, 0)
     end
-end)
+end
 
 -- ==================== Follow Friend (Anti-Hacker) — P key ====================
 -- ตามหลังเพื่อน (teammate) ที่ใกล้สุด ห่าง 10 studs ด้านหลัง
@@ -572,7 +596,7 @@ local function destroyGodBP()
     stopGodAnims()
 end
 
-bind(RunService.Heartbeat, function()
+local function followStep()
     if not GOD_ON then
         if bpGod then destroyGodBP() end
         return
@@ -651,7 +675,7 @@ bind(RunService.Heartbeat, function()
             stopGodAnims()
         end
     end
-end)
+end
 
 -- ==================== GUI (Compact 130x290) ====================
 local sg = Instance.new("ScreenGui")
@@ -682,7 +706,7 @@ titleL.Size = UDim2.new(1,-18,0,14)
 titleL.Position = UDim2.new(0,2,0,1)
 titleL.BackgroundTransparency = 1
 titleL.TextColor3 = Color3.fromRGB(255,100,100)
-titleL.Text = "06RB v3.4"
+titleL.Text = "06RB v3.5"
 titleL.TextScaled = true
 titleL.Font = Enum.Font.GothamBold
 titleL.Parent = f
@@ -1039,7 +1063,7 @@ updS() updJ() updGod()
 -- task.defer = ต่อท้าย queue ของเฟรมนั้น → เกมเซ็ต CFrame ก่อน → เราเขียนทับทีหลังเสมอ
 local function doFaceLock()
     if not FACELOCK_ON or not LPRoot or not LPHum or LPHum.Health <= 0 then return end
-    local flHead = findBestTarget(false)
+    local flHead = frameTargetHead   -- ใช้เป้าที่ RenderStepped scan แล้ว → ไม่ scan ซ้ำ
     if not flHead then return end
     local tp    = flHead.Position
     local myPos = LPRoot.Position
@@ -1050,11 +1074,14 @@ local function doFaceLock()
     end
 end
 
+-- ==================== Movement (Heartbeat รวม: Speed + Follow + FaceLock) ====================
 bind(RunService.Heartbeat, function()
+    speedStep()
+    followStep()
     if FACELOCK_ON then task.defer(doFaceLock) end
 end)
 
 -- ==================== INIT (เรียกหลัง define ทุกฟังก์ชันแล้ว — กัน nil crash) ====================
 cacheLPChar(LP.Character)
 
-print("[06RB v3.4.0 Unified] Aim+Move+Follow loaded | Netcode:", NETCODE_MODE)
+print("[06RB v3.5.0 Perf] Aim+Move+Follow loaded | Netcode:", NETCODE_MODE)
