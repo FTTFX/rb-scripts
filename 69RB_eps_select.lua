@@ -11,13 +11,17 @@ end
 if _G.EPS69_HLS then
     for _, hl in pairs(_G.EPS69_HLS) do pcall(function() hl:Destroy() end) end
 end
+if _G.EPS69_TAGS then
+    for _, t in pairs(_G.EPS69_TAGS) do pcall(function() t:Destroy() end) end
+end
 if _G.EPS69_GUI  then pcall(function() _G.EPS69_GUI:Destroy() end) end
 if _G.EPS69_DRAW then pcall(function() _G.EPS69_DRAW:Remove() end) end
 _G.EPS69_CONNS = {}
 _G.EPS69_HLS   = {}
+_G.EPS69_TAGS  = {}         -- ป้ายชื่อ+ระยะลอยเหนือหัว (แยกผู้เล่นจริง)
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.3.1"
+local V = "2.4.0"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -90,7 +94,15 @@ local function isAlive(p)
 end
 
 -- ==================== ESP (Highlight ทุกคน) ====================
-local HLS = _G.EPS69_HLS
+local HLS  = _G.EPS69_HLS
+local TAGS = _G.EPS69_TAGS
+
+-- ระยะจากตัวเรา → player (nil ถ้าไม่มีตัว/ไม่มีตัวเรา)
+local function distTo(p, fromPos)
+    if not fromPos or not p.Character then return nil end
+    local r = p.Character:FindFirstChild("HumanoidRootPart")
+    return r and (r.Position - fromPos).Magnitude or nil
+end
 
 local function colorHL(p)
     local hl = HLS[p]
@@ -126,6 +138,43 @@ end
 local function removeHL(p)
     local hl = HLS[p]
     if hl then pcall(function() hl:Destroy() end) HLS[p] = nil end
+    local t = TAGS[p]
+    if t then pcall(function() t:Destroy() end) TAGS[p] = nil end
+end
+
+-- ป้ายชื่อ+ระยะลอยเหนือหัว (สร้างครั้งเดียว/respawn, อัปข้อความใน loop)
+local function addTag(p)
+    local char = p.Character
+    local head = char and (char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart"))
+    if not head then return end
+    local t = TAGS[p]
+    if t and t.Adornee == head then return end
+    if t then pcall(function() t:Destroy() end) end
+    t = Instance.new("BillboardGui")
+    t.Adornee = head
+    t.Size = UDim2.new(0, 130, 0, 18)
+    t.StudsOffset = Vector3.new(0, 2.6, 0)
+    t.AlwaysOnTop = true
+    t.Parent = head
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextScaled = true
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextStrokeTransparency = 0.3
+    lbl.Text = p.Name
+    lbl.Parent = t
+    TAGS[p] = t
+end
+
+-- อัปป้ายชื่อ: ข้อความ ชื่อ+ระยะ + สี (เขียว=เป้า แดง=คนอื่น)
+local function updateTag(p, sel, dStr)
+    local t = TAGS[p]
+    if not t then return end
+    local lbl = t:FindFirstChildOfClass("TextLabel")
+    if not lbl then return end
+    lbl.Text = p.Name .. dStr
+    lbl.TextColor3 = sel and Color3.fromRGB(60, 255, 120) or Color3.fromRGB(255, 90, 90)
 end
 
 -- หา "ส่วนที่มองเห็น" (ไม่โดนกำแพงบัง) ตามลำดับ priority
@@ -270,7 +319,7 @@ hintLbl.Size  = UDim2.new(1, -12, 0, 16)
 hintLbl.Position = UDim2.new(0, 6, 1, -20)
 hintLbl.BackgroundTransparency = 1
 hintLbl.TextColor3 = Color3.fromRGB(55, 55, 75)
-hintLbl.Text  = "คลิกชื่อ=เลือก | [,]=ก่อนหน้า [.]=ถัดไป"
+hintLbl.Text  = "คลิก/[,][.]=เลือก | [Q]=เล็งคนกลางจอ"
 hintLbl.TextScaled = true
 hintLbl.Font  = Enum.Font.Gotham
 hintLbl.Parent = panel
@@ -304,17 +353,25 @@ local pBtns = {}
 local function rebuildList()
     for _, b in pairs(pBtns) do b:Destroy() end
     pBtns = {}
+    local myChar = LP.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local fromPos = myRoot and myRoot.Position or nil
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP then
             addHL(p)   -- ESP ทุกคน + สีตามเป้าที่เลือก
+            addTag(p)  -- ป้ายชื่อเหนือหัว
             local sel   = (target == p)
             local alive = isAlive(p)
+            local dist  = distTo(p, fromPos)
+            local dStr  = dist and (" " .. math.floor(dist) .. "m") or ""
+            updateTag(p, sel, dStr)
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, -6, 0, 26)
+            btn.LayoutOrder = dist and math.floor(dist) or 99999   -- เรียงใกล้→ไกล
             btn.BackgroundColor3 = sel and Color3.fromRGB(25, 65, 35) or Color3.fromRGB(20, 20, 30)
             btn.TextColor3 = sel and Color3.fromRGB(60, 230, 100)
                 or (alive and Color3.fromRGB(165, 165, 185) or Color3.fromRGB(110, 70, 70))
-            btn.Text = (sel and "► " or "  ") .. (alive and "● " or "○ ") .. p.Name
+            btn.Text = (sel and "► " or "  ") .. (alive and "● " or "○ ") .. p.Name .. dStr
             btn.TextScaled = true
             btn.Font = sel and Enum.Font.GothamBold or Enum.Font.Gotham
             btn.TextXAlignment = Enum.TextXAlignment.Left
@@ -394,13 +451,21 @@ table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function(dt)
     lastListRefresh += dt
     if lastListRefresh >= 0.5 then
         lastListRefresh = 0
+        local myChar2 = LP.Character
+        local myRoot2 = myChar2 and myChar2:FindFirstChild("HumanoidRootPart")
+        local fromPos2 = myRoot2 and myRoot2.Position or nil
         for p, btn in pairs(pBtns) do
             if p and p.Parent then
                 local sel, alive = (target == p), isAlive(p)
-                btn.Text = (sel and "► " or "  ") .. (alive and "● " or "○ ") .. p.Name
+                local dist = distTo(p, fromPos2)
+                local dStr = dist and (" " .. math.floor(dist) .. "m") or ""
+                btn.Text = (sel and "► " or "  ") .. (alive and "● " or "○ ") .. p.Name .. dStr
                 btn.TextColor3 = sel and Color3.fromRGB(60, 230, 100)
                     or (alive and Color3.fromRGB(165, 165, 185) or Color3.fromRGB(110, 70, 70))
+                btn.LayoutOrder = dist and math.floor(dist) or 99999   -- เรียงใกล้→ไกลสด
                 addHL(p)   -- ซ่อม ESP หลัง respawn + อัปสี
+                addTag(p)  -- ซ่อมป้ายชื่อหลัง respawn
+                updateTag(p, sel, dStr)
             end
         end
     end
@@ -464,8 +529,41 @@ local function cycleTarget(dir)
     updateStatus()
 end
 
+-- ==================== Crosshair pick [Q] — เล็งคนที่อยู่กลางจอ ====================
+-- หันกล้องไปทางคนที่อยากเอา แล้วกด Q → ล็อคคนที่ใกล้กลางจอสุด (ไม่ต้องหาชื่อ)
+local function pickCrosshair()
+    local camCF  = Camera.CFrame
+    local origin = camCF.Position
+    local look   = camCF.LookVector
+    local best, bestDot = nil, 0.97   -- cone ~14° (สูงขึ้น=แคบลง)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and isAlive(p) then
+            local head = p.Character:FindFirstChild("Head")
+                or p.Character:FindFirstChild("HumanoidRootPart")
+            if head then
+                local dir = head.Position - origin
+                local mag = dir.Magnitude
+                if mag > 0 and mag <= CFG.MaxDist then
+                    local dot = look:Dot(dir / mag)
+                    if dot > bestDot then bestDot, best = dot, p end
+                end
+            end
+        end
+    end
+    if not best then return end
+    if autoMode then
+        autoMode = false
+        modeBtn.Text = "Mode: MANUAL"
+        modeBtn.BackgroundColor3 = Color3.fromRGB(35, 55, 90)
+        modeBtn.TextColor3 = Color3.fromRGB(110, 170, 255)
+    end
+    target = best
+    rebuildList()
+    updateStatus()
+end
+
 -- ==================== Keys (IsKeyDown polling) ====================
--- [E] = toggle lock | [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป
+-- [E] = toggle lock | [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป | [Q] = เล็งคนกลางจอ
 local keyWas = {}
 local function pollKey(kc, fn)
     local isDown = UIS:IsKeyDown(kc)
@@ -477,6 +575,7 @@ table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function()
     pollKey(CFG.Key, toggle)
     pollKey(Enum.KeyCode.Comma,  function() cycleTarget(-1) end)
     pollKey(Enum.KeyCode.Period, function() cycleTarget(1)  end)
+    pollKey(Enum.KeyCode.Q,      pickCrosshair)
 end))
 
 updateStatus()
