@@ -1,12 +1,12 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.4, มือถือ/ปุ่มจิ้ม)
--- v1.4: FARM วิ่งหน้าไปเรื่อยๆ ตามกล้อง (วงกลมหมุนอยู่กับที่=ไม่ได้ระยะ) เล็งกล้องไปทางลู่
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.5, มือถือ/ปุ่มจิ้ม)
+-- v1.5: − + ปรับความเร็ววิ่งตอน FARM ได้ (set WalkSpeed) | วิ่งหน้าตามกล้อง
 -- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งสะสม speed | MODE: วิ่งหน้า / วงกลม
--- − + : ปรับ (FLY=สปีดบิน, FARM=ความถี่วงกลม) | ponytail: Humanoid:Move วิ่งจริง ไม่วาร์ป
+-- − + : ปรับ (FLY=สปีดบิน, FARM=ความเร็ววิ่ง) | ponytail: Humanoid:Move วิ่งจริง ไม่วาร์ป
 local Players, RS = game:GetService("Players"), game:GetService("RunService")
 local LP, Cam = Players.LocalPlayer, workspace.CurrentCamera
 
 local SPEED, FLY, up, down, bv = 60, false, false, false, nil
-local FARM, MODE, RATE, ang = false, 1, 0.5, 0   -- MODE 1=วิ่งหน้า 2=วงกลม
+local FARM, MODE, RUNSPD, ang = false, 1, 50, 0   -- MODE 1=วิ่งหน้า 2=วงกลม | RUNSPD=WalkSpeed ตอนฟาร์ม
 
 -- single-instance guard
 if _G.FLYNC then for _, c in pairs(_G.FLYNC) do pcall(function() c:Disconnect() end) end end
@@ -48,11 +48,12 @@ bind(RS.Heartbeat, function()
     -- FARM: วิ่งสะสม speed (ไม่ทำตอนบิน)
     if FARM and not FLY then
         local h = hum(); if not h then return end
+        h.WalkSpeed = RUNSPD          -- ปรับความเร็ววิ่งด้วย − +
         if MODE == 1 then            -- วิ่งหน้า: ตามทิศกล้อง (เล็งกล้องไปทางลู่)
             local lk = Cam.CFrame.LookVector
             h:Move(Vector3.new(lk.X, 0, lk.Z), false)
         else                          -- วงกลมเล็กเร็ว: หมุนทิศทุกเฟรม
-            ang = ang + 0.35 * RATE
+            ang = ang + 0.3
             h:Move(Vector3.new(math.cos(ang), 0, math.sin(ang)), false)
         end
     end
@@ -113,16 +114,16 @@ modeB.MouseButton1Click:Connect(function()
     modeB.Text = "MODE: " .. (MODE == 1 and "วิ่งหน้า" or "วงกลม")
 end)
 
-local function rateTxt() return FLY and ("speed "..SPEED) or ("rate x"..string.format("%.1f", RATE)) end
+local function rateTxt() return FLY and ("fly "..SPEED) or ("run "..RUNSPD) end
 local spdL = btn(rateTxt(), 5, 171, 140, 18); spdL.Active = false
 local minus = btn("−", 5, 191, 67, 36)
 local plus  = btn("+", 78, 191, 67, 36)
 local function refresh() spdL.Text = rateTxt() end
 minus.MouseButton1Click:Connect(function()
-    if FLY then SPEED = math.max(10, SPEED-10) else RATE = math.max(0.1, RATE-0.1) end; refresh()
+    if FLY then SPEED = math.max(10, SPEED-10) else RUNSPD = math.max(10, RUNSPD-10) end; refresh()
 end)
 plus.MouseButton1Click:Connect(function()
-    if FLY then SPEED = SPEED+10 else RATE = math.min(3, RATE+0.1) end; refresh()
+    if FLY then SPEED = SPEED+10 else RUNSPD = RUNSPD+10 end; refresh()
 end)
 
-print("[FlyNoclip+Farm v1.4] พร้อม")
+print("[FlyNoclip+Farm v1.5] พร้อม")
