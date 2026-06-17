@@ -1,4 +1,5 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.6, มือถือ/ปุ่มจิ้ม)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.7, มือถือ/ปุ่มจิ้ม)
+-- v1.7: FIX fly บินตามกล้อง/จอยได้แล้ว (เอา PlatformStand ออก — มันทำให้ MoveDirection=0)
 -- v1.6: FARM กดปุ่ม W ค้างจริง (VirtualInputManager) — เกมขับด้วย WASD เอง Humanoid:Move เลยไม่ติด
 --       หมุนกล้องเพื่อเลี้ยว | − + ปรับ WalkSpeed | ตัด MODE วงกลมทิ้ง
 -- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งหน้าสะสม speed | ponytail: กด key จริง ไม่วาร์ป
@@ -24,11 +25,10 @@ local function startFly()
     bv = Instance.new("BodyVelocity")
     bv.MaxForce, bv.Velocity = Vector3.new(1,1,1)*9e9, Vector3.zero
     bv.Parent = root; _G.FLYNC_BV = bv
-    local h = hum(); if h then h.PlatformStand = true end
+    -- ไม่ใช้ PlatformStand: มันทำให้ MoveDirection=0 = บินตามกล้องไม่ได้ (BV กัน gravity อยู่แล้ว)
 end
 local function stopFly()
     if bv then bv:Destroy(); bv = nil end
-    local h = hum(); if h then h.PlatformStand = false end
 end
 
 bind(RS.Heartbeat, function()
@@ -114,4 +114,4 @@ plus.MouseButton1Click:Connect(function()
     if FLY then SPEED = SPEED+10 else RUNSPD = RUNSPD+10 end; refresh()
 end)
 
-print("[FlyNoclip+Farm v1.6] พร้อม")
+print("[FlyNoclip+Farm v1.7] พร้อม")
