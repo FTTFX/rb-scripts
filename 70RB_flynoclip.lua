@@ -1,5 +1,5 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm (v2.1, มือถือ/ปุ่มจิ้ม)
--- v2.1: FARM กด W→A→S→D วนซ้ำ ตั้งเวลาต่อปุ่มได้ (ค่าเริ่ม 0.3วิ)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm (v2.2, มือถือ/ปุ่มจิ้ม)
+-- v2.2: auto re-fly หลังตาย (CharacterAdded) + noclip ทุก frame (server reset CanCollide)
 local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
@@ -25,15 +25,13 @@ local function hum() local c = LP.Character; return c and c:FindFirstChildOfClas
 
 local function startFly()
     local root = hrp(); if not root then FLY = false; return end
-    for _, p in pairs(LP.Character:GetDescendants()) do
-        if p:IsA("BasePart") then p.CanCollide = false end
-    end
     bv = Instance.new("BodyVelocity")
     bv.MaxForce, bv.Velocity = Vector3.new(1,1,1)*9e9, Vector3.zero
     bv.Parent = root; _G.FLYNC_BV = bv
 end
 local function stopFly()
     if bv then bv:Destroy(); bv = nil end
+    -- คืน CanCollide (ถ้า character ยังอยู่)
     local char = LP.Character
     if char then
         for _, p in pairs(char:GetDescendants()) do
@@ -42,21 +40,35 @@ local function stopFly()
     end
 end
 
+-- auto re-fly หลัง respawn
+bind(LP.CharacterRemoving, function() bv = nil end)
+bind(LP.CharacterAdded, function()
+    RS.Heartbeat:Wait()   -- รอ 1 frame ให้ character โหลด
+    if FLY then startFly() end
+end)
+
 bind(RS.Heartbeat, function(dt)
-    if FLY and bv then
-        local h = hum()
-        local mag = h and h.MoveDirection.Magnitude or 0
-        local dir = workspace.CurrentCamera.CFrame.LookVector * mag
-        bv.Velocity = (mag > 0 and dir.Unit or Vector3.zero) * SPEED
+    if FLY then
+        local char = LP.Character
+        if char and bv then
+            -- noclip ทุก frame — server reset CanCollide ทุกกราฟิก ต้องสู้ทุก frame
+            for _, p in pairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+            local h = hum()
+            local mag = h and h.MoveDirection.Magnitude or 0
+            local dir = workspace.CurrentCamera.CFrame.LookVector * mag
+            bv.Velocity = (mag > 0 and dir.Unit or Vector3.zero) * SPEED
+        end
     end
     if FARM and not FLY then
         local h = hum(); if not h then return end
         h.WalkSpeed = RUNSPD
         farmTimer = farmTimer + dt
         if farmTimer >= FARM_DUR then
-            pressKey(KEYS[farmIdx], false)          -- ปล่อยปุ่มเก่า
-            farmIdx = farmIdx % 4 + 1               -- W→A→S→D→W→...
-            pressKey(KEYS[farmIdx], true)           -- กดปุ่มถัดไป
+            pressKey(KEYS[farmIdx], false)
+            farmIdx = farmIdx % 4 + 1
+            pressKey(KEYS[farmIdx], true)
             farmTimer = 0
         end
     end
@@ -97,13 +109,12 @@ farmB.MouseButton1Click:Connect(function()
     farmB.BackgroundColor3 = FARM and Color3.fromRGB(140,90,40) or Color3.fromRGB(45,45,55)
     if FARM then
         farmIdx, farmTimer = 1, 0
-        pressKey(KEYS[farmIdx], true)   -- กด W ทันที
+        pressKey(KEYS[farmIdx], true)
     else
         releaseAll()
     end
 end)
 
--- interval row: [0.3s][−][+]
 local durL = btn("0.3s", 5, 87, 60, 26);  durL.Active = false
 local durM = btn("−", 68, 87, 34, 26)
 local durP = btn("+", 106, 87, 34, 26)
@@ -116,7 +127,6 @@ durP.MouseButton1Click:Connect(function()
     durL.Text = ("%.1fs"):format(FARM_DUR)
 end)
 
--- speed row
 local spdL = btn("fly 60", 5, 118, 140, 18); spdL.Active = false
 local minus = btn("−", 5, 140, 67, 36)
 local plus  = btn("+", 78, 140, 67, 36)
@@ -129,4 +139,4 @@ plus.MouseButton1Click:Connect(function()
     spdL.Text = (FLY and "fly " or "run ") .. (FLY and SPEED or RUNSPD)
 end)
 
-print("[FlyNoclip+Farm v2.1] พร้อม")
+print("[FlyNoclip+Farm v2.2] พร้อม")
