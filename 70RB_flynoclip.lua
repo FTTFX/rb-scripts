@@ -1,4 +1,5 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.2, มือถือ/ปุ่มจิ้ม)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.3, มือถือ/ปุ่มจิ้ม)
+-- v1.3: ▲▼ เปลี่ยนเป็นแตะเปิด/ปิด (กดค้างไม่ติดเพราะกรอบ Draggable แย่งทัช)
 -- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งสะสม speed | MODE: หน้า-ถอย / วงกลมเล็ก
 -- − + : ปรับ (FLY=สปีดบิน, FARM=ความถี่วิ่ง) | ponytail: Humanoid:Move วิ่งจริง ไม่วาร์ป
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
@@ -86,10 +87,18 @@ flyB.MouseButton1Click:Connect(function()
     if FLY then startFly() else stopFly() end
 end)
 
+-- แตะเปิด/แตะปิด (กดค้างไม่ติดเพราะกรอบ Draggable แย่งทัช)
 local upB   = btn("▲", 5, 46, 67, 44)
 local downB = btn("▼", 78, 46, 67, 44)
-upB.MouseButton1Down:Connect(function() up = true end);     upB.MouseButton1Up:Connect(function() up = false end)
-downB.MouseButton1Down:Connect(function() down = true end); downB.MouseButton1Up:Connect(function() down = false end)
+local OFFC, ONC = Color3.fromRGB(45,45,55), Color3.fromRGB(40,120,150)
+upB.MouseButton1Click:Connect(function()
+    up = not up; down = false
+    upB.BackgroundColor3, downB.BackgroundColor3 = up and ONC or OFFC, OFFC
+end)
+downB.MouseButton1Click:Connect(function()
+    down = not down; up = false
+    downB.BackgroundColor3, upB.BackgroundColor3 = down and ONC or OFFC, OFFC
+end)
 
 local farmB = btn("FARM: OFF", 5, 95, 140, 36)
 farmB.MouseButton1Click:Connect(function()
@@ -118,4 +127,4 @@ plus.MouseButton1Click:Connect(function()
     if FLY then SPEED = SPEED+10 else RATE = math.min(3, RATE+0.1) end; refresh()
 end)
 
-print("[FlyNoclip+Farm v1.2] พร้อม")
+print("[FlyNoclip+Farm v1.3] พร้อม")
