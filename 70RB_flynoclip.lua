@@ -1,16 +1,23 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm (v2.0, มือถือ/ปุ่มจิ้ม)
--- v2.0: บินตามกล้อง (เงยขึ้น=ขึ้น, กดหน้า=ไปหน้า) | step speed x5 | FARM วงกลม Humanoid:Move
-local Players, RS = game:GetService("Players"), game:GetService("RunService")
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm (v2.1, มือถือ/ปุ่มจิ้ม)
+-- v2.1: FARM กด W→A→S→D วนซ้ำ ตั้งเวลาต่อปุ่มได้ (ค่าเริ่ม 0.3วิ)
+local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
 local SPEED, FLY, bv = 60, false, nil
-local FARM, RUNSPD, ang = false, 50, 0
+local FARM, RUNSPD = false, 50
+local FARM_DUR = 0.3
+local KEYS = {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}
+local farmIdx, farmTimer = 1, 0
+
+local function pressKey(kc, on) pcall(function() VIM:SendKeyEvent(on, kc, false, game) end) end
+local function releaseAll() for _, k in pairs(KEYS) do pressKey(k, false) end end
 
 -- single-instance guard
 if _G.FLYNC then for _, c in pairs(_G.FLYNC) do pcall(function() c:Disconnect() end) end end
 if _G.FLYNC_BV then pcall(function() _G.FLYNC_BV:Destroy() end) end
+if _G.FLYNC_RELEASE then pcall(_G.FLYNC_RELEASE) end
 pcall(function() (gethui and gethui() or LP.PlayerGui).FLYNCGUI:Destroy() end)
-_G.FLYNC = {}
+_G.FLYNC, _G.FLYNC_RELEASE = {}, releaseAll
 local function bind(s, f) local c = s:Connect(f); _G.FLYNC[#_G.FLYNC+1] = c end
 
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
@@ -35,19 +42,23 @@ local function stopFly()
     end
 end
 
-bind(RS.Heartbeat, function()
+bind(RS.Heartbeat, function(dt)
     if FLY and bv then
         local h = hum()
         local mag = h and h.MoveDirection.Magnitude or 0
-        -- บินตามทิศกล้อง: เงยกล้องขึ้น=บินขึ้น, กดจอยหน้า=บินหน้า
         local dir = workspace.CurrentCamera.CFrame.LookVector * mag
         bv.Velocity = (mag > 0 and dir.Unit or Vector3.zero) * SPEED
     end
     if FARM and not FLY then
         local h = hum(); if not h then return end
-        ang = ang + 0.04   -- ponytail: ~2.3°/frame, ปรับถ้าวงแน่น/กว้างเกิน
         h.WalkSpeed = RUNSPD
-        h:Move(Vector3.new(math.sin(ang), 0, math.cos(ang)), false)
+        farmTimer = farmTimer + dt
+        if farmTimer >= FARM_DUR then
+            pressKey(KEYS[farmIdx], false)          -- ปล่อยปุ่มเก่า
+            farmIdx = farmIdx % 4 + 1               -- W→A→S→D→W→...
+            pressKey(KEYS[farmIdx], true)           -- กดปุ่มถัดไป
+            farmTimer = 0
+        end
     end
 end)
 
@@ -57,7 +68,7 @@ gui.Name, gui.ResetOnSpawn = "FLYNCGUI", false
 gui.Parent = gethui and gethui() or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,150,0,150), UDim2.new(0,20,0.5,-75)
+f.Size, f.Position = UDim2.new(0,150,0,180), UDim2.new(0,20,0.5,-90)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(20,20,25), 0.25
 f.Active, f.Draggable = true, true
 Instance.new("UICorner", f)
@@ -84,11 +95,31 @@ farmB.MouseButton1Click:Connect(function()
     FARM = not FARM
     farmB.Text = "FARM: " .. (FARM and "ON" or "OFF")
     farmB.BackgroundColor3 = FARM and Color3.fromRGB(140,90,40) or Color3.fromRGB(45,45,55)
+    if FARM then
+        farmIdx, farmTimer = 1, 0
+        pressKey(KEYS[farmIdx], true)   -- กด W ทันที
+    else
+        releaseAll()
+    end
 end)
 
-local spdL = btn("fly 60", 5, 87, 140, 18); spdL.Active = false
-local minus = btn("−", 5, 109, 67, 36)
-local plus  = btn("+", 78, 109, 67, 36)
+-- interval row: [0.3s][−][+]
+local durL = btn("0.3s", 5, 87, 60, 26);  durL.Active = false
+local durM = btn("−", 68, 87, 34, 26)
+local durP = btn("+", 106, 87, 34, 26)
+durM.MouseButton1Click:Connect(function()
+    FARM_DUR = math.max(0.1, FARM_DUR - 0.1)
+    durL.Text = ("%.1fs"):format(FARM_DUR)
+end)
+durP.MouseButton1Click:Connect(function()
+    FARM_DUR = FARM_DUR + 0.1
+    durL.Text = ("%.1fs"):format(FARM_DUR)
+end)
+
+-- speed row
+local spdL = btn("fly 60", 5, 118, 140, 18); spdL.Active = false
+local minus = btn("−", 5, 140, 67, 36)
+local plus  = btn("+", 78, 140, 67, 36)
 minus.MouseButton1Click:Connect(function()
     if FLY then SPEED = math.max(10, SPEED-50) else RUNSPD = math.max(10, RUNSPD-50) end
     spdL.Text = (FLY and "fly " or "run ") .. (FLY and SPEED or RUNSPD)
@@ -98,4 +129,4 @@ plus.MouseButton1Click:Connect(function()
     spdL.Text = (FLY and "fly " or "run ") .. (FLY and SPEED or RUNSPD)
 end)
 
-print("[FlyNoclip+Farm v2.0] พร้อม")
+print("[FlyNoclip+Farm v2.1] พร้อม")
