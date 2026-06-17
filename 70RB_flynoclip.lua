@@ -1,12 +1,12 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.3, มือถือ/ปุ่มจิ้ม)
--- v1.3: ▲▼ เปลี่ยนเป็นแตะเปิด/ปิด (กดค้างไม่ติดเพราะกรอบ Draggable แย่งทัช)
--- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งสะสม speed | MODE: หน้า-ถอย / วงกลมเล็ก
--- − + : ปรับ (FLY=สปีดบิน, FARM=ความถี่วิ่ง) | ponytail: Humanoid:Move วิ่งจริง ไม่วาร์ป
-local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
-local LP = Players.LocalPlayer
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.4, มือถือ/ปุ่มจิ้ม)
+-- v1.4: FARM วิ่งหน้าไปเรื่อยๆ ตามกล้อง (วงกลมหมุนอยู่กับที่=ไม่ได้ระยะ) เล็งกล้องไปทางลู่
+-- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งสะสม speed | MODE: วิ่งหน้า / วงกลม
+-- − + : ปรับ (FLY=สปีดบิน, FARM=ความถี่วงกลม) | ponytail: Humanoid:Move วิ่งจริง ไม่วาร์ป
+local Players, RS = game:GetService("Players"), game:GetService("RunService")
+local LP, Cam = Players.LocalPlayer, workspace.CurrentCamera
 
 local SPEED, FLY, up, down, bv = 60, false, false, false, nil
-local FARM, MODE, RATE, ang, flipT, fwd = false, 1, 0.5, 0, 0, 1   -- MODE 1=หน้า-ถอย 2=วงกลม
+local FARM, MODE, RATE, ang = false, 1, 0.5, 0   -- MODE 1=วิ่งหน้า 2=วงกลม
 
 -- single-instance guard
 if _G.FLYNC then for _, c in pairs(_G.FLYNC) do pcall(function() c:Disconnect() end) end end
@@ -47,11 +47,10 @@ bind(RS.Heartbeat, function()
     end
     -- FARM: วิ่งสะสม speed (ไม่ทำตอนบิน)
     if FARM and not FLY then
-        local root, h = hrp(), hum(); if not (root and h) then return end
-        if MODE == 1 then            -- หน้า-ถอย: สลับทุก (0.3/RATE) วิ
-            flipT = flipT + 1/60
-            if flipT >= 0.3 / RATE then flipT = 0; fwd = -fwd end
-            h:Move(root.CFrame.LookVector * fwd, false)
+        local h = hum(); if not h then return end
+        if MODE == 1 then            -- วิ่งหน้า: ตามทิศกล้อง (เล็งกล้องไปทางลู่)
+            local lk = Cam.CFrame.LookVector
+            h:Move(Vector3.new(lk.X, 0, lk.Z), false)
         else                          -- วงกลมเล็กเร็ว: หมุนทิศทุกเฟรม
             ang = ang + 0.35 * RATE
             h:Move(Vector3.new(math.cos(ang), 0, math.sin(ang)), false)
@@ -105,14 +104,13 @@ farmB.MouseButton1Click:Connect(function()
     FARM = not FARM
     farmB.Text = "FARM: " .. (FARM and "ON" or "OFF")
     farmB.BackgroundColor3 = FARM and Color3.fromRGB(140,90,40) or Color3.fromRGB(45,45,55)
-    if FARM then local h = hum(); if h then h.AutoRotate = false end
-    else local h = hum(); if h then h.AutoRotate = true end end
+    local h = hum(); if h then h.AutoRotate = not FARM end
 end)
 
-local modeB = btn("MODE: หน้า-ถอย", 5, 136, 140, 30)
+local modeB = btn("MODE: วิ่งหน้า", 5, 136, 140, 30)
 modeB.MouseButton1Click:Connect(function()
     MODE = MODE == 1 and 2 or 1
-    modeB.Text = "MODE: " .. (MODE == 1 and "หน้า-ถอย" or "วงกลม")
+    modeB.Text = "MODE: " .. (MODE == 1 and "วิ่งหน้า" or "วงกลม")
 end)
 
 local function rateTxt() return FLY and ("speed "..SPEED) or ("rate x"..string.format("%.1f", RATE)) end
@@ -127,4 +125,4 @@ plus.MouseButton1Click:Connect(function()
     if FLY then SPEED = SPEED+10 else RATE = math.min(3, RATE+0.1) end; refresh()
 end)
 
-print("[FlyNoclip+Farm v1.3] พร้อม")
+print("[FlyNoclip+Farm v1.4] พร้อม")
