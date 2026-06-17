@@ -1,12 +1,13 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.5, มือถือ/ปุ่มจิ้ม)
--- v1.5: − + ปรับความเร็ววิ่งตอน FARM ได้ (set WalkSpeed) | วิ่งหน้าตามกล้อง
--- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งสะสม speed | MODE: วิ่งหน้า / วงกลม
--- − + : ปรับ (FLY=สปีดบิน, FARM=ความเร็ววิ่ง) | ponytail: Humanoid:Move วิ่งจริง ไม่วาร์ป
-local Players, RS = game:GetService("Players"), game:GetService("RunService")
-local LP, Cam = Players.LocalPlayer, workspace.CurrentCamera
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm-run mini (v1.6, มือถือ/ปุ่มจิ้ม)
+-- v1.6: FARM กดปุ่ม W ค้างจริง (VirtualInputManager) — เกมขับด้วย WASD เอง Humanoid:Move เลยไม่ติด
+--       หมุนกล้องเพื่อเลี้ยว | − + ปรับ WalkSpeed | ตัด MODE วงกลมทิ้ง
+-- FLY: เปิดบิน+ทะลุ | ▲▼ ขึ้นลง | FARM: วิ่งหน้าสะสม speed | ponytail: กด key จริง ไม่วาร์ป
+local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
+local LP = Players.LocalPlayer
 
 local SPEED, FLY, up, down, bv = 60, false, false, false, nil
-local FARM, MODE, RUNSPD, ang = false, 1, 50, 0   -- MODE 1=วิ่งหน้า 2=วงกลม | RUNSPD=WalkSpeed ตอนฟาร์ม
+local FARM, RUNSPD = false, 50   -- RUNSPD = WalkSpeed ตอนฟาร์ม
+local function pressW(on) pcall(function() VIM:SendKeyEvent(on, Enum.KeyCode.W, false, game) end) end
 
 -- single-instance guard
 if _G.FLYNC then for _, c in pairs(_G.FLYNC) do pcall(function() c:Disconnect() end) end end
@@ -45,17 +46,10 @@ bind(RS.Heartbeat, function()
             bv.Velocity = (dir.Magnitude > 0 and dir.Unit or Vector3.zero) * SPEED
         end
     end
-    -- FARM: วิ่งสะสม speed (ไม่ทำตอนบิน)
+    -- FARM: กด W ค้าง (ไม่ทำตอนบิน) | set WalkSpeed กันเกม reset
     if FARM and not FLY then
-        local h = hum(); if not h then return end
-        h.WalkSpeed = RUNSPD          -- ปรับความเร็ววิ่งด้วย − +
-        if MODE == 1 then            -- วิ่งหน้า: ตามทิศกล้อง (เล็งกล้องไปทางลู่)
-            local lk = Cam.CFrame.LookVector
-            h:Move(Vector3.new(lk.X, 0, lk.Z), false)
-        else                          -- วงกลมเล็กเร็ว: หมุนทิศทุกเฟรม
-            ang = ang + 0.3
-            h:Move(Vector3.new(math.cos(ang), 0, math.sin(ang)), false)
-        end
+        local h = hum(); if h then h.WalkSpeed = RUNSPD end
+        pressW(true)
     end
 end)
 
@@ -65,7 +59,7 @@ gui.Name, gui.ResetOnSpawn = "FLYNCGUI", false
 gui.Parent = gethui and gethui() or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,150,0,235), UDim2.new(0,20,0.5,-117)
+f.Size, f.Position = UDim2.new(0,150,0,200), UDim2.new(0,20,0.5,-100)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(20,20,25), 0.25
 f.Active, f.Draggable = true, true
 Instance.new("UICorner", f)
@@ -105,19 +99,13 @@ farmB.MouseButton1Click:Connect(function()
     FARM = not FARM
     farmB.Text = "FARM: " .. (FARM and "ON" or "OFF")
     farmB.BackgroundColor3 = FARM and Color3.fromRGB(140,90,40) or Color3.fromRGB(45,45,55)
-    local h = hum(); if h then h.AutoRotate = not FARM end
-end)
-
-local modeB = btn("MODE: วิ่งหน้า", 5, 136, 140, 30)
-modeB.MouseButton1Click:Connect(function()
-    MODE = MODE == 1 and 2 or 1
-    modeB.Text = "MODE: " .. (MODE == 1 and "วิ่งหน้า" or "วงกลม")
+    if not FARM then pressW(false) end   -- ปล่อยปุ่ม W
 end)
 
 local function rateTxt() return FLY and ("fly "..SPEED) or ("run "..RUNSPD) end
-local spdL = btn(rateTxt(), 5, 171, 140, 18); spdL.Active = false
-local minus = btn("−", 5, 191, 67, 36)
-local plus  = btn("+", 78, 191, 67, 36)
+local spdL = btn(rateTxt(), 5, 136, 140, 18); spdL.Active = false
+local minus = btn("−", 5, 158, 67, 36)
+local plus  = btn("+", 78, 158, 67, 36)
 local function refresh() spdL.Text = rateTxt() end
 minus.MouseButton1Click:Connect(function()
     if FLY then SPEED = math.max(10, SPEED-10) else RUNSPD = math.max(10, RUNSPD-10) end; refresh()
@@ -126,4 +114,4 @@ plus.MouseButton1Click:Connect(function()
     if FLY then SPEED = SPEED+10 else RUNSPD = RUNSPD+10 end; refresh()
 end)
 
-print("[FlyNoclip+Farm v1.5] พร้อม")
+print("[FlyNoclip+Farm v1.6] พร้อม")
