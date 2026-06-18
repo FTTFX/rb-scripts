@@ -1,6 +1,6 @@
--- 72RB_speed.lua — Run Speed + Jump + Auto Win (v2.2)
--- v2.2: AUTO WIN บินไล่ผ่านทุกด่านตามลำดับ (Stage1→2→…→เป้า) + กด W ค้าง + noclip → ผ่านด่านจริง progress เต็ม → เก็บที่เป้า → วนเอง
--- v2.1: บินตรงดิ่งไปแผ่นเป้า (ข้ามด่าน อาจได้แค่ +3)
+-- 72RB_speed.lua — Run Speed + Jump + Auto Win + WASD วน (v2.3)
+-- v2.3: + WASD วน (W→A→S ละ 0.3วิ วนวงกลม เดินเก็บ speed อยู่กับที่) แทนช่อง CD เดิม
+-- v2.2: AUTO WIN บินไล่ผ่านทุกด่าน + กด W + noclip
 -- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure)
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
@@ -10,16 +10,18 @@ local LP = Players.LocalPlayer
 
 local RUN, SPEED = false, 50
 local INFJ, lastJump, JUMP_VAL = false, 0, 30
-local WIN, WIN_CD, lastWinFire = false, 1.0, 0
-local fti = firetouchinterest
+local WIN = false
+local FARM, FARM_KEYS, FARM_DUR = false, {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S}, 0.3
+local fIdx, fStart, fHeld = 1, 0, nil
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
+local function pressKey(kc, on) pcall(function() VIM:SendKeyEvent(on, kc, false, game) end) end
 local wpIdx, wDown = 1, false
 local function setW(on)
     if on == wDown then return end
     wDown = on
-    pcall(function() VIM:SendKeyEvent(on, Enum.KeyCode.W, false, game) end)
+    pressKey(Enum.KeyCode.W, on)
 end
 
 local blocks = {}
@@ -77,6 +79,20 @@ bind(RS.Heartbeat, function()
         end
     else
         setW(false)
+    end
+
+    -- WASD วน: W→A→S ละ FARM_DUR วิ (เดินวงกลมเก็บ speed อยู่กับที่)
+    if FARM then
+        local now = os.clock()
+        if fHeld == nil then
+            fIdx = 1; fHeld = FARM_KEYS[1]; fStart = now; pressKey(fHeld, true)
+        elseif now - fStart >= FARM_DUR then
+            pressKey(fHeld, false)
+            fIdx = fIdx % #FARM_KEYS + 1
+            fHeld = FARM_KEYS[fIdx]; fStart = now; pressKey(fHeld, true)
+        end
+    elseif fHeld then
+        pressKey(fHeld, false); fHeld = nil
     end
 end)
 
@@ -161,6 +177,7 @@ end)
 local winB = btn("AUTO WIN: OFF", 10, 202, 170, 32)
 local function unclip()
     setW(false); wpIdx = 1
+    if fHeld then pressKey(fHeld, false); fHeld = nil end
     local char = LP.Character
     if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
 end
@@ -187,19 +204,17 @@ stB.MouseButton1Click:Connect(function()
     stB.Text = stLabel()
 end)
 
-local cdL = btn(("%.1fs"):format(WIN_CD), 10, 278, 90, 32); cdL.Active = false
-local cdMinus = btn("−", 106, 278, 36, 32)
-local cdPlus  = btn("+", 144, 278, 36, 32)
-cdMinus.MouseButton1Click:Connect(function()
-    WIN_CD = math.max(0.2, WIN_CD - 0.2); cdL.Text = ("%.1fs"):format(WIN_CD)
-end)
-cdPlus.MouseButton1Click:Connect(function()
-    WIN_CD = WIN_CD + 0.2; cdL.Text = ("%.1fs"):format(WIN_CD)
+local farmB = btn("WASD วน: OFF", 10, 278, 170, 32)
+farmB.MouseButton1Click:Connect(function()
+    FARM = not FARM
+    if not FARM and fHeld then pressKey(fHeld, false); fHeld = nil end
+    farmB.Text = "WASD วน: " .. (FARM and "ON" or "OFF")
+    farmB.BackgroundColor3 = FARM and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
 local closeB = btn("CLOSE", 10, 318, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
-    RUN, WIN, INFJ = false, false, false
+    RUN, WIN, INFJ, FARM = false, false, false, false
     unclip()
     local h = hum(); if h then h.WalkSpeed = 16 end
     for _, c in pairs(CONNS) do pcall(function() c:Disconnect() end) end
@@ -207,4 +222,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + AutoWin v2.2] พร้อม")
+print("[72RB Run Speed + Jump + AutoWin + WASDวน v2.3] พร้อม")
