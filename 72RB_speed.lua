@@ -1,10 +1,10 @@
--- 72RB_speed.lua — Run Speed + Double Jump (v1.1)
--- v1.1: + DBL JUMP (กระโดดซ้ำกลางอากาศ ปรับจำนวนได้)
+-- 72RB_speed.lua — Run Speed + Jump (v1.3)
+-- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 local RUN, SPEED = false, 50
-local DJUMP, MAXJUMP, extraUsed, lastJump = false, 1, 0, 0
+local INFJ, lastJump, JUMP_VAL = false, 0, 30
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
@@ -20,18 +20,17 @@ bind(RS.Heartbeat, function()
     if RUN then local h = hum(); if h then h.WalkSpeed = SPEED end end
 end)
 
--- DBL JUMP: กระโดดซ้ำกลางอากาศ (reset เมื่อแตะพื้น)
+-- JUMP: อัด velocity ขึ้นทุกครั้งที่กด space (กลางอากาศก็ได้ = ดับเบิล/มัลติจัม), สูงตาม JUMP_VAL
 bind(UIS.JumpRequest, function()
-    if not DJUMP then return end
+    if not INFJ then return end
     local h, root = hum(), hrp()
     if not h or not root then return end
-    if h.FloorMaterial ~= Enum.Material.Air then extraUsed = 0; return end  -- อยู่บนพื้น = จัมป์ปกติ
     local now = os.clock()
-    if extraUsed < MAXJUMP and now - lastJump > 0.2 then
-        extraUsed, lastJump = extraUsed + 1, now
+    if now - lastJump > 0.1 then
+        lastJump = now
         local v = root.AssemblyLinearVelocity
-        local jp = h.JumpPower > 0 and h.JumpPower or 50
-        root.AssemblyLinearVelocity = Vector3.new(v.X, jp, v.Z)
+        root.AssemblyLinearVelocity = Vector3.new(v.X, JUMP_VAL, v.Z)
+        h:ChangeState(Enum.HumanoidStateType.Jumping)
     end
 end)
 
@@ -41,7 +40,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "RBSPDGUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,234), UDim2.new(0,20,0.5,-117)
+f.Size, f.Position = UDim2.new(0,190,0,238), UDim2.new(0,20,0.5,-119)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -82,20 +81,24 @@ plus.MouseButton1Click:Connect(function()
     SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
 end)
 
-local jumpB = btn("DBL JUMP: OFF", 10, 124, 170, 32)
+local jumpB = btn("JUMP: OFF", 10, 124, 170, 32)
 jumpB.MouseButton1Click:Connect(function()
-    DJUMP = not DJUMP
-    jumpB.Text = "DBL JUMP: " .. (DJUMP and "ON" or "OFF")
-    jumpB.BackgroundColor3 = DJUMP and Color3.fromRGB(40,120,160) or Color3.fromRGB(45,45,58)
+    INFJ = not INFJ
+    jumpB.Text = "JUMP: " .. (INFJ and "ON" or "OFF")
+    jumpB.BackgroundColor3 = INFJ and Color3.fromRGB(40,120,160) or Color3.fromRGB(45,45,58)
 end)
 
-local jcL = btn("x"..(MAXJUMP+1), 10, 162, 90, 28); jcL.Active = false
-local jcM = btn("−", 106, 162, 36, 28)
-local jcP = btn("+", 144, 162, 36, 28)
-jcM.MouseButton1Click:Connect(function() MAXJUMP = math.max(1, MAXJUMP-1); jcL.Text = "x"..(MAXJUMP+1) end)
-jcP.MouseButton1Click:Connect(function() MAXJUMP = MAXJUMP+1; jcL.Text = "x"..(MAXJUMP+1) end)
+local jValL = btn(tostring(JUMP_VAL), 10, 162, 90, 32); jValL.Active = false
+local jMinus = btn("−", 106, 162, 36, 32)
+local jPlus  = btn("+", 144, 162, 36, 32)
+jMinus.MouseButton1Click:Connect(function()
+    JUMP_VAL = math.max(10, JUMP_VAL - 10); jValL.Text = tostring(JUMP_VAL)
+end)
+jPlus.MouseButton1Click:Connect(function()
+    JUMP_VAL = JUMP_VAL + 10; jValL.Text = tostring(JUMP_VAL)
+end)
 
-local closeB = btn("CLOSE", 10, 196, 170, 24, Color3.fromRGB(120,30,30))
+local closeB = btn("CLOSE", 10, 202, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
     RUN = false
     local h = hum(); if h then h.WalkSpeed = 16 end
@@ -104,4 +107,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + DblJump v1.1] พร้อม")
+print("[72RB Run Speed + Jump v1.3] พร้อม")
