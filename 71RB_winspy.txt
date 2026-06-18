@@ -1,10 +1,8 @@
--- 71RB_winspy.txt v1.2 — Win Condition Spy: หาเงื่อนไขกันฟาร์มของแผ่น win
--- วิธีใช้:
---   1) รันตัวนี้ → ยืนบนแผ่นเหลือง → กด SET PAD (ดูด attr/children + ดักการแตะแผ่น)
---   2) เหยียบเข้า-ออกแผ่นหลายๆครั้ง รัวบ้างช้าบ้าง
---   3) อ่าน log: 👆TOUCH = แตะแผ่น | 🏆WIN = คะแนนขึ้น (โชว์ "ห่างครั้งก่อน Xs")
---   → ดูว่าแตะไหนนับ/ไม่นับ ห่างกี่วิ = เจอ cooldown / ต้องออกก่อน
-local VERSION = "1.2"
+-- 71RB_winspy.txt v1.3 — Win Condition Spy + จับแผ่น win อัตโนมัติ
+-- แผ่น win วาปกลับทันที กด SET ไม่ทัน → ตัวนี้จำ part ใต้เท้าทุก frame แล้วย้อน ~0.1s ตอน Win ขึ้น
+-- วิธีใช้: รัน → วิ่งไปแตะแผ่นเหลืองให้ win 1 ครั้ง → ดู "🎯 แผ่น win = ..."
+--   เก็บใน _G.WINSPY.pad → เอาไปทำ farm | SET PAD = จับเองตอนยืนนิ่งได้ (ถ้าแผ่นไม่วาป)
+local VERSION = "1.3"
 local Players, RunService = game:GetService("Players"), game:GetService("RunService")
 local LP = Players.LocalPlayer
 
@@ -172,22 +170,44 @@ setPadB.MouseButton1Click:Connect(function()
     add("ตอนนี้เหยียบเข้า-ออกแผ่นได้เลย ดู TOUCH vs WIN")
 end)
 
+-- ==================== ประวัติ part ใต้เท้า (จับแผ่น win ก่อนวาป) ====================
+local posHist = {}
+local rpFoot = RaycastParams.new()
+rpFoot.FilterType = Enum.RaycastFilterType.Exclude
+bind(RunService.Heartbeat, function()
+    local root = hrp(); if not root then return end
+    rpFoot.FilterDescendantsInstances = {LP.Character}
+    local res = workspace:Raycast(root.Position, Vector3.new(0,-8,0), rpFoot)
+    posHist[#posHist+1] = {t = os.clock(), part = res and res.Instance, p = root.Position}
+    if #posHist > 40 then table.remove(posHist, 1) end
+end)
+
 -- ==================== Win watch ====================
 local lastWinT = 0
 local function report(name, old, new)
     local now = os.clock()
     local gap = lastWinT > 0 and string.format(" (ห่างครั้งก่อน %.2fs)", now - lastWinT) or ""
     lastWinT = now
-    local root = hrp()
-    if root then S.lastWin = root.CFrame end
     add("🏆 "..name..": "..old.." → "..new..gap)
+    -- จับแผ่น finish = part ใต้เท้า "เฟรมก่อนวาป" (ตรวจระยะกระโดดไกล)
+    local pad, jumpFrom
+    for i = #posHist, 2, -1 do
+        local a, b = posHist[i-1], posHist[i]
+        if a.p and b.p and (a.p - b.p).Magnitude > 40 then pad, jumpFrom = a.part, a.p; break end
+    end
+    if pad then
+        S.pad, S.lastWin = pad, CFrame.new(jumpFrom)
+        add("🎯 แผ่น finish (ก่อนวาป) = "..getName(pad))
+        add("   → _G.WINSPY.pad พร้อม firetouchinterest")
+    else
+        local last = posHist[#posHist]
+        if last and last.part then S.pad = last.part; add("🎯 (ไม่เจอวาป) ใต้เท้า = "..getName(last.part)) end
+    end
     -- remote ใน 3s ก่อนหน้า (ถ้ามี)
-    local found = false
     for i = #S.ring, 1, -1 do
         local e = S.ring[i]
-        if now - e.t <= 3 then add(string.format("   -%.2fs %s", now - e.t, e.s)); found = true end
+        if now - e.t <= 3 then add(string.format("   remote -%.2fs %s", now - e.t, e.s)) end
     end
-    if not found then add("   (ไม่มี remote → win = touch ล้วน)") end
 end
 
 local function candidates()
