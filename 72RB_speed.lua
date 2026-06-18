@@ -1,11 +1,10 @@
--- 72RB_speed.lua — Run Speed + Jump + Auto Win (v1.9)
--- v1.9: AUTO WIN วิ่งหน้าด้วยปุ่ม W (เล็งกล้องไปทาง stage เป้า) → ผ่านทุก stage จริง → ใกล้แผ่นเป้าค่อย MoveTo เก็บ
--- v1.8: AUTO WIN = MoveTo ตรงไปแผ่น (ได้แค่ +3 เพราะข้าม stage)
+-- 72RB_speed.lua — Run Speed + Jump + Auto Win (v2.0)
+-- v2.0: AUTO WIN วิ่งไปเป้าเอง (Humanoid:Move world-space หันให้เอง ไม่ต้องเล็งกล้อง) → ใกล้แผ่นค่อย MoveTo เก็บ
+-- v1.9: วิ่งด้วยปุ่ม W (ต้องเล็งกล้องเอง)
 -- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure)
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
-local VIM = game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
 local RUN, SPEED = false, 50
@@ -14,13 +13,6 @@ local WIN, WIN_CD, lastWinFire = false, 1.0, 0
 local fti = firetouchinterest
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
-
-local wDown = false
-local function setW(on)
-    if on == wDown then return end
-    wDown = on
-    pcall(function() VIM:SendKeyEvent(on, Enum.KeyCode.W, false, game) end)
-end
 
 local blocks = {}
 local BIDX = 0          -- 0 = auto (spy/แผ่นแรก), >0 = เลือกเอง
@@ -60,15 +52,14 @@ bind(RS.Heartbeat, function()
             local char = LP.Character           -- noclip ทะลุคีย์ที่ขวาง (พื้นยังยืนได้)
             if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
             h.WalkSpeed = math.max(SPEED, 120)
-            if (root.Position - pad.Position).Magnitude < 20 then
-                setW(false)
+            local to = pad.Position - root.Position
+            if to.Magnitude < 20 then
                 h:MoveTo(pad.Position)          -- ใกล้แผ่นเป้า → เดินเข้าเก็บคะแนน → วาปกลับ → วนเอง
             else
-                setW(true)                      -- วิ่งหน้าด้วย W ตามราง (เล็งกล้องไปทาง stage เป้า)
+                local dir = Vector3.new(to.X, 0, to.Z)
+                if dir.Magnitude > 0 then h:Move(dir.Unit, false) end  -- วิ่งไปเป้าเอง หันให้เอง ไม่ต้องเล็งกล้อง
             end
         end
-    else
-        setW(false)
     end
 end)
 
@@ -152,7 +143,6 @@ end)
 
 local winB = btn("AUTO WIN: OFF", 10, 202, 170, 32)
 local function unclip()
-    setW(false)
     local char = LP.Character
     if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
 end
@@ -199,4 +189,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + AutoWin v1.9] พร้อม")
+print("[72RB Run Speed + Jump + AutoWin v2.0] พร้อม")
