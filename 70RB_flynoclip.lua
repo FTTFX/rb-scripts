@@ -1,5 +1,5 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm (v2.2, มือถือ/ปุ่มจิ้ม)
--- v2.2: auto re-fly หลังตาย (CharacterAdded) + noclip ทุก frame (server reset CanCollide)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.3)
+-- v2.3: WIN FARM — SET บันทึกจุด, WIN วาร์ปซ้ำทุก N วิ (cooldown ปรับได้)
 local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
@@ -8,6 +8,7 @@ local FARM, RUNSPD = false, 50
 local FARM_DUR = 0.3
 local KEYS = {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}
 local farmIdx, farmTimer = 1, 0
+local WIN, winPos, WIN_CD, winTimer = false, nil, 3.0, 0
 
 local function pressKey(kc, on) pcall(function() VIM:SendKeyEvent(on, kc, false, game) end) end
 local function releaseAll() for _, k in pairs(KEYS) do pressKey(k, false) end end
@@ -31,7 +32,6 @@ local function startFly()
 end
 local function stopFly()
     if bv then bv:Destroy(); bv = nil end
-    -- คืน CanCollide (ถ้า character ยังอยู่)
     local char = LP.Character
     if char then
         for _, p in pairs(char:GetDescendants()) do
@@ -40,10 +40,9 @@ local function stopFly()
     end
 end
 
--- auto re-fly หลัง respawn
 bind(LP.CharacterRemoving, function() bv = nil end)
 bind(LP.CharacterAdded, function()
-    RS.Heartbeat:Wait()   -- รอ 1 frame ให้ character โหลด
+    RS.Heartbeat:Wait()
     if FLY then startFly() end
 end)
 
@@ -51,7 +50,6 @@ bind(RS.Heartbeat, function(dt)
     if FLY then
         local char = LP.Character
         if char and bv then
-            -- noclip ทุก frame — server reset CanCollide ทุกกราฟิก ต้องสู้ทุก frame
             for _, p in pairs(char:GetDescendants()) do
                 if p:IsA("BasePart") then p.CanCollide = false end
             end
@@ -72,6 +70,14 @@ bind(RS.Heartbeat, function(dt)
             farmTimer = 0
         end
     end
+    if WIN and winPos then
+        winTimer = winTimer + dt
+        if winTimer >= WIN_CD then
+            local root = hrp()
+            if root then root.CFrame = winPos end
+            winTimer = 0
+        end
+    end
 end)
 
 -- ===== GUI =====
@@ -80,7 +86,7 @@ gui.Name, gui.ResetOnSpawn = "FLYNCGUI", false
 gui.Parent = gethui and gethui() or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,150,0,180), UDim2.new(0,20,0.5,-90)
+f.Size, f.Position = UDim2.new(0,150,0,300), UDim2.new(0,20,0.5,-150)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(20,20,25), 0.25
 f.Active, f.Draggable = true, true
 Instance.new("UICorner", f)
@@ -94,6 +100,7 @@ local function btn(txt, x, y, w, h)
     return b
 end
 
+-- FLY
 local flyB = btn("FLY: OFF", 5, 5, 140, 36)
 flyB.MouseButton1Click:Connect(function()
     FLY = not FLY
@@ -102,20 +109,20 @@ flyB.MouseButton1Click:Connect(function()
     if FLY then startFly() else stopFly() end
 end)
 
+-- FARM
 local farmB = btn("FARM: OFF", 5, 46, 140, 36)
 farmB.MouseButton1Click:Connect(function()
     FARM = not FARM
     farmB.Text = "FARM: " .. (FARM and "ON" or "OFF")
     farmB.BackgroundColor3 = FARM and Color3.fromRGB(140,90,40) or Color3.fromRGB(45,45,55)
     if FARM then
-        farmIdx, farmTimer = 1, 0
-        pressKey(KEYS[farmIdx], true)
+        farmIdx, farmTimer = 1, 0; pressKey(KEYS[farmIdx], true)
     else
         releaseAll()
     end
 end)
 
-local durL = btn("0.3s", 5, 87, 60, 26);  durL.Active = false
+local durL = btn("0.3s", 5, 87, 60, 26); durL.Active = false
 local durM = btn("−", 68, 87, 34, 26)
 local durP = btn("+", 106, 87, 34, 26)
 durM.MouseButton1Click:Connect(function()
@@ -127,6 +134,7 @@ durP.MouseButton1Click:Connect(function()
     durL.Text = ("%.1fs"):format(FARM_DUR)
 end)
 
+-- SPEED
 local spdL = btn("fly 60", 5, 118, 140, 18); spdL.Active = false
 local minus = btn("−", 5, 140, 67, 36)
 local plus  = btn("+", 78, 140, 67, 36)
@@ -139,4 +147,42 @@ plus.MouseButton1Click:Connect(function()
     spdL.Text = (FLY and "fly " or "run ") .. (FLY and SPEED or RUNSPD)
 end)
 
-print("[FlyNoclip+Farm v2.2] พร้อม")
+-- divider
+local div = Instance.new("Frame", f)
+div.Size, div.Position = UDim2.new(1,-10,0,1), UDim2.new(0,5,0,182)
+div.BackgroundColor3, div.BorderSizePixel = Color3.fromRGB(80,80,100), 0
+
+-- WIN FARM
+local setB = btn("SET POS", 5, 189, 140, 30)
+setB.BackgroundColor3 = Color3.fromRGB(60,60,80)
+setB.MouseButton1Click:Connect(function()
+    local root = hrp()
+    if root then
+        winPos = root.CFrame
+        setB.Text = "SET ✓"
+        setB.BackgroundColor3 = Color3.fromRGB(80,80,160)
+    end
+end)
+
+local winB = btn("WIN: OFF", 5, 224, 140, 36)
+winB.MouseButton1Click:Connect(function()
+    if not winPos then setB.Text = "SET ก่อน!"; return end
+    WIN = not WIN
+    winTimer = 0
+    winB.Text = "WIN: " .. (WIN and "ON" or "OFF")
+    winB.BackgroundColor3 = WIN and Color3.fromRGB(160,40,160) or Color3.fromRGB(45,45,55)
+end)
+
+local cdL = btn(("%.1fs"):format(WIN_CD), 5, 265, 60, 26); cdL.Active = false
+local cdM = btn("−", 68, 265, 34, 26)
+local cdP = btn("+", 106, 265, 34, 26)
+cdM.MouseButton1Click:Connect(function()
+    WIN_CD = math.max(0.5, WIN_CD - 0.5)
+    cdL.Text = ("%.1fs"):format(WIN_CD)
+end)
+cdP.MouseButton1Click:Connect(function()
+    WIN_CD = WIN_CD + 0.5
+    cdL.Text = ("%.1fs"):format(WIN_CD)
+end)
+
+print("[FlyNoclip+Farm+Win v2.3] พร้อม")
