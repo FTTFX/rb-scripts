@@ -9,6 +9,8 @@ local FARM_DUR = 0.3
 local KEYS = {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}
 local farmIdx, farmTimer = 1, 0
 local WIN, winPos, WIN_CD, winTimer = false, nil, 3.0, 0
+local winPhase = 0   -- 0=รอ, 1=วาร์ปขึ้นฟ้าแล้ว(รอกลับ)
+local winReturn = 0
 
 local function pressKey(kc, on) pcall(function() VIM:SendKeyEvent(on, kc, false, game) end) end
 local function releaseAll() for _, k in pairs(KEYS) do pressKey(k, false) end end
@@ -71,11 +73,22 @@ bind(RS.Heartbeat, function(dt)
         end
     end
     if WIN and winPos then
-        winTimer = winTimer + dt
-        if winTimer >= WIN_CD then
-            local root = hrp()
-            if root then root.CFrame = winPos end
-            winTimer = 0
+        if winPhase == 0 then
+            winTimer = winTimer + dt
+            if winTimer >= WIN_CD then
+                local root = hrp()
+                if root then
+                    root.CFrame = CFrame.new(winPos.Position + Vector3.new(0, 120, 0))
+                end
+                winPhase, winReturn, winTimer = 1, 0, 0
+            end
+        else
+            winReturn = winReturn + dt
+            if winReturn >= 0.2 then   -- รอ 0.2วิ แล้ววาร์ปลงแผ่น → Touched ยิงใหม่
+                local root = hrp()
+                if root then root.CFrame = winPos end
+                winPhase = 0
+            end
         end
     end
 end)
