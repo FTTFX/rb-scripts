@@ -1,6 +1,6 @@
--- 72RB_speed.lua — Run Speed + Jump + Win Farm (v1.4)
--- v1.4: WIN FARM = firetouchinterest แผ่น Structure.*.WinBlock* รัวๆ (spy ยืนยัน win=touch ไม่มี remote)
---       ดึง pad จาก _G.WINSPY.pad (รัน 71RB spy ก่อนให้ชัวร์) หรือหาเองจากชื่อ
+-- 72RB_speed.lua — Run Speed + Jump + Win Farm (v1.5)
+-- v1.5: WIN FARM ยิงทุก WinBlock ทุก stage พร้อมกัน (อันท้ายๆคะแนนเยอะ) firetouchinterest
+-- v1.4: WIN FARM = firetouchinterest แผ่น Structure.*.WinBlock* (spy ยืนยัน win=touch ไม่มี remote)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
 local LP = Players.LocalPlayer
@@ -12,13 +12,15 @@ local fti = firetouchinterest
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
-local winPadCache
-local function findWinPad()
-    if winPadCache and winPadCache.Parent then return winPadCache end
-    if _G.WINSPY and _G.WINSPY.pad and _G.WINSPY.pad.Parent then winPadCache = _G.WINSPY.pad; return winPadCache end
-    for _, v in ipairs(workspace:GetDescendants()) do
-        if v:IsA("BasePart") and v.Name:lower():find("winblock") then winPadCache = v; return v end
+local winPads
+local function getWinPads()
+    if winPads and winPads[1] and winPads[1].Parent then return winPads end
+    winPads = {}
+    local root = workspace:FindFirstChild("Structure") or workspace
+    for _, v in ipairs(root:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name:lower():find("winblock") then winPads[#winPads+1] = v end
     end
+    return winPads
 end
 
 -- single-instance guard
@@ -35,8 +37,10 @@ bind(RS.Heartbeat, function()
         local now = os.clock()
         if now - lastWinFire >= WIN_CD then
             lastWinFire = now
-            local pad, root = findWinPad(), hrp()
-            if pad and root then pcall(fti, root, pad, 0); pcall(fti, root, pad, 1) end
+            local root = hrp()
+            if root then
+                for _, pad in ipairs(getWinPads()) do pcall(fti, root, pad, 0); pcall(fti, root, pad, 1) end
+            end
         end
     end
 end)
@@ -122,10 +126,11 @@ end)
 local winB = btn("WIN FARM: OFF", 10, 202, 170, 32)
 winB.MouseButton1Click:Connect(function()
     if not fti then winB.Text = "ไม่รองรับ fti"; return end
-    if not WIN and not findWinPad() then winB.Text = "ไม่เจอแผ่น (รัน spy)"; return end
+    local n = #getWinPads()
+    if not WIN and n == 0 then winB.Text = "ไม่เจอแผ่น win"; return end
     WIN = not WIN
     lastWinFire = 0
-    winB.Text = "WIN FARM: " .. (WIN and "ON" or "OFF")
+    winB.Text = WIN and ("WIN FARM: ON ("..n..")") or "WIN FARM: OFF"
     winB.BackgroundColor3 = WIN and Color3.fromRGB(150,40,150) or Color3.fromRGB(45,45,58)
 end)
 
@@ -148,4 +153,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + WinFarm v1.4] พร้อม")
+print("[72RB Run Speed + Jump + WinFarm v1.5] พร้อม")
