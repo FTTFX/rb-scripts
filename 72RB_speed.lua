@@ -1,10 +1,12 @@
--- 72RB_speed.lua — Run Speed (v1.0)
--- เริ่มใหม่: เอาเฉพาะความเร็ววิ่งก่อน (ยังไม่มี fly / noclip)
-local Players, RS = game:GetService("Players"), game:GetService("RunService")
+-- 72RB_speed.lua — Run Speed + Double Jump (v1.1)
+-- v1.1: + DBL JUMP (กระโดดซ้ำกลางอากาศ ปรับจำนวนได้)
+local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 local RUN, SPEED = false, 50
+local DJUMP, MAXJUMP, extraUsed, lastJump = false, 1, 0, 0
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
+local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
 -- single-instance guard
 if _G.RBSPD_CONNS then for _, c in pairs(_G.RBSPD_CONNS) do pcall(function() c:Disconnect() end) end end
@@ -18,13 +20,28 @@ bind(RS.Heartbeat, function()
     if RUN then local h = hum(); if h then h.WalkSpeed = SPEED end end
 end)
 
+-- DBL JUMP: กระโดดซ้ำกลางอากาศ (reset เมื่อแตะพื้น)
+bind(UIS.JumpRequest, function()
+    if not DJUMP then return end
+    local h, root = hum(), hrp()
+    if not h or not root then return end
+    if h.FloorMaterial ~= Enum.Material.Air then extraUsed = 0; return end  -- อยู่บนพื้น = จัมป์ปกติ
+    local now = os.clock()
+    if extraUsed < MAXJUMP and now - lastJump > 0.2 then
+        extraUsed, lastJump = extraUsed + 1, now
+        local v = root.AssemblyLinearVelocity
+        local jp = h.JumpPower > 0 and h.JumpPower or 50
+        root.AssemblyLinearVelocity = Vector3.new(v.X, jp, v.Z)
+    end
+end)
+
 -- ===== GUI =====
 local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "RBSPDGUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,150), UDim2.new(0,20,0.5,-75)
+f.Size, f.Position = UDim2.new(0,190,0,234), UDim2.new(0,20,0.5,-117)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -65,7 +82,20 @@ plus.MouseButton1Click:Connect(function()
     SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
 end)
 
-local closeB = btn("CLOSE", 10, 122, 170, 24, Color3.fromRGB(120,30,30))
+local jumpB = btn("DBL JUMP: OFF", 10, 124, 170, 32)
+jumpB.MouseButton1Click:Connect(function()
+    DJUMP = not DJUMP
+    jumpB.Text = "DBL JUMP: " .. (DJUMP and "ON" or "OFF")
+    jumpB.BackgroundColor3 = DJUMP and Color3.fromRGB(40,120,160) or Color3.fromRGB(45,45,58)
+end)
+
+local jcL = btn("x"..(MAXJUMP+1), 10, 162, 90, 28); jcL.Active = false
+local jcM = btn("−", 106, 162, 36, 28)
+local jcP = btn("+", 144, 162, 36, 28)
+jcM.MouseButton1Click:Connect(function() MAXJUMP = math.max(1, MAXJUMP-1); jcL.Text = "x"..(MAXJUMP+1) end)
+jcP.MouseButton1Click:Connect(function() MAXJUMP = MAXJUMP+1; jcL.Text = "x"..(MAXJUMP+1) end)
+
+local closeB = btn("CLOSE", 10, 196, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
     RUN = false
     local h = hum(); if h then h.WalkSpeed = 16 end
@@ -74,4 +104,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed v1.0] พร้อม")
+print("[72RB Run Speed + DblJump v1.1] พร้อม")
