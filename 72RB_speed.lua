@@ -1,5 +1,6 @@
--- 72RB_speed.lua — Run Speed + Jump + Auto Win + WASD วน (v2.3)
--- v2.3: + WASD วน (W→A→S ละ 0.3วิ วนวงกลม เดินเก็บ speed อยู่กับที่) แทนช่อง CD เดิม
+-- 72RB_speed.lua — Run Speed + Jump + Auto Win + WASD วน (v2.4)
+-- v2.4: WASD วน ครบ W→A→S→D (วงเต็ม) + ปรับเวลาได้ (−/+ ทีละ 0.1วิ น้อย=สลับเร็ว=วงแคบ)
+-- v2.3: + WASD วน (W→A→S วนวงกลม เดินเก็บ speed อยู่กับที่)
 -- v2.2: AUTO WIN บินไล่ผ่านทุกด่าน + กด W + noclip
 -- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure)
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
@@ -11,7 +12,7 @@ local LP = Players.LocalPlayer
 local RUN, SPEED = false, 50
 local INFJ, lastJump, JUMP_VAL = false, 0, 30
 local WIN = false
-local FARM, FARM_KEYS, FARM_DUR = false, {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S}, 0.3
+local FARM, FARM_KEYS, FARM_DUR = false, {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}, 0.3
 local fIdx, fStart, fHeld = 1, 0, nil
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
@@ -116,7 +117,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "RBSPDGUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,354), UDim2.new(0,20,0.5,-177)
+f.Size, f.Position = UDim2.new(0,190,0,392), UDim2.new(0,20,0.5,-196)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -212,7 +213,13 @@ farmB.MouseButton1Click:Connect(function()
     farmB.BackgroundColor3 = FARM and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local closeB = btn("CLOSE", 10, 318, 170, 24, Color3.fromRGB(120,30,30))
+local fDurL = btn(("%.1fs"):format(FARM_DUR), 10, 316, 90, 32); fDurL.Active = false
+local fDurM = btn("−", 106, 316, 36, 32)
+local fDurP = btn("+", 144, 316, 36, 32)
+fDurM.MouseButton1Click:Connect(function() FARM_DUR = math.max(0.1, FARM_DUR - 0.1); fDurL.Text = ("%.1fs"):format(FARM_DUR) end)
+fDurP.MouseButton1Click:Connect(function() FARM_DUR = FARM_DUR + 0.1; fDurL.Text = ("%.1fs"):format(FARM_DUR) end)
+
+local closeB = btn("CLOSE", 10, 356, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
     RUN, WIN, INFJ, FARM = false, false, false, false
     unclip()
@@ -222,4 +229,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + AutoWin + WASDวน v2.3] พร้อม")
+print("[72RB Run Speed + Jump + AutoWin + WASDวน v2.4] พร้อม")
