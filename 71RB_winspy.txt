@@ -1,7 +1,8 @@
--- 71RB_winspy.txt v1.0 — Win Spy: จับว่า remote ไหนทำให้ Win เพิ่ม
--- วิธีใช้: รันตัวนี้ก่อน → ไปทำให้ชนะ 1 ครั้ง → มันโชว์ FireServer ที่ยิง "ก่อน" Win ขึ้น
---   ตัวบนสุด (เวลาติดลบน้อยสุด) = remote ที่น่าจะเป็นตัวเพิ่ม Win → เอาไปยิงตรงๆ แทน MoveTo
-local VERSION = "1.0"
+-- 71RB_winspy.txt v1.1 — Win Spy: จับ remote + ตำแหน่ง ตอน Win เพิ่ม
+-- วิธีใช้: รันก่อน → วิ่งถึงเส้น finish ให้ชนะ 1 ครั้ง → มันจำ CFrame จุดที่ชนะ
+--   ถ้าไม่มี remote = win เป็น touch/region ที่ตำแหน่งนั้น → เอาพิกัดไปทำ teleport-farm
+--   พิกัดเก็บใน _G.WINSPY.lastWin (CFrame) + copy clipboard อัตโนมัติ
+local VERSION = "1.1"
 local Players, RunService = game:GetService("Players"), game:GetService("RunService")
 local LP = Players.LocalPlayer
 
@@ -119,14 +120,25 @@ copyB.MouseButton1Click:Connect(function()
 end)
 
 -- ==================== Win detect + report ====================
+local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+
 local function report(name, old, new)
     local now = os.clock()
-    local lines = {"🏆 "..name..": "..tostring(old).." → "..tostring(new), "FireServer ใน 3s ก่อนหน้า (บนสุด=ใกล้สุด):"}
+    local lines = {"🏆 "..name..": "..tostring(old).." → "..tostring(new)}
+    local root = hrp()
+    if root then
+        S.lastWin = root.CFrame
+        local p = root.Position
+        lines[#lines+1] = string.format("📍 จุดที่ชนะ: %.1f, %.1f, %.1f", p.X, p.Y, p.Z)
+        pcall(function() if clip then clip(string.format("Vector3.new(%.2f,%.2f,%.2f)", p.X, p.Y, p.Z)) end end)
+    end
+    lines[#lines+1] = "FireServer ใน 3s ก่อนหน้า:"
+    local n0 = #lines
     for i = #S.ring, 1, -1 do
         local e = S.ring[i]
         if now - e.t <= 3 then lines[#lines+1] = string.format("  -%.2fs  %s", now - e.t, e.s) end
     end
-    if #lines == 2 then lines[3] = "  (ไม่มี remote — อาจเป็น touch part / server auto)" end
+    if #lines == n0 then lines[#lines+1] = "  (ไม่มี remote — win=touch/region ที่จุดนี้)" end
     setText(table.concat(lines, "\n"))
 end
 
@@ -157,3 +169,4 @@ else
 end
 
 print("[71RB WinSpy v"..VERSION.."] loaded | hook:", okHooks and "ON" or "OFF")
+print("  ชนะแล้วพิกัดอยู่ที่ _G.WINSPY.lastWin")
