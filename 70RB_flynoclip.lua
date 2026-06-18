@@ -1,5 +1,6 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.3)
--- v2.3: WIN FARM — SET บันทึกจุด, WIN วาร์ปซ้ำทุก N วิ (cooldown ปรับได้)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.4)
+-- v2.4: WIN ใช้ MoveTo เดินจริง (server-side physics) + noclip ทะลุกำแพง
+--       วิธีใช้ WIN: บินไปแผ่น → SET POS → กลับมายืนที่ไหนก็ได้ → WIN ON
 local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
@@ -8,9 +9,10 @@ local FARM, RUNSPD = false, 50
 local FARM_DUR = 0.3
 local KEYS = {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}
 local farmIdx, farmTimer = 1, 0
-local WIN, winPos, WIN_CD, winTimer = false, nil, 3.0, 0
-local winPhase = 0   -- 0=รอ, 1=วาร์ปขึ้นฟ้าแล้ว(รอกลับ)
-local winReturn = 0
+
+local WIN, winPos, WIN_CD = false, nil, 3.0
+local winPhase, winTimer = 0, 0   -- phase: 0=รอ 1=เดินไปแผ่น 2=ยืนบนแผ่น 3=เดินออก
+local awayPos = Vector3.zero
 
 local function pressKey(kc, on) pcall(function() VIM:SendKeyEvent(on, kc, false, game) end) end
 local function releaseAll() for _, k in pairs(KEYS) do pressKey(k, false) end end
@@ -49,6 +51,7 @@ bind(LP.CharacterAdded, function()
 end)
 
 bind(RS.Heartbeat, function(dt)
+    -- FLY
     if FLY then
         local char = LP.Character
         if char and bv then
@@ -61,6 +64,8 @@ bind(RS.Heartbeat, function(dt)
             bv.Velocity = (mag > 0 and dir.Unit or Vector3.zero) * SPEED
         end
     end
+
+    -- FARM
     if FARM and not FLY then
         local h = hum(); if not h then return end
         h.WalkSpeed = RUNSPD
@@ -72,22 +77,49 @@ bind(RS.Heartbeat, function(dt)
             farmTimer = 0
         end
     end
+
+    -- WIN: เดินจริงผ่าน MoveTo + noclip (server ต้องการ physics touch)
     if WIN and winPos then
-        if winPhase == 0 then
-            winTimer = winTimer + dt
-            if winTimer >= WIN_CD then
-                local root = hrp()
-                if root then
-                    root.CFrame = CFrame.new(winPos.Position + Vector3.new(0, 120, 0))
-                end
-                winPhase, winReturn, winTimer = 1, 0, 0
+        local h, root = hum(), hrp()
+        if not h or not root then return end
+
+        -- noclip ทุก frame ให้เดินทะลุกำแพงได้
+        local char = LP.Character
+        if char then
+            for _, p in pairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
             end
-        else
-            winReturn = winReturn + dt
-            if winReturn >= 0.2 then   -- รอ 0.2วิ แล้ววาร์ปลงแผ่น → Touched ยิงใหม่
-                local root = hrp()
-                if root then root.CFrame = winPos end
-                winPhase = 0
+        end
+
+        winTimer = winTimer + dt
+        local padV = winPos.Position
+
+        if winPhase == 0 then                          -- รอ cooldown
+            if winTimer >= WIN_CD then
+                h:MoveTo(padV)
+                winPhase, winTimer = 1, 0
+            end
+
+        elseif winPhase == 1 then                      -- เดินไปแผ่น
+            if (root.Position - padV).Magnitude < 5 then
+                winPhase, winTimer = 2, 0              -- ถึงแล้ว → ยืนรอ
+            elseif winTimer > 12 then                  -- timeout ถ้าไปไม่ถึง
+                h:MoveTo(padV)                         -- MoveTo reset (8s timeout ของ Roblox)
+                winTimer = 0
+            end
+
+        elseif winPhase == 2 then                      -- ยืนบนแผ่น 0.5วิ
+            if winTimer >= 0.5 then
+                h:MoveTo(awayPos)
+                winPhase, winTimer = 3, 0
+            end
+
+        elseif winPhase == 3 then                      -- เดินออกจากแผ่น
+            if (root.Position - awayPos).Magnitude < 8 then
+                winPhase, winTimer = 0, 0
+            elseif winTimer > 12 then
+                h:MoveTo(awayPos)                      -- MoveTo reset
+                winTimer = 0
             end
         end
     end
@@ -113,7 +145,6 @@ local function btn(txt, x, y, w, h)
     return b
 end
 
--- FLY
 local flyB = btn("FLY: OFF", 5, 5, 140, 36)
 flyB.MouseButton1Click:Connect(function()
     FLY = not FLY
@@ -122,7 +153,6 @@ flyB.MouseButton1Click:Connect(function()
     if FLY then startFly() else stopFly() end
 end)
 
--- FARM
 local farmB = btn("FARM: OFF", 5, 46, 140, 36)
 farmB.MouseButton1Click:Connect(function()
     FARM = not FARM
@@ -147,7 +177,6 @@ durP.MouseButton1Click:Connect(function()
     durL.Text = ("%.1fs"):format(FARM_DUR)
 end)
 
--- SPEED
 local spdL = btn("fly 60", 5, 118, 140, 18); spdL.Active = false
 local minus = btn("−", 5, 140, 67, 36)
 local plus  = btn("+", 78, 140, 67, 36)
@@ -160,12 +189,10 @@ plus.MouseButton1Click:Connect(function()
     spdL.Text = (FLY and "fly " or "run ") .. (FLY and SPEED or RUNSPD)
 end)
 
--- divider
 local div = Instance.new("Frame", f)
 div.Size, div.Position = UDim2.new(1,-10,0,1), UDim2.new(0,5,0,182)
 div.BackgroundColor3, div.BorderSizePixel = Color3.fromRGB(80,80,100), 0
 
--- WIN FARM
 local setB = btn("SET POS", 5, 189, 140, 30)
 setB.BackgroundColor3 = Color3.fromRGB(60,60,80)
 setB.MouseButton1Click:Connect(function()
@@ -181,7 +208,18 @@ local winB = btn("WIN: OFF", 5, 224, 140, 36)
 winB.MouseButton1Click:Connect(function()
     if not winPos then setB.Text = "SET ก่อน!"; return end
     WIN = not WIN
-    winTimer = 0
+    if WIN then
+        -- ปิด FLY — BV ขัด MoveTo
+        if FLY then
+            FLY = false; stopFly()
+            flyB.Text = "FLY: OFF"
+            flyB.BackgroundColor3 = Color3.fromRGB(45,45,55)
+        end
+        -- บันทึก awayPos = ที่ยืนอยู่ตอนนี้ (จุดออก)
+        local root = hrp()
+        awayPos = root and root.Position or (winPos.Position + Vector3.new(40,0,0))
+        winPhase, winTimer = 0, 0
+    end
     winB.Text = "WIN: " .. (WIN and "ON" or "OFF")
     winB.BackgroundColor3 = WIN and Color3.fromRGB(160,40,160) or Color3.fromRGB(45,45,55)
 end)
@@ -198,4 +236,4 @@ cdP.MouseButton1Click:Connect(function()
     cdL.Text = ("%.1fs"):format(WIN_CD)
 end)
 
-print("[FlyNoclip+Farm+Win v2.3] พร้อม")
+print("[FlyNoclip+Farm+Win v2.4] พร้อม")
