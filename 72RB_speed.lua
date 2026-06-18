@@ -1,10 +1,11 @@
--- 72RB_speed.lua — Run Speed + Jump + Auto Win (v2.1)
--- v2.1: AUTO WIN บินตรงดิ่งไปแผ่นเป้า 3D + noclip ทะลุทุกอย่าง (เล็งให้เอง) → ถึง=เก็บคะแนน → วาปกลับ → วนเอง
--- v2.0: วิ่งพื้นไปเป้า (Humanoid:Move) ไม่ต้องเล็งกล้อง
+-- 72RB_speed.lua — Run Speed + Jump + Auto Win (v2.2)
+-- v2.2: AUTO WIN บินไล่ผ่านทุกด่านตามลำดับ (Stage1→2→…→เป้า) + กด W ค้าง + noclip → ผ่านด่านจริง progress เต็ม → เก็บที่เป้า → วนเอง
+-- v2.1: บินตรงดิ่งไปแผ่นเป้า (ข้ามด่าน อาจได้แค่ +3)
 -- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure)
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
+local VIM = game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
 local RUN, SPEED = false, 50
@@ -13,6 +14,13 @@ local WIN, WIN_CD, lastWinFire = false, 1.0, 0
 local fti = firetouchinterest
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+
+local wpIdx, wDown = 1, false
+local function setW(on)
+    if on == wDown then return end
+    wDown = on
+    pcall(function() VIM:SendKeyEvent(on, Enum.KeyCode.W, false, game) end)
+end
 
 local blocks = {}
 local BIDX = 0          -- 0 = auto (spy/แผ่นแรก), >0 = เลือกเอง
@@ -47,17 +55,28 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("RBSPDGU
 bind(RS.Heartbeat, function()
     if RUN then local h = hum(); if h then h.WalkSpeed = SPEED end end
     if WIN then
-        local root, pad = hrp(), winTarget()
-        if root and pad then
+        local root = hrp()
+        local list = (#blocks > 0) and blocks or refreshBlocks()
+        if root and list[1] then
             local char = LP.Character           -- noclip ทะลุทุกอย่าง
             if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
-            local to = pad.Position - root.Position
-            if to.Magnitude < 8 then
-                root.AssemblyLinearVelocity = Vector3.zero                     -- ถึงแผ่น → เก็บคะแนน → วาปกลับ → วนเอง
-            else
-                root.AssemblyLinearVelocity = to.Unit * math.max(SPEED, 120)   -- บินตรงไปเป้า (3D ทะลุกำแพง) เล็งให้เอง
+            setW(true)                          -- กด W ค้าง (เผื่อเกมต้องการ input วิ่ง)
+            local SPD = math.max(SPEED, 120)
+            local tIdx = (BIDX > 0 and BIDX <= #list) and BIDX or #list   -- เป้า: ที่เลือก / ไกลสุด
+            if wpIdx > tIdx then wpIdx = 1 end
+            if wpIdx == tIdx then               -- ด่านเป้า: ร่อนลงเก็บคะแนน
+                local to = list[tIdx].Position - root.Position
+                if to.Magnitude < 8 then root.AssemblyLinearVelocity = Vector3.zero; wpIdx = 1
+                else root.AssemblyLinearVelocity = to.Unit * SPD end
+            else                                -- ด่านระหว่างทาง: บินผ่านเหนือแผ่นนิดนึง (ไม่เก็บ)
+                local above = list[wpIdx].Position + Vector3.new(0, 12, 0)
+                local to = above - root.Position
+                if to.Magnitude < 14 then wpIdx = wpIdx + 1
+                else root.AssemblyLinearVelocity = to.Unit * SPD end
             end
         end
+    else
+        setW(false)
     end
 end)
 
@@ -141,6 +160,7 @@ end)
 
 local winB = btn("AUTO WIN: OFF", 10, 202, 170, 32)
 local function unclip()
+    setW(false); wpIdx = 1
     local char = LP.Character
     if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
 end
@@ -187,4 +207,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + AutoWin v2.1] พร้อม")
+print("[72RB Run Speed + Jump + AutoWin v2.2] พร้อม")
