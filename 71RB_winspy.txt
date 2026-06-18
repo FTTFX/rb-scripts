@@ -1,0 +1,159 @@
+-- 71RB_winspy.txt v1.0 — Win Spy: จับว่า remote ไหนทำให้ Win เพิ่ม
+-- วิธีใช้: รันตัวนี้ก่อน → ไปทำให้ชนะ 1 ครั้ง → มันโชว์ FireServer ที่ยิง "ก่อน" Win ขึ้น
+--   ตัวบนสุด (เวลาติดลบน้อยสุด) = remote ที่น่าจะเป็นตัวเพิ่ม Win → เอาไปยิงตรงๆ แทน MoveTo
+local VERSION = "1.0"
+local Players, RunService = game:GetService("Players"), game:GetService("RunService")
+local LP = Players.LocalPlayer
+
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local clip     = setclipboard or toclipboard
+local okHooks  = hookmeta and getnc
+
+-- state ถาวร (hook ครั้งเดียว, ring คงค่าข้าม re-run)
+_G.WINSPY = _G.WINSPY or {}
+local S = _G.WINSPY
+S.ring = S.ring or {}        -- {t=os.clock(), s="..."}
+S.prev = S.prev or {}        -- ค่าเดิมของแต่ละ value
+local RINGMAX = 50
+
+-- guard (GUI/conns เท่านั้น — hook ถาวร)
+if _G.WINSPY_CONNS then for _, c in pairs(_G.WINSPY_CONNS) do pcall(function() c:Disconnect() end) end end
+_G.WINSPY_CONNS = {}
+local CONNS = _G.WINSPY_CONNS
+local function bind(s, f) local c = s:Connect(f); CONNS[#CONNS+1] = c; return c end
+pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("WINSPYGUI"):Destroy() end)
+
+-- formatter
+local function fmt(v)
+    local t = typeof(v)
+    if t == "Instance" then return v.ClassName..":"..v.Name
+    elseif t == "Vector3" then return string.format("V3(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then local p = v.Position return string.format("CF(%.0f,%.0f,%.0f)", p.X, p.Y, p.Z)
+    elseif t == "string" then return #v > 40 and '"'..v:sub(1,40)..'..."' or '"'..v..'"'
+    elseif t == "number" then return string.format("%.4g", v)
+    elseif t == "boolean" then return tostring(v)
+    else return t end
+end
+local function fmtArgs(...)
+    local n = select("#", ...)
+    if n == 0 then return "()" end
+    local p = {}
+    for i = 1, math.min(n, 8) do p[i] = fmt((select(i, ...))) end
+    return table.concat(p, " | ")
+end
+
+local nameCache = setmetatable({}, {__mode = "k"})
+local function getName(r)
+    local n = nameCache[r]
+    if n == nil then local ok, f = pcall(function() return r:GetFullName() end); n = ok and f or "?"; nameCache[r] = n end
+    return n
+end
+
+-- hook __namecall → เก็บ FireServer/InvokeServer ใน ring buffer
+if okHooks and not S.hooked then
+    S.hooked = true
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local m = getnc()
+        if m == "FireServer" or m == "InvokeServer" then
+            local nm = getName(self):gsub("^.-Remotes%.", "")
+            local r = S.ring
+            r[#r+1] = {t = os.clock(), s = m.." @"..nm.." "..fmtArgs(...)}
+            if #r > RINGMAX then table.remove(r, 1) end
+        end
+        return oldNc(self, ...)
+    end))
+    S.restoreNc = oldNc
+end
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "WINSPYGUI", false, 9999
+gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
+
+local f = Instance.new("Frame", gui)
+f.Size, f.Position = UDim2.new(0,380,0,210), UDim2.new(0,20,0,80)
+f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(10,8,16), 0.08
+f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
+Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
+Instance.new("UIStroke", f).Color = Color3.fromRGB(200,120,255)
+
+local title = Instance.new("TextLabel", f)
+title.Size, title.Position = UDim2.new(1,-30,0,22), UDim2.new(0,8,0,2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(220,160,255)
+title.Text = "71RB WinSpy v"..VERSION..(okHooks and "" or " [NOHOOK]")
+title.Font, title.TextSize, title.TextXAlignment = Enum.Font.GothamBold, 12, Enum.TextXAlignment.Left
+
+local closeB = Instance.new("TextButton", f)
+closeB.Size, closeB.Position = UDim2.new(0,22,0,20), UDim2.new(1,-26,0,2)
+closeB.BackgroundColor3, closeB.TextColor3 = Color3.fromRGB(120,20,20), Color3.new(1,1,1)
+closeB.Text, closeB.Font, closeB.TextSize, closeB.BorderSizePixel = "X", Enum.Font.GothamBold, 12, 0
+Instance.new("UICorner", closeB).CornerRadius = UDim.new(0,4)
+closeB.MouseButton1Click:Connect(function()
+    for _, c in pairs(CONNS) do pcall(function() c:Disconnect() end) end
+    gui:Destroy()
+end)
+
+local out = Instance.new("TextLabel", f)
+out.Size, out.Position = UDim2.new(1,-12,1,-58), UDim2.new(0,6,0,28)
+out.BackgroundColor3, out.BackgroundTransparency = Color3.fromRGB(4,4,8), 0.2
+out.TextColor3 = Color3.fromRGB(230,230,240)
+out.Font, out.TextSize = Enum.Font.Code, 12
+out.TextXAlignment, out.TextYAlignment, out.TextWrapped = Enum.TextXAlignment.Left, Enum.TextYAlignment.Top, true
+Instance.new("UICorner", out).CornerRadius = UDim.new(0,4)
+
+local lastText = ""
+local function setText(t) lastText = t; out.Text = t end
+
+local copyB = Instance.new("TextButton", f)
+copyB.Size, copyB.Position = UDim2.new(0,100,0,22), UDim2.new(0,6,1,-26)
+copyB.BackgroundColor3, copyB.TextColor3 = Color3.fromRGB(40,90,140), Color3.new(1,1,1)
+copyB.Text, copyB.Font, copyB.TextSize, copyB.BorderSizePixel = "COPY", Enum.Font.GothamBold, 11, 0
+Instance.new("UICorner", copyB).CornerRadius = UDim.new(0,4)
+copyB.MouseButton1Click:Connect(function()
+    local ok = clip and pcall(clip, lastText)
+    copyB.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(1.5, function() if copyB.Parent then copyB.Text = "COPY" end end)
+end)
+
+-- ==================== Win detect + report ====================
+local function report(name, old, new)
+    local now = os.clock()
+    local lines = {"🏆 "..name..": "..tostring(old).." → "..tostring(new), "FireServer ใน 3s ก่อนหน้า (บนสุด=ใกล้สุด):"}
+    for i = #S.ring, 1, -1 do
+        local e = S.ring[i]
+        if now - e.t <= 3 then lines[#lines+1] = string.format("  -%.2fs  %s", now - e.t, e.s) end
+    end
+    if #lines == 2 then lines[3] = "  (ไม่มี remote — อาจเป็น touch part / server auto)" end
+    setText(table.concat(lines, "\n"))
+end
+
+-- หา value ที่จะเฝ้า: ชื่อมี "win" ก่อน, ไม่งั้นเอา leaderstats ทั้งหมด
+local function candidates()
+    local out, ls = {}, LP:FindFirstChild("leaderstats")
+    if ls then for _, v in ipairs(ls:GetChildren()) do if v:IsA("ValueBase") then out[#out+1] = v end end end
+    for _, v in ipairs(LP:GetDescendants()) do
+        if v:IsA("ValueBase") and v.Name:lower():find("win") then return {v} end  -- win-named ชนะเสมอ
+    end
+    return out
+end
+
+local cands = candidates()
+if #cands == 0 then
+    setText("❌ หา Win/leaderstats ไม่เจอ\nไปทำให้ชนะ 1 ครั้งแล้วดู console / บอกชื่อ stat มา")
+else
+    local names = {}
+    for _, v in ipairs(cands) do
+        names[#names+1] = v.Name
+        S.prev[v] = v.Value
+        bind(v.Changed, function(nv)
+            local ov = S.prev[v]; S.prev[v] = nv
+            if type(nv) == "number" and type(ov) == "number" and nv > ov then report(v.Name, ov, nv) end
+        end)
+    end
+    setText("👀 เฝ้าดู: "..table.concat(names, ", ").."\nไปทำให้ชนะ 1 ครั้ง...")
+end
+
+print("[71RB WinSpy v"..VERSION.."] loaded | hook:", okHooks and "ON" or "OFF")
