@@ -1,6 +1,7 @@
--- 72RB_speed.lua — Run Speed + Jump + Win Farm (v1.7)
--- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure) → วาปฟาร์ม stage ไหนก็ได้ (cooldown server ~3s)
--- v1.6: WIN FARM = teleport ขึ้นแผ่น WinBlock วนๆ (เกมเช็คยืนจริง/region ไม่ใช่ Touched — กระโดดไม่นับ)
+-- 72RB_speed.lua — Run Speed + Jump + Auto Win (v1.8)
+-- v1.8: AUTO WIN = วิ่งจริง (MoveTo+noclip) ไปแผ่น stage เป้า → progress นับ → เก็บคะแนน → วาปกลับ → วนเอง
+--       (วาปข้ามไม่นับ ต้องเคลื่อนที่ต่อเนื่อง — ยืนยันจากผู้เล่น: วิ่งผ่านทุกด่านได้)
+-- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure)
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
@@ -46,14 +47,12 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("RBSPDGU
 bind(RS.Heartbeat, function()
     if RUN then local h = hum(); if h then h.WalkSpeed = SPEED end end
     if WIN then
-        local now = os.clock()
-        if now - lastWinFire >= WIN_CD then
-            lastWinFire = now
-            local root, pad = hrp(), winTarget()
-            if root and pad then
-                root.CFrame = pad.CFrame + Vector3.new(0, 3, 0)   -- วาปขึ้นแผ่น (ผ่าน grounded/region check)
-                if fti then pcall(fti, root, pad, 0); pcall(fti, root, pad, 1) end
-            end
+        local root, h, pad = hrp(), hum(), winTarget()
+        if root and h and pad then
+            local char = LP.Character           -- noclip ทะลุคีย์ที่ขวาง (พื้นยังยืนได้)
+            if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
+            h.WalkSpeed = math.max(SPEED, 120)  -- วิ่งเร็วไปแผ่น stage เป้า (progress นับ)
+            h:MoveTo(pad.Position)              -- ถึงแล้ว=เก็บคะแนน stage นั้น→วาปกลับ start→วนเอง
         end
     end
 end)
@@ -136,12 +135,16 @@ jPlus.MouseButton1Click:Connect(function()
     JUMP_VAL = JUMP_VAL + 10; jValL.Text = tostring(JUMP_VAL)
 end)
 
-local winB = btn("WIN FARM: OFF", 10, 202, 170, 32)
+local winB = btn("AUTO WIN: OFF", 10, 202, 170, 32)
+local function unclip()
+    local char = LP.Character
+    if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
+end
 winB.MouseButton1Click:Connect(function()
-    if not WIN and not winTarget() then winB.Text = "ไม่เจอแผ่น (รัน spy)"; return end
+    if not WIN and not winTarget() then winB.Text = "ไม่เจอแผ่น"; return end
     WIN = not WIN
-    lastWinFire = 0
-    winB.Text = "WIN FARM: " .. (WIN and "ON" or "OFF")
+    if not WIN then unclip() end
+    winB.Text = "AUTO WIN: " .. (WIN and "ON" or "OFF")
     winB.BackgroundColor3 = WIN and Color3.fromRGB(150,40,150) or Color3.fromRGB(45,45,58)
 end)
 
@@ -173,10 +176,11 @@ end)
 local closeB = btn("CLOSE", 10, 318, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
     RUN, WIN, INFJ = false, false, false
+    unclip()
     local h = hum(); if h then h.WalkSpeed = 16 end
     for _, c in pairs(CONNS) do pcall(function() c:Disconnect() end) end
     _G.RBSPD_CONNS = nil
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + WinFarm v1.7] พร้อม")
+print("[72RB Run Speed + Jump + AutoWin v1.8] พร้อม")
