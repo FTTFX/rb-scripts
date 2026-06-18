@@ -1,6 +1,6 @@
--- 72RB_speed.lua — Run Speed + Jump + Win Farm (v1.6)
+-- 72RB_speed.lua — Run Speed + Jump + Win Farm (v1.7)
+-- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure) → วาปฟาร์ม stage ไหนก็ได้ (cooldown server ~3s)
 -- v1.6: WIN FARM = teleport ขึ้นแผ่น WinBlock วนๆ (เกมเช็คยืนจริง/region ไม่ใช่ Touched — กระโดดไม่นับ)
---       ใช้แผ่นจาก _G.WINSPY.pad (วิ่งถึง stage ไหน spy จับอันนั้น) ไม่งั้นใช้ WinBlock แรก
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
@@ -13,19 +13,26 @@ local fti = firetouchinterest
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
-local winPads
-local function getWinPads()
-    if winPads and winPads[1] and winPads[1].Parent then return winPads end
-    winPads = {}
+local blocks = {}
+local BIDX = 0          -- 0 = auto (spy/แผ่นแรก), >0 = เลือกเอง
+local function refreshBlocks()
+    blocks = {}
     local root = workspace:FindFirstChild("Structure") or workspace
     for _, v in ipairs(root:GetDescendants()) do
-        if v:IsA("BasePart") and v.Name:lower():find("winblock") then winPads[#winPads+1] = v end
+        if v:IsA("BasePart") and v.Name:lower():find("winblock") then blocks[#blocks+1] = v end
     end
-    return winPads
+    table.sort(blocks, function(a, b)   -- เรียงตามเลข stage แล้วชื่อแผ่น
+        local na = tonumber((a.Parent and a.Parent.Name or ""):match("%d+")) or 0
+        local nb = tonumber((b.Parent and b.Parent.Name or ""):match("%d+")) or 0
+        if na ~= nb then return na < nb end
+        return a.Name < b.Name
+    end)
+    return blocks
 end
 local function winTarget()
+    if BIDX > 0 and blocks[BIDX] and blocks[BIDX].Parent then return blocks[BIDX] end
     if _G.WINSPY and _G.WINSPY.pad and _G.WINSPY.pad.Parent then return _G.WINSPY.pad end
-    return getWinPads()[1]
+    refreshBlocks(); return blocks[1]
 end
 
 -- single-instance guard
@@ -71,7 +78,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "RBSPDGUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,316), UDim2.new(0,20,0.5,-158)
+f.Size, f.Position = UDim2.new(0,190,0,354), UDim2.new(0,20,0.5,-177)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -138,9 +145,24 @@ winB.MouseButton1Click:Connect(function()
     winB.BackgroundColor3 = WIN and Color3.fromRGB(150,40,150) or Color3.fromRGB(45,45,58)
 end)
 
-local cdL = btn(("%.1fs"):format(WIN_CD), 10, 240, 90, 32); cdL.Active = false
-local cdMinus = btn("−", 106, 240, 36, 32)
-local cdPlus  = btn("+", 144, 240, 36, 32)
+-- STAGE selector: กดวนไปทุก WinBlock ใต้ Structure (0=auto ใช้ spy)
+local stB = btn("ST: auto >", 10, 240, 170, 32)
+local function stLabel()
+    if BIDX == 0 then return "ST: auto >" end
+    local b = blocks[BIDX]
+    return b and ("ST: "..(b.Parent and b.Parent.Name or "?").."/"..b.Name.." >") or "ST: ?"
+end
+stB.MouseButton1Click:Connect(function()
+    refreshBlocks()
+    if #blocks == 0 then stB.Text = "ไม่เจอแผ่น"; return end
+    BIDX = BIDX + 1
+    if BIDX > #blocks then BIDX = 0 end   -- วนกลับ auto
+    stB.Text = stLabel()
+end)
+
+local cdL = btn(("%.1fs"):format(WIN_CD), 10, 278, 90, 32); cdL.Active = false
+local cdMinus = btn("−", 106, 278, 36, 32)
+local cdPlus  = btn("+", 144, 278, 36, 32)
 cdMinus.MouseButton1Click:Connect(function()
     WIN_CD = math.max(0.2, WIN_CD - 0.2); cdL.Text = ("%.1fs"):format(WIN_CD)
 end)
@@ -148,7 +170,7 @@ cdPlus.MouseButton1Click:Connect(function()
     WIN_CD = WIN_CD + 0.2; cdL.Text = ("%.1fs"):format(WIN_CD)
 end)
 
-local closeB = btn("CLOSE", 10, 280, 170, 24, Color3.fromRGB(120,30,30))
+local closeB = btn("CLOSE", 10, 318, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
     RUN, WIN, INFJ = false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
@@ -157,4 +179,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + WinFarm v1.6] พร้อม")
+print("[72RB Run Speed + Jump + WinFarm v1.7] พร้อม")
