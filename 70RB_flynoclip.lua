@@ -1,7 +1,7 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.5)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.6)
+-- v2.6: WIN = firetouchinterest แตะแผ่น finish ตรงๆ (spy ยืนยัน: win=touch ไม่ใช่ remote)
+--       วิธีใช้ WIN: ไปยืนบนแผ่น finish → SET POS → ยืนที่ไหนก็ได้ → WIN ON
 -- v2.5: + ปุ่ม CLOSE (ปิดทุกอย่าง + คืน CanCollide + ลบ GUI)
--- v2.4: WIN ใช้ MoveTo เดินจริง (server-side physics) + noclip ทะลุกำแพง
---       วิธีใช้ WIN: บินไปแผ่น → SET POS → กลับมายืนที่ไหนก็ได้ → WIN ON
 local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
 local LP = Players.LocalPlayer
 
@@ -11,9 +11,9 @@ local FARM_DUR = 0.3
 local KEYS = {Enum.KeyCode.W, Enum.KeyCode.A, Enum.KeyCode.S, Enum.KeyCode.D}
 local farmIdx, farmTimer = 1, 0
 
-local WIN, winPos, WIN_CD = false, nil, 3.0
-local winPhase, winTimer = 0, 0   -- phase: 0=รอ 1=เดินไปแผ่น 2=ยืนบนแผ่น 3=เดินออก
-local awayPos = Vector3.zero
+local WIN, winPad, WIN_CD = false, nil, 3.0
+local winTimer = 0
+local fti = firetouchinterest
 
 local function pressKey(kc, on) pcall(function() VIM:SendKeyEvent(on, kc, false, game) end) end
 local function releaseAll() for _, k in pairs(KEYS) do pressKey(k, false) end end
@@ -79,49 +79,14 @@ bind(RS.Heartbeat, function(dt)
         end
     end
 
-    -- WIN: เดินจริงผ่าน MoveTo + noclip (server ต้องการ physics touch)
-    if WIN and winPos then
-        local h, root = hum(), hrp()
-        if not h or not root then return end
-
-        -- noclip ทุก frame ให้เดินทะลุกำแพงได้
-        local char = LP.Character
-        if char then
-            for _, p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
-            end
-        end
-
+    -- WIN: firetouchinterest แตะแผ่น finish (spy ยืนยัน win=touch ไม่ใช่ remote)
+    if WIN and winPad and fti then
+        local root = hrp(); if not root then return end
         winTimer = winTimer + dt
-        local padV = winPos.Position
-
-        if winPhase == 0 then                          -- รอ cooldown
-            if winTimer >= WIN_CD then
-                h:MoveTo(padV)
-                winPhase, winTimer = 1, 0
-            end
-
-        elseif winPhase == 1 then                      -- เดินไปแผ่น
-            if (root.Position - padV).Magnitude < 5 then
-                winPhase, winTimer = 2, 0              -- ถึงแล้ว → ยืนรอ
-            elseif winTimer > 12 then                  -- timeout ถ้าไปไม่ถึง
-                h:MoveTo(padV)                         -- MoveTo reset (8s timeout ของ Roblox)
-                winTimer = 0
-            end
-
-        elseif winPhase == 2 then                      -- ยืนบนแผ่น 0.5วิ
-            if winTimer >= 0.5 then
-                h:MoveTo(awayPos)
-                winPhase, winTimer = 3, 0
-            end
-
-        elseif winPhase == 3 then                      -- เดินออกจากแผ่น
-            if (root.Position - awayPos).Magnitude < 8 then
-                winPhase, winTimer = 0, 0
-            elseif winTimer > 12 then
-                h:MoveTo(awayPos)                      -- MoveTo reset
-                winTimer = 0
-            end
+        if winTimer >= WIN_CD then
+            winTimer = 0
+            pcall(fti, root, winPad, 0)
+            pcall(fti, root, winPad, 1)
         end
     end
 end)
@@ -197,30 +162,27 @@ div.BackgroundColor3, div.BorderSizePixel = Color3.fromRGB(80,80,100), 0
 local setB = btn("SET POS", 5, 189, 140, 30)
 setB.BackgroundColor3 = Color3.fromRGB(60,60,80)
 setB.MouseButton1Click:Connect(function()
-    local root = hrp()
-    if root then
-        winPos = root.CFrame
-        setB.Text = "SET ✓"
+    local root = hrp(); if not root then return end
+    -- raycast ลงหา part ที่ยืนอยู่ = แผ่น finish
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = {LP.Character}
+    local res = workspace:Raycast(root.Position, Vector3.new(0,-15,0), rp)
+    if res then
+        winPad = res.Instance
+        setB.Text = "SET ✓ "..winPad.Name
         setB.BackgroundColor3 = Color3.fromRGB(80,80,160)
+    else
+        setB.Text = "ไม่เจอแผ่น!"
     end
 end)
 
 local winB = btn("WIN: OFF", 5, 224, 140, 36)
 winB.MouseButton1Click:Connect(function()
-    if not winPos then setB.Text = "SET ก่อน!"; return end
+    if not winPad then setB.Text = "SET ก่อน!"; return end
+    if not fti then winB.Text = "ไม่รองรับ fti"; return end
     WIN = not WIN
-    if WIN then
-        -- ปิด FLY — BV ขัด MoveTo
-        if FLY then
-            FLY = false; stopFly()
-            flyB.Text = "FLY: OFF"
-            flyB.BackgroundColor3 = Color3.fromRGB(45,45,55)
-        end
-        -- บันทึก awayPos = ที่ยืนอยู่ตอนนี้ (จุดออก)
-        local root = hrp()
-        awayPos = root and root.Position or (winPos.Position + Vector3.new(40,0,0))
-        winPhase, winTimer = 0, 0
-    end
+    winTimer = 0
     winB.Text = "WIN: " .. (WIN and "ON" or "OFF")
     winB.BackgroundColor3 = WIN and Color3.fromRGB(160,40,160) or Color3.fromRGB(45,45,55)
 end)
@@ -250,4 +212,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[FlyNoclip+Farm+Win v2.5] พร้อม")
+print("[FlyNoclip+Farm+Win v2.6] พร้อม")
