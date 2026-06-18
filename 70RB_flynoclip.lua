@@ -1,4 +1,5 @@
--- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.4)
+-- 70RB_flynoclip.lua — Fly + Noclip + AutoFarm + WinFarm (v2.5)
+-- v2.5: + ปุ่ม CLOSE (ปิดทุกอย่าง + คืน CanCollide + ลบ GUI)
 -- v2.4: WIN ใช้ MoveTo เดินจริง (server-side physics) + noclip ทะลุกำแพง
 --       วิธีใช้ WIN: บินไปแผ่น → SET POS → กลับมายืนที่ไหนก็ได้ → WIN ON
 local Players, RS, VIM = game:GetService("Players"), game:GetService("RunService"), game:GetService("VirtualInputManager")
@@ -131,7 +132,7 @@ gui.Name, gui.ResetOnSpawn = "FLYNCGUI", false
 gui.Parent = gethui and gethui() or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,150,0,300), UDim2.new(0,20,0.5,-150)
+f.Size, f.Position = UDim2.new(0,150,0,336), UDim2.new(0,20,0.5,-168)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(20,20,25), 0.25
 f.Active, f.Draggable = true, true
 Instance.new("UICorner", f)
@@ -236,4 +237,17 @@ cdP.MouseButton1Click:Connect(function()
     cdL.Text = ("%.1fs"):format(WIN_CD)
 end)
 
-print("[FlyNoclip+Farm+Win v2.4] พร้อม")
+local closeB = btn("CLOSE", 5, 300, 140, 30)
+closeB.BackgroundColor3 = Color3.fromRGB(120,30,30)
+closeB.MouseButton1Click:Connect(function()
+    FLY, FARM, WIN = false, false, false
+    releaseAll()
+    if bv then bv:Destroy(); bv = nil end
+    local char = LP.Character
+    if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
+    for _, c in pairs(_G.FLYNC) do pcall(function() c:Disconnect() end) end
+    _G.FLYNC, _G.FLYNC_BV, _G.FLYNC_RELEASE = nil, nil, nil
+    gui:Destroy()
+end)
+
+print("[FlyNoclip+Farm+Win v2.5] พร้อม")
