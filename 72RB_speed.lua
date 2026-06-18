@@ -1,12 +1,25 @@
--- 72RB_speed.lua — Run Speed + Jump (v1.3)
+-- 72RB_speed.lua — Run Speed + Jump + Win Farm (v1.4)
+-- v1.4: WIN FARM = firetouchinterest แผ่น Structure.*.WinBlock* รัวๆ (spy ยืนยัน win=touch ไม่มี remote)
+--       ดึง pad จาก _G.WINSPY.pad (รัน 71RB spy ก่อนให้ชัวร์) หรือหาเองจากชื่อ
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
 local Players, RS, UIS = game:GetService("Players"), game:GetService("RunService"), game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 local RUN, SPEED = false, 50
 local INFJ, lastJump, JUMP_VAL = false, 0, 30
+local WIN, WIN_CD, lastWinFire = false, 1.0, 0
+local fti = firetouchinterest
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+
+local winPadCache
+local function findWinPad()
+    if winPadCache and winPadCache.Parent then return winPadCache end
+    if _G.WINSPY and _G.WINSPY.pad and _G.WINSPY.pad.Parent then winPadCache = _G.WINSPY.pad; return winPadCache end
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name:lower():find("winblock") then winPadCache = v; return v end
+    end
+end
 
 -- single-instance guard
 if _G.RBSPD_CONNS then for _, c in pairs(_G.RBSPD_CONNS) do pcall(function() c:Disconnect() end) end end
@@ -18,6 +31,14 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("RBSPDGU
 -- บังคับ WalkSpeed ทุก frame (กันเกม reset + respawn)
 bind(RS.Heartbeat, function()
     if RUN then local h = hum(); if h then h.WalkSpeed = SPEED end end
+    if WIN and fti then
+        local now = os.clock()
+        if now - lastWinFire >= WIN_CD then
+            lastWinFire = now
+            local pad, root = findWinPad(), hrp()
+            if pad and root then pcall(fti, root, pad, 0); pcall(fti, root, pad, 1) end
+        end
+    end
 end)
 
 -- JUMP: อัด velocity ขึ้นทุกครั้งที่กด space (กลางอากาศก็ได้ = ดับเบิล/มัลติจัม), สูงตาม JUMP_VAL
@@ -40,7 +61,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "RBSPDGUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,238), UDim2.new(0,20,0.5,-119)
+f.Size, f.Position = UDim2.new(0,190,0,316), UDim2.new(0,20,0.5,-158)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -98,13 +119,33 @@ jPlus.MouseButton1Click:Connect(function()
     JUMP_VAL = JUMP_VAL + 10; jValL.Text = tostring(JUMP_VAL)
 end)
 
-local closeB = btn("CLOSE", 10, 202, 170, 24, Color3.fromRGB(120,30,30))
+local winB = btn("WIN FARM: OFF", 10, 202, 170, 32)
+winB.MouseButton1Click:Connect(function()
+    if not fti then winB.Text = "ไม่รองรับ fti"; return end
+    if not WIN and not findWinPad() then winB.Text = "ไม่เจอแผ่น (รัน spy)"; return end
+    WIN = not WIN
+    lastWinFire = 0
+    winB.Text = "WIN FARM: " .. (WIN and "ON" or "OFF")
+    winB.BackgroundColor3 = WIN and Color3.fromRGB(150,40,150) or Color3.fromRGB(45,45,58)
+end)
+
+local cdL = btn(("%.1fs"):format(WIN_CD), 10, 240, 90, 32); cdL.Active = false
+local cdMinus = btn("−", 106, 240, 36, 32)
+local cdPlus  = btn("+", 144, 240, 36, 32)
+cdMinus.MouseButton1Click:Connect(function()
+    WIN_CD = math.max(0.2, WIN_CD - 0.2); cdL.Text = ("%.1fs"):format(WIN_CD)
+end)
+cdPlus.MouseButton1Click:Connect(function()
+    WIN_CD = WIN_CD + 0.2; cdL.Text = ("%.1fs"):format(WIN_CD)
+end)
+
+local closeB = btn("CLOSE", 10, 280, 170, 24, Color3.fromRGB(120,30,30))
 closeB.MouseButton1Click:Connect(function()
-    RUN = false
+    RUN, WIN, INFJ = false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     for _, c in pairs(CONNS) do pcall(function() c:Disconnect() end) end
     _G.RBSPD_CONNS = nil
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump v1.3] พร้อม")
+print("[72RB Run Speed + Jump + WinFarm v1.4] พร้อม")
