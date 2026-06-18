@@ -1,8 +1,10 @@
--- 71RB_winspy.txt v1.1 — Win Spy: จับ remote + ตำแหน่ง ตอน Win เพิ่ม
--- วิธีใช้: รันก่อน → วิ่งถึงเส้น finish ให้ชนะ 1 ครั้ง → มันจำ CFrame จุดที่ชนะ
---   ถ้าไม่มี remote = win เป็น touch/region ที่ตำแหน่งนั้น → เอาพิกัดไปทำ teleport-farm
---   พิกัดเก็บใน _G.WINSPY.lastWin (CFrame) + copy clipboard อัตโนมัติ
-local VERSION = "1.1"
+-- 71RB_winspy.txt v1.2 — Win Condition Spy: หาเงื่อนไขกันฟาร์มของแผ่น win
+-- วิธีใช้:
+--   1) รันตัวนี้ → ยืนบนแผ่นเหลือง → กด SET PAD (ดูด attr/children + ดักการแตะแผ่น)
+--   2) เหยียบเข้า-ออกแผ่นหลายๆครั้ง รัวบ้างช้าบ้าง
+--   3) อ่าน log: 👆TOUCH = แตะแผ่น | 🏆WIN = คะแนนขึ้น (โชว์ "ห่างครั้งก่อน Xs")
+--   → ดูว่าแตะไหนนับ/ไม่นับ ห่างกี่วิ = เจอ cooldown / ต้องออกก่อน
+local VERSION = "1.2"
 local Players, RunService = game:GetService("Players"), game:GetService("RunService")
 local LP = Players.LocalPlayer
 
@@ -12,19 +14,20 @@ local newcc    = newcclosure or function(f) return f end
 local clip     = setclipboard or toclipboard
 local okHooks  = hookmeta and getnc
 
--- state ถาวร (hook ครั้งเดียว, ring คงค่าข้าม re-run)
 _G.WINSPY = _G.WINSPY or {}
 local S = _G.WINSPY
-S.ring = S.ring or {}        -- {t=os.clock(), s="..."}
-S.prev = S.prev or {}        -- ค่าเดิมของแต่ละ value
+S.ring = S.ring or {}
+S.prev = S.prev or {}
 local RINGMAX = 50
 
--- guard (GUI/conns เท่านั้น — hook ถาวร)
+-- guard (GUI/conns; hook ถาวร)
 if _G.WINSPY_CONNS then for _, c in pairs(_G.WINSPY_CONNS) do pcall(function() c:Disconnect() end) end end
 _G.WINSPY_CONNS = {}
 local CONNS = _G.WINSPY_CONNS
 local function bind(s, f) local c = s:Connect(f); CONNS[#CONNS+1] = c; return c end
 pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("WINSPYGUI"):Destroy() end)
+
+local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
 -- formatter
 local function fmt(v)
@@ -44,7 +47,6 @@ local function fmtArgs(...)
     for i = 1, math.min(n, 8) do p[i] = fmt((select(i, ...))) end
     return table.concat(p, " | ")
 end
-
 local nameCache = setmetatable({}, {__mode = "k"})
 local function getName(r)
     local n = nameCache[r]
@@ -52,7 +54,7 @@ local function getName(r)
     return n
 end
 
--- hook __namecall → เก็บ FireServer/InvokeServer ใน ring buffer
+-- hook __namecall → ring buffer (FireServer/InvokeServer)
 if okHooks and not S.hooked then
     S.hooked = true
     local oldNc
@@ -75,7 +77,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "WINSPYGUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,380,0,210), UDim2.new(0,20,0,80)
+f.Size, f.Position = UDim2.new(0,400,0,260), UDim2.new(0,20,0,80)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(10,8,16), 0.08
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
@@ -105,56 +107,101 @@ out.Font, out.TextSize = Enum.Font.Code, 12
 out.TextXAlignment, out.TextYAlignment, out.TextWrapped = Enum.TextXAlignment.Left, Enum.TextYAlignment.Top, true
 Instance.new("UICorner", out).CornerRadius = UDim.new(0,4)
 
-local lastText = ""
-local function setText(t) lastText = t; out.Text = t end
+-- rolling log
+local logLines = {}
+local function add(t)
+    logLines[#logLines+1] = t
+    if #logLines > 40 then table.remove(logLines, 1) end
+    out.Text = table.concat(logLines, "\n")
+end
 
-local copyB = Instance.new("TextButton", f)
-copyB.Size, copyB.Position = UDim2.new(0,100,0,22), UDim2.new(0,6,1,-26)
-copyB.BackgroundColor3, copyB.TextColor3 = Color3.fromRGB(40,90,140), Color3.new(1,1,1)
-copyB.Text, copyB.Font, copyB.TextSize, copyB.BorderSizePixel = "COPY", Enum.Font.GothamBold, 11, 0
-Instance.new("UICorner", copyB).CornerRadius = UDim.new(0,4)
+local function mkB(x, w, txt, col)
+    local b = Instance.new("TextButton", f)
+    b.Size, b.Position = UDim2.new(0,w,0,22), UDim2.new(0,x,1,-26)
+    b.BackgroundColor3, b.TextColor3 = col, Color3.new(1,1,1)
+    b.Text, b.Font, b.TextSize, b.BorderSizePixel = txt, Enum.Font.GothamBold, 11, 0
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4)
+    return b
+end
+local setPadB = mkB(6,   110, "SET PAD", Color3.fromRGB(120,90,40))
+local copyB   = mkB(120, 90,  "COPY",    Color3.fromRGB(40,90,140))
+local clrB    = mkB(214, 80,  "CLEAR",   Color3.fromRGB(60,60,90))
+
 copyB.MouseButton1Click:Connect(function()
-    local ok = clip and pcall(clip, lastText)
+    local ok = clip and pcall(clip, table.concat(logLines, "\n"))
     copyB.Text = ok and "Copied!" or "ไม่รองรับ"
     task.delay(1.5, function() if copyB.Parent then copyB.Text = "COPY" end end)
 end)
+clrB.MouseButton1Click:Connect(function() table.clear(logLines); out.Text = "" end)
 
--- ==================== Win detect + report ====================
-local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
-
-local function report(name, old, new)
-    local now = os.clock()
-    local lines = {"🏆 "..name..": "..tostring(old).." → "..tostring(new)}
-    local root = hrp()
-    if root then
-        S.lastWin = root.CFrame
-        local p = root.Position
-        lines[#lines+1] = string.format("📍 จุดที่ชนะ: %.1f, %.1f, %.1f", p.X, p.Y, p.Z)
-        pcall(function() if clip then clip(string.format("Vector3.new(%.2f,%.2f,%.2f)", p.X, p.Y, p.Z)) end end)
+-- ==================== SET PAD: ดูดข้อมูล + ดักการแตะ ====================
+local function dumpPad(p)
+    add("📦 PAD = "..getName(p))
+    add(string.format("  Class:%s CanTouch:%s CanCollide:%s", p.ClassName, tostring(p.CanTouch), tostring(p.CanCollide)))
+    local attrs = p:GetAttributes()
+    local na = 0
+    for k, v in pairs(attrs) do add("  attr "..k.." = "..tostring(v)); na = na + 1 end
+    if na == 0 then add("  (ไม่มี attribute)") end
+    for _, c in ipairs(p:GetChildren()) do add("  child "..c.ClassName..":"..c.Name) end
+    -- หา value ชื่อ debounce/cooldown/time แถวๆแผ่น
+    local scope = p.Parent or p
+    for _, v in ipairs(scope:GetDescendants()) do
+        local ln = v.Name:lower()
+        if v:IsA("ValueBase") and (ln:find("debounce") or ln:find("cooldown") or ln:find("cd") or ln:find("time")) then
+            add("  🔎 "..v.ClassName..":"..v.Name.." = "..tostring(v.Value))
+        end
     end
-    lines[#lines+1] = "FireServer ใน 3s ก่อนหน้า:"
-    local n0 = #lines
-    for i = #S.ring, 1, -1 do
-        local e = S.ring[i]
-        if now - e.t <= 3 then lines[#lines+1] = string.format("  -%.2fs  %s", now - e.t, e.s) end
-    end
-    if #lines == n0 then lines[#lines+1] = "  (ไม่มี remote — win=touch/region ที่จุดนี้)" end
-    setText(table.concat(lines, "\n"))
 end
 
--- หา value ที่จะเฝ้า: ชื่อมี "win" ก่อน, ไม่งั้นเอา leaderstats ทั้งหมด
+setPadB.MouseButton1Click:Connect(function()
+    local root = hrp(); if not root then add("❌ ไม่มีตัวละคร"); return end
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = {LP.Character}
+    local res = workspace:Raycast(root.Position, Vector3.new(0,-15,0), rp)
+    if not res then add("❌ ไม่เจอแผ่นใต้เท้า (ยืนบนแผ่นเหลืองก่อน)"); return end
+    local p = res.Instance
+    S.pad = p
+    if S.padConn then pcall(function() S.padConn:Disconnect() end) end
+    S.padConn = p.Touched:Connect(function(hit)
+        if hit and hit:IsDescendantOf(LP.Character) then add(string.format("👆 TOUCH @%.2f", os.clock())) end
+    end)
+    CONNS[#CONNS+1] = S.padConn
+    add("===== SET PAD =====")
+    dumpPad(p)
+    add("ตอนนี้เหยียบเข้า-ออกแผ่นได้เลย ดู TOUCH vs WIN")
+end)
+
+-- ==================== Win watch ====================
+local lastWinT = 0
+local function report(name, old, new)
+    local now = os.clock()
+    local gap = lastWinT > 0 and string.format(" (ห่างครั้งก่อน %.2fs)", now - lastWinT) or ""
+    lastWinT = now
+    local root = hrp()
+    if root then S.lastWin = root.CFrame end
+    add("🏆 "..name..": "..old.." → "..new..gap)
+    -- remote ใน 3s ก่อนหน้า (ถ้ามี)
+    local found = false
+    for i = #S.ring, 1, -1 do
+        local e = S.ring[i]
+        if now - e.t <= 3 then add(string.format("   -%.2fs %s", now - e.t, e.s)); found = true end
+    end
+    if not found then add("   (ไม่มี remote → win = touch ล้วน)") end
+end
+
 local function candidates()
     local out, ls = {}, LP:FindFirstChild("leaderstats")
     if ls then for _, v in ipairs(ls:GetChildren()) do if v:IsA("ValueBase") then out[#out+1] = v end end end
     for _, v in ipairs(LP:GetDescendants()) do
-        if v:IsA("ValueBase") and v.Name:lower():find("win") then return {v} end  -- win-named ชนะเสมอ
+        if v:IsA("ValueBase") and v.Name:lower():find("win") then return {v} end
     end
     return out
 end
 
 local cands = candidates()
 if #cands == 0 then
-    setText("❌ หา Win/leaderstats ไม่เจอ\nไปทำให้ชนะ 1 ครั้งแล้วดู console / บอกชื่อ stat มา")
+    add("❌ หา Win/leaderstats ไม่เจอ — บอกชื่อ stat มา")
 else
     local names = {}
     for _, v in ipairs(cands) do
@@ -165,8 +212,8 @@ else
             if type(nv) == "number" and type(ov) == "number" and nv > ov then report(v.Name, ov, nv) end
         end)
     end
-    setText("👀 เฝ้าดู: "..table.concat(names, ", ").."\nไปทำให้ชนะ 1 ครั้ง...")
+    add("👀 เฝ้า: "..table.concat(names, ", "))
+    add("ยืนบนแผ่นเหลือง → SET PAD")
 end
 
 print("[71RB WinSpy v"..VERSION.."] loaded | hook:", okHooks and "ON" or "OFF")
-print("  ชนะแล้วพิกัดอยู่ที่ _G.WINSPY.lastWin")
