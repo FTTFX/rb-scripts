@@ -1,6 +1,6 @@
--- 72RB_speed.lua — Run Speed + Jump + Auto Win (v2.0)
--- v2.0: AUTO WIN วิ่งไปเป้าเอง (Humanoid:Move world-space หันให้เอง ไม่ต้องเล็งกล้อง) → ใกล้แผ่นค่อย MoveTo เก็บ
--- v1.9: วิ่งด้วยปุ่ม W (ต้องเล็งกล้องเอง)
+-- 72RB_speed.lua — Run Speed + Jump + Auto Win (v2.1)
+-- v2.1: AUTO WIN บินตรงดิ่งไปแผ่นเป้า 3D + noclip ทะลุทุกอย่าง (เล็งให้เอง) → ถึง=เก็บคะแนน → วาปกลับ → วนเอง
+-- v2.0: วิ่งพื้นไปเป้า (Humanoid:Move) ไม่ต้องเล็งกล้อง
 -- v1.7: + ปุ่ม ST เลือก stage/แผ่น (วนทุก WinBlock ใต้ Structure)
 -- v1.5: ยิงทุก WinBlock ด้วย firetouchinterest (ไม่ขึ้น = เกมไม่ได้เช็คแค่ touch)
 -- v1.3: JUMP impulse ปรับความสูงได้ (default 30) + ดับเบิล/มัลติจัม (กด space กลางอากาศ) เหมือน 06RB
@@ -47,17 +47,15 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("RBSPDGU
 bind(RS.Heartbeat, function()
     if RUN then local h = hum(); if h then h.WalkSpeed = SPEED end end
     if WIN then
-        local root, h, pad = hrp(), hum(), winTarget()
-        if root and h and pad then
-            local char = LP.Character           -- noclip ทะลุคีย์ที่ขวาง (พื้นยังยืนได้)
+        local root, pad = hrp(), winTarget()
+        if root and pad then
+            local char = LP.Character           -- noclip ทะลุทุกอย่าง
             if char then for _, p in pairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end
-            h.WalkSpeed = math.max(SPEED, 120)
             local to = pad.Position - root.Position
-            if to.Magnitude < 20 then
-                h:MoveTo(pad.Position)          -- ใกล้แผ่นเป้า → เดินเข้าเก็บคะแนน → วาปกลับ → วนเอง
+            if to.Magnitude < 8 then
+                root.AssemblyLinearVelocity = Vector3.zero                     -- ถึงแผ่น → เก็บคะแนน → วาปกลับ → วนเอง
             else
-                local dir = Vector3.new(to.X, 0, to.Z)
-                if dir.Magnitude > 0 then h:Move(dir.Unit, false) end  -- วิ่งไปเป้าเอง หันให้เอง ไม่ต้องเล็งกล้อง
+                root.AssemblyLinearVelocity = to.Unit * math.max(SPEED, 120)   -- บินตรงไปเป้า (3D ทะลุกำแพง) เล็งให้เอง
             end
         end
     end
@@ -189,4 +187,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy()
 end)
 
-print("[72RB Run Speed + Jump + AutoWin v2.0] พร้อม")
+print("[72RB Run Speed + Jump + AutoWin v2.1] พร้อม")
