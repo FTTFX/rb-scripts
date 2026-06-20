@@ -9,6 +9,8 @@ local LP      = Players.LocalPlayer
 if _G.AH74_CONNS then for _, c in pairs(_G.AH74_CONNS) do pcall(function() c:Disconnect() end) end end
 if _G.AH74_ESP  then for _, e in pairs(_G.AH74_ESP)  do pcall(function() e:Destroy() end) end end
 _G.AH74_CONNS, _G.AH74_ESP = {}, {}
+_G.AH74_GEN = (_G.AH74_GEN or 0) + 1   -- กัน loop เก่าทำงานซ้อนตอนรันใหม่
+local MYGEN = _G.AH74_GEN
 local CONNS, ESP = _G.AH74_CONNS, _G.AH74_ESP
 local function bind(s, f) CONNS[#CONNS+1] = s:Connect(f) end
 pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI"):Destroy() end)
@@ -18,20 +20,17 @@ local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON = true, false, false, false
 local SPEED = 50
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
-local TREAT_ACTS = {
+-- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
+-- *** ไม่รวมเก็บยา/Apply Treatment *** เพราะให้ยาผิด = คนไข้ตาย → จัดการแยกแบบ match ชื่อ
+local SAFE_ACTS = {
     ["Stamp Forms"]=true, ["Take Photo"]=true, ["Register"]=true, ["Print Badge"]=true,
     ["Take"]=true, ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true,
-    ["Process Results"]=true, ["Herbs"]=true, ["Apply Treatment"]=true, ["Use Treatment"]=true,
+    ["Process Results"]=true,
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local promptCache, cacheAcc, fireAcc = {}, 99, 0
-local function refreshPrompts()
-    promptCache = {}
-    for _, p in ipairs(workspace:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and TREAT_ACTS[p.ActionText] then promptCache[#promptCache+1] = p end
-    end
-end
+local fireAcc = 0
 local function partPos(inst)
+    if not inst then return nil end
     if inst:IsA("BasePart") then return inst.Position end
     local b = inst:FindFirstChildWhichIsA("BasePart", true)
     return b and b.Position
@@ -47,6 +46,70 @@ local LBL = { ghost="ผี", fake="ปลอม", patient="คนไข้", ma
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+
+-- ===== Auto รักษา (match ชื่อยา ไม่ฆ่าคนไข้) =====
+local function tpTo(pos)
+    local r = hrp()
+    if r and pos then r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
+end
+-- หา ProximityPrompt ที่ ActionText ตรงชื่อยา (จุดเก็บยา)
+local function findPickup(medName)
+    for _, p in ipairs(workspace:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.ActionText == medName then return p end
+    end
+end
+-- หา Tool ชื่อตรงยา (ที่ถืออยู่ใน Backpack/ตัว)
+local function findTool(medName)
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then local t = bp:FindFirstChild(medName); if t and t:IsA("Tool") then return t end end
+    if LP.Character then local t = LP.Character:FindFirstChild(medName); if t and t:IsA("Tool") then return t end end
+end
+-- อ่าน "ยาที่ต้องใช้" ของห้อง จาก TV.Screen.UI.Report.inv (populate หลังวินิจฉัย)
+local function requiredMeds(room)
+    local inv = room:FindFirstChild("Minigame")
+    inv = inv and inv:FindFirstChild("TV"); inv = inv and inv:FindFirstChild("Screen")
+    inv = inv and inv:FindFirstChild("UI"); inv = inv and inv:FindFirstChild("Report")
+    inv = inv and inv:FindFirstChild("inv")
+    if not inv then return {} end
+    local meds = {}
+    for _, fr in ipairs(inv:GetChildren()) do
+        if fr:IsA("GuiObject") then
+            local nm = fr:FindFirstChild("name")
+            meds[#meds+1] = (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or fr.Name
+        end
+    end
+    return meds
+end
+-- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
+local function treatRoom(room)
+    local meds = requiredMeds(room)
+    if #meds == 0 then return false end
+    -- 1) เก็บยาที่ยังไม่มี
+    for _, m in ipairs(meds) do
+        if not findTool(m) then
+            local pp = findPickup(m)
+            if pp and pp.Parent then
+                tpTo(partPos(pp.Parent)); task.wait(0.35)
+                pcall(fp, pp, 0); task.wait(0.45)
+            end
+        end
+    end
+    -- 2) ไปเตียง แล้วให้ยาทีละชนิด (equip ให้ตรงก่อนกด)
+    local bed = room:FindFirstChild("Minigame")
+    bed = bed and bed:FindFirstChild("Bed"); bed = bed and bed:FindFirstChild("InBed")
+    local bedPP = bed and bed:FindFirstChild("PP")
+    if not bedPP then return false end
+    tpTo(partPos(bed)); task.wait(0.35)
+    local h = hum()
+    for _, m in ipairs(meds) do
+        local tool = findTool(m)
+        if tool and h then
+            pcall(function() h:EquipTool(tool) end); task.wait(0.25)
+            pcall(fp, bedPP, 0); task.wait(0.5)
+        end
+    end
+    return true
+end
 
 -- ===== ESP helper: สร้าง/อัปเดต Highlight + ป้ายชื่อ (ทะลุกำแพง) =====
 local function applyESP(model, kind, distStr)
@@ -102,23 +165,16 @@ bind(RS.Heartbeat, function(dt)
         end end
     end
 
-    -- Auto รักษา/quest: ยิง prompt ที่ enabled ใกล้สุด ทุก ~0.6s
+    -- Auto: ยิงสเต็ป "ปลอดภัย" (เช็คอิน+วินิจฉัย) ทุก 0.6s — ส่วนให้ยาทำใน loop แยก
     if AUTO_ON and fp then
-        cacheAcc += dt
-        if cacheAcc >= 2 then cacheAcc = 0; refreshPrompts() end
         fireAcc += dt
         if fireAcc >= 0.6 then
             fireAcc = 0
-            local fromPos = hrp() and hrp().Position
-            local best, bestD
-            for _, p in ipairs(promptCache) do
-                if p.Parent and p.Enabled then
-                    local pos = partPos(p.Parent)
-                    local d = (fromPos and pos) and (pos - fromPos).Magnitude or 0
-                    if not best or d < bestD then best, bestD = p, d end
+            for _, p in ipairs(workspace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled and SAFE_ACTS[p.ActionText] then
+                    pcall(fp, p, 0)   -- ยิงทุกตัวที่ enabled (เกม gate ลำดับเอง)
                 end
             end
-            if best then pcall(fp, best, 0) end
         end
     end
 
@@ -232,10 +288,26 @@ end)
 local autoB = btn("AUTO รักษา: OFF", 10, 206, 170, 36)
 autoB.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
-    if AUTO_ON then cacheAcc = 99 end   -- บังคับ refresh prompt รอบแรกทันที
     autoB.Text = "AUTO รักษา: " .. (AUTO_ON and "ON" or "OFF")
     autoB.BackgroundColor3 = AUTO_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
     if AUTO_ON and not fp then autoB.Text = "ไม่มี fireproximityprompt" end
+end)
+
+-- loop ให้ยา (match ชื่อ) แยกจาก Heartbeat — มี wait ระหว่างสเต็ป
+task.spawn(function()
+    while _G.AH74_GEN == MYGEN do
+        if AUTO_ON and fp then
+            local med = workspace:FindFirstChild("Rooms")
+            med = med and med:FindFirstChild("Medical")
+            if med then
+                for _, room in ipairs(med:GetChildren()) do
+                    if not (AUTO_ON and _G.AH74_GEN == MYGEN) then break end
+                    pcall(treatRoom, room)   -- treatRoom เช็คเองว่าห้องมียาที่ต้องให้ไหม
+                end
+            end
+        end
+        task.wait(1)
+    end
 end)
 
 btn("CLOSE", 10, 248, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
@@ -246,7 +318,8 @@ btn("CLOSE", 10, 248, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     for m, e in pairs(ESP) do pcall(function() e:Destroy() end) end
     for _, conn in pairs(CONNS) do pcall(function() conn:Disconnect() end) end
     _G.AH74_CONNS, _G.AH74_ESP = nil, nil
+    _G.AH74_GEN = (_G.AH74_GEN or 0) + 1   -- หยุด treat loop
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v1.0] ESP ทะลุกำแพง + Speed + Noclip พร้อม")
+print("[74RB AnimalHospital v2.0] ESP + Speed + Noclip + AUTO รักษา(match ยา) พร้อม")
