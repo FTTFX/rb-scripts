@@ -15,7 +15,7 @@ local SLOT_KEYS = {
 local function pressSlot(n)
     local k = SLOT_KEYS[n]; if not k then return end
     pcall(function()
-        VIM:SendKeyEvent(true, k, false, game); task.wait(0.05)
+        VIM:SendKeyEvent(true, k, false, game); task.wait(0.02)
         VIM:SendKeyEvent(false, k, false, game)
     end)
 end
@@ -247,15 +247,15 @@ local function killWithWrongMed(room)
     end
     if not wrongName then return false end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
-        tpTo(partPos(wrongPP.Parent)); task.wait(0.35); pcall(fp, wrongPP, 0); task.wait(0.45)
+        tpTo(partPos(wrongPP.Parent)); task.wait(0.18); pcall(fp, wrongPP, 0); task.wait(0.2)
     end
     if not findTool(wrongName) then return false end
-    tpTo(partPos(bedPP.Parent)); task.wait(0.35)
-    for slot = 1, 9 do
-        pressSlot(slot); task.wait(0.22)
+    tpTo(partPos(bedPP.Parent)); task.wait(0.18)
+    for slot = 1, math.min(9, #heldTools()) do
+        pressSlot(slot); task.wait(0.08)
         local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
         if held and held.Name == wrongName then
-            pcall(fp, bedPP, 0); task.wait(0.6); return true
+            pcall(fp, bedPP, 0); task.wait(0.3); return true
         end
     end
     return false
@@ -280,8 +280,8 @@ local function treatRoom(room)
         if not medGiven(room, m) and not findTool(m) then
             local pp = findPickup(m)
             if pp and pp.Parent then
-                tpTo(partPos(pp.Parent)); task.wait(0.35)
-                pcall(fp, pp, 0); task.wait(0.45)
+                tpTo(partPos(pp.Parent)); task.wait(0.18)
+                pcall(fp, pp, 0); task.wait(0.2)
             end
         end
     end
@@ -292,18 +292,19 @@ local function treatRoom(room)
     -- 2) ไปเตียง แล้วให้ยาทีละชนิด — หา prompt "Apply Treatment" ในห้อง (ยืดหยุ่นทุกห้อง)
     local bedPP = bedApplyPP(room)
     if not bedPP or not bedPP.Parent then return false end
-    tpTo(partPos(bedPP.Parent)); task.wait(0.35)
+    tpTo(partPos(bedPP.Parent)); task.wait(0.18)
     -- ให้ยาตามลำดับที่จอบอก ทีละตัว — เลือก slot จนเจอยาชื่อตรงเป๊ะค่อยกด
     -- ถ้าหายาตัวนั้นไม่เจอ = ยกเลิก (ไม่กดมั่ว); ถ้ากดแล้ว TREATMENT ไม่เพิ่ม = หยุด
     local given = {}
+    local nslots = math.min(9, #heldTools())   -- วนแค่จำนวนของที่ถือ ไม่วนช่องว่าง
     for _, m in ipairs(meds) do
         if roomDone(room) then break end
         -- ข้ามถ้าเราให้แล้ว หรือ "เพื่อนให้ไปแล้ว" (กันให้ซ้ำ→ตาย)
         if not given[m] and not medGiven(room, m) then
             -- หา slot ที่ถือยา m พอดี
             local picked = false
-            for slot = 1, 9 do
-                pressSlot(slot); task.wait(0.22)
+            for slot = 1, nslots do
+                pressSlot(slot); task.wait(0.08)
                 local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
                 if held and held.Name == m then picked = true; break end
             end
@@ -312,7 +313,7 @@ local function treatRoom(room)
             if medGiven(room, m) then given[m] = true
             else
                 local before = treatCount(room)
-                pcall(fp, bedPP, 0); task.wait(0.6)            -- ให้ยา m
+                pcall(fp, bedPP, 0); task.wait(0.3)            -- ให้ยา m
                 given[m] = true
                 if treatCount(room) <= before then return false end  -- ไม่คืบ = ผิด หยุดทันที
             end
@@ -532,7 +533,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(1)
+        task.wait(0.3)
     end
 end)
 
