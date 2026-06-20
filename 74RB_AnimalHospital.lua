@@ -118,6 +118,16 @@ local function getReport(room)
     r = r and r:FindFirstChild("UI"); r = r and r:FindFirstChild("Report")
     return r
 end
+-- เลข TREATMENT ปัจจุบัน (X จาก 'TREATMENT: X/Y')
+local function treatCount(room)
+    local rep = getReport(room)
+    local tt = rep and rep:FindFirstChild("treatment")
+    if tt and tt:IsA("TextLabel") then
+        local a = tt.Text:match("(%d+)%s*/")
+        return tonumber(a) or 0
+    end
+    return 0
+end
 -- ห้องนี้รักษาเสร็จ/กำลังฟื้นแล้วหรือยัง → ข้าม ไม่วาปซ้ำ
 local function roomDone(room)
     local rep = getReport(room)
@@ -175,16 +185,24 @@ local function treatRoom(room)
     local bedPP = bed and bed:FindFirstChild("PP")
     if not bedPP then return false end
     tpTo(partPos(bed)); task.wait(0.35)
-    -- ให้ยาโดย "เลือก slot (กดเลข)" แล้วดูว่าถืออะไร — จำว่าให้ตัวไหนไปแล้ว ไม่ซ้ำ
-    local applied, remain = {}, #meds
-    for slot = 1, 9 do
-        if remain <= 0 or roomDone(room) then break end
-        pressSlot(slot); task.wait(0.25)
-        local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-        if held and needed[held.Name] and not applied[held.Name] then
-            pcall(fp, bedPP, 0); task.wait(0.6)   -- ให้ยา slot นี้
-            applied[held.Name] = true
-            remain -= 1
+    -- ให้ยาตามลำดับที่จอบอก ทีละตัว — เลือก slot จนเจอยาชื่อตรงเป๊ะค่อยกด
+    -- ถ้าหายาตัวนั้นไม่เจอ = ยกเลิก (ไม่กดมั่ว); ถ้ากดแล้ว TREATMENT ไม่เพิ่ม = หยุด
+    local given = {}
+    for _, m in ipairs(meds) do
+        if roomDone(room) then break end
+        if not given[m] then
+            -- หา slot ที่ถือยา m พอดี
+            local picked = false
+            for slot = 1, 9 do
+                pressSlot(slot); task.wait(0.22)
+                local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+                if held and held.Name == m then picked = true; break end
+            end
+            if not picked then return false end          -- ไม่เจอยาตัวนี้ → เลิก ไม่เสี่ยง
+            local before = treatCount(room)
+            pcall(fp, bedPP, 0); task.wait(0.6)            -- ให้ยา m
+            given[m] = true
+            if treatCount(room) <= before then return false end  -- ไม่คืบ = ผิด หยุดทันที
         end
     end
     return true
