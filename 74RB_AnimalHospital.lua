@@ -3,7 +3,21 @@
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพงเดินผ่านได้
 local Players = game:GetService("Players")
 local RS      = game:GetService("RunService")
+local VIM     = game:GetService("VirtualInputManager")
 local LP      = Players.LocalPlayer
+
+-- กดเลข 1-9 เลือก slot hotbar (เกมดู slot ที่เลือก ไม่ใช่ EquipTool)
+local SLOT_KEYS = {
+    Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four,
+    Enum.KeyCode.Five, Enum.KeyCode.Six, Enum.KeyCode.Seven, Enum.KeyCode.Eight, Enum.KeyCode.Nine,
+}
+local function pressSlot(n)
+    local k = SLOT_KEYS[n]; if not k then return end
+    pcall(function()
+        VIM:SendKeyEvent(true, k, false, game); task.wait(0.05)
+        VIM:SendKeyEvent(false, k, false, game)
+    end)
+end
 
 -- ===== Single-Instance Guard =====
 if _G.AH74_CONNS then for _, c in pairs(_G.AH74_CONNS) do pcall(function() c:Disconnect() end) end end
@@ -161,21 +175,16 @@ local function treatRoom(room)
     local bedPP = bed and bed:FindFirstChild("PP")
     if not bedPP then return false end
     tpTo(partPos(bed)); task.wait(0.35)
-    for _, m in ipairs(meds) do
-        if roomDone(room) then break end             -- ครบแล้วหยุด ไม่ให้ยาเกิน
-        local tool = findTool(m)
-        local h = hum()
-        if tool and h then
-            -- สลับยาให้ตรง: เอาของเก่าลงก่อน แล้ว equip ตัวใหม่ (กันให้ยาตัวเดิมซ้ำ)
-            pcall(function() h:UnequipTools() end); task.wait(0.15)
-            pcall(function() h:EquipTool(tool) end); task.wait(0.3)
-            -- ยืนยัน equip ติดจริง ค่อยกด (ถ้าไม่ติด ลองอีกครั้ง)
-            if tool.Parent ~= LP.Character then
-                pcall(function() h:EquipTool(tool) end); task.wait(0.3)
-            end
-            if tool.Parent == LP.Character then
-                pcall(fp, bedPP, 0); task.wait(0.6)
-            end
+    -- ให้ยาโดย "เลือก slot (กดเลข)" แล้วดูว่าถืออะไร — จำว่าให้ตัวไหนไปแล้ว ไม่ซ้ำ
+    local applied, remain = {}, #meds
+    for slot = 1, 9 do
+        if remain <= 0 or roomDone(room) then break end
+        pressSlot(slot); task.wait(0.25)
+        local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+        if held and needed[held.Name] and not applied[held.Name] then
+            pcall(fp, bedPP, 0); task.wait(0.6)   -- ให้ยา slot นี้
+            applied[held.Name] = true
+            remain -= 1
         end
     end
     return true
