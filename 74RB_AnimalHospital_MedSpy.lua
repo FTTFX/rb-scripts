@@ -19,7 +19,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-185,0,28); titleLbl.Position = UDim2.new(0,10,0,0)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120,200,255)
-titleLbl.Text = "MedSpy v1 — scanning..."; titleLbl.Font = Enum.Font.Code; titleLbl.TextSize = 13
+titleLbl.Text = "MedSpy v2 — scanning..."; titleLbl.Font = Enum.Font.Code; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 local copyBtn = Instance.new("TextButton")
 copyBtn.Size = UDim2.new(0,110,0,22); copyBtn.Position = UDim2.new(1,-178,0,3)
@@ -63,14 +63,26 @@ copyBtn.MouseButton1Click:Connect(function()
     task.delay(2, function() if copyBtn.Parent then copyBtn.Text = "Copy" end end)
 end)
 
+local rescanBtn = Instance.new("TextButton")
+rescanBtn.Size = UDim2.new(0,90,0,22); rescanBtn.Position = UDim2.new(1,-272,0,3)
+rescanBtn.BackgroundColor3 = Color3.fromRGB(40,70,120); rescanBtn.TextColor3 = Color3.new(1,1,1)
+rescanBtn.Text = "RESCAN"; rescanBtn.Font = Enum.Font.Code; rescanBtn.TextSize = 12
+rescanBtn.BorderSizePixel = 0; rescanBtn.Parent = frame
+Instance.new("UICorner", rescanBtn).CornerRadius = UDim.new(0,4)
+
 local function attrsStr(inst)
     local ak = {}
     for k, v in pairs(inst:GetAttributes()) do ak[#ak+1] = k.."="..tostring(v) end
     return table.concat(ak, ", ")
 end
 
-task.spawn(function()
-    task.wait(0.1)
+local function runScan()
+    -- ล้างผลเก่า
+    for _, c in ipairs(scroll:GetChildren()) do
+        if c:IsA("TextLabel") then c:Destroy() end
+    end
+    copyLines = {}; order = 0
+    task.wait(0.05)
     local ok, err = pcall(function()
         -- A) ผู้ป่วยทุกคน — attrs เต็ม + values (หา Disease/Cure/Medicine/Sickness)
         addLine("===== PATIENTS (attrs เต็ม) =====", C.Y)
@@ -150,7 +162,12 @@ task.spawn(function()
     end)
     if not ok then addLine("SCAN ERROR: " .. tostring(err), C.R) end
     addLine("", C.S)
-    addLine(">> สำคัญ: วินิจฉัยผู้ป่วยก่อนรัน เพื่อให้จอโชว์ไอคอนยาที่ต้องใช้", C.Y)
-    addLine(">> กด Copy ส่งมา — หาว่าโรคไหนใช้ยาอะไร แล้วทำ Auto วาป", C.Y)
-    titleLbl.Text = "MedSpy v1 — done (กด Copy)"
+    addLine(">> วินิจฉัยผู้ป่วยให้จอโชว์ไอคอนยา → กด RESCAN → Copy", C.Y)
+    titleLbl.Text = "MedSpy v2 — done (กด Copy / RESCAN)"
+end
+
+rescanBtn.MouseButton1Click:Connect(function()
+    titleLbl.Text = "MedSpy v2 — rescanning..."
+    task.spawn(runScan)
 end)
+task.spawn(runScan)
