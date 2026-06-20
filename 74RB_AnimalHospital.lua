@@ -181,6 +181,21 @@ local function roomDone(room)
     end
     return false
 end
+-- ยาตัวนี้ "ถูกให้ไปแล้ว" ไหม (ใครก็ได้ให้ — เช็คจาก .check ในจอ) กันให้ซ้ำ→ตาย
+local function medGiven(room, medName)
+    local inv = getReport(room)
+    inv = inv and inv:FindFirstChild("inv")
+    local fr = inv and inv:FindFirstChild(medName)
+    if not fr then return false end
+    local chk = fr:FindFirstChild("check")
+    if chk and chk:IsA("GuiObject") then
+        -- check โผล่/ทึบ = ให้ยาตัวนี้แล้ว
+        if not chk.Visible then return false end
+        if chk:IsA("ImageLabel") and chk.ImageTransparency >= 0.5 then return false end
+        return true
+    end
+    return false
+end
 -- อ่าน "ยาที่ต้องใช้" ของห้อง จาก TV.Screen.UI.Report.inv (populate หลังวินิจฉัย)
 local function requiredMeds(room)
     local inv = getReport(room)
@@ -260,9 +275,9 @@ local function treatRoom(room)
     for _, m in ipairs(meds) do needed[m] = true end
     -- 0) ทิ้งยาเก่า/ผิดที่ไม่ใช่ของคนไข้นี้ก่อน (กัน slot เต็ม → ให้ยาผิด → ตาย)
     cleanInventory(needed)
-    -- 1) เก็บยาที่ยังไม่มี
+    -- 1) เก็บยาที่ยังไม่มี (ข้ามตัวที่เพื่อนให้ไปแล้ว)
     for _, m in ipairs(meds) do
-        if not findTool(m) then
+        if not medGiven(room, m) and not findTool(m) then
             local pp = findPickup(m)
             if pp and pp.Parent then
                 tpTo(partPos(pp.Parent)); task.wait(0.35)
@@ -270,9 +285,9 @@ local function treatRoom(room)
             end
         end
     end
-    -- กันตาย: ถ้ายังถือยาไม่ครบทุกชนิด → ห้าม Apply (รอบหน้าค่อยลองใหม่)
+    -- กันตาย: ยาที่ "ยังไม่มีคนให้" ต้องถือครบ ไม่งั้นไม่ Apply (รอบหน้าค่อยลองใหม่)
     for _, m in ipairs(meds) do
-        if not findTool(m) then return false end
+        if not medGiven(room, m) and not findTool(m) then return false end
     end
     -- 2) ไปเตียง แล้วให้ยาทีละชนิด — หา prompt "Apply Treatment" ในห้อง (ยืดหยุ่นทุกห้อง)
     local bedPP
@@ -286,7 +301,8 @@ local function treatRoom(room)
     local given = {}
     for _, m in ipairs(meds) do
         if roomDone(room) then break end
-        if not given[m] then
+        -- ข้ามถ้าเราให้แล้ว หรือ "เพื่อนให้ไปแล้ว" (กันให้ซ้ำ→ตาย)
+        if not given[m] and not medGiven(room, m) then
             -- หา slot ที่ถือยา m พอดี
             local picked = false
             for slot = 1, 9 do
@@ -295,10 +311,14 @@ local function treatRoom(room)
                 if held and held.Name == m then picked = true; break end
             end
             if not picked then return false end          -- ไม่เจอยาตัวนี้ → เลิก ไม่เสี่ยง
-            local before = treatCount(room)
-            pcall(fp, bedPP, 0); task.wait(0.6)            -- ให้ยา m
-            given[m] = true
-            if treatCount(room) <= before then return false end  -- ไม่คืบ = ผิด หยุดทันที
+            -- เช็คอีกครั้งก่อนกดจริง (เผื่อเพื่อนเพิ่งให้ตอนเราหา slot)
+            if medGiven(room, m) then given[m] = true
+            else
+                local before = treatCount(room)
+                pcall(fp, bedPP, 0); task.wait(0.6)            -- ให้ยา m
+                given[m] = true
+                if treatCount(room) <= before then return false end  -- ไม่คืบ = ผิด หยุดทันที
+            end
         end
     end
     return true
