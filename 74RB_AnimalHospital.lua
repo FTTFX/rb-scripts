@@ -158,16 +158,6 @@ local function getReport(room)
     r = r and r:FindFirstChild("UI"); r = r and r:FindFirstChild("Report")
     return r
 end
--- เลข TREATMENT ปัจจุบัน (X จาก 'TREATMENT: X/Y')
-local function treatCount(room)
-    local rep = getReport(room)
-    local tt = rep and rep:FindFirstChild("treatment")
-    if tt and tt:IsA("TextLabel") then
-        local a = tt.Text:match("(%d+)%s*/")
-        return tonumber(a) or 0
-    end
-    return 0
-end
 -- ห้องนี้รักษาเสร็จ/กำลังฟื้นแล้วหรือยัง → ข้าม ไม่วาปซ้ำ
 local function roomDone(room)
     local rep = getReport(room)
@@ -179,21 +169,6 @@ local function roomDone(room)
         local a, b = tt.Text:match("(%d+)%s*/%s*(%d+)")
         a, b = tonumber(a), tonumber(b)
         if a and b and b > 0 and a >= b then return true end   -- 2/2 = เสร็จ
-    end
-    return false
-end
--- ยาตัวนี้ "ถูกให้ไปแล้ว" ไหม (ใครก็ได้ให้ — เช็คจาก .check ในจอ) กันให้ซ้ำ→ตาย
-local function medGiven(room, medName)
-    local inv = getReport(room)
-    inv = inv and inv:FindFirstChild("inv")
-    local fr = inv and inv:FindFirstChild(medName)
-    if not fr then return false end
-    local chk = fr:FindFirstChild("check")
-    if chk and chk:IsA("GuiObject") then
-        -- check โผล่/ทึบ = ให้ยาตัวนี้แล้ว
-        if not chk.Visible then return false end
-        if chk:IsA("ImageLabel") and chk.ImageTransparency >= 0.5 then return false end
-        return true
     end
     return false
 end
@@ -210,6 +185,38 @@ local function requiredMeds(room)
         end
     end
     return meds
+end
+-- frame นี้ถูกให้ยาแล้ว (check โผล่)
+local function frameGiven(fr)
+    local chk = fr:FindFirstChild("check")
+    if not (chk and chk:IsA("GuiObject")) then return false end
+    if not chk.Visible then return false end
+    if chk:IsA("ImageLabel") and chk.ImageTransparency >= 0.5 then return false end
+    return true
+end
+-- นับจำนวนยาที่ต้องการ/ให้แล้ว ต่อชนิด (รองรับของซ้ำ เช่น มีดผ่าตัด ×2)
+-- คืน need[m]=ต้องการกี่ชิ้น, given[m]=ให้แล้วกี่ชิ้น(ใครก็ได้), order=รายชื่อชนิดเรียงลำดับ
+local function medCounts(room)
+    local need, given, order = {}, {}, {}
+    local inv = getReport(room); inv = inv and inv:FindFirstChild("inv")
+    if not inv then return need, given, order end
+    for _, fr in ipairs(inv:GetChildren()) do
+        if fr:IsA("GuiObject") then
+            local nm = fr:FindFirstChild("name")
+            local m = (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or fr.Name
+            if (need[m] or 0) == 0 then order[#order+1] = m end
+            need[m] = (need[m] or 0) + 1
+            if frameGiven(fr) then given[m] = (given[m] or 0) + 1 end
+        end
+    end
+    return need, given, order
+end
+local function givenOf(room, m) local _, g = medCounts(room); return g[m] or 0 end
+-- นับ Tool ชื่อ m ที่ถืออยู่ (รองรับถือซ้ำหลายชิ้น)
+local function heldCount(m)
+    local c = 0
+    for _, t in ipairs(heldTools()) do if t.Name == m then c += 1 end end
+    return c
 end
 -- หา NPC คนไข้ของห้องนี้ (จาก attribute DesignatedRoom)
 local function roomPatient(room)
@@ -292,58 +299,56 @@ local function treatRoom(room)
         end
         return false
     end
+    -- ===== แบบนับจำนวน (รองรับของซ้ำ เช่น มีดผ่าตัด ×2) =====
+    local need, given, order = medCounts(room)
+    if #order == 0 then return false end
     local needed = {}
-    for _, m in ipairs(meds) do needed[m] = true end
+    for _, m in ipairs(order) do needed[m] = true end
     -- 0) ทิ้งยาเก่า/ผิดที่ไม่ใช่ของคนไข้นี้ก่อน (กัน slot เต็ม → ให้ยาผิด → ตาย)
     cleanInventory(needed)
-    -- 1) เก็บยาที่ยังไม่มี (ข้ามตัวที่เพื่อนให้ไปแล้ว)
-    for _, m in ipairs(meds) do
-        if not medGiven(room, m) and not findTool(m) then
+    -- 1) เก็บยาให้ "ครบจำนวนที่ยังขาด" (ต้องการ − ที่ให้ไปแล้ว) ต่อชนิด
+    for _, m in ipairs(order) do
+        local want = need[m] - (given[m] or 0)        -- จำนวนที่ต้องถือ
+        local guard = 0
+        while heldCount(m) < want and guard < 8 do
+            guard += 1
             local pp = findPickup(m)
-            if pp and pp.Parent then
-                tpTo(partPos(pp.Parent)); task.wait(0.18)
-                pcall(fp, pp, 0); task.wait(0.2)
-            end
+            if not pp or not pp.Parent then break end
+            local before = heldCount(m)
+            tpTo(partPos(pp.Parent)); task.wait(0.18); pcall(fp, pp, 0); task.wait(0.2)
+            if heldCount(m) <= before then break end  -- เก็บไม่ขึ้น → เลิก
         end
     end
-    -- กันตาย: ยาที่ "ยังไม่มีคนให้" ต้องถือครบ ไม่งั้นไม่ Apply (รอบหน้าค่อยลองใหม่)
-    for _, m in ipairs(meds) do
-        if not medGiven(room, m) and not findTool(m) then return false end
+    -- กันตาย: ต้องถือครบทุกชนิดตามจำนวนที่ยังขาด ไม่งั้นไม่ Apply
+    for _, m in ipairs(order) do
+        local g = givenOf(room, m)
+        if heldCount(m) < (need[m] - g) then return false end
     end
-    -- 2) ไปเตียง แล้วให้ยาทีละชนิด — หา prompt "Apply Treatment" ในห้อง (ยืดหยุ่นทุกห้อง)
+    -- 2) ไปเตียง แล้วให้ยาแต่ละชนิด "จนครบจำนวน" (เช็คจาก given บนจอทุกครั้ง)
     local bedPP = bedApplyPP(room)
     if not bedPP or not bedPP.Parent then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
-    -- ให้ยาตามลำดับที่จอบอก ทีละตัว — เลือก slot จนเจอยาชื่อตรงเป๊ะค่อยกด
-    -- ถ้าหายาตัวนั้นไม่เจอ = ยกเลิก (ไม่กดมั่ว); ถ้ากดแล้ว TREATMENT ไม่เพิ่ม = หยุด
-    local given = {}
-    local nslots = math.min(9, #heldTools())   -- วนแค่จำนวนของที่ถือ ไม่วนช่องว่าง
-    for _, m in ipairs(meds) do
-        if roomDone(room) then break end
-        -- ข้ามถ้าเราให้แล้ว หรือ "เพื่อนให้ไปแล้ว" (กันให้ซ้ำ→ตาย)
-        if not given[m] and not medGiven(room, m) then
-            -- หา slot ที่ถือยา m พอดี
+    local nslots = math.min(9, #heldTools())
+    for _, m in ipairs(order) do
+        local guard = 0
+        while not roomDone(room) and guard < 8 do
+            if givenOf(room, m) >= need[m] then break end   -- ครบจำนวนแล้ว → ชนิดถัดไป
+            guard += 1
+            -- เลือก slot ที่ถือ m
             local picked = false
             for slot = 1, nslots do
                 pressSlot(slot); task.wait(0.08)
                 local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
                 if held and held.Name == m then picked = true; break end
             end
-            if not picked then return false end          -- ไม่เจอยาตัวนี้ → เลิก ไม่เสี่ยง
-            -- เช็คอีกครั้งก่อนกดจริง (เผื่อเพื่อนเพิ่งให้ตอนเราหา slot)
-            if medGiven(room, m) then given[m] = true
-            else
-                local before = treatCount(room)
-                pcall(fp, bedPP, 0); given[m] = true           -- ให้ยา m
-                -- poll: ยืนยันทันทีที่จอเปลี่ยน (ไม่รอตายตัว) เผื่อสูงสุด 0.5
-                local t0 = os.clock()
-                repeat task.wait(0.03)
-                until treatCount(room) > before or medGiven(room, m)
-                    or roomDone(room) or os.clock() - t0 > 0.5
-                -- ไม่คืบเลยใน 0.5 = ผิด → หยุด (กันให้ผิดซ้ำ)
-                if treatCount(room) <= before and not medGiven(room, m)
-                   and not roomDone(room) then return false end
-            end
+            if not picked then break end       -- ไม่มี m แล้ว (ถูกใช้หมด/ขาด) → ชนิดถัดไป
+            local before = givenOf(room, m)
+            pcall(fp, bedPP, 0)                 -- ให้ยา m 1 ชิ้น
+            -- poll: ยืนยันทันทีที่ given เพิ่ม เผื่อสูงสุด 0.5
+            local t0 = os.clock()
+            repeat task.wait(0.03)
+            until givenOf(room, m) > before or roomDone(room) or os.clock() - t0 > 0.5
+            if givenOf(room, m) <= before and not roomDone(room) then return false end -- ไม่คืบ = ผิด หยุด
         end
     end
     return true
