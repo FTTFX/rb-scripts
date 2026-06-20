@@ -118,6 +118,24 @@ local function runScan()
             local room=em:FindFirstChild(name)
             if room then dumpRoom(room) else addLine("ไม่เจอ "..name, C.O) end
         end
+        -- ปุ่มมินิเกมใน PlayerGui (heartbeat/whack — โผล่ตอนเล่น) ดี vs หัวกระโลกแดง
+        addLine("===== PLAYERGUI BUTTONS (รันตอนมินิเกมเปิด) =====", C.Y)
+        local n = 0
+        for _, d in ipairs(pg:GetDescendants()) do
+            if n >= 60 then break end
+            local vis = (not d:IsA("GuiObject")) or d.Visible
+            if vis and (d:IsA("GuiButton") or d:IsA("ImageLabel")) then
+                local img = (d:IsA("ImageButton") or d:IsA("ImageLabel")) and d.Image or ""
+                local txt = d:IsA("TextButton") and d.Text or ""
+                if img ~= "" or txt ~= "" then
+                    n += 1
+                    addLine(("  [%s] %s img=%s txt='%s'"):format(d.ClassName, d.Name, img, txt), C.G)
+                    addLine("     "..d:GetFullName(), C.S)
+                    local ca = attrsStr(d); if ca ~= "" then addLine("     attrs: "..ca, C.O) end
+                end
+            end
+        end
+        addLine(("  (gui buttons = %d)"):format(n), C.S)
     end)
     if not ok then addLine("SCAN ERROR: "..tostring(err), C.R) end
     addLine(">> เข้าไปในห้อง 6/7 ตอนมินิเกมเปิด → กด RESCAN → Copy", C.Y)
