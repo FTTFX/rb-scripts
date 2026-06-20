@@ -14,8 +14,28 @@ local function bind(s, f) CONNS[#CONNS+1] = s:Connect(f) end
 pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI"):Destroy() end)
 
 -- ===== State =====
-local ESP_ON, RUN_ON, NOCLIP_ON = true, false, false
+local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON = true, false, false, false
 local SPEED = 50
+
+-- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
+local TREAT_ACTS = {
+    ["Stamp Forms"]=true, ["Take Photo"]=true, ["Register"]=true, ["Print Badge"]=true,
+    ["Take"]=true, ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true,
+    ["Process Results"]=true, ["Herbs"]=true, ["Apply Treatment"]=true, ["Use Treatment"]=true,
+}
+local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+local promptCache, cacheAcc, fireAcc = {}, 99, 0
+local function refreshPrompts()
+    promptCache = {}
+    for _, p in ipairs(workspace:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and TREAT_ACTS[p.ActionText] then promptCache[#promptCache+1] = p end
+    end
+end
+local function partPos(inst)
+    if inst:IsA("BasePart") then return inst.Position end
+    local b = inst:FindFirstChildWhichIsA("BasePart", true)
+    return b and b.Position
+end
 
 local COL = {
     ghost   = Color3.fromRGB(255, 40, 40),    -- ผี
@@ -82,6 +102,26 @@ bind(RS.Heartbeat, function(dt)
         end end
     end
 
+    -- Auto รักษา/quest: ยิง prompt ที่ enabled ใกล้สุด ทุก ~0.6s
+    if AUTO_ON and fp then
+        cacheAcc += dt
+        if cacheAcc >= 2 then cacheAcc = 0; refreshPrompts() end
+        fireAcc += dt
+        if fireAcc >= 0.6 then
+            fireAcc = 0
+            local fromPos = hrp() and hrp().Position
+            local best, bestD
+            for _, p in ipairs(promptCache) do
+                if p.Parent and p.Enabled then
+                    local pos = partPos(p.Parent)
+                    local d = (fromPos and pos) and (pos - fromPos).Magnitude or 0
+                    if not best or d < bestD then best, bestD = p, d end
+                end
+            end
+            if best then pcall(fp, best, 0) end
+        end
+    end
+
     acc += dt
     if acc < 0.4 then return end
     acc = 0
@@ -127,7 +167,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,232), UDim2.new(0,20,0.5,-116)
+f.Size, f.Position = UDim2.new(0,190,0,274), UDim2.new(0,20,0.5,-137)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -189,8 +229,17 @@ clipB.MouseButton1Click:Connect(function()
     end
 end)
 
-btn("CLOSE", 10, 206, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON = false, false, false
+local autoB = btn("AUTO รักษา: OFF", 10, 206, 170, 36)
+autoB.MouseButton1Click:Connect(function()
+    AUTO_ON = not AUTO_ON
+    if AUTO_ON then cacheAcc = 99 end   -- บังคับ refresh prompt รอบแรกทันที
+    autoB.Text = "AUTO รักษา: " .. (AUTO_ON and "ON" or "OFF")
+    autoB.BackgroundColor3 = AUTO_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+    if AUTO_ON and not fp then autoB.Text = "ไม่มี fireproximityprompt" end
+end)
+
+btn("CLOSE", 10, 248, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON = false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
