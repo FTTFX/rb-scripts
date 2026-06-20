@@ -159,37 +159,71 @@ task.spawn(function()
     end)
     if not ok then addLine("SCAN ERROR: " .. tostring(err), C.R) end
 
-    -- ── 5. REMOTE HOOK (หลัง scan + best-effort, ใช้ hookmetamethod แบบ 69RB) ──
+    -- ── 5. REMOTE HOOK v4 — ดักทั้ง dot-call (Net lib) + colon-call ──────
+    -- Net framework เรียก fs(remote,...) ไม่ใช่ remote:FireServer() → ต้อง hookfunction
+    -- ที่ตัวฟังก์ชัน FireServer/InvokeServer โดยตรง (ดักได้ทุกแบบ) แทน __namecall
     addLine("", C.S)
-    local remoteCount, hookOK = 0, false
-    if hookmetamethod then
-        local okh = pcall(function()
+    local remoteCount = 0
+    local function logRemote(self, method, ...)
+        if remoteCount >= 150 then return end
+        local full = ""
+        pcall(function() full = self:GetFullName() end)
+        -- filter เสียงรบกวนของ Roblox internal — เอาเฉพาะ remote ของเกม
+        if full:find("RobloxReplicatedStorage") then return end
+        remoteCount += 1
+        local args, n = {...}, select("#", ...)
+        local parts = {}
+        for i = 1, n do parts[i] = v2s(args[i]) end
+        addLine(("[REMOTE] %s :%s(%s)"):format(self.Name, method,
+            table.concat(parts, " | ")), C.M)
+        addLine("   " .. full, C.S)
+        titleLbl.Text = "AnimalHospital Spy v4 — REMOTE: " .. remoteCount
+    end
+
+    local hookMode = "none"
+    -- วิธีที่ 1 (ดีสุด): hookfunction บน FireServer/InvokeServer — ดัก dot-call ได้
+    if hookfunction then
+        pcall(function()
+            local wrap = newcclosure or function(f) return f end
+            local re = Instance.new("RemoteEvent")
+            local oldFS
+            oldFS = hookfunction(re.FireServer, wrap(function(self, ...)
+                logRemote(self, "FireServer", ...)
+                return oldFS(self, ...)
+            end))
+            re:Destroy()
+            local rf = Instance.new("RemoteFunction")
+            local oldIS
+            oldIS = hookfunction(rf.InvokeServer, wrap(function(self, ...)
+                logRemote(self, "InvokeServer", ...)
+                return oldIS(self, ...)
+            end))
+            rf:Destroy()
+            hookMode = "hookfunction"
+        end)
+    end
+    -- วิธีที่ 2 (สำรอง): __namecall — ดักได้แค่ colon-call
+    if hookMode == "none" and hookmetamethod then
+        pcall(function()
             local oldnc
             oldnc = hookmetamethod(game, "__namecall", function(self, ...)
                 local m = getnamecallmethod and getnamecallmethod()
-                if (m == "FireServer" or m == "InvokeServer") and remoteCount < 120 then
-                    remoteCount += 1
-                    local args, n = {...}, select("#", ...)
-                    local parts = {}
-                    for i = 1, n do parts[i] = v2s(args[i]) end
-                    addLine(("[REMOTE] %s :%s(%s)"):format(self.Name, m,
-                        table.concat(parts, " | ")), C.M)
-                    addLine("   path: " .. self:GetFullName(), C.S)
+                if m == "FireServer" or m == "InvokeServer" then
+                    logRemote(self, m, ...)
                 end
                 return oldnc(self, ...)
             end)
-            hookOK = true
+            hookMode = "namecall"
         end)
-        if not okh then hookOK = false end
     end
 
-    if hookOK then
-        addLine(">> hook ติดแล้ว — ไป: เข้าใกล้ผี+คนดี / รักษาสัตว์ / ทำ quest", C.Y)
-        addLine(">> [REMOTE] สีชมพูจะเด้ง แล้วกด Copy ส่งให้ผม", C.Y)
-        titleLbl.Text = "AnimalHospital Spy v3 — ready (เล่นต่อ → ดู REMOTE)"
+    if hookMode ~= "none" then
+        addLine((">> hook ติดแล้ว (%s) — ไป รักษาคนไข้ 1 คน + ทำ quest 1 อัน"):format(hookMode), C.Y)
+        addLine(">> สำคัญ: อย่ารัน script ซ้ำ! แค่เล่นต่อ → [REMOTE] ชมพูจะเด้ง → กด Copy", C.Y)
+        addLine(">> ที่หัวกล่องจะนับ REMOTE: N ให้เห็นว่าดักติดจริง", C.G)
+        titleLbl.Text = "AnimalHospital Spy v4 — ready (เล่นต่อ → REMOTE จะนับ)"
     else
-        addLine(">> executor นี้ hook remote ไม่ได้ — แต่ข้อมูล scan ข้างบนใช้ได้", C.O)
-        addLine(">> กด Copy ส่ง scan มาก่อน เดี๋ยวผมหาวิธี remote อื่น", C.O)
-        titleLbl.Text = "AnimalHospital Spy v3 — scan done (no hook)"
+        addLine(">> executor นี้ hook ไม่ได้ทั้ง 2 วิธี — ส่ง scan มาก่อน", C.O)
+        titleLbl.Text = "AnimalHospital Spy v4 — scan done (no hook)"
     end
 end)
