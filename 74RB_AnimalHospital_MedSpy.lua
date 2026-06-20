@@ -100,33 +100,55 @@ local function runScan()
         end end
         addLine("", C.S)
 
-        -- B) ห้อง Medical + Minigame: values + attrs + รูปบนจอ (ImageLabel/Decal = ไอคอนยาที่ต้องใช้)
+        -- B) ห้อง Medical: หาไอคอน "ยาที่ต้องใช้" บนจอ TREATMENT (Decal.Texture/Image) + values/attrs
         addLine("===== MEDICAL ROOMS (จอ treatment + minigame) =====", C.Y)
+        local function relPath(c, root)
+            local s = c.Name
+            local p = c.Parent
+            while p and p ~= root do s = p.Name .. "." .. s; p = p.Parent end
+            return s
+        end
         local rooms = workspace:FindFirstChild("Rooms")
         local med = rooms and rooms:FindFirstChild("Medical")
         if med then for _, room in ipairs(med:GetChildren()) do
             addLine("ROOM: " .. room.Name, C.B)
             local ra = attrsStr(room); if ra ~= "" then addLine("   attrs: " .. ra, C.O) end
             for _, c in ipairs(room:GetDescendants()) do
+                local rp = relPath(c, room)
                 if c:IsA("ValueBase") then
-                    addLine(("   val %s.%s=%s"):format(c.Parent.Name, c.Name, tostring(c.Value)), C.M)
-                elseif (c:IsA("ImageLabel") or c:IsA("ImageButton") or c:IsA("Decal")) and c.Image ~= "" then
-                    addLine(("   IMG %s = %s"):format(c.Name, c.Image), C.G)
+                    addLine(("   val %s = %s"):format(rp, tostring(c.Value)), C.M)
+                elseif (c:IsA("ImageLabel") or c:IsA("ImageButton")) and c.Image ~= "" then
+                    addLine(("   IMG %s = %s"):format(rp, c.Image), C.G)
+                elseif c:IsA("Decal") and c.Texture ~= "" then       -- Decal ใช้ .Texture
+                    addLine(("   DECAL %s = %s"):format(rp, c.Texture), C.G)
                 elseif c:IsA("TextLabel") and c.Text ~= "" then
-                    addLine(("   TXT %s = '%s'"):format(c.Name, c.Text), C.W)
+                    addLine(("   TXT %s = '%s'"):format(rp, c.Text), C.W)
                 end
                 local ca = attrsStr(c)
-                if ca ~= "" then addLine(("   [%s].attrs: %s"):format(c.Name, ca), C.O) end
+                if ca ~= "" then addLine(("   attr@%s: %s"):format(rp, ca), C.O) end
             end
         end end
         addLine("", C.S)
 
-        -- C) ยาทั้งหมด: Tools (Backpack+Character+workspace) ชื่อ + TextureId (ไอคอน = map กับจอ)
-        addLine("===== MEDICINE TOOLS (ชื่อ + TextureId) =====", C.Y)
+        -- C) ยาแต่ละชนิด: ไอคอน (Decal/Image/Tool TextureId) → เอาไป match กับจอ
+        addLine("===== MEDICINE ITEMS (ไอคอน เพื่อ map กับจอ) =====", C.Y)
+        local model = workspace:FindFirstChild("Model")
+        local items = model and model:FindFirstChild("Items")
+        if items then for _, it in ipairs(items:GetChildren()) do
+            addLine("ITEM: " .. it.Name, C.G)
+            for _, c in ipairs(it:GetDescendants()) do
+                if c:IsA("Decal") and c.Texture ~= "" then
+                    addLine(("   DECAL %s = %s"):format(c.Name, c.Texture), C.B)
+                elseif (c:IsA("ImageLabel") or c:IsA("ImageButton")) and c.Image ~= "" then
+                    addLine(("   IMG %s = %s"):format(c.Name, c.Image), C.B)
+                end
+            end
+            local a = attrsStr(it); if a ~= "" then addLine("   attrs: " .. a, C.O) end
+        end end
+        -- Tools ที่ถืออยู่ (มี TextureId = ไอคอน)
         local function dumpTool(t, where)
             if not t:IsA("Tool") then return end
             addLine(("   Tool[%s]: '%s' tex=%s"):format(where, t.Name, tostring(t.TextureId)), C.G)
-            local a = attrsStr(t); if a ~= "" then addLine("      attrs: " .. a, C.O) end
         end
         local bp = LP:FindFirstChild("Backpack")
         if bp then for _, t in ipairs(bp:GetChildren()) do dumpTool(t, "BP") end end
@@ -163,7 +185,7 @@ local function runScan()
     if not ok then addLine("SCAN ERROR: " .. tostring(err), C.R) end
     addLine("", C.S)
     addLine(">> วินิจฉัยผู้ป่วยให้จอโชว์ไอคอนยา → กด RESCAN → Copy", C.Y)
-    titleLbl.Text = "MedSpy v2 — done (กด Copy / RESCAN)"
+    titleLbl.Text = "MedSpy v3 — done (กด Copy / RESCAN)"
 end
 
 rescanBtn.MouseButton1Click:Connect(function()
