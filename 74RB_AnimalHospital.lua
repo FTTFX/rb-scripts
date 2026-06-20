@@ -64,11 +64,30 @@ local function findTool(medName)
     if bp then local t = bp:FindFirstChild(medName); if t and t:IsA("Tool") then return t end end
     if LP.Character then local t = LP.Character:FindFirstChild(medName); if t and t:IsA("Tool") then return t end end
 end
+-- หา Report ของห้อง (TV.Screen.UI.Report)
+local function getReport(room)
+    local r = room:FindFirstChild("Minigame")
+    r = r and r:FindFirstChild("TV"); r = r and r:FindFirstChild("Screen")
+    r = r and r:FindFirstChild("UI"); r = r and r:FindFirstChild("Report")
+    return r
+end
+-- ห้องนี้รักษาเสร็จ/กำลังฟื้นแล้วหรือยัง → ข้าม ไม่วาปซ้ำ
+local function roomDone(room)
+    local rep = getReport(room)
+    if not rep then return true end                  -- ไม่มีจอ = ไม่ต้องทำ
+    local healing = rep:FindFirstChild("Healing")
+    if healing and healing:IsA("GuiObject") and healing.Visible then return true end
+    local tt = rep:FindFirstChild("treatment")
+    if tt and tt:IsA("TextLabel") then
+        local a, b = tt.Text:match("(%d+)%s*/%s*(%d+)")
+        a, b = tonumber(a), tonumber(b)
+        if a and b and b > 0 and a >= b then return true end   -- 2/2 = เสร็จ
+    end
+    return false
+end
 -- อ่าน "ยาที่ต้องใช้" ของห้อง จาก TV.Screen.UI.Report.inv (populate หลังวินิจฉัย)
 local function requiredMeds(room)
-    local inv = room:FindFirstChild("Minigame")
-    inv = inv and inv:FindFirstChild("TV"); inv = inv and inv:FindFirstChild("Screen")
-    inv = inv and inv:FindFirstChild("UI"); inv = inv and inv:FindFirstChild("Report")
+    local inv = getReport(room)
     inv = inv and inv:FindFirstChild("inv")
     if not inv then return {} end
     local meds = {}
@@ -82,6 +101,7 @@ local function requiredMeds(room)
 end
 -- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
 local function treatRoom(room)
+    if roomDone(room) then return false end          -- เสร็จ/ฟื้นแล้ว → ไม่วาปซ้ำ
     local meds = requiredMeds(room)
     if #meds == 0 then return false end
     -- 1) เก็บยาที่ยังไม่มี
@@ -102,6 +122,7 @@ local function treatRoom(room)
     tpTo(partPos(bed)); task.wait(0.35)
     local h = hum()
     for _, m in ipairs(meds) do
+        if roomDone(room) then break end             -- ครบแล้วหยุด ไม่ให้ยาเกิน
         local tool = findTool(m)
         if tool and h then
             pcall(function() h:EquipTool(tool) end); task.wait(0.25)
