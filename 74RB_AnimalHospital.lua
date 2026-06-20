@@ -53,12 +53,12 @@ local function partPos(inst)
 end
 
 local COL = {
-    ghost   = Color3.fromRGB(255, 40, 40),    -- ผี
-    fake    = Color3.fromRGB(255, 140, 0),    -- หมอปลอม
+    ghost   = Color3.fromRGB(255, 40, 40),    -- ผี (Skinwalker = อันตรายจริง)
     patient = Color3.fromRGB(60, 255, 90),    -- คนไข้จริง
     mate    = Color3.fromRGB(60, 160, 255),   -- เพื่อนผู้เล่น
+    npc     = Color3.fromRGB(220, 210, 110),  -- NPC ทั่วไป/visitor (Fake=true ไม่ใช่ผี)
 }
-local LBL = { ghost="ผี", fake="ปลอม", patient="คนไข้", mate="เพื่อน" }
+local LBL = { ghost="ผี", patient="คนไข้", mate="เพื่อน", npc="NPC" }
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
@@ -202,6 +202,12 @@ local function bedApplyPP(room)
         if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then return p end
     end
 end
+-- ตำแหน่งห้อง (ใช้เตียง) สำหรับเรียงระยะใกล้
+local function roomPos(room)
+    local pp = bedApplyPP(room)
+    if pp and pp.Parent then return partPos(pp.Parent) end
+    return partPos(room:FindFirstChild("Minigame") or room)
+end
 -- ฆ่าผี: จงใจให้ยา "ผิด" (ยาที่ไม่ใช่ของห้องนี้) 1 ตัว
 local function killWithWrongMed(room)
     local needed = {}
@@ -324,9 +330,9 @@ local function applyESP(model, kind, distStr)
 end
 
 local function npcKind(m)
-    if m:GetAttribute("Skinwalker") then return "ghost" end
-    if m:GetAttribute("Fake")       then return "fake"  end
-    return "patient"
+    if m:GetAttribute("Skinwalker") then return "ghost" end     -- อันตรายจริง
+    if m:GetAttribute("IsPatient")  then return "patient" end   -- คนไข้จริง
+    return "npc"   -- Fake/visitor/พนักงาน = NPC ทั่วไป (ไม่ใช่ผี)
 end
 
 -- ===== ESP refresh loop (re-check attr ทุก 0.5s — ผีเปลี่ยนสภาพกลางเกมก็เห็น) =====
@@ -476,12 +482,26 @@ task.spawn(function()
         if AUTO_ON and fp then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
-                for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8 (แค่ขั้นให้ยา)
+                -- รวมห้องทั้งหมด แล้วเรียงตามระยะใกล้ตัวเรา (ทำห้องใกล้ก่อน)
+                local list = {}
+                for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8
                     local f = rooms:FindFirstChild(grp)
                     if f then for _, room in ipairs(f:GetChildren()) do
-                        if not (AUTO_ON and _G.AH74_GEN == MYGEN) then break end
-                        pcall(treatRoom, room)   -- treatRoom เช็คเองว่าห้องมียาที่ต้องให้ไหม
+                        list[#list+1] = room
                     end end
+                end
+                local fromPos = hrp() and hrp().Position
+                if fromPos then
+                    local dist = {}
+                    for _, room in ipairs(list) do
+                        local pos = roomPos(room)
+                        dist[room] = pos and (pos - fromPos).Magnitude or math.huge
+                    end
+                    table.sort(list, function(a, b) return dist[a] < dist[b] end)
+                end
+                for _, room in ipairs(list) do
+                    if not (AUTO_ON and _G.AH74_GEN == MYGEN) then break end
+                    pcall(treatRoom, room)   -- treatRoom เช็คเองว่าห้องมียาที่ต้องให้ไหม
                 end
             end
         end
