@@ -138,9 +138,9 @@ local function discardTool(tool)
     local h = hum()
     local tp = trashPrompt()
     if not (h and tp and tp.Parent) then return end
-    pcall(function() h:EquipTool(tool) end); task.wait(0.2)
-    tpTo(partPos(tp.Parent)); task.wait(0.3)
-    pcall(fp, tp, 0); task.wait(0.35)
+    pcall(function() h:EquipTool(tool) end); task.wait(0.15)
+    tpTo(partPos(tp.Parent)); task.wait(0.2)
+    pcall(fp, tp, 0); task.wait(0.2)
 end
 -- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
 local function cleanInventory(needed)
@@ -255,7 +255,7 @@ local function killWithWrongMed(room)
         pressSlot(slot); task.wait(0.08)
         local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
         if held and held.Name == wrongName then
-            pcall(fp, bedPP, 0); task.wait(0.3); return true
+            pcall(fp, bedPP, 0); task.wait(0.2); return true
         end
     end
     return false
@@ -313,7 +313,7 @@ local function treatRoom(room)
             if medGiven(room, m) then given[m] = true
             else
                 local before = treatCount(room)
-                pcall(fp, bedPP, 0); task.wait(0.3)            -- ให้ยา m
+                pcall(fp, bedPP, 0); task.wait(0.2)            -- ให้ยา m
                 given[m] = true
                 if treatCount(room) <= before then return false end  -- ไม่คืบ = ผิด หยุดทันที
             end
@@ -533,7 +533,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(0.3)
+        task.wait(0.2)
     end
 end)
 
