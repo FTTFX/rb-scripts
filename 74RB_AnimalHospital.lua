@@ -271,19 +271,22 @@ local function treatRoom(room)
         return false
     end
     local meds = requiredMeds(room)
-    -- ยังไม่วินิจฉัย: ถ้าคนไข้นอนเตียงแล้ว → วาปไปทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
+    -- ยังไม่วินิจฉัย: คนไข้นอนเตียงแล้ว → ทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
+    -- MACHINE_ON=ON วาปไปก่อนยิง | OFF ยิงในที่ (ไม่วาป — เราเดินไปเอง เหมือน Ver.ก่อน)
     if #meds == 0 then
-        if MACHINE_ON and patient and patient:GetAttribute("InBed") then
+        if patient and patient:GetAttribute("InBed") then
             local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }
             local DIAG_ROOM = { ["Analyze Sample"]=true, ["Process Results"]=true }
             for _, p in ipairs(patient:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
-                    tpTo(partPos(patient)); task.wait(0.15); pcall(fp, p, 0); task.wait(0.15)
+                    if MACHINE_ON then tpTo(partPos(patient)); task.wait(0.15) end
+                    pcall(fp, p, 0); task.wait(0.1)
                 end
             end
             for _, p in ipairs(room:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
-                    tpTo(partPos(p.Parent)); task.wait(0.15); pcall(fp, p, 0); task.wait(0.15)
+                    if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
+                    pcall(fp, p, 0); task.wait(0.1)
                 end
             end
         end
