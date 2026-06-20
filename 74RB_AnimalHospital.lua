@@ -179,12 +179,13 @@ local function treatRoom(room)
     for _, m in ipairs(meds) do
         if not findTool(m) then return false end
     end
-    -- 2) ไปเตียง แล้วให้ยาทีละชนิด (equip ให้ตรงก่อนกด)
-    local bed = room:FindFirstChild("Minigame")
-    bed = bed and bed:FindFirstChild("Bed"); bed = bed and bed:FindFirstChild("InBed")
-    local bedPP = bed and bed:FindFirstChild("PP")
-    if not bedPP then return false end
-    tpTo(partPos(bed)); task.wait(0.35)
+    -- 2) ไปเตียง แล้วให้ยาทีละชนิด — หา prompt "Apply Treatment" ในห้อง (ยืดหยุ่นทุกห้อง)
+    local bedPP
+    for _, p in ipairs(room:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then bedPP = p; break end
+    end
+    if not bedPP or not bedPP.Parent then return false end
+    tpTo(partPos(bedPP.Parent)); task.wait(0.35)
     -- ให้ยาตามลำดับที่จอบอก ทีละตัว — เลือก slot จนเจอยาชื่อตรงเป๊ะค่อยกด
     -- ถ้าหายาตัวนั้นไม่เจอ = ยกเลิก (ไม่กดมั่ว); ถ้ากดแล้ว TREATMENT ไม่เพิ่ม = หยุด
     local given = {}
@@ -394,12 +395,14 @@ end)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if AUTO_ON and fp then
-            local med = workspace:FindFirstChild("Rooms")
-            med = med and med:FindFirstChild("Medical")
-            if med then
-                for _, room in ipairs(med:GetChildren()) do
-                    if not (AUTO_ON and _G.AH74_GEN == MYGEN) then break end
-                    pcall(treatRoom, room)   -- treatRoom เช็คเองว่าห้องมียาที่ต้องให้ไหม
+            local rooms = workspace:FindFirstChild("Rooms")
+            if rooms then
+                for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8 (แค่ขั้นให้ยา)
+                    local f = rooms:FindFirstChild(grp)
+                    if f then for _, room in ipairs(f:GetChildren()) do
+                        if not (AUTO_ON and _G.AH74_GEN == MYGEN) then break end
+                        pcall(treatRoom, room)   -- treatRoom เช็คเองว่าห้องมียาที่ต้องให้ไหม
+                    end end
                 end
             end
         end
