@@ -209,7 +209,11 @@ local function roomPos(room)
     return partPos(room:FindFirstChild("Minigame") or room)
 end
 -- ฆ่าผี: จงใจให้ยา "ผิด" (ยาที่ไม่ใช่ของห้องนี้) 1 ตัว
+-- *** ทำเฉพาะตอนผีถึงขั้น "จ่ายยา" แล้ว (Apply Treatment พร้อม) — ก่อนหน้านั้นปล่อย flow ปกติ ***
 local function killWithWrongMed(room)
+    -- รอจนผีอยู่ในเตียง + ถึงขั้นจ่ายยา (prompt Apply Treatment เปิดใช้งาน)
+    local bedPP = bedApplyPP(room)
+    if not bedPP or not bedPP.Parent or not bedPP.Enabled then return false end  -- ยังไม่ถึงขั้นจ่ายยา → รอ
     local needed = {}
     for _, m in ipairs(requiredMeds(room)) do needed[m] = true end
     -- หายาสักตัวที่ไม่ใช่ของห้องนี้ (ผิดแน่นอน)
@@ -223,8 +227,7 @@ local function killWithWrongMed(room)
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
         tpTo(partPos(wrongPP.Parent)); task.wait(0.35); pcall(fp, wrongPP, 0); task.wait(0.45)
     end
-    local bedPP = bedApplyPP(room)
-    if not bedPP or not bedPP.Parent or not findTool(wrongName) then return false end
+    if not findTool(wrongName) then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.35)
     for slot = 1, 9 do
         pressSlot(slot); task.wait(0.22)
