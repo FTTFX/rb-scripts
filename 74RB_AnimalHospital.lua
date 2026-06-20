@@ -32,7 +32,8 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI
 
 -- ===== State =====
 local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, false, false, false
-local TP_ON = true   -- true=วาป, false=เดิน (pathfinding)
+local TP_ON = true       -- true=วาป, false=เดิน (pathfinding)
+local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local SPEED = 50
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
@@ -272,7 +273,7 @@ local function treatRoom(room)
     local meds = requiredMeds(room)
     -- ยังไม่วินิจฉัย: ถ้าคนไข้นอนเตียงแล้ว → วาปไปทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
     if #meds == 0 then
-        if patient and patient:GetAttribute("InBed") then
+        if MACHINE_ON and patient and patient:GetAttribute("InBed") then
             local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }
             local DIAG_ROOM = { ["Analyze Sample"]=true, ["Process Results"]=true }
             for _, p in ipairs(patient:GetDescendants()) do
@@ -457,7 +458,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,358), UDim2.new(0,20,0.5,-179)
+f.Size, f.Position = UDim2.new(0,190,0,396), UDim2.new(0,20,0.5,-198)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -574,7 +575,14 @@ moveB.MouseButton1Click:Connect(function()
     moveB.BackgroundColor3 = TP_ON and Color3.fromRGB(55,35,80) or Color3.fromRGB(35,70,55)
 end)
 
-btn("CLOSE", 10, 322, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+local machB = btn("วาปทำเครื่อง: ON", 10, 320, 170, 32, Color3.fromRGB(40,150,70))
+machB.MouseButton1Click:Connect(function()
+    MACHINE_ON = not MACHINE_ON
+    machB.Text = "วาปทำเครื่อง: " .. (MACHINE_ON and "ON" or "OFF")
+    machB.BackgroundColor3 = MACHINE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
+
+btn("CLOSE", 10, 360, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON = false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
