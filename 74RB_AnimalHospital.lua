@@ -161,13 +161,21 @@ local function treatRoom(room)
     local bedPP = bed and bed:FindFirstChild("PP")
     if not bedPP then return false end
     tpTo(partPos(bed)); task.wait(0.35)
-    local h = hum()
     for _, m in ipairs(meds) do
         if roomDone(room) then break end             -- ครบแล้วหยุด ไม่ให้ยาเกิน
         local tool = findTool(m)
+        local h = hum()
         if tool and h then
-            pcall(function() h:EquipTool(tool) end); task.wait(0.25)
-            pcall(fp, bedPP, 0); task.wait(0.5)
+            -- สลับยาให้ตรง: เอาของเก่าลงก่อน แล้ว equip ตัวใหม่ (กันให้ยาตัวเดิมซ้ำ)
+            pcall(function() h:UnequipTools() end); task.wait(0.15)
+            pcall(function() h:EquipTool(tool) end); task.wait(0.3)
+            -- ยืนยัน equip ติดจริง ค่อยกด (ถ้าไม่ติด ลองอีกครั้ง)
+            if tool.Parent ~= LP.Character then
+                pcall(function() h:EquipTool(tool) end); task.wait(0.3)
+            end
+            if tool.Parent == LP.Character then
+                pcall(fp, bedPP, 0); task.wait(0.6)
+            end
         end
     end
     return true
