@@ -313,9 +313,15 @@ local function treatRoom(room)
             if medGiven(room, m) then given[m] = true
             else
                 local before = treatCount(room)
-                pcall(fp, bedPP, 0); task.wait(0.2)            -- ให้ยา m
-                given[m] = true
-                if treatCount(room) <= before then return false end  -- ไม่คืบ = ผิด หยุดทันที
+                pcall(fp, bedPP, 0); given[m] = true           -- ให้ยา m
+                -- poll: ยืนยันทันทีที่จอเปลี่ยน (ไม่รอตายตัว) เผื่อสูงสุด 0.5
+                local t0 = os.clock()
+                repeat task.wait(0.03)
+                until treatCount(room) > before or medGiven(room, m)
+                    or roomDone(room) or os.clock() - t0 > 0.5
+                -- ไม่คืบเลยใน 0.5 = ผิด → หยุด (กันให้ผิดซ้ำ)
+                if treatCount(room) <= before and not medGiven(room, m)
+                   and not roomDone(room) then return false end
             end
         end
     end
