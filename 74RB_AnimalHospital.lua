@@ -64,6 +64,39 @@ local function findTool(medName)
     if bp then local t = bp:FindFirstChild(medName); if t and t:IsA("Tool") then return t end end
     if LP.Character then local t = LP.Character:FindFirstChild(medName); if t and t:IsA("Tool") then return t end end
 end
+-- เป็น "ยา" ไหม = มีจุดเก็บ (ProximityPrompt ActionText ตรงชื่อ)
+local function isMedicine(name) return findPickup(name) ~= nil end
+-- Tool ทั้งหมดที่ถืออยู่ (Backpack+ตัว)
+local function heldTools()
+    local out = {}
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then for _, t in ipairs(bp:GetChildren()) do if t:IsA("Tool") then out[#out+1] = t end end end
+    if LP.Character then for _, t in ipairs(LP.Character:GetChildren()) do if t:IsA("Tool") then out[#out+1] = t end end end
+    return out
+end
+-- หาจุดทิ้งยา (Trash Item)
+local function trashPrompt()
+    for _, p in ipairs(workspace:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.ActionText == "Trash Item" then return p end
+    end
+end
+-- ทิ้ง Tool 1 ชิ้น: equip → วาปไปถังขยะ → fire
+local function discardTool(tool)
+    local h = hum()
+    local tp = trashPrompt()
+    if not (h and tp and tp.Parent) then return end
+    pcall(function() h:EquipTool(tool) end); task.wait(0.2)
+    tpTo(partPos(tp.Parent)); task.wait(0.3)
+    pcall(fp, tp, 0); task.wait(0.35)
+end
+-- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
+local function cleanInventory(needed)
+    for _, t in ipairs(heldTools()) do
+        if isMedicine(t.Name) and not needed[t.Name] then
+            discardTool(t)
+        end
+    end
+end
 -- หา Report ของห้อง (TV.Screen.UI.Report)
 local function getReport(room)
     local r = room:FindFirstChild("Minigame")
@@ -104,6 +137,10 @@ local function treatRoom(room)
     if roomDone(room) then return false end          -- เสร็จ/ฟื้นแล้ว → ไม่วาปซ้ำ
     local meds = requiredMeds(room)
     if #meds == 0 then return false end
+    local needed = {}
+    for _, m in ipairs(meds) do needed[m] = true end
+    -- 0) ทิ้งยาเก่า/ผิดที่ไม่ใช่ของคนไข้นี้ก่อน (กัน slot เต็ม → ให้ยาผิด → ตาย)
+    cleanInventory(needed)
     -- 1) เก็บยาที่ยังไม่มี
     for _, m in ipairs(meds) do
         if not findTool(m) then
@@ -113,6 +150,10 @@ local function treatRoom(room)
                 pcall(fp, pp, 0); task.wait(0.45)
             end
         end
+    end
+    -- กันตาย: ถ้ายังถือยาไม่ครบทุกชนิด → ห้าม Apply (รอบหน้าค่อยลองใหม่)
+    for _, m in ipairs(meds) do
+        if not findTool(m) then return false end
     end
     -- 2) ไปเตียง แล้วให้ยาทีละชนิด (equip ให้ตรงก่อนกด)
     local bed = room:FindFirstChild("Minigame")
