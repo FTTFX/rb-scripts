@@ -4,6 +4,7 @@
 local Players = game:GetService("Players")
 local RS      = game:GetService("RunService")
 local VIM     = game:GetService("VirtualInputManager")
+local PathSvc = game:GetService("PathfindingService")
 local LP      = Players.LocalPlayer
 
 -- กดเลข 1-9 เลือก slot hotbar (เกมดู slot ที่เลือก ไม่ใช่ EquipTool)
@@ -31,6 +32,7 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI
 
 -- ===== State =====
 local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, false, false, false
+local TP_ON = true   -- true=วาป, false=เดิน (pathfinding)
 local SPEED = 50
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
@@ -62,9 +64,39 @@ local function hum() local c = LP.Character; return c and c:FindFirstChildOfClas
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
 -- ===== Auto รักษา (match ชื่อยา ไม่ฆ่าคนไข้) =====
+-- เดินไปหา pos (pathfinding อ้อมกำแพง) — ใช้เมื่อปิดโหมดวาป
+local function walkTo(pos)
+    local h, r = hum(), hrp()
+    if not (h and r) then return end
+    local path = PathSvc:CreatePath({ AgentRadius = 2, AgentCanJump = true })
+    local ok = pcall(function() path:ComputeAsync(r.Position, pos) end)
+    if ok and path.Status == Enum.PathStatus.Success then
+        for _, wp in ipairs(path:GetWaypoints()) do
+            if not (AUTO_ON and _G.AH74_GEN == MYGEN) then return end
+            h:MoveTo(wp.Position)
+            if wp.Action == Enum.PathWaypointAction.Jump then
+                h:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+            local t0 = os.clock()
+            repeat task.wait(0.05)
+            until not hrp() or (hrp().Position - wp.Position).Magnitude < 4 or os.clock() - t0 > 3
+        end
+    else
+        h:MoveTo(pos)   -- fallback: เดินตรง
+        local t0 = os.clock()
+        repeat task.wait(0.1)
+        until not hrp() or (hrp().Position - pos).Magnitude < 6 or os.clock() - t0 > 6
+    end
+end
+-- ไปหา pos: วาป หรือ เดิน ตามโหมด
 local function tpTo(pos)
-    local r = hrp()
-    if r and pos then r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
+    if not pos then return end
+    if TP_ON then
+        local r = hrp()
+        if r then r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
+    else
+        walkTo(pos)
+    end
 end
 -- หา ProximityPrompt ที่ ActionText ตรงชื่อยา (จุดเก็บยา)
 local function findPickup(medName)
@@ -368,7 +400,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,316), UDim2.new(0,20,0.5,-158)
+f.Size, f.Position = UDim2.new(0,190,0,358), UDim2.new(0,20,0.5,-179)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -457,14 +489,21 @@ task.spawn(function()
     end
 end)
 
-local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 36)
+local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
     killB.Text = "ผี→ยาผิด: " .. (KILLGHOST_ON and "ON" or "OFF")
     killB.BackgroundColor3 = KILLGHOST_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(45,45,58)
 end)
 
-btn("CLOSE", 10, 290, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+local moveB = btn("ไปของ: วาป", 10, 284, 170, 32, Color3.fromRGB(55,35,80))
+moveB.MouseButton1Click:Connect(function()
+    TP_ON = not TP_ON
+    moveB.Text = "ไปของ: " .. (TP_ON and "วาป" or "เดิน")
+    moveB.BackgroundColor3 = TP_ON and Color3.fromRGB(55,35,80) or Color3.fromRGB(35,70,55)
+end)
+
+btn("CLOSE", 10, 322, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON = false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
