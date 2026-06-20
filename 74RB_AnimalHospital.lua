@@ -270,7 +270,24 @@ local function treatRoom(room)
         return false
     end
     local meds = requiredMeds(room)
-    if #meds == 0 then return false end
+    -- ยังไม่วินิจฉัย: ถ้าคนไข้นอนเตียงแล้ว → วาปไปทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
+    if #meds == 0 then
+        if patient and patient:GetAttribute("InBed") then
+            local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }
+            local DIAG_ROOM = { ["Analyze Sample"]=true, ["Process Results"]=true }
+            for _, p in ipairs(patient:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
+                    tpTo(partPos(patient)); task.wait(0.15); pcall(fp, p, 0); task.wait(0.15)
+                end
+            end
+            for _, p in ipairs(room:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
+                    tpTo(partPos(p.Parent)); task.wait(0.15); pcall(fp, p, 0); task.wait(0.15)
+                end
+            end
+        end
+        return false
+    end
     local needed = {}
     for _, m in ipairs(meds) do needed[m] = true end
     -- 0) ทิ้งยาเก่า/ผิดที่ไม่ใช่ของคนไข้นี้ก่อน (กัน slot เต็ม → ให้ยาผิด → ตาย)
