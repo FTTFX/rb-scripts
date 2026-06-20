@@ -1,7 +1,6 @@
--- 74RB_AnimalHospital_HookSpy v3.0  (hookmetamethod — แบบเดียวกับ 69RB ที่รันได้)
--- เปิดในเกม → GUI ขึ้นบนจอ → scan เสร็จเอง
--- แล้วไป: เข้าใกล้ผี+คนดี / รักษาสัตว์ / ทำ quest → [REMOTE] สีชมพูเด้งสด
--- กด Copy → วาง log มาในแชต
+-- 74RB_AnimalHospital_HookSpy v5.0  (ดัก 3 ทาง: Remote + ProximityPrompt + Tool)
+-- เปิดในเกม → GUI ขึ้น → scan เสร็จ → ไป "ให้ยา/รักษา 1 ครั้ง + quest 1 อัน"
+-- ให้ยาแบบไหนก็จับได้: [REMOTE]ชมพู / [PROMPT]ฟ้า / [TOOL]เหลือง → กด Copy ส่งมา
 
 local Players = game:GetService("Players")
 local HS = game:GetService("HttpService")
@@ -217,13 +216,54 @@ task.spawn(function()
         end)
     end
 
-    if hookMode ~= "none" then
-        addLine((">> hook ติดแล้ว (%s) — ไป รักษาคนไข้ 1 คน + ทำ quest 1 อัน"):format(hookMode), C.Y)
-        addLine(">> สำคัญ: อย่ารัน script ซ้ำ! แค่เล่นต่อ → [REMOTE] ชมพูจะเด้ง → กด Copy", C.Y)
-        addLine(">> ที่หัวกล่องจะนับ REMOTE: N ให้เห็นว่าดักติดจริง", C.G)
-        titleLbl.Text = "AnimalHospital Spy v4 — ready (เล่นต่อ → REMOTE จะนับ)"
-    else
-        addLine(">> executor นี้ hook ไม่ได้ทั้ง 2 วิธี — ส่ง scan มาก่อน", C.O)
-        titleLbl.Text = "AnimalHospital Spy v4 — scan done (no hook)"
+    -- ── 6. ProximityPrompt capture (ให้ยาอาจเป็นการกด prompt) ──────────
+    local promptCount = 0
+    pcall(function()
+        local PPS = game:GetService("ProximityPromptService")
+        CONNS_SPY = CONNS_SPY or {}
+        CONNS_SPY[#CONNS_SPY+1] = PPS.PromptTriggered:Connect(function(prompt, plr)
+            if plr ~= LP or promptCount >= 60 then return end
+            promptCount += 1
+            local full = ""; pcall(function() full = prompt:GetFullName() end)
+            addLine(("[PROMPT] act='%s' obj='%s'"):format(
+                tostring(prompt.ActionText), tostring(prompt.Parent and prompt.Parent.Name)), C.B)
+            addLine("   " .. full, C.S)
+            titleLbl.Text = "Spy v5 — R:"..remoteCount.." P:"..promptCount
+        end)
+    end)
+
+    -- ── 7. Tool capture (ยาอาจเป็น Tool ที่ equip/ใช้) ──────────────────
+    local toolCount = 0
+    local function watchTool(tool)
+        if not tool:IsA("Tool") then return end
+        tool.Activated:Connect(function()
+            if toolCount >= 40 then return end
+            toolCount += 1
+            addLine(("[TOOL] activated '%s'"):format(tool.Name), C.O)
+            titleLbl.Text = "Spy v5 — R:"..remoteCount.." P:"..promptCount.." T:"..toolCount
+        end)
     end
+    pcall(function()
+        addLine("===== TOOLS (Backpack/Character) =====", C.Y)
+        local bp = LP:FindFirstChild("Backpack")
+        if bp then for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") then addLine("  Tool: "..t.Name, C.G); watchTool(t) end
+        end end
+        if LP.Character then for _, t in ipairs(LP.Character:GetChildren()) do
+            if t:IsA("Tool") then addLine("  Tool(equipped): "..t.Name, C.G); watchTool(t) end
+        end end
+        if bp then bp.ChildAdded:Connect(watchTool) end
+        LP.CharacterAdded:Connect(function(c) c.ChildAdded:Connect(watchTool) end)
+        if LP.Character then LP.Character.ChildAdded:Connect(watchTool) end
+    end)
+
+    addLine("", C.S)
+    if hookMode ~= "none" then
+        addLine((">> ดักครบ 3 ทาง (remote=%s) — ไป ให้ยา/รักษา 1 ครั้ง + quest 1 อัน"):format(hookMode), C.Y)
+    else
+        addLine(">> remote hook ไม่ได้ แต่ PROMPT+TOOL ยังดักได้ — ลองให้ยาดู", C.O)
+    end
+    addLine(">> อย่ารันซ้ำ! เล่นต่อ → ดูบรรทัด ชมพู/ฟ้า/เหลือง เด้ง → กด Copy", C.Y)
+    addLine(">> หัวกล่องนับ R:remote P:prompt T:tool ให้เห็นว่าจับติด", C.G)
+    titleLbl.Text = "Spy v5 — ready (ให้ยา → R/P/T จะนับ)"
 end)
