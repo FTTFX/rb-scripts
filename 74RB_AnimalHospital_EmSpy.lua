@@ -14,7 +14,7 @@ frame.BackgroundColor3=Color3.fromRGB(12,12,18); frame.BorderSizePixel=0
 frame.Active=true; frame.Draggable=true; frame.Parent=sg
 Instance.new("UICorner",frame).CornerRadius=UDim.new(0,8)
 local titleLbl=Instance.new("TextLabel")
-titleLbl.Size=UDim2.new(1,-185,0,28); titleLbl.Position=UDim2.new(0,10,0,0)
+titleLbl.Size=UDim2.new(1,-370,0,28); titleLbl.Position=UDim2.new(0,10,0,0)
 titleLbl.BackgroundTransparency=1; titleLbl.TextColor3=Color3.fromRGB(120,200,255)
 titleLbl.Text="EmSpy v1 — scanning..."; titleLbl.Font=Enum.Font.Code; titleLbl.TextSize=13
 titleLbl.TextXAlignment=Enum.TextXAlignment.Left; titleLbl.Parent=frame
@@ -30,6 +30,12 @@ rescanBtn.BackgroundColor3=Color3.fromRGB(40,70,120); rescanBtn.TextColor3=Color
 rescanBtn.Text="RESCAN"; rescanBtn.Font=Enum.Font.Code; rescanBtn.TextSize=12
 rescanBtn.BorderSizePixel=0; rescanBtn.Parent=frame
 Instance.new("UICorner",rescanBtn).CornerRadius=UDim.new(0,4)
+local autoBtn=Instance.new("TextButton")
+autoBtn.Size=UDim2.new(0,80,0,22); autoBtn.Position=UDim2.new(1,-356,0,3)
+autoBtn.BackgroundColor3=Color3.fromRGB(120,90,30); autoBtn.TextColor3=Color3.new(1,1,1)
+autoBtn.Text="AUTO:OFF"; autoBtn.Font=Enum.Font.Code; autoBtn.TextSize=12
+autoBtn.BorderSizePixel=0; autoBtn.Parent=frame
+Instance.new("UICorner",autoBtn).CornerRadius=UDim.new(0,4)
 local closeBtn=Instance.new("TextButton")
 closeBtn.Size=UDim2.new(0,60,0,22); closeBtn.Position=UDim2.new(1,-64,0,3)
 closeBtn.BackgroundColor3=Color3.fromRGB(120,20,20); closeBtn.TextColor3=Color3.new(1,1,1)
@@ -138,10 +144,23 @@ local function runScan()
         addLine(("  (gui buttons = %d)"):format(n), C.S)
     end)
     if not ok then addLine("SCAN ERROR: "..tostring(err), C.R) end
-    addLine(">> เข้าไปในห้อง 6/7 ตอนมินิเกมเปิด → กด RESCAN → Copy", C.Y)
-    titleLbl.Text="EmSpy v1 — done (กด Copy / RESCAN)"
+    addLine(">> เริ่มมินิเกม → เปิด AUTO ให้ refresh เอง → Copy ตอนเกมเล่นอยู่", C.Y)
+    titleLbl.Text="EmSpy v3 — done (Copy / RESCAN / AUTO)"
 end
 rescanBtn.MouseButton1Click:Connect(function()
-    titleLbl.Text="EmSpy v1 — rescanning..."; task.spawn(runScan)
+    titleLbl.Text="EmSpy v3 — rescanning..."; task.spawn(runScan)
+end)
+-- AUTO: refresh ทุก 0.6 วิ (จับ active state มินิเกมไม่ต้องกดทัน)
+local AUTO=false
+autoBtn.MouseButton1Click:Connect(function()
+    AUTO=not AUTO
+    autoBtn.Text="AUTO:"..(AUTO and "ON" or "OFF")
+    autoBtn.BackgroundColor3=AUTO and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,90,30)
+end)
+task.spawn(function()
+    while sg.Parent do
+        if AUTO then runScan() end
+        task.wait(0.6)
+    end
 end)
 task.spawn(runScan)
