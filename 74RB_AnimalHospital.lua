@@ -30,7 +30,7 @@ local function bind(s, f) CONNS[#CONNS+1] = s:Connect(f) end
 pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI"):Destroy() end)
 
 -- ===== State =====
-local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON = true, false, false, false
+local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, false, false, false
 local SPEED = 50
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
@@ -156,9 +156,56 @@ local function requiredMeds(room)
     end
     return meds
 end
+-- หา NPC คนไข้ของห้องนี้ (จาก attribute DesignatedRoom)
+local function roomPatient(room)
+    local npcs = workspace:FindFirstChild("NPCs")
+    if not npcs then return end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:GetAttribute("DesignatedRoom") == room.Name then return m end
+    end
+end
+-- หา prompt "Apply Treatment" ในห้อง
+local function bedApplyPP(room)
+    for _, p in ipairs(room:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then return p end
+    end
+end
+-- ฆ่าผี: จงใจให้ยา "ผิด" (ยาที่ไม่ใช่ของห้องนี้) 1 ตัว
+local function killWithWrongMed(room)
+    local needed = {}
+    for _, m in ipairs(requiredMeds(room)) do needed[m] = true end
+    -- หายาสักตัวที่ไม่ใช่ของห้องนี้ (ผิดแน่นอน)
+    local wrongName, wrongPP
+    for _, p in ipairs(workspace:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and isMedicine(p.ActionText) and not needed[p.ActionText] then
+            wrongName, wrongPP = p.ActionText, p; break
+        end
+    end
+    if not wrongName then return false end
+    if not findTool(wrongName) and wrongPP and wrongPP.Parent then
+        tpTo(partPos(wrongPP.Parent)); task.wait(0.35); pcall(fp, wrongPP, 0); task.wait(0.45)
+    end
+    local bedPP = bedApplyPP(room)
+    if not bedPP or not bedPP.Parent or not findTool(wrongName) then return false end
+    tpTo(partPos(bedPP.Parent)); task.wait(0.35)
+    for slot = 1, 9 do
+        pressSlot(slot); task.wait(0.22)
+        local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+        if held and held.Name == wrongName then
+            pcall(fp, bedPP, 0); task.wait(0.6); return true
+        end
+    end
+    return false
+end
 -- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
 local function treatRoom(room)
     if roomDone(room) then return false end          -- เสร็จ/ฟื้นแล้ว → ไม่วาปซ้ำ
+    -- คนไข้เป็นผี? → ฆ่าด้วยยาผิด (ถ้าเปิดโหมด) / ข้าม (ถ้าปิด — ไม่รักษาผี)
+    local patient = roomPatient(room)
+    if patient and patient:GetAttribute("Skinwalker") then
+        if KILLGHOST_ON then return killWithWrongMed(room) end
+        return false
+    end
     local meds = requiredMeds(room)
     if #meds == 0 then return false end
     local needed = {}
@@ -321,7 +368,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,274), UDim2.new(0,20,0.5,-137)
+f.Size, f.Position = UDim2.new(0,190,0,316), UDim2.new(0,20,0.5,-158)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -410,8 +457,15 @@ task.spawn(function()
     end
 end)
 
-btn("CLOSE", 10, 248, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON = false, false, false, false
+local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 36)
+killB.MouseButton1Click:Connect(function()
+    KILLGHOST_ON = not KILLGHOST_ON
+    killB.Text = "ผี→ยาผิด: " .. (KILLGHOST_ON and "ON" or "OFF")
+    killB.BackgroundColor3 = KILLGHOST_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(45,45,58)
+end)
+
+btn("CLOSE", 10, 290, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON = false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
