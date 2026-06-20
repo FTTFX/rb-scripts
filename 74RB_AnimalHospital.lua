@@ -1,6 +1,6 @@
--- 74RB_AnimalHospital.lua — ESP ทะลุกำแพง + เดินเร็ว + Noclip  (v1.0)
--- ESP: ผี🔴 (Skinwalker) | ปลอม🟠 (Fake doctor) | คนไข้🟢 | เพื่อน🔵  + ชื่อ+ระยะ ทะลุกำแพง
--- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพงเดินผ่านได้
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.0)
+-- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
+-- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
 local RS      = game:GetService("RunService")
 local VIM     = game:GetService("VirtualInputManager")
@@ -290,10 +290,7 @@ local function treatRoom(room)
         if not medGiven(room, m) and not findTool(m) then return false end
     end
     -- 2) ไปเตียง แล้วให้ยาทีละชนิด — หา prompt "Apply Treatment" ในห้อง (ยืดหยุ่นทุกห้อง)
-    local bedPP
-    for _, p in ipairs(room:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then bedPP = p; break end
-    end
+    local bedPP = bedApplyPP(room)
     if not bedPP or not bedPP.Parent then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.35)
     -- ให้ยาตามลำดับที่จอบอก ทีละตัว — เลือก slot จนเจอยาชื่อตรงเป๊ะค่อยกด
