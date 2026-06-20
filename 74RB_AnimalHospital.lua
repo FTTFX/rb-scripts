@@ -98,11 +98,18 @@ local function tpTo(pos)
         walkTo(pos)
     end
 end
--- หา ProximityPrompt ที่ ActionText ตรงชื่อยา (จุดเก็บยา)
+-- หา ProximityPrompt ที่ ActionText ตรงชื่อยา + "ใกล้ตัวเราสุด" (ยามีหลายจุด/ตู้หน้าห้อง)
 local function findPickup(medName)
+    local fromPos = hrp() and hrp().Position
+    local best, bestD
     for _, p in ipairs(workspace:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.ActionText == medName then return p end
+        if p:IsA("ProximityPrompt") and p.ActionText == medName and p.Parent then
+            local pos = partPos(p.Parent)
+            local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
+            if not best or d < bestD then best, bestD = p, d end
+        end
     end
+    return best
 end
 -- หา Tool ชื่อตรงยา (ที่ถืออยู่ใน Backpack/ตัว)
 local function findTool(medName)
