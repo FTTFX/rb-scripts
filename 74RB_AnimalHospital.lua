@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ  (v2.5 +Room6 apply ที่ตัวคนไข้)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ  (v2.6 +วาปทำเครื่อง 6/7/8)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -318,20 +318,26 @@ local function treatRoom(room)
     -- ยังไม่วินิจฉัย: คนไข้นอนเตียงแล้ว → ทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
     -- MACHINE_ON=ON วาปไปก่อนยิง | OFF ยิงในที่ (ไม่วาป — เราเดินไปเอง เหมือน Ver.ก่อน)
     if #meds == 0 then
-        if patient and patient:GetAttribute("InBed") then
-            local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }
-            local DIAG_ROOM = { ["Analyze Sample"]=true, ["Process Results"]=true }
+        local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }   -- prompt บนตัวคนไข้
+        local DIAG_ROOM = {                                             -- prompt ในห้อง (เครื่อง + เตรียมคนไข้)
+            ["Analyze Sample"]=true, ["Process Results"]=true,          -- Medical
+            ["Prepare Patient"]=true, ["Sleep Patient"]=true,           -- Emergency เตรียมคนไข้ลงเตียง
+            ["Begin X-Ray"]=true, ["Set Up"]=true, ["Turn On"]=true,    -- Emergency เครื่อง (Room6 X-Ray / Room7 Heart)
+            ["Begin"]=true, ["Collect"]=true,                           -- เริ่มเครื่อง / เก็บผล
+        }
+        -- ยิงเฉพาะ .Enabled (เกม gate ลำดับเอง) ; MACHINE_ON=ON วาปไปจุดเครื่องก่อน | OFF ยิงในที่
+        if patient then
             for _, p in ipairs(patient:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
                     if MACHINE_ON then tpTo(partPos(patient)); task.wait(0.15) end
                     pcall(fp, p, 0); task.wait(0.1)
                 end
             end
-            for _, p in ipairs(room:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
-                    if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
-                    pcall(fp, p, 0); task.wait(0.1)
-                end
+        end
+        for _, p in ipairs(room:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
+                if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
+                pcall(fp, p, 0); task.wait(0.1)
             end
         end
         return false
@@ -820,4 +826,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.5] ESP + Speed + Noclip + AUTO รักษา + Room6/8 + ดับไฟ พร้อม")
+print("[74RB AnimalHospital v2.6] ESP + Speed + Noclip + AUTO รักษา + Room6/8 + วาปทำเครื่อง 6/7/8 + ดับไฟ พร้อม")
