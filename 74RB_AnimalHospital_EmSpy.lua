@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital_EmSpy v1.0 — สแกน Emergency Room6 + Room7 (ข้าม Room8)
+-- 74RB_AnimalHospital_EmSpy v1.1 — สแกน Emergency Room6/7/8 + dump TV.Screen.UI (Visible) จับสัญญาณเสร็จ Room8
 -- เข้าไปในห้อง 6 หรือ 7 ตอนมีคนไข้/มินิเกมเปิด → รัน → กด RESCAN → Copy
 -- ดู: prompt (action/enabled), values, text บนจอ, สีปุ่ม (color minigame), รูป
 
@@ -108,6 +108,18 @@ local function dumpRoom(room)
         end
         local ca=attrsStr(c)
         if ca~="" then addLine(("    attr@%s: %s"):format(rp,ca), C.S) end
+    end
+    -- จอ TV: dump ทุก GuiObject + .Visible (จับ Healing/Failed/inv ที่เป็น Frame เปล่า = สัญญาณเสร็จ Room8)
+    local ui=room:FindFirstChild("Minigame")
+    ui=ui and ui:FindFirstChild("TV"); ui=ui and ui:FindFirstChild("Screen")
+    ui=ui and ui:FindFirstChild("UI")
+    if ui then
+        addLine("  --- TV.Screen.UI (ทุก GuiObject + Visible) ---", C.Y)
+        for _,g in ipairs(ui:GetDescendants()) do
+            if g:IsA("GuiObject") then
+                addLine(("    [UI] %s <%s> vis=%s"):format(relPath(g,ui),g.ClassName,tostring(g.Visible)), C.B)
+            end
+        end
     end
     addLine("",C.S)
 end
