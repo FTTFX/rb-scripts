@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.1)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.2)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -460,13 +460,15 @@ bind(RS.Heartbeat, function(dt)
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
-                    -- มอบใบรับหมาย = กด E ที่ NPC (ขึ้น "พูดคุย"/Talk) → ยิงทุก prompt บนตัว NPC ตอนเช็คอิน
-                    -- ปลอดภัย: prompt บน NPC ไม่ใช่ยา + เกม gate ด้วย .Enabled อยู่แล้ว (DNA/Analyze ไม่ enabled ที่เคาน์เตอร์)
-                    -- *** กันเช็คอินผี: ข้าม NPC ที่ Skinwalker=true (อย่าช่วยผีเช็คอิน — ใช้ชัตเตอร์แทน) ***
                     local owner = npcOwner(p)
-                    local npcStep = CHECKIN_ON and owner ~= nil and not owner:GetAttribute("Skinwalker")
-                    if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
-                        pcall(fp, p, 0)   -- เกม gate ลำดับเอง
+                    -- *** ห้ามยุ่งกับผี: ไม่กด prompt ใดๆ บนตัว Skinwalker (Talk/DNA/มอบใบ) ไม่ว่า toggle ไหนเปิด ***
+                    -- (Talk อยู่ใน TREATD_ACTS ด้วย → ต้องกันที่ระดับ owner ไม่ใช่แค่ npcStep) — ใช้ชัตเตอร์/ยาผิดจัดการผีแทน
+                    if not (owner and owner:GetAttribute("Skinwalker")) then
+                        -- มอบใบรับหมาย = กด E ที่ NPC (ขึ้น "พูดคุย"/Talk) → ยิงทุก prompt บนตัว NPC (ที่ไม่ใช่ผี) ตอนเช็คอิน
+                        local npcStep = CHECKIN_ON and owner ~= nil
+                        if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
+                            pcall(fp, p, 0)   -- เกม gate ลำดับเอง
+                        end
                     end
                 end
             end
@@ -843,4 +845,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.1] ESP + AUTO รักษา + ชัตเตอร์(เช็คอินคนดีก่อน→ปิดผี) + ย่อ/ขยาย GUI พร้อม")
+print("[74RB AnimalHospital v3.2] ESP + AUTO รักษา + ไม่ยุ่งกับผี(blind-fire) + ชัตเตอร์ + ย่อ/ขยาย GUI พร้อม")
