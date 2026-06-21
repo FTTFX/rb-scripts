@@ -6,7 +6,7 @@ local LP = game:GetService("Players").LocalPlayer
 local RS = game:GetService("RunService")
 local pg = LP:WaitForChild("PlayerGui")
 local old = pg:FindFirstChild("AHR6GUI"); if old then old:Destroy() end
-if _G.AHR6_CONN then pcall(function() _G.AHR6_CONN:Disconnect() end) end
+if _G.AHR6_CONNS then for _,c in ipairs(_G.AHR6_CONNS) do pcall(function() c:Disconnect() end) end end
 
 local sg=Instance.new("ScreenGui"); sg.Name="AHR6GUI"; sg.ResetOnSpawn=false
 sg.IgnoreGuiInset=true; sg.Parent=pg
@@ -67,7 +67,7 @@ clrBtn.MouseButton1Click:Connect(function()
     lines={}; order=0
 end)
 closeBtn.MouseButton1Click:Connect(function()
-    if _G.AHR6_CONN then pcall(function() _G.AHR6_CONN:Disconnect() end) _G.AHR6_CONN=nil end
+    if _G.AHR6_CONNS then for _,c in ipairs(_G.AHR6_CONNS) do pcall(function() c:Disconnect() end) end _G.AHR6_CONNS=nil end
     sg:Destroy()
 end)
 
@@ -92,26 +92,32 @@ addLine("=== R6 watch: เริ่ม X-Ray แล้วดูปุ่มก�
 local btns=getButtons()
 addLine("เจอปุ่ม "..#btns.." อัน", Color3.fromRGB(140,160,255))
 
--- lit = Part.Color ใกล้ MainColor (สว่าง) ไม่ใช่สีมืด
-local lit, lastPP = {}, {}
-local function near(a,b) if not(a and b) then return false end
-    return math.abs(a.R-b.R)+math.abs(a.G-b.G)+math.abs(a.B-b.B) < 0.25 end
+-- ดักเหตุการณ์ "สีเปลี่ยน" ของแต่ละปุ่ม (event-driven จับได้ทุกครั้งแม้กะพริบเร็ว)
+-- + ดัก Transparency เผื่อ flash แบบจาง + ดัก PP.Enabled (ช่วง input)
+_G.AHR6_CONNS = {}
+local function track(c) table.insert(_G.AHR6_CONNS, c) end
+local function rgb(col) return ("%d,%d,%d"):format(col.R*255, col.G*255, col.B*255) end
 
-_G.AHR6_CONN = RS.Heartbeat:Connect(function()
-    for i,bt in ipairs(btns) do
-        if bt.part and bt.part.Parent then
-            local on = near(bt.part.Color, bt.main)
-            if on and not lit[i] then
-                addLine("[กะพริบ] ปุ่ม #"..bt.num, Color3.fromRGB(80,255,120))
-            end
-            lit[i]=on
-            -- log ตอน PP เปิด (ช่วง input ให้กด)
-            if bt.pp then
-                local en=bt.pp.Enabled
-                if en and not lastPP[i] then addLine("[PP-ON] ปุ่ม #"..bt.num.." กดได้แล้ว", Color3.fromRGB(255,160,50)) end
-                lastPP[i]=en
-            end
+for _, bt in ipairs(btns) do
+    local p = bt.part
+    if p then
+        addLine(("ปุ่ม #%s baseColor=%s main=%s"):format(bt.num, rgb(p.Color),
+            bt.main and rgb(bt.main) or "?"), Color3.fromRGB(140,140,140))
+        track(p:GetPropertyChangedSignal("Color"):Connect(function()
+            addLine(("[สีเปลี่ยน] #%s -> %s"):format(bt.num, rgb(p.Color)), Color3.fromRGB(80,255,120))
+        end))
+        track(p:GetPropertyChangedSignal("Transparency"):Connect(function()
+            addLine(("[trans] #%s -> %.2f"):format(bt.num, p.Transparency), Color3.fromRGB(140,160,255))
+        end))
+        track(p:GetPropertyChangedSignal("Material"):Connect(function()
+            addLine(("[mat] #%s -> %s"):format(bt.num, tostring(p.Material)), Color3.fromRGB(200,180,120))
+        end))
+        if bt.pp then
+            track(bt.pp:GetPropertyChangedSignal("Enabled"):Connect(function()
+                addLine(("[PP] #%s enabled=%s"):format(bt.num, tostring(bt.pp.Enabled)), Color3.fromRGB(255,160,50))
+            end))
         end
     end
-end)
-warn("[R6watch] armed — เริ่ม X-Ray ได้เลย")
+end
+_G.AHR6_CONN = nil
+warn("[R6watch] armed (event) — เริ่ม X-Ray ได้เลย")
