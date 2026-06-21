@@ -136,9 +136,10 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 ```
 1. roomDone? → ข้าม
 2. คนไข้เป็นผี (Skinwalker)? → KILLGHOST_ON ? killWithWrongMed : ข้าม
-3. medCounts; ถ้ายังไม่มี inv (#order==0):
-     คนไข้ InBed → doDiagnosis (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
-       MACHINE_ON=ON วาปไปก่อนยิง / OFF ยิงในที่
+3. ถ้ายังไม่มี inv (#meds==0): doDiagnosis (ไม่เช็ค InBed แล้ว — Room6 คนไข้ยืนก็ทำได้)
+     - บนตัวคนไข้: Talk / Take DNA Sample
+     - ในห้อง: Analyze Sample, Process Results (Medical) + Prepare/Sleep Patient, Begin X-Ray, Set Up, Turn On, Begin, Collect (Emergency 6/7/8)
+     - ยิงเฉพาะ .Enabled (เกม gate ลำดับ) ; MACHINE_ON=ON วาปไปจุดเครื่องก่อนยิง / OFF ยิงในที่
      return
 4. cleanInventory → เก็บยาให้ครบ (need-given) ต่อชนิด
 5. กันตาย: ถือไม่ครบ → ไม่ Apply
