@@ -189,15 +189,18 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 
 ---
 
-## 8. ⚠️ TODO / ค้างอยู่
+## 8. Room8 (SurgeryRoom) — ✅ รองรับแล้ว (v2.3)
+**ข้อมูลเดิมผิด:** Room8 **มี `Report.inv` จริง** (path เดียวกับห้องอื่น `TV.Screen.UI.Report.inv`) แต่ต่างกัน 2 จุด → เลยพังก่อนแก้:
+1. **สัญญาณเสร็จ:** `treatment='SURGERY:'` (ไม่มีเลข X/Y) → roomDone match ไม่ได้ ; ใช้ **`TV.Screen.UI.Healing.Visible`** (ฟื้นตัว) / **`.Failed.Visible`** (ผ่าล้มเหลว) แทน — Healing/Failed อยู่ที่ **UI ตรงๆ** (ไม่ใช่ใต้ Report) **ทุกห้อง**
+2. **given count:** inv item ใช้ **attribute `Cured=true`** ต่อชิ้น (ไม่ใช่ `.check.Visible`) → `frameGiven` เช็ค Cured ก่อน fallback ไป check
+- อุปกรณ์: `Room8.Minigame.Medicine.Model.<ชื่อ>.PP` ActionText ตรงชื่อ enabled=true (Scalpel/Antibiotics/Bandages/Medkit/Organ/Transplant/IV Drops/Scissors/Medicine)
+- bed = `Bed.InBed.PP` ('Apply Treatment') / `PP2` ('Sleep Patient') ; `Bed.InBed.Attachment.UI.TextLabel` = HP เช่น '6☠️'
+- flow ใช้ medCounts/treatRoom เดิม (collect ตามชื่อ → Apply → poll Cured) — ไม่ต้องแยกโค้ด Room8
 
-### Room8 (SurgeryRoom) — ยังไม่รองรับ
-- **ปัญหา:** Room8 **ไม่มี `Report.inv`** เหมือนห้องอื่น → `medCounts` คืน empty → บอทข้าม
-- อุปกรณ์: `Room8.Minigame.Medicine.Model.<ชื่อ>.PP` (Scalpel/Antibiotics/Bandages/Medkit/Organ/Transplant/IV Drops/Scissors/Medicine — enabled=true หมด), แต่ละอันมี `.item.ImageLabel`
-- bed = `Bed.InBed.PP2` ('Sleep Patient'), `Bed.InBed.Attachment.UI.TextLabel` (เช่น '45☠️')
-- จอ: `TV.Screen.UI.Healing` / `.Failed` (มี) แต่ **ไม่มี .inv**
-- **ต้องหา:** path "รายการของที่ต้องใช้" (จอ "ศัลยกรรม: ✓✓" รองรับของซ้ำ) + สัญญาณ "เสร็จ"
-- **วิธี:** spy Room8 **ตอนจอเลือกของโชว์อยู่** (ไม่ใช่ตอน recovering) → หา path → เพิ่มใน `getReport`/`medCounts`/`roomDone` ให้รองรับ
+### แก้ใน v2.3
+- `getScreenUI(room)` ใหม่ → คืน `TV.Screen.UI` (getReport เรียกต่อ) ; roomDone เช็ค `UI.Healing`/`UI.Failed` ตรงๆ
+- `frameGiven`: `Cured` attr มาก่อน `.check`
+- EmSpy v1.1: dump `TV.Screen.UI` ทุก GuiObject + `.Visible` (จับ Frame เปล่า = สัญญาณเสร็จ)
 
 ### จุดที่อาจต้องจูนตาม executor
 - VIM กดเลข/คลิก ติดทุก executor ไหม (ทดสอบ: Delta/Codex/Solara...)
