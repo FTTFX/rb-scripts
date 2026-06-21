@@ -36,17 +36,21 @@ local TP_ON = true       -- true=วาป, false=เดิน (pathfinding)
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
+local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
 local SPEED = 50
 local cam = workspace.CurrentCamera
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
 -- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
 -- *** ไม่รวมเก็บยา/Apply Treatment *** เพราะให้ยาผิด = คนไข้ตาย → จัดการแยกแบบ match ชื่อ
-local SAFE_ACTS = {
-    ["Stamp Forms"]=true, ["Take Photo"]=true, ["Register"]=true, ["Print Badge"]=true,
-    ["Take"]=true, ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true,
-    ["Process Results"]=true,
-    -- Emergency: เตรียมคนไข้ลงเตียง + สเต็ปเครื่อง (ปลอดภัย ไม่ใช่ขั้นให้ยา)
+-- กลุ่ม "เช็คอิน" (หน้าเคาน์เตอร์) — แยก toggle
+local CHECKIN_ACTS = {
+    ["Stamp Forms"]=true, ["Take Photo"]=true, ["Register"]=true,
+    ["Print Badge"]=true, ["Take"]=true,
+}
+-- กลุ่ม "รักษา/วินิจฉัย" (รวมเตรียมคนไข้+สเต็ปเครื่อง Emergency) — อยู่กับ AUTO รักษา
+local TREATD_ACTS = {
+    ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
     ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
     ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true,
 }
@@ -414,14 +418,17 @@ bind(RS.Heartbeat, function(dt)
         end end
     end
 
-    -- Auto: ยิงสเต็ป "ปลอดภัย" (เช็คอิน+วินิจฉัย) ทุก 0.6s — ส่วนให้ยาทำใน loop แยก
-    if AUTO_ON and fp then
+    -- Auto: ยิงสเต็ป เช็คอิน (CHECKIN_ON) + วินิจฉัย/เตรียม (AUTO_ON) ทุก 0.6s
+    if (AUTO_ON or CHECKIN_ON) and fp then
         fireAcc += dt
         if fireAcc >= 0.6 then
             fireAcc = 0
             for _, p in ipairs(workspace:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.Enabled and SAFE_ACTS[p.ActionText] then
-                    pcall(fp, p, 0)   -- ยิงทุกตัวที่ enabled (เกม gate ลำดับเอง)
+                if p:IsA("ProximityPrompt") and p.Enabled then
+                    local a = p.ActionText
+                    if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) then
+                        pcall(fp, p, 0)   -- เกม gate ลำดับเอง
+                    end
                 end
             end
         end
@@ -472,7 +479,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,472), UDim2.new(0,20,0.5,-236)
+f.Size, f.Position = UDim2.new(0,190,0,510), UDim2.new(0,20,0.5,-255)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -699,8 +706,16 @@ r6B.MouseButton1Click:Connect(function()
     r6B.BackgroundColor3 = R6_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-btn("CLOSE", 10, 436, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON = false, false, false, false, false, false, false
+local ciB = btn("เช็คอิน: OFF", 10, 434, 170, 32, Color3.fromRGB(45,45,58))
+ciB.MouseButton1Click:Connect(function()
+    CHECKIN_ON = not CHECKIN_ON
+    ciB.Text = "เช็คอิน: " .. (CHECKIN_ON and "ON" or "OFF")
+    ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
+
+btn("CLOSE", 10, 474, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON =
+        false, false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
