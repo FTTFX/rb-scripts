@@ -35,7 +35,9 @@ local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, false, fal
 local TP_ON = true       -- true=วาป, false=เดิน (pathfinding)
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
+local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
 local SPEED = 50
+local cam = workspace.CurrentCamera
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
 -- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
@@ -467,7 +469,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,434), UDim2.new(0,20,0.5,-217)
+f.Size, f.Position = UDim2.new(0,190,0,472), UDim2.new(0,20,0.5,-236)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -596,6 +598,69 @@ task.spawn(function()
     end
 end)
 
+-- ===== Auto Room6 ปริศนาสี (Simon "Copy the sequence") =====
+do
+    local function colors6()
+        local r=workspace:FindFirstChild("Rooms"); r=r and r:FindFirstChild("Emergency")
+        r=r and r:FindFirstChild("Room6"); r=r and r:FindFirstChild("Minigame")
+        return r and r:FindFirstChild("Colors")
+    end
+    local function num6(p)
+        local nm=p:FindFirstChild("ui"); nm=nm and nm:FindFirstChildOfClass("TextLabel")
+        return nm and nm.Text or "?"
+    end
+    local function near6(a,b,t) return a and b and (math.abs(a.R-b.R)+math.abs(a.G-b.G)+math.abs(a.B-b.B)<t) end
+    local function btn6(num)
+        local c=colors6(); if not c then return end
+        for _,b in ipairs(c:GetDescendants()) do
+            if b:IsA("BasePart") and b.Name=="Button" and num6(b)==num then return b end
+        end
+    end
+    local fcd = fireclickdetector
+    local function click6(b)
+        local cd=b:FindFirstChildWhichIsA("ClickDetector", true)
+        if cd and fcd then pcall(fcd, cd); return end
+        local pp=b:FindFirstChild("PP")
+        if pp and fp then pcall(fp, pp, 0); return end
+        local sp,vis=cam:WorldToViewportPoint(b.Position)
+        if vis then pcall(function()
+            VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
+        end) end
+    end
+    local seq, bright, lastFlash, playing, attached = {}, {}, 0, false, {}
+    local function attach6(b)
+        if attached[b] or not b:IsA("BasePart") or b.Name~="Button" then return end
+        attached[b]=true
+        CONNS[#CONNS+1]=b:GetPropertyChangedSignal("Color"):Connect(function()
+            if not R6_ON or playing then return end
+            local n=num6(b); local isB=near6(b.Color, b:GetAttribute("MainColor"), 0.08)
+            if isB and not bright[n] then seq[#seq+1]=n; lastFlash=os.clock() end
+            bright[n]=isB
+        end)
+    end
+    local function rearm6()
+        local c=colors6(); if not c then return end
+        for _,d in ipairs(c:GetDescendants()) do attach6(d) end
+        CONNS[#CONNS+1]=c.DescendantAdded:Connect(attach6)
+    end
+    rearm6()
+    bind(workspace.DescendantAdded, function(d) if d.Name=="Colors" then task.wait(0.2); rearm6() end end)
+    task.spawn(function()
+        while _G.AH74_GEN == MYGEN do
+            if R6_ON and #seq>0 and not playing and (os.clock()-lastFlash)>2.5 then
+                playing=true
+                for _,n in ipairs(seq) do
+                    if not R6_ON then break end
+                    local b=btn6(n); if b then click6(b); task.wait(0.35) end
+                end
+                seq={}; bright={}; task.wait(1.2); playing=false
+            elseif not R6_ON then seq={}; bright={}; playing=false end
+            task.wait(0.1)
+        end
+    end)
+end
+
 local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
@@ -624,8 +689,15 @@ whackB.MouseButton1Click:Connect(function()
     whackB.BackgroundColor3 = WHACK_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-btn("CLOSE", 10, 398, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON = false, false, false, false, false, false
+local r6B = btn("ปริศนาสี R6: OFF", 10, 396, 170, 32, Color3.fromRGB(120,60,30))
+r6B.MouseButton1Click:Connect(function()
+    R6_ON = not R6_ON
+    r6B.Text = "ปริศนาสี R6: " .. (R6_ON and "ON" or "OFF")
+    r6B.BackgroundColor3 = R6_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
+end)
+
+btn("CLOSE", 10, 436, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON = false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
