@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.2)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.3 + Room8 Surgery)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -170,22 +170,31 @@ local function cleanInventory(needed)
         end
     end
 end
--- หา Report ของห้อง (TV.Screen.UI.Report)
-local function getReport(room)
+-- หา TV.Screen.UI ของห้อง (Healing/Failed อยู่ที่นี่ตรงๆ ; Report เป็นลูก)
+local function getScreenUI(room)
     local r = room:FindFirstChild("Minigame")
     r = r and r:FindFirstChild("TV"); r = r and r:FindFirstChild("Screen")
-    r = r and r:FindFirstChild("UI"); r = r and r:FindFirstChild("Report")
-    return r
+    return r and r:FindFirstChild("UI")
+end
+-- หา Report ของห้อง (TV.Screen.UI.Report)
+local function getReport(room)
+    local ui = getScreenUI(room)
+    return ui and ui:FindFirstChild("Report")
 end
 -- ห้องนี้รักษาเสร็จ/กำลังฟื้นแล้วหรือยัง → ข้าม ไม่วาปซ้ำ
 local function roomDone(room)
-    local rep = getReport(room)
-    if not rep then return true end                  -- ไม่มีจอ = ไม่ต้องทำ
-    local healing = rep:FindFirstChild("Healing")
-    if healing and healing:IsA("GuiObject") and healing.Visible then return true end
+    local ui = getScreenUI(room)
+    if not ui then return true end                   -- ไม่มีจอ = ไม่ต้องทำ
+    -- ฟื้นตัว(Healing) หรือ ผ่าล้มเหลว(Failed, Room8) = จบ ; Healing/Failed อยู่ที่ UI ตรงๆ ทุกห้อง
+    for _, n in ipairs({"Healing", "Failed"}) do
+        local g = ui:FindFirstChild(n)
+        if g and g:IsA("GuiObject") and g.Visible then return true end
+    end
+    local rep = ui:FindFirstChild("Report")
+    if not rep then return true end
     local tt = rep:FindFirstChild("treatment")
     if tt and tt:IsA("TextLabel") then
-        local a, b = tt.Text:match("(%d+)%s*/%s*(%d+)")
+        local a, b = tt.Text:match("(%d+)%s*/%s*(%d+)")   -- Medical/Em: 'TREATMENT: X/Y' (Room8='SURGERY:' ไม่มีเลข → ใช้ Healing แทน)
         a, b = tonumber(a), tonumber(b)
         if a and b and b > 0 and a >= b then return true end   -- 2/2 = เสร็จ
     end
@@ -205,8 +214,10 @@ local function requiredMeds(room)
     end
     return meds
 end
--- frame นี้ถูกให้ยาแล้ว (check โผล่)
+-- frame นี้ถูกให้ยาแล้ว — Room8(Surgery) มี attr Cured=true ต่อชิ้น (สัญญาณตรง ใช้ก่อน) ; ห้องอื่นดู check โผล่
 local function frameGiven(fr)
+    local cured = fr:GetAttribute("Cured")
+    if cured ~= nil then return cured == true end
     local chk = fr:FindFirstChild("check")
     if not (chk and chk:IsA("GuiObject")) then return false end
     if not chk.Visible then return false end
@@ -739,4 +750,4 @@ btn("CLOSE", 10, 474, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.2] ESP + Speed + Noclip + AUTO รักษา(match ยา) + มอบใบที่ NPC พร้อม")
+print("[74RB AnimalHospital v2.3] ESP + Speed + Noclip + AUTO รักษา(match ยา) + มอบใบที่ NPC + Room8 Surgery พร้อม")
