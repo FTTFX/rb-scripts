@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.0)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.1)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -61,6 +61,15 @@ local function partPos(inst)
     if inst:IsA("BasePart") then return inst.Position end
     local b = inst:FindFirstChildWhichIsA("BasePart", true)
     return b and b.Position
+end
+-- prompt อยู่ใต้ Workspace.NPCs ไหม (ใช้รู้ว่า "กด E ที่ NPC" — เช่น มอบใบรับหมาย)
+local function underNPCs(inst)
+    local n = inst.Parent
+    while n and n ~= workspace do
+        if n.Name == "NPCs" then return true end
+        n = n.Parent
+    end
+    return false
 end
 
 local COL = {
@@ -426,7 +435,11 @@ bind(RS.Heartbeat, function(dt)
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
-                    if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) then
+                    -- มอบใบรับหมาย = กด E ที่ NPC (ActionText ไม่แน่นอน) → ยิง prompt บนตัว NPC
+                    -- ที่ไม่ใช่สเต็ปรักษา/วินิจฉัย (กันไป Talk/DNA ก่อนเวลา) ; ปลอดภัย: prompt บน NPC ไม่ใช่ยา
+                    -- ponytail: ยิงทุก prompt ใต้ NPCs ที่ไม่ใช่ TREATD; เกมเพิ่ม prompt อื่นบน NPC ค่อย match ชื่อ
+                    local npcStep = CHECKIN_ON and underNPCs(p) and not TREATD_ACTS[a]
+                    if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
                         pcall(fp, p, 0)   -- เกม gate ลำดับเอง
                     end
                 end
@@ -726,4 +739,4 @@ btn("CLOSE", 10, 474, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.0] ESP + Speed + Noclip + AUTO รักษา(match ยา) พร้อม")
+print("[74RB AnimalHospital v2.1] ESP + Speed + Noclip + AUTO รักษา(match ยา) + มอบใบที่ NPC พร้อม")
