@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ  (v2.6 +วาปทำเครื่อง 6/7/8)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ + ปิดชัตเตอร์ผี  (v2.7)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -38,6 +38,7 @@ local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
 local FIRE_ON = false    -- auto ดับไฟ: ถือ FireExtinguisher → เล็งไฟ → พ่น (Activate)
+local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี: Skinwalker ใกล้เคาน์เตอร์ → ปิดชัตเตอร์
 local SPEED = 50
 local cam = workspace.CurrentCamera
 
@@ -63,14 +64,15 @@ local function partPos(inst)
     local b = inst:FindFirstChildWhichIsA("BasePart", true)
     return b and b.Position
 end
--- prompt อยู่ใต้ Workspace.NPCs ไหม (ใช้รู้ว่า "กด E ที่ NPC" — เช่น มอบใบรับหมาย)
-local function underNPCs(inst)
-    local n = inst.Parent
-    while n and n ~= workspace do
-        if n.Name == "NPCs" then return true end
+-- คืน NPC model (ลูกของ Workspace.NPCs) ที่ prompt สังกัด ; nil ถ้าไม่อยู่ใต้ NPCs
+-- ใช้ทั้ง "กด E ที่ NPC" (มอบใบ) + กันเช็คอินผี (เช็ค Skinwalker จาก owner)
+local function npcOwner(inst)
+    local n = inst
+    while n and n.Parent and n.Parent ~= workspace do
+        if n.Parent.Name == "NPCs" then return n end
         n = n.Parent
     end
-    return false
+    return nil
 end
 
 local COL = {
@@ -461,8 +463,9 @@ bind(RS.Heartbeat, function(dt)
                     local a = p.ActionText
                     -- มอบใบรับหมาย = กด E ที่ NPC (ขึ้น "พูดคุย"/Talk) → ยิงทุก prompt บนตัว NPC ตอนเช็คอิน
                     -- ปลอดภัย: prompt บน NPC ไม่ใช่ยา + เกม gate ด้วย .Enabled อยู่แล้ว (DNA/Analyze ไม่ enabled ที่เคาน์เตอร์)
-                    -- ponytail: ยิงทุก prompt ใต้ NPCs; ถ้าเกมเพิ่ม prompt บน NPC ที่ไม่อยากให้กด ค่อย match ชื่อ
-                    local npcStep = CHECKIN_ON and underNPCs(p)
+                    -- *** กันเช็คอินผี: ข้าม NPC ที่ Skinwalker=true (อย่าช่วยผีเช็คอิน — ใช้ชัตเตอร์แทน) ***
+                    local owner = npcOwner(p)
+                    local npcStep = CHECKIN_ON and owner ~= nil and not owner:GetAttribute("Skinwalker")
                     if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
                         pcall(fp, p, 0)   -- เกม gate ลำดับเอง
                     end
@@ -516,7 +519,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,546), UDim2.new(0,20,0.5,-273)
+f.Size, f.Position = UDim2.new(0,190,0,582), UDim2.new(0,20,0.5,-291)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -764,6 +767,46 @@ do
     end)
 end
 
+-- ===== Auto ปิดชัตเตอร์ใส่ผี: Skinwalker ยืนใกล้เคาน์เตอร์เช็คอิน → ปิดชัตเตอร์ =====
+-- ชัตเตอร์ = Workspace.Misc.ShutterButton.PP (ActionText สลับ 'Open'/'Close') → ยิงตอน 'Close' เท่านั้น
+--   พอปิดแล้ว ActionText เป็น 'Open' → ไม่ยิงซ้ำ/ไม่เผลอเปิดเอง (self-limiting)
+-- ponytail: ระยะ 20 studs จากจุดเช็คอิน ; ปรับ COUNTER_RANGE ถ้าจับไกล/ใกล้ไป
+do
+    local COUNTER_RANGE = 20
+    local function shutterPP()
+        local misc = workspace:FindFirstChild("Misc")
+        local sb = misc and misc:FindFirstChild("ShutterButton")
+        return sb and sb:FindFirstChild("PP")
+    end
+    local function counterPos()
+        local misc = workspace:FindFirstChild("Misc")
+        if not misc then return nil end
+        return partPos(misc:FindFirstChild("CheckIn")) or partPos(misc:FindFirstChild("ShutterButton"))
+    end
+    local function ghostAtCounter()
+        local cpos = counterPos(); if not cpos then return false end
+        local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return false end
+        for _, m in ipairs(npcs:GetChildren()) do
+            if m:IsA("Model") and m:GetAttribute("Skinwalker") then
+                local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
+                if r and (r.Position - cpos).Magnitude < COUNTER_RANGE then return true end
+            end
+        end
+        return false
+    end
+    task.spawn(function()
+        while _G.AH74_GEN == MYGEN do
+            if SHUTTER_ON and fp then
+                local pp = shutterPP()
+                if pp and pp.Parent and pp.ActionText == "Close" and ghostAtCounter() then
+                    pcall(fp, pp, 0)   -- ปิด
+                end
+            end
+            task.wait(0.4)
+        end
+    end)
+end
+
 local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
@@ -813,9 +856,16 @@ fireB.MouseButton1Click:Connect(function()
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, FIRE_ON =
-        false, false, false, false, false, false, false, false, false
+local shutB = btn("ปิดชัตเตอร์ผี: OFF", 10, 506, 170, 30, Color3.fromRGB(120,30,30))
+shutB.MouseButton1Click:Connect(function()
+    SHUTTER_ON = not SHUTTER_ON
+    shutB.Text = "ปิดชัตเตอร์ผี: " .. (SHUTTER_ON and "ON" or "OFF")
+    shutB.BackgroundColor3 = SHUTTER_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,30,30)
+end)
+
+btn("CLOSE", 10, 544, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, FIRE_ON, SHUTTER_ON =
+        false, false, false, false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
@@ -826,4 +876,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.6] ESP + Speed + Noclip + AUTO รักษา + Room6/8 + วาปทำเครื่อง 6/7/8 + ดับไฟ พร้อม")
+print("[74RB AnimalHospital v2.7] ESP + AUTO รักษา + Room6/8 + วาปทำเครื่อง + ดับไฟ + ปิดชัตเตอร์ผี พร้อม")
