@@ -166,6 +166,12 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - `CHECKIN_ACTS` (ปุ่ม "เช็คอิน"): Stamp Forms, Take Photo, Register, Print Badge, Take
 - `TREATD_ACTS` (ปุ่ม "AUTO รักษา"): Talk, Take DNA Sample, Analyze Sample, Process Results, Prepare Patient, Sleep Patient, Set Up, Turn On, Begin, Begin X-Ray, Collect
 - blind-fire ยิงเฉพาะ prompt ที่ `.Enabled` (เกม gate ลำดับเอง) — **ไม่รวมเก็บยา/Apply Treatment** (อันตราย ทำแยกใน treatRoom)
+- ตอนเช็คอิน ยังยิง prompt บนตัว NPC ด้วย (มอบใบ = "พูดคุย"/Talk) ผ่าน `npcOwner(p)` — **ข้าม NPC ที่ `Skinwalker=true`** (กันช่วยผีเช็คอิน)
+
+### ชัตเตอร์ (กันผี) — toggle "ปิดชัตเตอร์ผี"
+- `Workspace.Misc.ShutterButton.PP` = ProximityPrompt, ActionText สลับ `'Open'`/`'Close'`
+- logic: มี `Skinwalker` ใกล้ `Workspace.Misc.CheckIn` (ระยะ <20 studs) **และ** ActionText=='Close' → `fp(pp)` ปิด
+- self-limiting: ปิดแล้ว ActionText='Open' → ไม่ยิงซ้ำ/ไม่เผลอเปิด ; ปรับ `COUNTER_RANGE` ถ้าจับไกล/ใกล้ไป
 
 ---
 
