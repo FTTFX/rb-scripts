@@ -85,7 +85,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 | Room7 | `HeartMonitorRoom` | **whack-a-mole** — กดเป้าดี เลี่ยงหัวกระโลก, มีเวลาจำกัด |
 | Room8 | `SurgeryRoom` | เลือกอุปกรณ์ผ่าตัด (รองรับแล้ว — §8) |
 
-> **⚠️ Room6 ไม่มียา/Bed/Apply Treatment เลย** (ยืนยันจาก spy 2 รอบ: ไม่มี `Bed`, ไม่มี `Medicine.Model`, `Report.inv` ว่าง) — **รักษาด้วยปริศนาสีล้วน** flow: `Begin X-Ray`→ปริศนาสี→`Process Results`→`Collect`. บอทจบ Room6 ต้องเปิด **ปริศนาสี R6 + AUTO รักษา** พร้อมกัน (ไม่มีขั้นเก็บยา) ; ตรงข้ามกับ Room7/8 ที่มี Apply Treatment + ต้องให้ยา
+> **⚠️ Room6 คนไข้ "ยืน" ไม่มีเตียง** — `Report.inv`/ยา **มีจริง** แต่ขึ้นหลังทำ X-ray เสร็จเท่านั้น (ตอน spy ก่อนวินิจฉัย inv ว่าง เลยเข้าใจผิดว่าไม่มี). flow: `Begin X-Ray`→ปริศนาสี(R6)→`Process Results`→ inv ขึ้นยา → เก็บยา → **Apply Treatment ที่ prompt บน "ตัวคนไข้" (อยู่ใน `Workspace.NPCs` ไม่ใช่ใต้ room)** → ต้องวาปไปใกล้คนไข้. ห้อง 7/8 prompt อยู่ที่ `Bed.InBed.PP` ใต้ห้อง ; **Room6 อยู่บน NPC** → `bedApplyPP` ต้อง fallback หาบนตัว `roomPatient(room)` (แก้ v2.5). เปิด **ปริศนาสี R6 + AUTO รักษา** พร้อมกัน
 
 **ทั้ง 6/7/8 มี:** เตรียมคนไข้ลงเตียง (`Bed.InBed.PP2` = 'Prepare Patient'/'Sleep Patient'), สเต็ปเครื่อง ('Set Up','Turn On','Begin','Begin X-Ray'), เก็บผล ('Collect')
 
