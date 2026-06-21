@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ  (v2.4)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ  (v2.5 +Room6 apply ที่ตัวคนไข้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -257,10 +257,16 @@ local function roomPatient(room)
         if m:GetAttribute("DesignatedRoom") == room.Name then return m end
     end
 end
--- หา prompt "Apply Treatment" ในห้อง
+-- หา prompt "Apply Treatment" — ในห้อง (Room7/8 มีเตียง) หรือ บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง)
 local function bedApplyPP(room)
     for _, p in ipairs(room:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then return p end
+    end
+    local pat = roomPatient(room)   -- คนไข้ยืน: prompt อยู่บน NPC (ใน Workspace.NPCs ไม่ใช่ใต้ room)
+    if pat then
+        for _, p in ipairs(pat:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then return p end
+        end
     end
 end
 -- ตำแหน่งห้อง (ใช้เตียง) สำหรับเรียงระยะใกล้
@@ -814,4 +820,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.4] ESP + Speed + Noclip + AUTO รักษา + Room8 + ดับไฟ(FireExtinguisher) พร้อม")
+print("[74RB AnimalHospital v2.5] ESP + Speed + Noclip + AUTO รักษา + Room6/8 + ดับไฟ พร้อม")
