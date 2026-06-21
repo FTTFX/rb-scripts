@@ -77,46 +77,74 @@ local function clickButton(b)
     end) end
 end
 
--- ===== main loop: จับลำดับ + เล่น =====
+-- ===== จับ peak ด้วย EVENT (เชื่อถือได้ ไม่พลาดเหมือน polling) =====
 local seq = {}          -- ลำดับเลขที่ต้องกด
 local bright = {}       -- สถานะปุ่มสว่างล่าสุด (กัน record ซ้ำระหว่าง fade)
 local lastFlash = 0
 local playing = false
+local attached = {}
 
+local function attach(b)
+    if attached[b] or not b:IsA("BasePart") or b.Name~="Button" then return end
+    attached[b]=true
+    track(b:GetPropertyChangedSignal("Color"):Connect(function()
+        if not ON or playing then return end
+        local main = b:GetAttribute("MainColor")
+        local num = numOf(b)
+        local isB = near(b.Color, main, 0.08)
+        if isB and not bright[num] then
+            seq[#seq+1] = num; lastFlash = os.clock()
+            st.Text = "ลำดับ: "..table.concat(seq, " ")
+        end
+        bright[num] = isB
+    end))
+end
+-- diagnostic: ปุ่มแรกมี ClickDetector ไหม
+local function diag()
+    local c=colorsContainer()
+    if not c then st.Text="ไม่เจอ Room6 (เข้าห้องก่อน)"; return end
+    for _,b in ipairs(c:GetDescendants()) do
+        if b:IsA("BasePart") and b.Name=="Button" then
+            local cd=b:FindFirstChildWhichIsA("ClickDetector", true)
+            st.Text=("CD=%s PP=%s fcd=%s"):format(
+                tostring(cd~=nil), tostring(b:FindFirstChild("PP")~=nil), tostring(fcd~=nil))
+            break
+        end
+    end
+end
+
+local function rearm()
+    local c=colorsContainer()
+    if not c then return end
+    for _,d in ipairs(c:GetDescendants()) do attach(d) end
+    track(c.DescendantAdded:Connect(attach))
+end
+rearm()
+-- เผื่อ Colors ถูกสร้างใหม่ทีหลัง
+track(workspace.DescendantAdded:Connect(function(d)
+    if d.Name=="Colors" then task.wait(0.2); rearm() end
+end))
+
+-- input loop: เงียบ >1.5วิ + มีลำดับ → คลิกตามลำดับ
 task.spawn(function()
     while _G.AHR6A_CONNS do
-        if ON then
-            local btns = buttons()
-            local now = os.clock()
-            -- 1) จับ peak สว่าง → เก็บลำดับ
-            for num, b in pairs(btns) do
-                local main = b:GetAttribute("MainColor")
-                local isB = near(b.Color, main, 0.08)
-                if isB and not bright[num] then
-                    seq[#seq+1] = num
-                    lastFlash = now
-                    st.Text = "ลำดับ: "..table.concat(seq, " ")
-                end
-                bright[num] = isB
+        if ON and #seq>0 and not playing and (os.clock()-lastFlash) > 1.5 then
+            playing = true
+            st.Text = "กด: "..table.concat(seq, " ")
+            for _, num in ipairs(seq) do
+                if not ON then break end
+                local b = buttons()[num]
+                if b then clickButton(b); task.wait(0.35) end
             end
-            -- 2) โชว์จบ (เงียบ >1.3วิ + มีลำดับ + ยังไม่เล่น) → คลิกตามลำดับ
-            if #seq > 0 and not playing and (now - lastFlash) > 1.3 then
-                playing = true
-                st.Text = "กดตามลำดับ: "..table.concat(seq, " ")
-                for _, num in ipairs(seq) do
-                    if not ON then break end
-                    local b = buttons()[num]
-                    if b then clickButton(b); task.wait(0.35) end
-                end
-                seq = {}; bright = {}
-                task.wait(1.0)        -- รอผล/รอบใหม่ (ถ้าผิดจะ replay ลำดับใหม่)
-                playing = false
-                st.Text = "R6 auto: รอลำดับใหม่..."
-            end
-        else
+            seq = {}; bright = {}
+            task.wait(1.2)
+            playing = false
+            st.Text = "R6 auto: รอลำดับใหม่..."
+        elseif not ON then
             seq = {}; bright = {}; playing = false
         end
-        task.wait(0.05)
+        task.wait(0.1)
     end
 end)
-warn("[R6auto] loaded — เข้า Room6 → กด R6 AUTO: ON → เริ่ม X-Ray")
+diag()
+warn("[R6auto] loaded(event) — เข้า Room6 → R6 AUTO: ON → เริ่ม X-Ray (ดู F9 = ผลตรวจ ClickDetector)")
