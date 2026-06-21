@@ -170,8 +170,11 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 
 ### ชัตเตอร์ (กันผี) — toggle "ปิดชัตเตอร์ผี"
 - `Workspace.Misc.ShutterButton.PP` = ProximityPrompt, ActionText สลับ `'Open'`/`'Close'`
-- logic: มี `Skinwalker` ใกล้ `Workspace.Misc.CheckIn` (ระยะ <20 studs) **และ** ActionText=='Close' → `fp(pp)` ปิด
-- self-limiting: ปิดแล้ว ActionText='Open' → ไม่ยิงซ้ำ/ไม่เผลอเปิด ; ปรับ `COUNTER_RANGE` ถ้าจับไกล/ใกล้ไป
+- **อ่านสถานะประตูจาก ActionText:** `'Close'`=เปิดอยู่(กด→ปิด) | `'Open'`=ปิดอยู่(กด→เปิด)
+- logic (สแกนใกล้ `Workspace.Misc.CheckIn` <20 studs):
+  - ผี(Skinwalker) + ActionText=='Close' → **ปิด**
+  - คนไข้จริง(IsPatient ไม่ใช่ผี) + ไม่มีผี + ActionText=='Open' → **เปิด** (กันค้างปิดแล้วคนไข้จริงเช็คอินไม่ได้)
+- ผีมี IsPatient=true ด้วย → counterScan เช็ค Skinwalker ก่อน (นับเป็นผี ไม่ใช่คนไข้) ; ปรับ `COUNTER_RANGE` ถ้าจับไกล/ใกล้ไป
 
 ---
 
