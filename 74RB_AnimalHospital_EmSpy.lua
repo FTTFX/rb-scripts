@@ -120,7 +120,7 @@ local function runScan()
         local em=workspace:FindFirstChild("Rooms")
         em=em and em:FindFirstChild("Emergency")
         if not em then addLine("ไม่เจอ Workspace.Rooms.Emergency", C.R); return end
-        for _,name in ipairs({"Room6","Room7"}) do   -- ข้าม Room8
+        for _,name in ipairs({"Room6","Room7","Room8"}) do
             local room=em:FindFirstChild(name)
             if room then dumpRoom(room) else addLine("ไม่เจอ "..name, C.O) end
         end
