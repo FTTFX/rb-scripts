@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.3 + Room8 Surgery)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ดับไฟ  (v2.4)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -37,6 +37,7 @@ local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(ว�
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
+local FIRE_ON = false    -- auto ดับไฟ: ถือ FireExtinguisher → เล็งไฟ → พ่น (Activate)
 local SPEED = 50
 local cam = workspace.CurrentCamera
 
@@ -503,7 +504,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,510), UDim2.new(0,20,0.5,-255)
+f.Size, f.Position = UDim2.new(0,190,0,546), UDim2.new(0,20,0.5,-273)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -695,6 +696,62 @@ do
     end)
 end
 
+-- ===== Auto ดับไฟ: ถือ FireExtinguisher → เล็งไฟใกล้สุด → พ่น (Activate) =====
+-- กลไก (จาก HookSpy): Tool 'FireExtinguisher' ใช้ :Activate() พ่นฟอง → ฟองโดนไฟ
+--   เกมยิง RE/ExtinguisherBubbleHit* เองตอนฟองชน — เราแค่ equip + เล็งกล้อง + Activate
+-- *** ปลอดภัย: เล็งกล้องอย่างเดียว ห้ามวาป/เดินเข้าไฟ (เข้าใกล้ = ตาย) ***
+-- ponytail: หาไฟด้วย Fire class + ParticleEmitter ที่ชื่อ/แม่มีคำว่า fire/flame/burn ; เจอ path จริงค่อยเจาะ
+do
+    local FIRE_WORDS = { "fire", "flame", "burn" }
+    local function looksFire(part, emitterName)
+        local low = (part.Name .. " " .. emitterName):lower()
+        for _, w in ipairs(FIRE_WORDS) do if low:find(w) then return true end end
+        return false
+    end
+    local function nearestFire()
+        local r = hrp(); if not r then return nil end
+        local best, bestD
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d:IsA("Fire") or d:IsA("ParticleEmitter") then
+                local p = d.Parent
+                if p and p:IsA("BasePart") and (d:IsA("Fire") or looksFire(p, d.Name)) then
+                    local dist = (p.Position - r.Position).Magnitude
+                    if not best or dist < bestD then best, bestD = p.Position, dist end
+                end
+            end
+        end
+        return best
+    end
+    local function getExtinguisher()
+        local t = findTool("FireExtinguisher")               -- หา Tool ชื่อตรง (Backpack/ตัว)
+        if t then return t end
+        local bp = LP:FindFirstChild("Backpack")             -- เผื่อชื่อมีคำว่า extinguisher
+        for _, src in ipairs({ bp, LP.Character }) do
+            if src then for _, x in ipairs(src:GetChildren()) do
+                if x:IsA("Tool") and x.Name:lower():find("extinguish") then return x end
+            end end
+        end
+    end
+    task.spawn(function()
+        while _G.AH74_GEN == MYGEN do
+            if FIRE_ON then
+                local tool = getExtinguisher()
+                if tool then
+                    local h = hum()
+                    if h and tool.Parent ~= LP.Character then pcall(function() h:EquipTool(tool) end) end
+                    local fpos = nearestFire()
+                    if fpos then
+                        local head = LP.Character and (LP.Character:FindFirstChild("Head") or hrp())
+                        if head then pcall(function() cam.CFrame = CFrame.new(head.Position, fpos) end) end
+                    end
+                    pcall(function() tool:Activate() end)     -- พ่น 1 จังหวะ (ไม่เจอไฟก็พ่นค้างไว้ตามที่เล็ง)
+                end
+            end
+            task.wait(0.12)
+        end
+    end)
+end
+
 local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
@@ -737,9 +794,16 @@ ciB.MouseButton1Click:Connect(function()
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-btn("CLOSE", 10, 474, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON =
-        false, false, false, false, false, false, false, false
+local fireB = btn("ดับไฟ: OFF", 10, 472, 170, 30, Color3.fromRGB(120,60,30))
+fireB.MouseButton1Click:Connect(function()
+    FIRE_ON = not FIRE_ON
+    fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
+    fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
+end)
+
+btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, FIRE_ON =
+        false, false, false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
@@ -750,4 +814,4 @@ btn("CLOSE", 10, 474, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.3] ESP + Speed + Noclip + AUTO รักษา(match ยา) + มอบใบที่ NPC + Room8 Surgery พร้อม")
+print("[74RB AnimalHospital v2.4] ESP + Speed + Noclip + AUTO รักษา + Room8 + ดับไฟ(FireExtinguisher) พร้อม")
