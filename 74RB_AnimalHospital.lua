@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.1)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี  (v2.2)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -435,10 +435,10 @@ bind(RS.Heartbeat, function(dt)
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
-                    -- มอบใบรับหมาย = กด E ที่ NPC (ActionText ไม่แน่นอน) → ยิง prompt บนตัว NPC
-                    -- ที่ไม่ใช่สเต็ปรักษา/วินิจฉัย (กันไป Talk/DNA ก่อนเวลา) ; ปลอดภัย: prompt บน NPC ไม่ใช่ยา
-                    -- ponytail: ยิงทุก prompt ใต้ NPCs ที่ไม่ใช่ TREATD; เกมเพิ่ม prompt อื่นบน NPC ค่อย match ชื่อ
-                    local npcStep = CHECKIN_ON and underNPCs(p) and not TREATD_ACTS[a]
+                    -- มอบใบรับหมาย = กด E ที่ NPC (ขึ้น "พูดคุย"/Talk) → ยิงทุก prompt บนตัว NPC ตอนเช็คอิน
+                    -- ปลอดภัย: prompt บน NPC ไม่ใช่ยา + เกม gate ด้วย .Enabled อยู่แล้ว (DNA/Analyze ไม่ enabled ที่เคาน์เตอร์)
+                    -- ponytail: ยิงทุก prompt ใต้ NPCs; ถ้าเกมเพิ่ม prompt บน NPC ที่ไม่อยากให้กด ค่อย match ชื่อ
+                    local npcStep = CHECKIN_ON and underNPCs(p)
                     if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
                         pcall(fp, p, 0)   -- เกม gate ลำดับเอง
                     end
@@ -739,4 +739,4 @@ btn("CLOSE", 10, 474, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.1] ESP + Speed + Noclip + AUTO รักษา(match ยา) + มอบใบที่ NPC พร้อม")
+print("[74RB AnimalHospital v2.2] ESP + Speed + Noclip + AUTO รักษา(match ยา) + มอบใบที่ NPC พร้อม")
