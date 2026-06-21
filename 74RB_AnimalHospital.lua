@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์(ผีปิด/คนไข้เปิด)  (v2.9)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.0)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -517,18 +517,34 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
+local FULL_H = 548
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,548), UDim2.new(0,20,0.5,-274)
+f.Size, f.Position = UDim2.new(0,190,0,FULL_H), UDim2.new(0,20,0.5,-274)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
+f.ClipsDescendants = true   -- ย่อ = ซ่อนปุ่มที่อยู่ใต้แถบหัว
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
 Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 
 local title = Instance.new("TextLabel", f)
-title.Size, title.Position = UDim2.new(1,-12,0,26), UDim2.new(0,8,0,4)
+title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
 title.Text, title.Font, title.TextSize = "ANIMAL HOSPITAL 74", Enum.Font.GothamBold, 14
 title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
+local minB = Instance.new("TextButton", f)
+minB.Size, minB.Position = UDim2.new(0,26,0,22), UDim2.new(1,-32,0,4)
+minB.Text, minB.TextScaled = "—", true
+minB.BackgroundColor3 = Color3.fromRGB(60,60,80)
+minB.TextColor3, minB.BorderSizePixel = Color3.fromRGB(255,255,255), 0
+Instance.new("UICorner", minB).CornerRadius = UDim.new(0,6)
+local minimized = false
+minB.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    f.Size = UDim2.new(0,190,0, minimized and 34 or FULL_H)
+    minB.Text = minimized and "+" or "—"
+end)
 
 local function btn(txt, x, y, w, h, col)
     local b = Instance.new("TextButton", f)
@@ -823,4 +839,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v2.9] ESP + AUTO รักษา + Room6/8 + วาปทำเครื่อง + ชัตเตอร์(ผีปิด/คนไข้เปิด) พร้อม")
+print("[74RB AnimalHospital v3.0] ESP + AUTO รักษา + Room6/8 + วาปทำเครื่อง + ชัตเตอร์ + ย่อ/ขยาย GUI พร้อม")
