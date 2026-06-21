@@ -71,53 +71,44 @@ closeBtn.MouseButton1Click:Connect(function()
     sg:Destroy()
 end)
 
--- หาปุ่ม Room6
-local function getButtons()
-    local r=workspace:FindFirstChild("Rooms"); r=r and r:FindFirstChild("Emergency")
-    r=r and r:FindFirstChild("Room6"); r=r and r:FindFirstChild("Minigame")
-    r=r and r:FindFirstChild("Colors"); r=r and r:FindFirstChild("Model")
-    if not r then return {} end
-    local out={}
-    for _,b in ipairs(r:GetChildren()) do
-        if b:IsA("BasePart") and b.Name=="Button" then
-            local nm=b:FindFirstChild("ui"); nm=nm and nm:FindFirstChildOfClass("TextLabel")
-            out[#out+1]={ part=b, num=(nm and nm.Text or "?"),
-                main=b:GetAttribute("MainColor"), pp=b:FindFirstChild("PP") }
-        end
-    end
-    return out
-end
-
 addLine("=== R6 watch: เริ่ม X-Ray แล้วดูปุ่มกะพริบ ===", Color3.fromRGB(255,210,0))
-local btns=getButtons()
-addLine("เจอปุ่ม "..#btns.." อัน", Color3.fromRGB(140,160,255))
-
--- ดักเหตุการณ์ "สีเปลี่ยน" ของแต่ละปุ่ม (event-driven จับได้ทุกครั้งแม้กะพริบเร็ว)
--- + ดัก Transparency เผื่อ flash แบบจาง + ดัก PP.Enabled (ช่วง input)
 _G.AHR6_CONNS = {}
 local function track(c) table.insert(_G.AHR6_CONNS, c) end
 local function rgb(col) return ("%d,%d,%d"):format(col.R*255, col.G*255, col.B*255) end
-
-for _, bt in ipairs(btns) do
-    local p = bt.part
-    if p then
-        addLine(("ปุ่ม #%s baseColor=%s main=%s"):format(bt.num, rgb(p.Color),
-            bt.main and rgb(bt.main) or "?"), Color3.fromRGB(140,140,140))
-        track(p:GetPropertyChangedSignal("Color"):Connect(function()
-            addLine(("[สีเปลี่ยน] #%s -> %s"):format(bt.num, rgb(p.Color)), Color3.fromRGB(80,255,120))
-        end))
-        track(p:GetPropertyChangedSignal("Transparency"):Connect(function()
-            addLine(("[trans] #%s -> %.2f"):format(bt.num, p.Transparency), Color3.fromRGB(140,160,255))
-        end))
-        track(p:GetPropertyChangedSignal("Material"):Connect(function()
-            addLine(("[mat] #%s -> %s"):format(bt.num, tostring(p.Material)), Color3.fromRGB(200,180,120))
-        end))
-        if bt.pp then
-            track(bt.pp:GetPropertyChangedSignal("Enabled"):Connect(function()
-                addLine(("[PP] #%s enabled=%s"):format(bt.num, tostring(bt.pp.Enabled)), Color3.fromRGB(255,160,50))
-            end))
-        end
-    end
+local function numOf(p)
+    local nm=p:FindFirstChild("ui"); nm=nm and nm:FindFirstChildOfClass("TextLabel")
+    return nm and nm.Text or "?"
 end
-_G.AHR6_CONN = nil
-warn("[R6watch] armed (event) — เริ่ม X-Ray ได้เลย")
+
+-- ผูก listener ปุ่ม 1 อัน (color/trans/material/PP) — เรียกตอนเจอปุ่มใหม่ทุกครั้ง
+local attached = {}
+local function attach(p)
+    if attached[p] or not p:IsA("BasePart") or p.Name~="Button" then return end
+    attached[p]=true
+    addLine(("+ ปุ่ม #%s base=%s main=%s"):format(numOf(p), rgb(p.Color),
+        p:GetAttribute("MainColor") and rgb(p:GetAttribute("MainColor")) or "?"), Color3.fromRGB(140,140,140))
+    track(p:GetPropertyChangedSignal("Color"):Connect(function()
+        addLine(("[สีเปลี่ยน] #%s -> %s"):format(numOf(p), rgb(p.Color)), Color3.fromRGB(80,255,120))
+    end))
+    track(p:GetPropertyChangedSignal("Transparency"):Connect(function()
+        addLine(("[trans] #%s -> %.2f"):format(numOf(p), p.Transparency), Color3.fromRGB(140,160,255))
+    end))
+    local pp=p:FindFirstChild("PP")
+    if pp then track(pp:GetPropertyChangedSignal("Enabled"):Connect(function()
+        addLine(("[PP] #%s enabled=%s"):format(numOf(p), tostring(pp.Enabled)), Color3.fromRGB(255,160,50))
+    end)) end
+end
+
+-- หา container Colors แล้วดักทั้งของเดิม + ที่จะถูกสร้างใหม่ตอนเริ่มเกม
+local r=workspace:FindFirstChild("Rooms"); r=r and r:FindFirstChild("Emergency")
+r=r and r:FindFirstChild("Room6"); r=r and r:FindFirstChild("Minigame")
+local colors=r and r:FindFirstChild("Colors")
+if not colors then
+    addLine("ไม่เจอ Room6.Minigame.Colors — เข้าห้อง 6 ก่อน", Color3.fromRGB(255,80,80))
+else
+    local n=0
+    for _,d in ipairs(colors:GetDescendants()) do attach(d); if attached[d] then n+=1 end end
+    addLine("ผูกปุ่มเดิม "..n.." อัน + รอปุ่มใหม่ตอนเริ่มเกม", Color3.fromRGB(140,160,255))
+    track(colors.DescendantAdded:Connect(attach))   -- ปุ่มที่สร้างตอนเริ่ม X-Ray
+end
+warn("[R6watch] armed (dynamic) — เริ่ม X-Ray ได้เลย")
