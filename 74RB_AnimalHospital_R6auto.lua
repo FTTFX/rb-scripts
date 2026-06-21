@@ -94,7 +94,7 @@ local function attach(b)
         local isB = near(b.Color, main, 0.08)
         if isB and not bright[num] then
             seq[#seq+1] = num; lastFlash = os.clock()
-            st.Text = "ลำดับ: "..table.concat(seq, " ")
+            st.Text = ("ลำดับ(%d): %s"):format(#seq, table.concat(seq, " "))
         end
         bright[num] = isB
     end))
@@ -128,7 +128,7 @@ end))
 -- input loop: เงียบ >1.5วิ + มีลำดับ → คลิกตามลำดับ
 task.spawn(function()
     while _G.AHR6A_CONNS do
-        if ON and #seq>0 and not playing and (os.clock()-lastFlash) > 1.5 then
+        if ON and #seq>0 and not playing and (os.clock()-lastFlash) > 2.5 then
             playing = true
             st.Text = "กด: "..table.concat(seq, " ")
             for _, num in ipairs(seq) do
