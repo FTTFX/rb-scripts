@@ -83,7 +83,9 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 |---|---|---|
 | Room6 | `XRayRoom` | **Simon "Copy the sequence"** — ปุ่มสีกะพริบเป็นลำดับ กดตาม |
 | Room7 | `HeartMonitorRoom` | **whack-a-mole** — กดเป้าดี เลี่ยงหัวกระโลก, มีเวลาจำกัด |
-| Room8 | `SurgeryRoom` | เลือกอุปกรณ์ผ่าตัด (ยังไม่รองรับ — §8) |
+| Room8 | `SurgeryRoom` | เลือกอุปกรณ์ผ่าตัด (รองรับแล้ว — §8) |
+
+> **⚠️ Room6 ไม่มียา/Bed/Apply Treatment เลย** (ยืนยันจาก spy 2 รอบ: ไม่มี `Bed`, ไม่มี `Medicine.Model`, `Report.inv` ว่าง) — **รักษาด้วยปริศนาสีล้วน** flow: `Begin X-Ray`→ปริศนาสี→`Process Results`→`Collect`. บอทจบ Room6 ต้องเปิด **ปริศนาสี R6 + AUTO รักษา** พร้อมกัน (ไม่มีขั้นเก็บยา) ; ตรงข้ามกับ Room7/8 ที่มี Apply Treatment + ต้องให้ยา
 
 **ทั้ง 6/7/8 มี:** เตรียมคนไข้ลงเตียง (`Bed.InBed.PP2` = 'Prepare Patient'/'Sleep Patient'), สเต็ปเครื่อง ('Set Up','Turn On','Begin','Begin X-Ray'), เก็บผล ('Collect')
 
