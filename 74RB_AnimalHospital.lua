@@ -34,6 +34,7 @@ pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI
 local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, false, false, false
 local TP_ON = true       -- true=วาป, false=เดิน (pathfinding)
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
+local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local SPEED = 50
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
@@ -466,7 +467,7 @@ gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,396), UDim2.new(0,20,0.5,-198)
+f.Size, f.Position = UDim2.new(0,190,0,434), UDim2.new(0,20,0.5,-217)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
@@ -569,6 +570,32 @@ task.spawn(function()
     end
 end)
 
+-- ===== Auto whack-a-mole: คลิกเป้าดีใน PlayerGui.Minigame.Frame เลี่ยง Danger(หัวกระโลก) =====
+task.spawn(function()
+    local pgui = LP:WaitForChild("PlayerGui")
+    while _G.AH74_GEN == MYGEN do
+        if WHACK_ON then
+            local mg = pgui:FindFirstChild("Minigame")
+            local fr = mg and mg:FindFirstChild("Frame")
+            if fr then
+                for _, it in ipairs(fr:GetChildren()) do
+                    -- เป้าดี = visible + ไม่ใช่ Danger(หัวกระโลก); Template ที่ visible = clone จริงต้องกด
+                    if it:IsA("GuiObject") and it.Visible and it.Name ~= "Danger"
+                       and it.AbsoluteSize.X > 0 then
+                        local p, s = it.AbsolutePosition, it.AbsoluteSize
+                        local x, y = p.X + s.X/2, p.Y + s.Y/2 + 36  -- +inset topbar
+                        pcall(function()
+                            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+                            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+                        end)
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
 local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
@@ -590,8 +617,15 @@ machB.MouseButton1Click:Connect(function()
     machB.BackgroundColor3 = MACHINE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-btn("CLOSE", 10, 360, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON = false, false, false, false, false
+local whackB = btn("ตีตัว(มินิเกม): OFF", 10, 358, 170, 32, Color3.fromRGB(120,60,30))
+whackB.MouseButton1Click:Connect(function()
+    WHACK_ON = not WHACK_ON
+    whackB.Text = "ตีตัว(มินิเกม): " .. (WHACK_ON and "ON" or "OFF")
+    whackB.BackgroundColor3 = WHACK_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
+end)
+
+btn("CLOSE", 10, 398, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON = false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
