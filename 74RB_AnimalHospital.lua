@@ -46,6 +46,9 @@ local SAFE_ACTS = {
     ["Stamp Forms"]=true, ["Take Photo"]=true, ["Register"]=true, ["Print Badge"]=true,
     ["Take"]=true, ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true,
     ["Process Results"]=true,
+    -- Emergency: เตรียมคนไข้ลงเตียง + สเต็ปเครื่อง (ปลอดภัย ไม่ใช่ขั้นให้ยา)
+    ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
+    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true,
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local fireAcc = 0
