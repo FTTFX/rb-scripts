@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.2)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.3)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -319,6 +319,12 @@ local function treatRoom(room)
     -- ยังไม่วินิจฉัย: คนไข้นอนเตียงแล้ว → ทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
     -- MACHINE_ON=ON วาปไปก่อนยิง | OFF ยิงในที่ (ไม่วาป — เราเดินไปเอง เหมือน Ver.ก่อน)
     if #meds == 0 then
+        -- วินิจฉัย/วาป เฉพาะตอนคนไข้ "อยู่ในห้องจริง" — InBed หรือ อยู่ใกล้ห้อง
+        -- (roomPatient จับด้วย DesignatedRoom ที่ติดตั้งแต่คนไข้ยังยืนอยู่เคาน์เตอร์ → กันวาปไปเคาน์เตอร์)
+        local rpos = roomPos(room)
+        local pPos = patient and partPos(patient)
+        if not (patient and (patient:GetAttribute("InBed")
+            or (rpos and pPos and (pPos - rpos).Magnitude < 35))) then return false end
         local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }   -- prompt บนตัวคนไข้
         local DIAG_ROOM = {                                             -- prompt ในห้อง (เครื่อง + เตรียมคนไข้)
             ["Analyze Sample"]=true, ["Process Results"]=true,          -- Medical
@@ -845,4 +851,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.2] ESP + AUTO รักษา + ไม่ยุ่งกับผี(blind-fire) + ชัตเตอร์ + ย่อ/ขยาย GUI พร้อม")
+print("[74RB AnimalHospital v3.3] ESP + AUTO รักษา + กันวาปไปคนไข้เคาน์เตอร์ + ชัตเตอร์ + ย่อ/ขยาย GUI พร้อม")
