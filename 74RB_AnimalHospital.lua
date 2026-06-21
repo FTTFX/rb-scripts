@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.0)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.1)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -742,33 +742,37 @@ do
         if not misc then return nil end
         return partPos(misc:FindFirstChild("CheckIn")) or partPos(misc:FindFirstChild("ShutterButton"))
     end
-    -- สแกนใครยืนใกล้เคาน์เตอร์ → ghost(ผี Skinwalker), patient(คนไข้จริง ไม่ใช่ผี)
+    -- สแกนใกล้เคาน์เตอร์ → ghost(ผีอยู่), pending(คนไข้จริงที่ "ยังไม่เช็คอิน")
     local function counterScan()
         local cpos = counterPos(); if not cpos then return false, false end
         local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return false, false end
-        local ghost, patient = false, false
+        local ghost, pending = false, false
         for _, m in ipairs(npcs:GetChildren()) do
             if m:IsA("Model") then
                 local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
                 if r and (r.Position - cpos).Magnitude < COUNTER_RANGE then
                     if m:GetAttribute("Skinwalker") then ghost = true       -- ผี (มี IsPatient ด้วยก็นับเป็นผี)
-                    elseif m:GetAttribute("IsPatient") then patient = true end
+                    elseif m:GetAttribute("IsPatient")                       -- คนไข้จริงยังไม่เช็คอินเสร็จ
+                       and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
+                        pending = true
+                    end
                 end
             end
         end
-        return ghost, patient
+        return ghost, pending
     end
     -- ActionText: 'Close'=ประตูเปิดอยู่(กด→ปิด) | 'Open'=ประตูปิดอยู่(กด→เปิด)
+    -- ลำดับ: คนไข้จริงยังไม่เช็คอิน → เปิดไว้ก่อน (เช็คอินคนดีก่อน แม้มีผีปนอยู่) ; เช็คอินครบแล้ว+ผียังอยู่ → ปิด
     task.spawn(function()
         while _G.AH74_GEN == MYGEN do
             if SHUTTER_ON and fp then
                 local pp = shutterPP()
                 if pp and pp.Parent then
-                    local ghost, patient = counterScan()
-                    if ghost and pp.ActionText == "Close" then
-                        pcall(fp, pp, 0)                                   -- ผีมา + เปิดอยู่ → ปิด
-                    elseif patient and not ghost and pp.ActionText == "Open" then
-                        pcall(fp, pp, 0)                                   -- คนไข้จริง + ไม่มีผี + ปิดอยู่ → เปิดให้เช็คอิน
+                    local ghost, pending = counterScan()
+                    if pending and pp.ActionText == "Open" then
+                        pcall(fp, pp, 0)                                   -- มีคนไข้จริงรอเช็คอิน → เปิด
+                    elseif ghost and not pending and pp.ActionText == "Close" then
+                        pcall(fp, pp, 0)                                   -- คนดีเช็คอินครบ + ผียังอยู่ → ปิด
                     end
                 end
             end
@@ -839,4 +843,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.0] ESP + AUTO รักษา + Room6/8 + วาปทำเครื่อง + ชัตเตอร์ + ย่อ/ขยาย GUI พร้อม")
+print("[74RB AnimalHospital v3.1] ESP + AUTO รักษา + ชัตเตอร์(เช็คอินคนดีก่อน→ปิดผี) + ย่อ/ขยาย GUI พร้อม")
