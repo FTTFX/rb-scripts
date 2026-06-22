@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ(คน+พื้น)+ทาครีม + NPC เร็ว  (v3.8)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา(ทีละห้อง) + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v3.9)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -398,6 +398,8 @@ local function treatRoom(room)
                 if held and held.Name == m then picked = true; break end
             end
             if not picked then break end       -- ไม่มี m แล้ว (ถูกใช้หมด/ขาด) → ชนิดถัดไป
+            local held2 = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+            if not (held2 and held2.Name == m) then break end  -- กันยาผิด: ยืนยันถือ m ตรงจริงก่อนกด (เผื่อถือปืน/ของอื่น)
             local before = givenOf(room, m)
             pcall(fp, bedPP, 0)                 -- ให้ยา m 1 ชิ้น
             -- poll: ยืนยันทันทีที่ given เพิ่ม เผื่อสูงสุด 0.5
@@ -626,36 +628,39 @@ autoB.MouseButton1Click:Connect(function()
     if AUTO_ON and not fp then autoB.Text = "ไม่มี fireproximityprompt" end
 end)
 
--- loop ให้ยา (match ชื่อ) แยกจาก Heartbeat — มี wait ระหว่างสเต็ป
+-- loop ให้ยา: ทำ "ทีละห้องจนจบ" (ไม่วนข้ามห้องไปมา = กันวาปสับสน/ให้ยาผิด)
+-- เลือกห้องใกล้สุดที่ยังต้องทำ → commit ทำจน done (หรือหมดเวลา ~6s) ก่อนเปลี่ยนห้อง
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if AUTO_ON and fp then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
-                -- รวมห้องทั้งหมด แล้วเรียงตามระยะใกล้ตัวเรา (ทำห้องใกล้ก่อน)
-                local list = {}
+                local fromPos = hrp() and hrp().Position
+                local target, bestD
                 for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8
                     local f = rooms:FindFirstChild(grp)
                     if f then for _, room in ipairs(f:GetChildren()) do
-                        list[#list+1] = room
+                        local pat = roomPatient(room)
+                        local ghost = pat and pat:GetAttribute("Skinwalker")
+                        if pat and not roomDone(room) and (not ghost or KILLGHOST_ON) then
+                            local pos = roomPos(room)
+                            local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
+                            if not target or d < bestD then target, bestD = room, d end
+                        end
                     end end
                 end
-                local fromPos = hrp() and hrp().Position
-                if fromPos then
-                    local dist = {}
-                    for _, room in ipairs(list) do
-                        local pos = roomPos(room)
-                        dist[room] = pos and (pos - fromPos).Magnitude or math.huge
+                if target then
+                    local guard = 0
+                    while AUTO_ON and _G.AH74_GEN == MYGEN
+                          and not roomDone(target) and guard < 30 do  -- ~6s/ห้อง กันค้าง
+                        guard += 1
+                        pcall(treatRoom, target)
+                        task.wait(0.2)
                     end
-                    table.sort(list, function(a, b) return dist[a] < dist[b] end)
-                end
-                for _, room in ipairs(list) do
-                    if not (AUTO_ON and _G.AH74_GEN == MYGEN) then break end
-                    pcall(treatRoom, room)   -- treatRoom เช็คเองว่าห้องมียาที่ต้องให้ไหม
                 end
             end
         end
-        task.wait(0.2)
+        task.wait(0.3)
     end
 end)
 
@@ -932,4 +937,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.8] ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ(คน+พื้น)+ทาครีม + NPC เร็ว พร้อม")
+print("[74RB AnimalHospital v3.9] ESP + AUTO รักษา(ทีละห้อง+กันยาผิด) + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
