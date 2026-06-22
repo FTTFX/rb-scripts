@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา(ทีละห้อง) + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.1)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.2 GUI 2 คอลัมน์)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -549,9 +549,9 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 620
+local FULL_H = 292
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,FULL_H), UDim2.new(0,20,0.5,-310)
+f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 f.ClipsDescendants = true   -- ย่อ = ซ่อนปุ่มที่อยู่ใต้แถบหัว
@@ -574,7 +574,7 @@ Instance.new("UICorner", minB).CornerRadius = UDim.new(0,6)
 local minimized = false
 minB.MouseButton1Click:Connect(function()
     minimized = not minimized
-    f.Size = UDim2.new(0,190,0, minimized and 34 or FULL_H)
+    f.Size = UDim2.new(0,192,0, minimized and 34 or FULL_H)
     minB.Text = minimized and "+" or "—"
 end)
 
@@ -589,7 +589,7 @@ local function btn(txt, x, y, w, h, col)
     return b
 end
 
-local espB = btn("ESP: ON", 10, 36, 170, 36, Color3.fromRGB(40,150,70))
+local espB = btn("ESP: ON", 8, 34, 86, 30, Color3.fromRGB(40,150,70))
 espB.MouseButton1Click:Connect(function()
     ESP_ON = not ESP_ON
     espB.Text = "ESP: " .. (ESP_ON and "ON" or "OFF")
@@ -599,7 +599,7 @@ espB.MouseButton1Click:Connect(function()
     end
 end)
 
-local runB = btn("RUN: OFF", 10, 80, 170, 36)
+local runB = btn("RUN: OFF", 98, 34, 86, 30)
 runB.MouseButton1Click:Connect(function()
     RUN_ON = not RUN_ON
     runB.Text = "RUN: " .. (RUN_ON and "ON" or "OFF")
@@ -607,15 +607,15 @@ runB.MouseButton1Click:Connect(function()
     if not RUN_ON then local h = hum(); if h then h.WalkSpeed = 16 end end
 end)
 
-local spdL = btn(tostring(SPEED), 10, 122, 90, 34); spdL.Active = false
-btn("−", 106, 122, 36, 34).MouseButton1Click:Connect(function()
+local spdL = btn(tostring(SPEED), 98, 226, 34, 30); spdL.Active = false
+btn("−", 134, 226, 24, 30).MouseButton1Click:Connect(function()
     SPEED = math.max(16, SPEED - 10); spdL.Text = tostring(SPEED)
 end)
-btn("+", 144, 122, 36, 34).MouseButton1Click:Connect(function()
+btn("+", 160, 226, 24, 30).MouseButton1Click:Connect(function()
     SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
 end)
 
-local clipB = btn("NOCLIP: OFF", 10, 164, 170, 36)
+local clipB = btn("NOCLIP: OFF", 8, 66, 86, 30)
 clipB.MouseButton1Click:Connect(function()
     NOCLIP_ON = not NOCLIP_ON
     clipB.Text = "NOCLIP: " .. (NOCLIP_ON and "ON" or "OFF")
@@ -628,12 +628,12 @@ clipB.MouseButton1Click:Connect(function()
     end
 end)
 
-local autoB = btn("AUTO รักษา: OFF", 10, 206, 170, 36)
+local autoB = btn("รักษา: OFF", 98, 66, 86, 30)
 autoB.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
-    autoB.Text = "AUTO รักษา: " .. (AUTO_ON and "ON" or "OFF")
+    autoB.Text = "รักษา: " .. (AUTO_ON and "ON" or "OFF")
     autoB.BackgroundColor3 = AUTO_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-    if AUTO_ON and not fp then autoB.Text = "ไม่มี fireproximityprompt" end
+    if AUTO_ON and not fp then autoB.Text = "ไม่มี fp!" end
 end)
 
 -- loop ให้ยา: ทำ "ทีละห้องจนจบ" (ไม่วนข้ามห้องไปมา = กันวาปสับสน/ให้ยาผิด)
@@ -869,70 +869,70 @@ task.spawn(function()
     end
 end)
 
-local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
+local killB = btn("ฆ่าผี: OFF", 8, 98, 86, 30)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
-    killB.Text = "ผี→ยาผิด: " .. (KILLGHOST_ON and "ON" or "OFF")
+    killB.Text = "ฆ่าผี: " .. (KILLGHOST_ON and "ON" or "OFF")
     killB.BackgroundColor3 = KILLGHOST_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(45,45,58)
 end)
 
-local moveB = btn("ไปของ: วาป", 10, 284, 170, 32, Color3.fromRGB(55,35,80))
+local moveB = btn("ไปของ: วาป", 98, 98, 86, 30, Color3.fromRGB(55,35,80))
 moveB.MouseButton1Click:Connect(function()
     TP_ON = not TP_ON
     moveB.Text = "ไปของ: " .. (TP_ON and "วาป" or "เดิน")
     moveB.BackgroundColor3 = TP_ON and Color3.fromRGB(55,35,80) or Color3.fromRGB(35,70,55)
 end)
 
-local machB = btn("วาปทำเครื่อง: ON", 10, 320, 170, 32, Color3.fromRGB(40,150,70))
+local machB = btn("ทำเครื่อง: ON", 8, 130, 86, 30, Color3.fromRGB(40,150,70))
 machB.MouseButton1Click:Connect(function()
     MACHINE_ON = not MACHINE_ON
-    machB.Text = "วาปทำเครื่อง: " .. (MACHINE_ON and "ON" or "OFF")
+    machB.Text = "ทำเครื่อง: " .. (MACHINE_ON and "ON" or "OFF")
     machB.BackgroundColor3 = MACHINE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local whackB = btn("ตีตัว(มินิเกม): OFF", 10, 358, 170, 32, Color3.fromRGB(120,60,30))
+local whackB = btn("ตีตัว: OFF", 98, 130, 86, 30, Color3.fromRGB(120,60,30))
 whackB.MouseButton1Click:Connect(function()
     WHACK_ON = not WHACK_ON
-    whackB.Text = "ตีตัว(มินิเกม): " .. (WHACK_ON and "ON" or "OFF")
+    whackB.Text = "ตีตัว: " .. (WHACK_ON and "ON" or "OFF")
     whackB.BackgroundColor3 = WHACK_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local r6B = btn("ปริศนาสี R6: OFF", 10, 396, 170, 32, Color3.fromRGB(120,60,30))
+local r6B = btn("สี R6: OFF", 8, 162, 86, 30, Color3.fromRGB(120,60,30))
 r6B.MouseButton1Click:Connect(function()
     R6_ON = not R6_ON
-    r6B.Text = "ปริศนาสี R6: " .. (R6_ON and "ON" or "OFF")
+    r6B.Text = "สี R6: " .. (R6_ON and "ON" or "OFF")
     r6B.BackgroundColor3 = R6_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local ciB = btn("เช็คอิน: OFF", 10, 434, 170, 32, Color3.fromRGB(45,45,58))
+local ciB = btn("เช็คอิน: OFF", 98, 162, 86, 30, Color3.fromRGB(45,45,58))
 ciB.MouseButton1Click:Connect(function()
     CHECKIN_ON = not CHECKIN_ON
     ciB.Text = "เช็คอิน: " .. (CHECKIN_ON and "ON" or "OFF")
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local shutB = btn("ปิดชัตเตอร์ผี: OFF", 10, 472, 170, 30, Color3.fromRGB(120,30,30))
+local shutB = btn("ชัตเตอร์: OFF", 8, 194, 86, 30, Color3.fromRGB(120,30,30))
 shutB.MouseButton1Click:Connect(function()
     SHUTTER_ON = not SHUTTER_ON
-    shutB.Text = "ปิดชัตเตอร์ผี: " .. (SHUTTER_ON and "ON" or "OFF")
+    shutB.Text = "ชัตเตอร์: " .. (SHUTTER_ON and "ON" or "OFF")
     shutB.BackgroundColor3 = SHUTTER_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,30,30)
 end)
 
-local fireB = btn("ดับไฟ: OFF", 10, 508, 170, 30, Color3.fromRGB(120,60,30))
+local fireB = btn("ดับไฟ: OFF", 98, 194, 86, 30, Color3.fromRGB(120,60,30))
 fireB.MouseButton1Click:Connect(function()
     FIRE_ON = not FIRE_ON
     fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local npcfB = btn("NPC เร็ว: OFF", 10, 544, 170, 30, Color3.fromRGB(60,60,80))
+local npcfB = btn("NPC เร็ว: OFF", 8, 226, 86, 30, Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
     NPCFAST_ON = not NPCFAST_ON
     npcfB.Text = "NPC เร็ว: " .. (NPCFAST_ON and "ON" or "OFF")
     npcfB.BackgroundColor3 = NPCFAST_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(60,60,80)
 end)
 
-btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON, FIRE_ON =
         false, false, false, false, false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
@@ -945,4 +945,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.1] ESP + AUTO รักษา + ทิ้งขยะถังใกล้สุด + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
+print("[74RB AnimalHospital v4.2] GUI 2 คอลัมน์ + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
