@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว  (v3.6)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว  (v3.7 deconflict R6)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -322,6 +322,9 @@ local function treatRoom(room)
     -- ยังไม่วินิจฉัย: คนไข้นอนเตียงแล้ว → ทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
     -- MACHINE_ON=ON วาปไปก่อนยิง | OFF ยิงในที่ (ไม่วาป — เราเดินไปเอง เหมือน Ver.ก่อน)
     if #meds == 0 then
+        -- Room6 (X-Ray): ปล่อยให้ blind-fire (Begin X-Ray/Process/Collect) + ปริศนาสี R6 จัดการเฟส X-ray
+        -- กัน AUTO วาปเข้า-ออก Room6 ซ้ำๆ แย่งกับ R6 (เฟสนี้ไม่ต้องวาป — fp/คลิกสี ทำจากไกลได้)
+        if R6_ON and room.Name == "Room6" then return false end
         -- วินิจฉัย/วาป เฉพาะตอนคนไข้ "อยู่ในห้องจริง" — InBed หรือ อยู่ใกล้ห้อง
         -- (roomPatient จับด้วย DesignatedRoom ที่ติดตั้งแต่คนไข้ยังยืนอยู่เคาน์เตอร์ → กันวาปไปเคาน์เตอร์)
         local rpos = roomPos(room)
@@ -914,4 +917,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.6] ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว + ย่อ/ขยาย GUI พร้อม")
+print("[74RB AnimalHospital v3.7] ESP + AUTO รักษา(ไม่แย่ง R6) + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว พร้อม")
