@@ -169,6 +169,12 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - ตอนเช็คอิน ยังยิง prompt บนตัว NPC ด้วย (มอบใบ = "พูดคุย"/Talk) ผ่าน `npcOwner(p)`
 - **ห้ามยุ่งกับผี:** blind-fire ข้าม prompt **ทุกตัว**บน NPC ที่ `Skinwalker=true` (กันที่ระดับ owner) — เพราะ `Talk` อยู่ใน `TREATD_ACTS` ด้วย ถ้ากันแค่ npcStep จะยังกด Talk ใส่ผีตอน AUTO เปิด → จัดการผีด้วยชัตเตอร์/ยาผิดแทน
 
+### ดับไฟ (คนติดไฟ) — toggle "ดับไฟ"
+- คนติดไฟ = NPC attr `CustomPatientIntro=BurningPatient`, `CustomRoomAssigned=BurningRoom`, `FireCharges=N` (จำนวนเปลวที่ต้องดับ)
+- prompt อยู่บนตัว NPC: `Workspace.NPCs.<ชื่อ>.FirePP` — ActionText วน `'Fire'`(ดับเปลว ใช้ FireCharges) → `'Treat Burns'`(รักษาแผล)
+- logic: วน NPCs → เจอ `FirePP` ที่ `.Enabled` → `fp(pp,0)` รัวทุก 0.15s (ดับ+รักษาจน prompt ปิด) — **ไม่ใช้ถังดับเพลิง** (ถัง=tank `FireExtinguisher`:Activate พ่นฟอง เปลือง charge + ต้องเล็ง → ทิ้ง)
+- ไฟกองพื้นที่ไม่มี NPC/prompt = ใช้ถังอย่างเดียว (ไม่ auto)
+
 ### ชัตเตอร์ (กันผี) — toggle "ปิดชัตเตอร์ผี"
 - `Workspace.Misc.ShutterButton.PP` = ProximityPrompt, ActionText สลับ `'Open'`/`'Close'`
 - **อ่านสถานะประตูจาก ActionText:** `'Close'`=เปิดอยู่(กด→ปิด) | `'Open'`=ปิดอยู่(กด→เปิด)
