@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital_HookSpy v5.0  (ดัก 3 ทาง: Remote + ProximityPrompt + Tool)
+-- 74RB_AnimalHospital_HookSpy v5.1  (ดัก 3 ทาง: Remote + ProximityPrompt + Tool ; + ปุ่มล้าง/พับ)
 -- เปิดในเกม → GUI ขึ้น → scan เสร็จ → ไป "ให้ยา/รักษา 1 ครั้ง + quest 1 อัน"
 -- ให้ยาแบบไหนก็จับได้: [REMOTE]ชมพู / [PROMPT]ฟ้า / [TOOL]เหลือง → กด Copy ส่งมา
 
@@ -21,29 +21,39 @@ frame.Size = UDim2.new(0, 560, 0, 460)
 frame.Position = UDim2.new(0.5, -280, 0.5, -230)
 frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 frame.BorderSizePixel = 0; frame.Active = true; frame.Draggable = true
+frame.ClipsDescendants = true   -- พับ = ซ่อนเนื้อใต้แถบหัว
 frame.Parent = sg
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 
 local titleLbl = Instance.new("TextLabel")
-titleLbl.Size = UDim2.new(1, -185, 0, 28); titleLbl.Position = UDim2.new(0, 10, 0, 0)
+titleLbl.Size = UDim2.new(1, -236, 0, 28); titleLbl.Position = UDim2.new(0, 10, 0, 0)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120, 200, 255)
 titleLbl.Text = "AnimalHospital Spy v3 — scanning..."
 titleLbl.Font = Enum.Font.Code; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
-local copyBtn = Instance.new("TextButton")
-copyBtn.Size = UDim2.new(0, 110, 0, 22); copyBtn.Position = UDim2.new(1, -178, 0, 3)
-copyBtn.BackgroundColor3 = Color3.fromRGB(30, 100, 50); copyBtn.TextColor3 = Color3.new(1,1,1)
-copyBtn.Text = "Copy"; copyBtn.Font = Enum.Font.Code; copyBtn.TextSize = 12
-copyBtn.BorderSizePixel = 0; copyBtn.Parent = frame
-Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0, 4)
+local function topBtn(w, x, col, txt)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, w, 0, 22); b.Position = UDim2.new(1, x, 0, 3)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1)
+    b.Text = txt; b.Font = Enum.Font.Code; b.TextSize = 12
+    b.BorderSizePixel = 0; b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+    return b
+end
+local copyBtn  = topBtn(70, -226, Color3.fromRGB(30, 100, 50), "Copy")
+local clearBtn = topBtn(52, -150, Color3.fromRGB(110, 90, 30), "ล้าง")
+local minBtn   = topBtn(30, -92,  Color3.fromRGB(60, 60, 80),  "—")
+local closeBtn = topBtn(52, -56,  Color3.fromRGB(120, 20, 20), "ปิด")
 
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 60, 0, 22); closeBtn.Position = UDim2.new(1, -64, 0, 3)
-closeBtn.BackgroundColor3 = Color3.fromRGB(120, 20, 20); closeBtn.TextColor3 = Color3.new(1,1,1)
-closeBtn.Text = "ปิด"; closeBtn.Font = Enum.Font.Code; closeBtn.TextSize = 12
-closeBtn.BorderSizePixel = 0; closeBtn.Parent = frame
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
+-- พับ/กาง
+local FULL_SZ = UDim2.new(0, 560, 0, 460)
+local folded = false
+minBtn.MouseButton1Click:Connect(function()
+    folded = not folded
+    frame.Size = folded and UDim2.new(0, 560, 0, 32) or FULL_SZ
+    minBtn.Text = folded and "+" or "—"
+end)
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1, -8, 1, -34); scroll.Position = UDim2.new(0, 4, 0, 30)
@@ -75,6 +85,10 @@ local function addLine(txt, col)
 end
 
 closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
+clearBtn.MouseButton1Click:Connect(function()   -- ล้าง log (เริ่มจับใหม่)
+    for _, c in ipairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    copyLines = {}; order = 0
+end)
 copyBtn.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard or write_clipboard
         or (getgenv and getgenv().setclipboard)
