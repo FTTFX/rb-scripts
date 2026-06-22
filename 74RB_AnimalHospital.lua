@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา(ทีละห้อง) + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.0 fix Room8)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา(ทีละห้อง) + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.1)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -152,11 +152,18 @@ local function heldTools()
     if LP.Character then for _, t in ipairs(LP.Character:GetChildren()) do if t:IsA("Tool") then out[#out+1] = t end end end
     return out
 end
--- หาจุดทิ้งยา (Trash Item)
+-- หาจุดทิ้งยา (Trash Item) — "ใกล้สุด" (มีหลายถัง อย่าไปไกล)
 local function trashPrompt()
+    local fromPos = hrp() and hrp().Position
+    local best, bestD
     for _, p in ipairs(workspace:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.ActionText == "Trash Item" then return p end
+        if p:IsA("ProximityPrompt") and p.ActionText == "Trash Item" and p.Parent then
+            local pos = partPos(p.Parent)
+            local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
+            if not best or d < bestD then best, bestD = p, d end
+        end
     end
+    return best
 end
 -- ทิ้ง Tool 1 ชิ้น: equip → วาปไปถังขยะ → fire
 local function discardTool(tool)
@@ -938,4 +945,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.0] ESP + AUTO รักษา(ทีละห้อง+fix Room8) + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
+print("[74RB AnimalHospital v4.1] ESP + AUTO รักษา + ทิ้งขยะถังใกล้สุด + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
