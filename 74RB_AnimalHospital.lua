@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว  (v3.7 deconflict R6)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ(คน+พื้น)+ทาครีม + NPC เร็ว  (v3.8)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -841,6 +841,21 @@ task.spawn(function()
     end
 end)
 
+-- ===== Auto ดับไฟกองพื้น: PP 'Put out fire' (ใต้ Rooms, attr Charges) — กด E ที่ไฟ ไม่ใช้ถัง =====
+task.spawn(function()
+    while _G.AH74_GEN == MYGEN do
+        if FIRE_ON and fp then
+            local rooms = workspace:FindFirstChild("Rooms")
+            if rooms then for _, d in ipairs(rooms:GetDescendants()) do
+                if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire" then
+                    pcall(fp, d, 0)   -- ดับ 1 จุด (วนจน Charges หมด → prompt ปิด)
+                end
+            end end
+        end
+        task.wait(0.35)
+    end
+end)
+
 local killB = btn("ผี→ยาผิด: OFF", 10, 248, 170, 32)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
@@ -917,4 +932,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.7] ESP + AUTO รักษา(ไม่แย่ง R6) + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว พร้อม")
+print("[74RB AnimalHospital v3.8] ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ(คน+พื้น)+ทาครีม + NPC เร็ว พร้อม")
