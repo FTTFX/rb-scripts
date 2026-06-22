@@ -26,7 +26,7 @@ frame.Parent = sg
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 
 local titleLbl = Instance.new("TextLabel")
-titleLbl.Size = UDim2.new(1, -236, 0, 28); titleLbl.Position = UDim2.new(0, 10, 0, 0)
+titleLbl.Size = UDim2.new(1, -292, 0, 28); titleLbl.Position = UDim2.new(0, 10, 0, 0)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120, 200, 255)
 titleLbl.Text = "AnimalHospital Spy v3 — scanning..."
 titleLbl.Font = Enum.Font.Code; titleLbl.TextSize = 13
@@ -41,10 +41,11 @@ local function topBtn(w, x, col, txt)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
     return b
 end
-local copyBtn  = topBtn(70, -226, Color3.fromRGB(30, 100, 50), "Copy")
-local clearBtn = topBtn(52, -150, Color3.fromRGB(110, 90, 30), "ล้าง")
-local minBtn   = topBtn(30, -92,  Color3.fromRGB(60, 60, 80),  "—")
-local closeBtn = topBtn(52, -56,  Color3.fromRGB(120, 20, 20), "ปิด")
+local copyBtn   = topBtn(62, -282, Color3.fromRGB(30, 100, 50), "Copy")
+local rescanBtn = topBtn(72, -216, Color3.fromRGB(40, 70, 120), "RESCAN")
+local clearBtn  = topBtn(50, -140, Color3.fromRGB(110, 90, 30), "ล้าง")
+local minBtn    = topBtn(30, -86,  Color3.fromRGB(60, 60, 80),  "—")
+local closeBtn  = topBtn(48, -52,  Color3.fromRGB(120, 20, 20), "ปิด")
 
 -- พับ/กาง
 local FULL_SZ = UDim2.new(0, 560, 0, 460)
@@ -105,9 +106,8 @@ local function v2s(v)
     else return ("<%s:%s>"):format(t, tostring(v)) end
 end
 
--- ── 4. SCAN (task.spawn ไม่ block GUI) ──────────────────────────
-task.spawn(function()
-    task.wait(0.1)
+-- ── 4. SCAN (แยกเป็นฟังก์ชัน — RESCAN เรียกได้ ไม่แตะ hook) ──────
+local function runScan()
     local ok, err = pcall(function()
         addLine("===== TEAMS =====", C.Y)
         for _, t in ipairs(game:GetService("Teams"):GetChildren()) do
@@ -171,8 +171,20 @@ task.spawn(function()
         addLine(("  total remotes = %d"):format(rc), C.S)
     end)
     if not ok then addLine("SCAN ERROR: " .. tostring(err), C.R) end
+end
+rescanBtn.MouseButton1Click:Connect(function()   -- สแกนข้อมูลใหม่ (ล้าง+ดัมพ์ใหม่) ; hook ยังทำงานต่อ
+    for _, c in ipairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    copyLines = {}; order = 0
+    titleLbl.Text = "Spy — rescanning..."
+    task.spawn(runScan)
+end)
 
-    -- ── 5. REMOTE HOOK v4 — ดักทั้ง dot-call (Net lib) + colon-call ──────
+-- ── 5. ครั้งแรก: scan + ตั้ง hook (hook ตั้งครั้งเดียว ไม่อยู่ใน runScan) ──────
+task.spawn(function()
+    task.wait(0.1)
+    runScan()
+
+    -- REMOTE HOOK v4 — ดักทั้ง dot-call (Net lib) + colon-call
     -- Net framework เรียก fs(remote,...) ไม่ใช่ remote:FireServer() → ต้อง hookfunction
     -- ที่ตัวฟังก์ชัน FireServer/InvokeServer โดยตรง (ดักได้ทุกแบบ) แทน __namecall
     addLine("", C.S)
