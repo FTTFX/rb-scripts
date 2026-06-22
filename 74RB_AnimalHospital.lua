@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ดับไฟ(FirePP) + NPC เร็ว  (v3.5)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว  (v3.6)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -800,8 +800,29 @@ do
     end)
 end
 
--- ===== Auto ดับไฟที่ตัว NPC: คนติดไฟ (BurningPatient) มี Workspace.NPCs.<ชื่อ>.FirePP =====
--- ActionText: 'Fire'(ดับเปลว ใช้ FireCharges) → 'Treat Burns'(รักษาแผล) ; fp ยิงทันที ไม่ต้องถัง/เล็ง/เข้าใกล้
+-- ===== Auto ดับไฟ + ทาครีม: คนติดไฟ (BurningPatient) มี Workspace.NPCs.<ชื่อ>.FirePP =====
+-- FirePP ActionText: 'Fire'(ดับเปลว ใช้ FireCharges) → 'Treat Burns'(ทาครีม Ointment)
+-- flow: ดับไฟ → เก็บ Ointment (Workspace.Model.Items.Ointment.PP) → เลือก slot → ทา ; fp ยิงไกลได้ ไม่ใช้ถัง
+local function doBurning(pp)
+    local a = pp.ActionText
+    if a == "Fire" then
+        pcall(fp, pp, 0)                                   -- ดับเปลว
+    elseif a == "Treat Burns" then
+        if heldCount("Ointment") < 1 then                  -- ยังไม่มีครีม → ไปเก็บ
+            local cream = findPickup("Ointment")
+            if not (cream and cream.Parent) then return end
+            tpTo(partPos(cream.Parent)); task.wait(0.18)
+            pcall(fp, cream, 0); task.wait(0.2)
+            if heldCount("Ointment") < 1 then return end
+        end
+        for slot = 1, math.min(9, #heldTools()) do         -- เลือก slot ที่ถือ Ointment
+            pressSlot(slot); task.wait(0.06)
+            local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+            if held and held.Name == "Ointment" then break end
+        end
+        pcall(fp, pp, 0)                                   -- ทาครีม
+    end
+end
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp then
@@ -809,7 +830,7 @@ task.spawn(function()
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
                 if pp and pp:IsA("ProximityPrompt") and pp.Enabled then
-                    pcall(fp, pp, 0)   -- ดับ/รักษา 1 ครั้ง (วนจนกว่า charge หมด → Treat Burns → prompt ปิด)
+                    doBurning(pp)
                 end
             end end
         end
@@ -893,4 +914,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.5] ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ(FirePP) + NPC เร็ว + ย่อ/ขยาย GUI พร้อม")
+print("[74RB AnimalHospital v3.6] ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ+ทาครีม + NPC เร็ว + ย่อ/ขยาย GUI พร้อม")
