@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา(ทีละห้อง) + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v3.9)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา(ทีละห้อง) + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.0 fix Room8)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -325,12 +325,6 @@ local function treatRoom(room)
         -- Room6 (X-Ray): ปล่อยให้ blind-fire (Begin X-Ray/Process/Collect) + ปริศนาสี R6 จัดการเฟส X-ray
         -- กัน AUTO วาปเข้า-ออก Room6 ซ้ำๆ แย่งกับ R6 (เฟสนี้ไม่ต้องวาป — fp/คลิกสี ทำจากไกลได้)
         if R6_ON and room.Name == "Room6" then return false end
-        -- วินิจฉัย/วาป เฉพาะตอนคนไข้ "อยู่ในห้องจริง" — InBed หรือ อยู่ใกล้ห้อง
-        -- (roomPatient จับด้วย DesignatedRoom ที่ติดตั้งแต่คนไข้ยังยืนอยู่เคาน์เตอร์ → กันวาปไปเคาน์เตอร์)
-        local rpos = roomPos(room)
-        local pPos = patient and partPos(patient)
-        if not (patient and (patient:GetAttribute("InBed")
-            or (rpos and pPos and (pPos - rpos).Magnitude < 35))) then return false end
         local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }   -- prompt บนตัวคนไข้
         local DIAG_ROOM = {                                             -- prompt ในห้อง (เครื่อง + เตรียมคนไข้)
             ["Analyze Sample"]=true, ["Process Results"]=true,          -- Medical
@@ -338,8 +332,13 @@ local function treatRoom(room)
             ["Begin X-Ray"]=true, ["Set Up"]=true, ["Turn On"]=true,    -- Emergency เครื่อง (Room6 X-Ray / Room7 Heart)
             ["Begin"]=true, ["Collect"]=true,                           -- เริ่มเครื่อง / เก็บผล
         }
-        -- ยิงเฉพาะ .Enabled (เกม gate ลำดับเอง) ; MACHINE_ON=ON วาปไปจุดเครื่องก่อน | OFF ยิงในที่
-        if patient then
+        -- prompt บน "ตัวคนไข้" (Talk/DNA): กดเฉพาะตอนคนไข้อยู่ในห้องจริง (InBed/ใกล้ห้อง <35)
+        --   กันวาปไปกดคนไข้ที่ยังยืนอยู่เคาน์เตอร์ (roomPatient จับด้วย DesignatedRoom ตั้งแต่ก่อนเดินเข้าห้อง)
+        local rpos = roomPos(room)
+        local pPos = patient and partPos(patient)
+        local patInRoom = patient and (patient:GetAttribute("InBed")
+            or (rpos and pPos and (pPos - rpos).Magnitude < 35))
+        if patInRoom then
             for _, p in ipairs(patient:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
                     if MACHINE_ON then tpTo(partPos(patient)); task.wait(0.15) end
@@ -347,6 +346,8 @@ local function treatRoom(room)
                 end
             end
         end
+        -- *** เครื่อง/เตรียมคนไข้ ในห้อง (Sleep Patient ฯลฯ): ทำได้เสมอ — prompt อยู่ในห้อง ไม่ใช่เคาน์เตอร์ ***
+        -- (เดิม v3.3 gate ทั้งก้อน → Room8 'Sleep Patient' ไม่ยิง = ผ่าตัดไม่เริ่ม วาปมาแต่ไม่ทำ)
         for _, p in ipairs(room:GetDescendants()) do
             if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
                 if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
@@ -937,4 +938,4 @@ btn("CLOSE", 10, 580, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.9] ESP + AUTO รักษา(ทีละห้อง+กันยาผิด) + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
+print("[74RB AnimalHospital v4.0] ESP + AUTO รักษา(ทีละห้อง+fix Room8) + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
