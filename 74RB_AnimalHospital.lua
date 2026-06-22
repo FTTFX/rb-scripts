@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + ย่อ/ขยาย GUI  (v3.3)
+-- 74RB_AnimalHospital.lua — ESP + Speed + Noclip + AUTO รักษา + ฆ่าผี + ชัตเตอร์ + NPC เร็ว(ลอง)  (v3.4)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -38,6 +38,8 @@ local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
 local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี: Skinwalker ใกล้เคาน์เตอร์ → ปิดชัตเตอร์
+local NPCFAST_ON = false -- ลองเร่ง WalkSpeed ของ NPC (อาจไม่เวิร์ค ถ้า server คุมการเดิน)
+local NPC_SPEED = 28     -- ปรับได้
 local SPEED = 50
 local cam = workspace.CurrentCamera
 
@@ -484,6 +486,14 @@ bind(RS.Heartbeat, function(dt)
     acc += dt
     if acc < 0.4 then return end
     acc = 0
+    -- ลองเร่ง NPC (ทุก 0.4s) — ถ้า server คุมการเดินจะไม่มีผล (ทดสอบดู)
+    if NPCFAST_ON then
+        local npcs = workspace:FindFirstChild("NPCs")
+        if npcs then for _, m in ipairs(npcs:GetChildren()) do
+            local h = m:FindFirstChildOfClass("Humanoid")
+            if h then h.WalkSpeed = NPC_SPEED end
+        end end
+    end
     if not ESP_ON then return end
 
     local fromPos = hrp() and hrp().Position
@@ -525,9 +535,9 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 548
+local FULL_H = 584
 local f = Instance.new("Frame", gui)
-f.Size, f.Position = UDim2.new(0,190,0,FULL_H), UDim2.new(0,20,0.5,-274)
+f.Size, f.Position = UDim2.new(0,190,0,FULL_H), UDim2.new(0,20,0.5,-292)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
 f.BorderSizePixel, f.Active, f.Draggable = 0, true, true
 f.ClipsDescendants = true   -- ย่อ = ซ่อนปุ่มที่อยู่ใต้แถบหัว
@@ -838,9 +848,16 @@ shutB.MouseButton1Click:Connect(function()
     shutB.BackgroundColor3 = SHUTTER_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,30,30)
 end)
 
-btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON =
-        false, false, false, false, false, false, false, false, false
+local npcfB = btn("NPC เร็ว: OFF", 10, 508, 170, 30, Color3.fromRGB(60,60,80))
+npcfB.MouseButton1Click:Connect(function()
+    NPCFAST_ON = not NPCFAST_ON
+    npcfB.Text = "NPC เร็ว: " .. (NPCFAST_ON and "ON" or "OFF")
+    npcfB.BackgroundColor3 = NPCFAST_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(60,60,80)
+end)
+
+btn("CLOSE", 10, 544, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON =
+        false, false, false, false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
@@ -851,4 +868,4 @@ btn("CLOSE", 10, 508, 170, 22, Color3.fromRGB(120,30,30)).MouseButton1Click:Conn
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v3.3] ESP + AUTO รักษา + กันวาปไปคนไข้เคาน์เตอร์ + ชัตเตอร์ + ย่อ/ขยาย GUI พร้อม")
+print("[74RB AnimalHospital v3.4] ESP + AUTO รักษา + ชัตเตอร์ + NPC เร็ว(ลอง) + ย่อ/ขยาย GUI พร้อม")
