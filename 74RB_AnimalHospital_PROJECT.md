@@ -174,7 +174,8 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - prompt อยู่บนตัว NPC: `Workspace.NPCs.<ชื่อ>.FirePP` — ActionText วน `'Fire'`(ดับเปลว ใช้ FireCharges) → `'Treat Burns'`(รักษาแผล)
 - **flow: ดับไฟ → ทาครีม** : `'Fire'` → `fp` ดับเปลว ; `'Treat Burns'` → ต้องถือ **`Ointment`** (ครีม, ที่ `Workspace.Model.Items.Ointment.PP`) → `findPickup("Ointment")` วาปเก็บ → เลือก slot → `fp` ทา
 - `doBurning(pp)` จัดการตาม ActionText ; วนทุก 0.15s — **ไม่ใช้ถังดับเพลิง** (ถัง=tank `FireExtinguisher`:Activate เปลือง charge + ต้องเล็ง → ทิ้ง)
-- ไฟกองพื้นที่ไม่มี NPC/FirePP = ใช้ถังอย่างเดียว (ไม่ auto)
+- **ไฟกองพื้น** = มี PP `'Put out fire'` (attr `Charges=N`) ที่ `Workspace.Rooms.Emergency.RoomN...Fire.Part` (หลายจุด) → `fp` ทุกจุดที่ `.Enabled` ใต้ `Workspace.Rooms` (ทุก 0.35s) — กด E ที่ไฟ **ไม่ใช้ถัง** (ถังเป็นทางเลือก method 2 ที่ทิ้งไป)
+- ถัง `FireExtinguisher` (tank) = method 2 ไม่ใช้ (เปลือง charge + ต้องเล็ง)
 
 ### ชัตเตอร์ (กันผี) — toggle "ปิดชัตเตอร์ผี"
 - `Workspace.Misc.ShutterButton.PP` = ProximityPrompt, ActionText สลับ `'Open'`/`'Close'`
