@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.2 GUI 2 คอลัมน์)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.3 Room8 ให้ยาตามลำดับจอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -236,20 +236,36 @@ local function frameGiven(fr)
     if chk:IsA("ImageLabel") and chk.ImageTransparency >= 0.5 then return false end
     return true
 end
+-- ชื่อยาของ frame (จาก .name.Text หรือชื่อ frame)
+local function frameMed(fr)
+    local nm = fr:FindFirstChild("name")
+    return (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or fr.Name
+end
+-- frame ยาทั้งหมด "เรียงตามลำดับบนจอ" (LayoutOrder) — Room8 ผ่าตัดต้องให้ตามลำดับนี้เป๊ะ
+local function invFrames(room)
+    local inv = getReport(room); inv = inv and inv:FindFirstChild("inv")
+    if not inv then return {} end
+    local frs = {}
+    for _, fr in ipairs(inv:GetChildren()) do
+        if fr:IsA("GuiObject") then frs[#frs+1] = fr end
+    end
+    local idx = {}
+    for i, f in ipairs(frs) do idx[f] = i end
+    table.sort(frs, function(a, b)
+        if a.LayoutOrder ~= b.LayoutOrder then return a.LayoutOrder < b.LayoutOrder end
+        return idx[a] < idx[b]   -- LayoutOrder เท่ากัน = คงลำดับเดิม (sort ไม่ stable)
+    end)
+    return frs
+end
 -- นับจำนวนยาที่ต้องการ/ให้แล้ว ต่อชนิด (รองรับของซ้ำ เช่น มีดผ่าตัด ×2)
--- คืน need[m]=ต้องการกี่ชิ้น, given[m]=ให้แล้วกี่ชิ้น(ใครก็ได้), order=รายชื่อชนิดเรียงลำดับ
+-- คืน need[m]=ต้องการกี่ชิ้น, given[m]=ให้แล้วกี่ชิ้น(ใครก็ได้), order=รายชื่อชนิดเรียงลำดับจอ
 local function medCounts(room)
     local need, given, order = {}, {}, {}
-    local inv = getReport(room); inv = inv and inv:FindFirstChild("inv")
-    if not inv then return need, given, order end
-    for _, fr in ipairs(inv:GetChildren()) do
-        if fr:IsA("GuiObject") then
-            local nm = fr:FindFirstChild("name")
-            local m = (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or fr.Name
-            if (need[m] or 0) == 0 then order[#order+1] = m end
-            need[m] = (need[m] or 0) + 1
-            if frameGiven(fr) then given[m] = (given[m] or 0) + 1 end
-        end
+    for _, fr in ipairs(invFrames(room)) do
+        local m = frameMed(fr)
+        if (need[m] or 0) == 0 then order[#order+1] = m end
+        need[m] = (need[m] or 0) + 1
+        if frameGiven(fr) then given[m] = (given[m] or 0) + 1 end
     end
     return need, given, order
 end
@@ -388,16 +404,16 @@ local function treatRoom(room)
         local g = givenOf(room, m)
         if heldCount(m) < (need[m] - g) then return false end
     end
-    -- 2) ไปเตียง แล้วให้ยาแต่ละชนิด "จนครบจำนวน" (เช็คจาก given บนจอทุกครั้ง)
+    -- 2) ไปเตียง แล้วให้ยา "ทีละ frame ตามลำดับบนจอ" (Room8 ผ่าตัดสั่งสลับชนิดได้
+    --    เช่น Scalpel→Bandages→Scalpel — ให้ทีละชนิดจนครบแบบเดิม = ผิดคิว เกมไม่รับ/นับพลาด)
     local bedPP = bedApplyPP(room)
     if not bedPP or not bedPP.Parent then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
     local nslots = math.min(9, #heldTools())
-    for _, m in ipairs(order) do
-        local guard = 0
-        while not roomDone(room) and guard < 8 do
-            if givenOf(room, m) >= need[m] then break end   -- ครบจำนวนแล้ว → ชนิดถัดไป
-            guard += 1
+    for _, fr in ipairs(invFrames(room)) do
+        if roomDone(room) then break end
+        if fr.Parent and not frameGiven(fr) then
+            local m = frameMed(fr)
             -- เลือก slot ที่ถือ m
             local picked = false
             for slot = 1, nslots do
@@ -405,16 +421,14 @@ local function treatRoom(room)
                 local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
                 if held and held.Name == m then picked = true; break end
             end
-            if not picked then break end       -- ไม่มี m แล้ว (ถูกใช้หมด/ขาด) → ชนิดถัดไป
-            local held2 = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-            if not (held2 and held2.Name == m) then break end  -- กันยาผิด: ยืนยันถือ m ตรงจริงก่อนกด (เผื่อถือปืน/ของอื่น)
-            local before = givenOf(room, m)
-            pcall(fp, bedPP, 0)                 -- ให้ยา m 1 ชิ้น
-            -- poll: ยืนยันทันทีที่ given เพิ่ม เผื่อสูงสุด 0.5
+            if not picked then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
+            pcall(fp, bedPP, 0)                   -- ให้ 1 ชิ้น
+            -- poll: ยืนยัน frame "ชิ้นนี้" ถูกติ๊ก (Cured/check) เผื่อสูงสุด 0.5s
             local t0 = os.clock()
             repeat task.wait(0.03)
-            until givenOf(room, m) > before or roomDone(room) or os.clock() - t0 > 0.5
-            if givenOf(room, m) <= before and not roomDone(room) then return false end -- ไม่คืบ = ผิด หยุด
+            until not fr.Parent or frameGiven(fr) or roomDone(room) or os.clock() - t0 > 0.5
+            if fr.Parent and not frameGiven(fr) and not roomDone(room) then return false end -- ไม่คืบ = ผิด หยุด
+            task.wait(0.15)
         end
     end
     return true
@@ -945,4 +959,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.2] GUI 2 คอลัมน์ + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว พร้อม")
+print("[74RB AnimalHospital v4.3] Room8 ให้ยาตามลำดับจอ + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ พร้อม")
