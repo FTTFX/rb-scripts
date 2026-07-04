@@ -217,6 +217,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - อุปกรณ์: `Room8.Minigame.Medicine.Model.<ชื่อ>.PP` ActionText ตรงชื่อ enabled=true (Scalpel/Antibiotics/Bandages/Medkit/Organ/Transplant/IV Drops/Scissors/Medicine)
 - bed = `Bed.InBed.PP` ('Apply Treatment') / `PP2` ('Sleep Patient') ; `Bed.InBed.Attachment.UI.TextLabel` = HP เช่น '6☠️'
 - flow ใช้ medCounts/treatRoom เดิม (collect ตามชื่อ → Apply → poll Cured) — ไม่ต้องแยกโค้ด Room8
+- **v4.3 fix ความแม่นยำ:** ผ่าตัดต้องให้อุปกรณ์ **ตามลำดับบนจอ ที่สลับชนิดได้** (เช่น Scalpel→Bandages→Scalpel) — เดิมให้ "ทีละชนิดจนครบ" = ผิดคิว เกมไม่รับ → บอทหยุด/นับพลาด. แก้: `invFrames(room)` คืน frame เรียง LayoutOrder → ให้ทีละ frame, poll `frameGiven(fr)` ของชิ้นนั้นตรงๆ
 
 ### แก้ใน v2.3
 - `getScreenUI(room)` ใหม่ → คืน `TV.Screen.UI` (getReport เรียกต่อ) ; roomDone เช็ค `UI.Healing`/`UI.Failed` ตรงๆ
