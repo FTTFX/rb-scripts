@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.3 Room8 ให้ยาตามลำดับจอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.4 เช็คอิน=วาปไปเคาน์เตอร์เอง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -75,6 +75,21 @@ local function npcOwner(inst)
         n = n.Parent
     end
     return nil
+end
+
+-- มีคนไข้จริง (ไม่ใช่ผี) ใกล้เคาน์เตอร์ที่ยังไม่เช็คอิน → คืน pos เคาน์เตอร์ (ไว้วาปไปเช็คอินให้)
+local function checkinPending()
+    local misc = workspace:FindFirstChild("Misc")
+    local cpos = misc and partPos(misc:FindFirstChild("CheckIn"))
+    if not cpos then return nil end
+    local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:IsA("Model") and m:GetAttribute("IsPatient") and not m:GetAttribute("Skinwalker")
+           and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
+            local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
+            if r and (r.Position - cpos).Magnitude < 25 then return cpos end
+        end
+    end
 end
 
 local COL = {
@@ -493,6 +508,11 @@ bind(RS.Heartbeat, function(dt)
         fireAcc += dt
         if fireAcc >= 0.6 then
             fireAcc = 0
+            -- มีคนไข้มารอเช็คอิน → วาปไปเคาน์เตอร์ก่อน (prompt บางตัวต้องอยู่ใกล้)
+            if CHECKIN_ON then
+                local cpos = checkinPending()
+                if cpos then tpTo(cpos) end
+            end
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
@@ -959,4 +979,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.3] Room8 ให้ยาตามลำดับจอ + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ พร้อม")
+print("[74RB AnimalHospital v4.4] เช็คอินวาปเอง + Room8 ลำดับจอ + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ พร้อม")
