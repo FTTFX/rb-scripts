@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.15 จอ touch: คลิกเมาส์ค้างที่ปุ่ม prompt fallback ชั้น 3)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.16 FIX ด่วน: กันกดยาซ้ำ (เช็คผลจริงก่อนกดชั้นถัดไป) + เลิกหมุนกล้อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -62,36 +62,39 @@ local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local fireAcc = 0
 -- v4.11: กด prompt แบบชัวร์ — fp ก่อน ถ้า prompt ยัง Enabled อยู่ (fp โดน patch/ไม่ติด)
 -- → กด E ค้างจริงผ่าน VIM ตาม HoldDuration (ต้องอยู่ใกล้ prompt ถึงจะติด)
-local function pressPrompt(pp)
-    if not (pp and pp.Parent and pp.Enabled) then return end
-    if fp then pcall(fp, pp, pp.HoldDuration or 0); task.wait(0.15) end
-    if pp.Parent and pp.Enabled then          -- fp ไม่ติด → กด E ค้างจริง
-        pcall(function()
-            VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
-            task.wait((pp.HoldDuration or 0) + 0.2)
-            VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
-        end)
-        task.wait(0.1)
+-- v4.16: กด prompt 3 ชั้น (fp → E → คลิกจอ) แต่ "เช็คสำเร็จจากผลจริง" ก่อนลองชั้นถัดไป
+-- done() = ฟังก์ชันเช็คว่างานสำเร็จแล้ว (เช่น ยาติ๊ก/ของเข้ามือ) — สำคัญมาก:
+-- ปุ่มอย่าง Apply Treatment ไม่ดับหลังกดสำเร็จ ถ้าเช็คจาก Enabled จะกดซ้ำ = ให้ยาเกิน = คนไข้ตาย!
+local function pressPrompt(pp, done)
+    if not (pp and pp.Parent and pp.Enabled) then return true end
+    done = done or function() return not (pp.Parent and pp.Enabled) end   -- default: prompt ดับ = สำเร็จ (ใช้ได้กับ prompt one-shot เท่านั้น)
+    local function settled(timeout)
+        local t0 = os.clock()
+        repeat task.wait(0.05) until done() or os.clock() - t0 > timeout
+        return done()
     end
-    if pp.Parent and pp.Enabled then          -- v4.15: จอ touch ไม่มี E → คลิกเมาส์ค้างที่ปุ่ม prompt บนจอ
-        local pos = partPos(pp.Parent)
-        if pos then
-            local sp, vis = cam:WorldToViewportPoint(pos)
-            if not vis then   -- prompt อยู่หลังกล้อง → หันกล้องหาก่อน
-                pcall(function() cam.CFrame = CFrame.new(cam.CFrame.Position, pos) end)
-                task.wait(0.05)
-                sp, vis = cam:WorldToViewportPoint(pos)
-            end
-            if vis then
-                pcall(function()
-                    VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
-                    task.wait((pp.HoldDuration or 0) + 0.25)
-                    VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
-                end)
-                task.wait(0.1)
-            end
+    if fp then
+        pcall(fp, pp, pp.HoldDuration or 0)
+        if settled(0.4) then return true end
+    end
+    pcall(function()                          -- ชั้น 2: กด E ค้างจริง
+        VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
+        task.wait((pp.HoldDuration or 0) + 0.2)
+        VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
+    end)
+    if settled(0.3) then return true end
+    local pos = partPos(pp.Parent)            -- ชั้น 3: คลิกเมาส์ค้างที่ปุ่ม prompt (จอ touch) — ไม่หมุนกล้อง
+    if pos then
+        local sp, vis = cam:WorldToViewportPoint(pos)
+        if vis then
+            pcall(function()
+                VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
+                task.wait((pp.HoldDuration or 0) + 0.25)
+                VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
+            end)
         end
     end
+    return settled(0.3)
 end
 local function partPos(inst)
     if not inst then return nil end
@@ -470,7 +473,9 @@ local function treatRoom(room)
             local pp = findPickup(m)
             if not pp or not pp.Parent then break end
             local before = heldCount(m)
-            tpTo(partPos(pp.Parent)); task.wait(0.18); pressPrompt(pp); task.wait(0.2)
+            tpTo(partPos(pp.Parent)); task.wait(0.18)
+            pressPrompt(pp, function() return heldCount(m) > before end)   -- done = ของเข้ามือจริง
+            task.wait(0.1)
             if heldCount(m) <= before then break end  -- เก็บไม่ขึ้น → เลิก
         end
     end
@@ -497,7 +502,10 @@ local function treatRoom(room)
                 if held and held.Name == m then picked = true; break end
             end
             if not picked then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
-            pressPrompt(bedPP)                    -- ให้ 1 ชิ้น
+            -- ให้ 1 ชิ้น — done = frame "ชิ้นนี้" ติ๊กจริง (กันกดซ้ำ = ยาเกิน = ตาย)
+            pressPrompt(bedPP, function()
+                return not fr.Parent or frameGiven(fr) or roomDone(room)
+            end)
             -- poll: ยืนยัน frame "ชิ้นนี้" ถูกติ๊ก (Cured/check) เผื่อสูงสุด 0.5s
             local t0 = os.clock()
             repeat task.wait(0.03)
@@ -923,7 +931,7 @@ local function doBurning(pp)
             local cream = findPickup("Ointment")
             if not (cream and cream.Parent) then return end
             tpTo(partPos(cream.Parent)); task.wait(0.18)
-            pressPrompt(cream); task.wait(0.2)
+            pressPrompt(cream, function() return heldCount("Ointment") >= 1 end); task.wait(0.1)
             if heldCount("Ointment") < 1 then return end
         end
         for slot = 1, math.min(9, #heldTools()) do         -- เลือก slot ที่ถือ Ointment
@@ -1042,4 +1050,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.15] pressPrompt 3 ชั้น (fp→E→คลิกจอ) + เลือกห้องมีงานจริง + Room8 ก่อน + AUTO รักษา พร้อม")
+print("[74RB AnimalHospital v4.16] กันยาซ้ำ (done เช็คผลจริง) + ไม่หมุนกล้อง + เลือกห้องมีงานจริง + Room8 ก่อน พร้อม")
