@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.24 ชื่อยาใช้ fr.Name อังกฤษ — GUI แปลไทยทำบอทไม่ให้ยา)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.25 โชว์เวอร์ชันบนหัว GUI + ชื่อยาใช้ fr.Name อังกฤษ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -657,7 +657,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "ANIMAL HOSPITAL 74", Enum.Font.GothamBold, 14
+title.Text, title.Font, title.TextSize = "AH74 v4.25", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1045,4 +1045,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.24] ชื่อยาใช้ fr.Name (กัน GUI แปลไทย) + กด slot จริง + done=ยาหายจากมือ พร้อม")
+print("[74RB AnimalHospital v4.25] เวอร์ชันบนหัว GUI + ชื่อยา fr.Name + กด slot จริง + done=ยาหายจากมือ พร้อม")
