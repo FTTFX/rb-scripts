@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.21 ถอด Inspect — ตัวการกล้องล็อคติดจอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.22 ชัตเตอร์=วาปไปกดที่ปุ่ม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -906,10 +906,11 @@ do
                 local pp = shutterPP()
                 if pp and pp.Parent then
                     local ghost, pending = counterScan()
-                    if pending and pp.ActionText == "Open" then
-                        pcall(fp, pp, 0)                                   -- มีคนไข้จริงรอเช็คอิน → เปิด
-                    elseif ghost and not pending and pp.ActionText == "Close" then
-                        pcall(fp, pp, 0)                                   -- คนดีเช็คอินครบ + ผียังอยู่ → ปิด
+                    local want = (pending and pp.ActionText == "Open")                   -- คนไข้จริงรอ → เปิด
+                              or (ghost and not pending and pp.ActionText == "Close")    -- ผีอยู่+คนดีครบ → ปิด
+                    if want then
+                        tpTo(partPos(pp.Parent)); task.wait(0.15)   -- v4.22 วาปไปกดที่ปุ่ม
+                        pressPrompt(pp)
                     end
                 end
             end
@@ -1046,4 +1047,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.21] ถอด Inspect (กล้องไม่ล็อคติดจอแล้ว) + done=ยาหายจากมือ + เลือกของตามชื่อ พร้อม")
+print("[74RB AnimalHospital v4.22] ชัตเตอร์วาปไปกด + ถอด Inspect + done=ยาหายจากมือ + เลือกของตามชื่อ พร้อม")
