@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.13 Room8 ทำก่อนเสมอ + เกาะจนจบ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.14 เลือกเฉพาะห้องที่มีงาน Enabled จริง — หายค้าง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -290,6 +290,26 @@ local function heldCount(m)
     for _, t in ipairs(heldTools()) do if t.Name == m then c += 1 end end
     return c
 end
+-- v4.14: ห้องนี้มี "งานทำได้จริง" ไหม — prompt สเต็ปงาน Enabled อยู่ (ในห้อง/บนตัวคนไข้) หรือมียาต้องเก็บ
+-- ใช้กรองตอนเลือกห้อง: กัน commit ห้องที่คนไข้ยังเดินไม่ถึง/ทุกอย่างปิดอยู่ (เสียเวลาห้องละ 1.6s ฟรี)
+local WORK_ACTS = {
+    ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
+    ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
+    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true, ["Inspect"]=true, ["Apply Treatment"]=true,
+}
+local function hasWork(room, pat)
+    for _, p in ipairs(room:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.Enabled and WORK_ACTS[p.ActionText] then return true end
+    end
+    if pat then
+        for _, p in ipairs(pat:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and p.Enabled and WORK_ACTS[p.ActionText] then return true end
+        end
+    end
+    if #requiredMeds(room) > 0 then return true end   -- มียาต้องเก็บ/ให้ = มีงาน
+    return false
+end
+
 -- หา NPC คนไข้ของห้องนี้ (จาก attribute DesignatedRoom)
 local function roomPatient(room)
     local npcs = workspace:FindFirstChild("NPCs")
@@ -701,7 +721,8 @@ task.spawn(function()
                     if f then for _, room in ipairs(f:GetChildren()) do
                         local pat = roomPatient(room)
                         local ghost = pat and pat:GetAttribute("Skinwalker")
-                        if pat and not roomDone(room) and (not ghost or KILLGHOST_ON) then
+                        if pat and not roomDone(room) and (not ghost or KILLGHOST_ON)
+                           and hasWork(room, pat) then   -- v4.14: ข้ามห้องที่ยังไม่มีงานให้ทำ
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
                             -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — เจอเมื่อไหร่ทำก่อนเสมอ ห้องอื่นเรียงตามระยะ
@@ -1002,4 +1023,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.13] Room8 ก่อนเสมอ+เกาะจนจบ + Inspect + Apply(Main) + pressPrompt fallback + AUTO รักษา พร้อม")
+print("[74RB AnimalHospital v4.14] เลือกห้องที่มีงานจริงเท่านั้น + Room8 ก่อนเสมอ + Inspect + pressPrompt + AUTO รักษา พร้อม")
