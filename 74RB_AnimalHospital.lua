@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.29 หันหน้าหา prompt ก่อนยิงทุกครั้ง — กัน fp ลง prompt ตรงหน้าผิดตัว)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.30 สี R6 กดช้าลง 0.7s/ปุ่ม — กดรัวเกมนับผิด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -706,7 +706,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.29", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.30", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -897,11 +897,12 @@ do
     bind(workspace.DescendantAdded, function(d) if d.Name=="Colors" then task.wait(0.2); rearm6() end end)
     task.spawn(function()
         while _G.AH74_GEN == MYGEN do
-            if R6_ON and #seq>0 and not playing and (os.clock()-lastFlash)>2.5 then
+            if R6_ON and #seq>0 and not playing and (os.clock()-lastFlash)>3 then
                 playing=true
                 for _,n in ipairs(seq) do
                     if not R6_ON then break end
-                    local b=btn6(n); if b then click6(b); task.wait(0.35) end
+                    -- v4.30: กดช้าลง 0.35→0.7s — เกมรับไม่ทันตอนกดรัว = นับผิดบ่อย
+                    local b=btn6(n); if b then click6(b); task.wait(0.7) end
                 end
                 seq={}; bright={}; task.wait(1.2); playing=false
             elseif not R6_ON then seq={}; bright={}; playing=false end
@@ -1094,4 +1095,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.29] หันหน้าหา prompt ก่อนยิง (กันจ่ายผิดตัว Room8) + fix ฆ่าผี Model.Items พร้อม")
+print("[74RB AnimalHospital v4.30] สี R6 กดช้าลง (0.7s/ปุ่ม รอโชว์จบ 3s) + หันหน้าก่อนยิง + fix ฆ่าผี พร้อม")
