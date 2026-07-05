@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.27 เช็คอินวาปหาคนไข้ + เปิดชัตเตอร์ก่อนถ้าปิดอยู่)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.28 fix ฆ่าผี: หยิบยาผิดจากตู้ยาจริง Model.Items เท่านั้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -418,14 +418,22 @@ local function killWithWrongMed(room)
     if not bedPP or not bedPP.Parent or not bedPP.Enabled then return false end  -- ยังไม่ถึงขั้นจ่ายยา → รอ
     local needed = {}
     for _, m in ipairs(requiredMeds(room)) do needed[m] = true end
-    -- หายาสักตัวที่ไม่ใช่ของห้องนี้ (ผิดแน่นอน)
+    -- v4.28: หา "ยาผิด" จากตู้ยาจริงเท่านั้น (Workspace.Model.Items.<ชื่อ>.PP)
+    -- เดิมสแกน prompt ทั้ง workspace → คว้า 'Interact'/'Trash Item' มาเป็นยา → หา Tool ไม่เจอ → ฆ่าผีล้มเงียบ
     local wrongName, wrongPP
-    for _, p in ipairs(workspace:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and isMedicine(p.ActionText) and not needed[p.ActionText] then
-            wrongName, wrongPP = p.ActionText, p; break
+    local items = workspace:FindFirstChild("Model")
+    items = items and items:FindFirstChild("Items")
+    if items then
+        for _, it in ipairs(items:GetChildren()) do
+            local ppp = it:FindFirstChild("PP")
+            if ppp and ppp:IsA("ProximityPrompt") and not needed[it.Name] then
+                wrongName, wrongPP = it.Name, ppp; break
+            end
         end
     end
     if not wrongName then return false end
+    -- ถือยาเต็ม 3 ช่อง = เก็บเพิ่มไม่ได้ → ทิ้งอันแรกก่อน
+    if not findTool(wrongName) and #heldTools() >= 3 then discardTool(heldTools()[1]) end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
         tpTo(partPos(wrongPP.Parent)); task.wait(0.18)
         pressPrompt(wrongPP, function() return findTool(wrongName) ~= nil end, true); task.wait(0.1)
@@ -693,7 +701,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.27", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.28", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1081,4 +1089,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.27] เช็คอิน: เปิดชัตเตอร์ก่อน→วาปหาคนไข้ + EquipTool fallback + done=ยาหายจากมือ พร้อม")
+print("[74RB AnimalHospital v4.28] fix ฆ่าผี (ยาผิดจาก Model.Items) + เช็คอินเปิดชัตเตอร์ก่อน + EquipTool fallback พร้อม")
