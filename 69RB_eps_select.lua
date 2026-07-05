@@ -1,4 +1,4 @@
--- 69RB_eps_select.lua  v2.3.1
+-- 69RB_eps_select.lua  v2.4.1
 -- [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป | [E] = เปิด/ปิดล็อค
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
 -- ESP ทุกคน (แดง=คนอื่น เขียว=เป้าที่เลือก) | คลิกชื่อ = เลือกเป้า | AUTO = ใกล้สุดที่เห็น
@@ -21,7 +21,7 @@ _G.EPS69_HLS   = {}
 _G.EPS69_TAGS  = {}         -- ป้ายชื่อ+ระยะลอยเหนือหัว (แยกผู้เล่นจริง)
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.4.0"
+local V = "2.4.1"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -29,6 +29,18 @@ local UIS     = game:GetService("UserInputService")
 local World   = workspace
 local LP      = Players.LocalPlayer
 local Camera  = workspace.CurrentCamera
+
+-- เกม round-based สร้างกล้องใหม่ตอนเริ่มรอบ → ต้องตามกล้องตัวใหม่ ไม่งั้น aim อ่านกล้องเก่าที่ตายแล้ว
+table.insert(_G.EPS69_CONNS, workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    if workspace.CurrentCamera then Camera = workspace.CurrentCamera end
+end))
+
+-- เกมที่ teleport ไป place อื่นตอนเข้าแมตช์ → โหลดตัวเองซ้ำหลัง teleport
+local qot = queue_on_teleport or (syn and syn.queue_on_teleport)
+if qot and not _G.EPS69_QOT then
+    _G.EPS69_QOT = true
+    pcall(qot, 'loadstring(game:HttpGet("https://raw.githubusercontent.com/FTTFX/rb-scripts/main/69RB_eps_select.lua?v="..tick()))()')
+end
 
 local cf_lookAt = CFrame.lookAt
 local math_huge = math.huge
