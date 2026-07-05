@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.19 เลือกของตามชื่อ EquipTool — เร็ว+ไม่หลงตอนถือ 3-4 ชิ้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.20 done=ยาหายจากมือ — กันกดซ้ำตอนแลค 100%)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -499,16 +499,19 @@ local function treatRoom(room)
         if fr.Parent and not frameGiven(fr) then
             local m = frameMed(fr)
             if not selectTool(m) then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
-            -- ให้ 1 ชิ้น — done = frame "ชิ้นนี้" ติ๊กจริง (กันกดซ้ำ = ยาเกิน = ตาย)
+            -- v4.20: done = "ยาหายจากมือ" (เกม consume ทันทีที่รับ) — เร็ว+แม่นกว่ารอติ๊กบนจอ
+            -- ติ๊กขึ้นช้าตอนแลค → เวอร์ชันก่อนคิดว่าไม่ติดแล้วกดซ้ำ = ยาเกิน = ตาย
+            local before = heldCount(m)
             pressPrompt(bedPP, function()
-                return not fr.Parent or frameGiven(fr) or roomDone(room)
-            end, true)   -- fp เท่านั้น — E สแปมใกล้เตียง Room8 = คว้าของผิด
-            -- poll: ยืนยัน frame "ชิ้นนี้" ถูกติ๊ก (Cured/check) เผื่อสูงสุด 0.5s
-            local t0 = os.clock()
-            repeat task.wait(0.03)
-            until not fr.Parent or frameGiven(fr) or roomDone(room) or os.clock() - t0 > 0.5
-            if fr.Parent and not frameGiven(fr) and not roomDone(room) then return false end -- ไม่คืบ = ผิด หยุด
-            task.wait(0.15)
+                return not fr.Parent or heldCount(m) < before or frameGiven(fr) or roomDone(room)
+            end)
+            if heldCount(m) < before then                -- ยาเข้าแล้ว → รอติ๊กได้นานหน่อย (ไม่กดซ้ำแน่นอน)
+                local t0 = os.clock()
+                repeat task.wait(0.05)
+                until not fr.Parent or frameGiven(fr) or roomDone(room) or os.clock() - t0 > 2
+            end
+            if fr.Parent and not frameGiven(fr) and not roomDone(room) then return false end -- ไม่คืบ = หยุด (ไม่เดา)
+            task.wait(0.1)
         end
     end
     return true
@@ -1043,4 +1046,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.19] เลือกของตามชื่อ (EquipTool) เร็ว+แม่น + fp Hold0 + กันยาซ้ำ พร้อม")
+print("[74RB AnimalHospital v4.20] done=ยาหายจากมือ (กันกดซ้ำตอนแลค) + เลือกของตามชื่อ + fp Hold0 พร้อม")
