@@ -15,7 +15,7 @@ end
 local function scan()
     local out = {}
     local function L(s) out[#out+1] = s end
-    L("=== AH74 RoomDebug v1.0 ===")
+    L("=== AH74 RoomDebug v1.2 ===")
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then L("!! ไม่มี workspace.NPCs") else
         L("=== NPCs ("..#npcs:GetChildren()..") ===")
@@ -116,4 +116,4 @@ mkbtn("COPY", 112, function()
 end)
 mkbtn("CLOSE", 218, function() gui:Destroy(); _G.AH74DBG_GUI = nil end)
 
-print("[AH74 RoomDebug v1.0] พร้อม — RESCAN ตอนมีคนไข้นอนห้อง แล้ว COPY ส่งมา")
+print("[AH74 RoomDebug v1.2] พร้อม — RESCAN ตอนมีคนไข้นอนห้อง แล้ว COPY ส่งมา")
