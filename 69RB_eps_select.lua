@@ -1,4 +1,4 @@
--- 69RB_eps_select.lua  v2.4.2
+-- 69RB_eps_select.lua  v2.4.3
 -- [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป | [E] = เปิด/ปิดล็อค
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
 -- ESP ทุกคน (แดง=คนอื่น เขียว=เป้าที่เลือก) | คลิกชื่อ = เลือกเป้า | AUTO = ใกล้สุดที่เห็น
@@ -25,7 +25,7 @@ _G.EPS69_TAGS  = {}         -- ป้ายชื่อ+ระยะลอยเ
 _G.EPS69_BOXES = {}         -- กล่อง ESP (เห็นแม้ตัวโปร่งใส เช่นเกมซ่อนหา)
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.4.2"
+local V = "2.4.3"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -152,7 +152,8 @@ local function addHL(p)
     colorHL(p)
 end
 
--- กล่อง ESP บน HumanoidRootPart — เรนเดอร์เสมอแม้ตัวละครโปร่งใส (Highlight ไม่ขึ้นถ้า Transparency=1)
+-- กล่อง ESP บน HumanoidRootPart — ใช้ BillboardGui (ระบบเดียวกับป้ายชื่อ เรนเดอร์แน่นอน
+-- แม้ตัวละครโปร่งใส; Highlight/HandleAdornment ไม่ขึ้นในบางเกม)
 local function addBox(p)
     local char = p.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -160,17 +161,28 @@ local function addBox(p)
     local b = BOXES[p]
     if not (b and b.Adornee == root) then
         if b then pcall(function() b:Destroy() end) end
-        b = Instance.new("BoxHandleAdornment")
+        b = Instance.new("BillboardGui")
         b.Adornee = root
-        b.Size = Vector3.new(4, 5.5, 2)
-        b.CFrame = CFrame.new(0, 0.25, 0)
+        b.Size = UDim2.new(4.5, 0, 6, 0)   -- scale = หน่วย studs → กล่องขนาดตัวคน
         b.AlwaysOnTop = true
-        b.ZIndex = 5
-        b.Transparency = 0.65
         b.Parent = root
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(1, 0, 1, 0)
+        f.BackgroundTransparency = 0.85
+        f.BorderSizePixel = 0
+        f.Parent = b
+        local st = Instance.new("UIStroke")
+        st.Thickness = 2
+        st.Parent = f
         BOXES[p] = b
     end
-    b.Color3 = (target == p) and Color3.fromRGB(40, 255, 90) or Color3.fromRGB(255, 40, 40)
+    local col = (target == p) and Color3.fromRGB(40, 255, 90) or Color3.fromRGB(255, 40, 40)
+    local f = b:FindFirstChildOfClass("Frame")
+    if f then
+        f.BackgroundColor3 = col
+        local st = f:FindFirstChildOfClass("UIStroke")
+        if st then st.Color = col end
+    end
 end
 
 local function removeHL(p)
