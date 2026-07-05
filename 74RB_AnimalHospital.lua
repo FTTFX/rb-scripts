@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.7 ดับไฟ=วาปไปที่ไฟ/คนติดไฟก่อนยิง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.8 ดับไฟ=วาปไปหา + กด E จริง fallback ถ้า fp ไม่ติด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -864,14 +864,26 @@ do
     end)
 end
 
+-- กด prompt แบบชัวร์: fp ก่อน ถ้ายัง Enabled อยู่ → กด E ค้างจริงผ่าน VIM (รองรับ HoldDuration)
+local function pressPrompt(pp)
+    if fp then pcall(fp, pp, pp.HoldDuration or 0); task.wait(0.15) end
+    if pp.Parent and pp.Enabled then
+        pcall(function()
+            VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
+            task.wait((pp.HoldDuration or 0) + 0.15)
+            VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
+        end)
+    end
+end
+
 -- ===== Auto ดับไฟ + ทาครีม: คนติดไฟ (BurningPatient) มี Workspace.NPCs.<ชื่อ>.FirePP =====
 -- FirePP ActionText: 'Fire'(ดับเปลว ใช้ FireCharges) → 'Treat Burns'(ทาครีม Ointment)
 -- flow: ดับไฟ → เก็บ Ointment (Workspace.Model.Items.Ointment.PP) → เลือก slot → ทา ; fp ยิงไกลได้ ไม่ใช้ถัง
 local function doBurning(pp)
     local a = pp.ActionText
     if a == "Fire" then
-        tpTo(partPos(pp.Parent)); task.wait(0.15)          -- วาปไปหาคนติดไฟก่อน
-        pcall(fp, pp, 0)                                   -- ดับเปลว
+        tpTo(partPos(pp.Parent)); task.wait(0.15)          -- วาปไปหาคนติดไฟก่อน (เหมือนเช็คอิน)
+        pressPrompt(pp)                                    -- ดับเปลว (fp + fallback กด E)
     elseif a == "Treat Burns" then
         if heldCount("Ointment") < 1 then                  -- ยังไม่มีครีม → ไปเก็บ
             local cream = findPickup("Ointment")
@@ -885,7 +897,8 @@ local function doBurning(pp)
             local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
             if held and held.Name == "Ointment" then break end
         end
-        pcall(fp, pp, 0)                                   -- ทาครีม
+        tpTo(partPos(pp.Parent)); task.wait(0.15)          -- กลับไปหาคนไข้ (เผื่อวาปไปเก็บครีมมา)
+        pressPrompt(pp)                                    -- ทาครีม
     end
 end
 task.spawn(function()
@@ -911,7 +924,7 @@ task.spawn(function()
             if rooms then for _, d in ipairs(rooms:GetDescendants()) do
                 if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire" then
                     tpTo(partPos(d.Parent)); task.wait(0.15)  -- วาปไปที่กองไฟก่อน
-                    pcall(fp, d, 0)   -- ดับ 1 จุด (วนจน Charges หมด → prompt ปิด)
+                    pressPrompt(d)    -- ดับ 1 จุด (วนจน Charges หมด → prompt ปิด)
                 end
             end end
         end
@@ -995,4 +1008,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.7] ดับไฟวาปไปที่จุดไฟ + fix จับคนไข้ในห้อง + ESP + AUTO รักษา + ชัตเตอร์ พร้อม")
+print("[74RB AnimalHospital v4.8] ดับไฟวาปไปหา+กด E fallback + fix จับคนไข้ในห้อง + ESP + AUTO รักษา + ชัตเตอร์ พร้อม")
