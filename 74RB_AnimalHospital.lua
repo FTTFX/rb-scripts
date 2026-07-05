@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.9 เช็คอินไม่วาป + สแกนห้องไวขึ้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.10 fix: เปิดสี R6 แล้วบอทไม่ยอมวาปไป Room6)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -358,9 +358,8 @@ local function treatRoom(room)
     -- ยังไม่วินิจฉัย: คนไข้นอนเตียงแล้ว → ทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
     -- MACHINE_ON=ON วาปไปก่อนยิง | OFF ยิงในที่ (ไม่วาป — เราเดินไปเอง เหมือน Ver.ก่อน)
     if #meds == 0 then
-        -- Room6 (X-Ray): ปล่อยให้ blind-fire (Begin X-Ray/Process/Collect) + ปริศนาสี R6 จัดการเฟส X-ray
-        -- กัน AUTO วาปเข้า-ออก Room6 ซ้ำๆ แย่งกับ R6 (เฟสนี้ไม่ต้องวาป — fp/คลิกสี ทำจากไกลได้)
-        if R6_ON and room.Name == "Room6" then return false end
+        -- v4.10: ถอด gate "R6_ON ข้าม Room6" ออก — เดิมทำให้บอทไม่วาปไป Room6 เลยตอนเปิดสี R6
+        -- (ช่วงเล่นปริศนาสี prompt ในห้อง Enabled=false หมดอยู่แล้ว → ไม่มีวาปแย่งกัน)
         local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }   -- prompt บนตัวคนไข้
         local DIAG_ROOM = {                                             -- prompt ในห้อง (เครื่อง + เตรียมคนไข้)
             ["Analyze Sample"]=true, ["Process Results"]=true,          -- Medical
@@ -988,4 +987,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.9] เช็คอินไม่วาป + สแกนห้องไว (0.1s) + ดับไฟวาปไปหา + ESP + AUTO รักษา + ชัตเตอร์ พร้อม")
+print("[74RB AnimalHospital v4.10] fix Room6 วาปได้แม้เปิดสี R6 + เช็คอินไม่วาป + สแกนห้องไว + ESP + AUTO รักษา พร้อม")
