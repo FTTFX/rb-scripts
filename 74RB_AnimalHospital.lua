@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.20 done=ยาหายจากมือ — กันกดซ้ำตอนแลค 100%)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.21 ถอด Inspect — ตัวการกล้องล็อคติดจอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -56,7 +56,8 @@ local CHECKIN_ACTS = {
 local TREATD_ACTS = {
     ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
     ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
-    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true, ["Inspect"]=true,   -- v4.12 เกมเพิ่มสเต็ป Inspect
+    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true,
+    -- v4.21: เอา Inspect ออก — มันคือปุ่มซูมกล้องเข้าจอ ไม่ใช่สเต็ปรักษา (บอทกด = กล้องล็อคติดจอ)
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local fireAcc = 0
@@ -301,7 +302,7 @@ end
 local WORK_ACTS = {
     ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
     ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
-    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true, ["Inspect"]=true, ["Apply Treatment"]=true,
+    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true, ["Apply Treatment"]=true,
 }
 local function hasWork(room, pat)
     for _, p in ipairs(room:GetDescendants()) do
@@ -436,8 +437,7 @@ local function treatRoom(room)
             ["Prepare Patient"]=true, ["Sleep Patient"]=true,           -- Emergency เตรียมคนไข้ลงเตียง
             ["Begin X-Ray"]=true, ["Set Up"]=true, ["Turn On"]=true,    -- Emergency เครื่อง (Room6 X-Ray / Room7 Heart)
             ["Begin"]=true, ["Collect"]=true,                           -- เริ่มเครื่อง / เก็บผล
-            ["Inspect"]=true,                                           -- v4.12 สเต็ปใหม่ของเกม (Monitor/Model)
-        }
+        }                                                               -- (Inspect = ซูมจอ ไม่ใช่งาน — ห้ามใส่)
         -- prompt บน "ตัวคนไข้" (Talk/DNA): กดเฉพาะตอนคนไข้อยู่ในห้องจริง (InBed/ใกล้ห้อง <35)
         --   กันวาปไปกดคนไข้ที่ยังยืนอยู่เคาน์เตอร์ (roomPatient จับด้วย DesignatedRoom ตั้งแต่ก่อนเดินเข้าห้อง)
         local rpos = roomPos(room)
@@ -1046,4 +1046,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.20] done=ยาหายจากมือ (กันกดซ้ำตอนแลค) + เลือกของตามชื่อ + fp Hold0 พร้อม")
+print("[74RB AnimalHospital v4.21] ถอด Inspect (กล้องไม่ล็อคติดจอแล้ว) + done=ยาหายจากมือ + เลือกของตามชื่อ พร้อม")
