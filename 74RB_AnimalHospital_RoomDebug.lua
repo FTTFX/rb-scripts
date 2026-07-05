@@ -24,6 +24,11 @@ local function scan()
             for k, v in pairs(m:GetAttributes()) do a[#a+1] = k.."="..tostring(v) end
             table.sort(a)
             L("[NPC] "..m.Name.." | "..table.concat(a, " "))
+            for _, p in ipairs(m:GetDescendants()) do
+                if p:IsA("ProximityPrompt") then
+                    L(("   PP '%s' obj=%s Enabled=%s"):format(p.ActionText, p.Parent.Name, tostring(p.Enabled)))
+                end
+            end
         end
     end
     L("=== ROOMS ===")
@@ -55,6 +60,22 @@ local function scan()
                         tostring(ui ~= nil), tostring(rep ~= nil),
                         tostring(healing and healing.Visible),
                         nearest and nearest.Name or "-", nd and math.floor(nd) or -1))
+                    -- v1.1: dump prompt ทุกตัวในห้อง + inv
+                    for _, p in ipairs(room:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") then
+                            L(("   PP '%s' obj=%s Enabled=%s Hold=%.1f"):format(
+                                p.ActionText, p.Parent.Name, tostring(p.Enabled), p.HoldDuration))
+                        end
+                    end
+                    local inv = rep and rep:FindFirstChild("inv")
+                    if inv then
+                        for _, fr in ipairs(inv:GetChildren()) do
+                            if fr:IsA("GuiObject") then
+                                local nm = fr:FindFirstChild("name")
+                                L("   INV "..fr.Name.." name="..tostring(nm and nm:IsA("TextLabel") and nm.Text))
+                            end
+                        end
+                    end
                 end
             end
         end
