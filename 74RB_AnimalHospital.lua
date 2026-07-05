@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.10 fix: เปิดสี R6 แล้วบอทไม่ยอมวาปไป Room6)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.11 fp อาจโดน patch → ทุกจุดสำคัญกด E จริงผ่าน VIM fallback)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -60,6 +60,20 @@ local TREATD_ACTS = {
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local fireAcc = 0
+-- v4.11: กด prompt แบบชัวร์ — fp ก่อน ถ้า prompt ยัง Enabled อยู่ (fp โดน patch/ไม่ติด)
+-- → กด E ค้างจริงผ่าน VIM ตาม HoldDuration (ต้องอยู่ใกล้ prompt ถึงจะติด)
+local function pressPrompt(pp)
+    if not (pp and pp.Parent and pp.Enabled) then return end
+    if fp then pcall(fp, pp, pp.HoldDuration or 0); task.wait(0.15) end
+    if pp.Parent and pp.Enabled then
+        pcall(function()
+            VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
+            task.wait((pp.HoldDuration or 0) + 0.2)
+            VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
+        end)
+        task.wait(0.1)
+    end
+end
 local function partPos(inst)
     if not inst then return nil end
     if inst:IsA("BasePart") then return inst.Position end
@@ -172,7 +186,7 @@ local function discardTool(tool)
     if not (h and tp and tp.Parent) then return end
     pcall(function() h:EquipTool(tool) end); task.wait(0.15)
     tpTo(partPos(tp.Parent)); task.wait(0.2)
-    pcall(fp, tp, 0); task.wait(0.2)
+    pressPrompt(tp); task.wait(0.2)
 end
 -- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
 local function cleanInventory(needed)
@@ -332,7 +346,7 @@ local function killWithWrongMed(room)
     end
     if not wrongName then return false end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
-        tpTo(partPos(wrongPP.Parent)); task.wait(0.18); pcall(fp, wrongPP, 0); task.wait(0.2)
+        tpTo(partPos(wrongPP.Parent)); task.wait(0.18); pressPrompt(wrongPP); task.wait(0.2)
     end
     if not findTool(wrongName) then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
@@ -340,7 +354,7 @@ local function killWithWrongMed(room)
         pressSlot(slot); task.wait(0.08)
         local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
         if held and held.Name == wrongName then
-            pcall(fp, bedPP, 0); task.wait(0.2); return true
+            pressPrompt(bedPP); task.wait(0.2); return true
         end
     end
     return false
@@ -377,7 +391,7 @@ local function treatRoom(room)
             for _, p in ipairs(patient:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
                     if MACHINE_ON then tpTo(partPos(patient)); task.wait(0.15) end
-                    pcall(fp, p, 0); task.wait(0.1)
+                    pressPrompt(p); task.wait(0.1)
                 end
             end
         end
@@ -386,7 +400,7 @@ local function treatRoom(room)
         for _, p in ipairs(room:GetDescendants()) do
             if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
                 if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
-                pcall(fp, p, 0); task.wait(0.1)
+                pressPrompt(p); task.wait(0.1)
             end
         end
         return false
@@ -407,7 +421,7 @@ local function treatRoom(room)
             local pp = findPickup(m)
             if not pp or not pp.Parent then break end
             local before = heldCount(m)
-            tpTo(partPos(pp.Parent)); task.wait(0.18); pcall(fp, pp, 0); task.wait(0.2)
+            tpTo(partPos(pp.Parent)); task.wait(0.18); pressPrompt(pp); task.wait(0.2)
             if heldCount(m) <= before then break end  -- เก็บไม่ขึ้น → เลิก
         end
     end
@@ -434,7 +448,7 @@ local function treatRoom(room)
                 if held and held.Name == m then picked = true; break end
             end
             if not picked then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
-            pcall(fp, bedPP, 0)                   -- ให้ 1 ชิ้น
+            pressPrompt(bedPP)                    -- ให้ 1 ชิ้น
             -- poll: ยืนยัน frame "ชิ้นนี้" ถูกติ๊ก (Cured/check) เผื่อสูงสุด 0.5s
             local t0 = os.clock()
             repeat task.wait(0.03)
@@ -843,18 +857,6 @@ do
     end)
 end
 
--- กด prompt แบบชัวร์: fp ก่อน ถ้ายัง Enabled อยู่ → กด E ค้างจริงผ่าน VIM (รองรับ HoldDuration)
-local function pressPrompt(pp)
-    if fp then pcall(fp, pp, pp.HoldDuration or 0); task.wait(0.15) end
-    if pp.Parent and pp.Enabled then
-        pcall(function()
-            VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
-            task.wait((pp.HoldDuration or 0) + 0.15)
-            VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
-        end)
-    end
-end
-
 -- ===== Auto ดับไฟ + ทาครีม: คนติดไฟ (BurningPatient) มี Workspace.NPCs.<ชื่อ>.FirePP =====
 -- FirePP ActionText: 'Fire'(ดับเปลว ใช้ FireCharges) → 'Treat Burns'(ทาครีม Ointment)
 -- flow: ดับไฟ → เก็บ Ointment (Workspace.Model.Items.Ointment.PP) → เลือก slot → ทา ; fp ยิงไกลได้ ไม่ใช้ถัง
@@ -868,7 +870,7 @@ local function doBurning(pp)
             local cream = findPickup("Ointment")
             if not (cream and cream.Parent) then return end
             tpTo(partPos(cream.Parent)); task.wait(0.18)
-            pcall(fp, cream, 0); task.wait(0.2)
+            pressPrompt(cream); task.wait(0.2)
             if heldCount("Ointment") < 1 then return end
         end
         for slot = 1, math.min(9, #heldTools()) do         -- เลือก slot ที่ถือ Ointment
@@ -987,4 +989,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.10] fix Room6 วาปได้แม้เปิดสี R6 + เช็คอินไม่วาป + สแกนห้องไว + ESP + AUTO รักษา พร้อม")
+print("[74RB AnimalHospital v4.11] pressPrompt (fp + กด E จริง fallback) ทุกจุดสำคัญ + fix Room6/R6 + ESP + AUTO รักษา พร้อม")
