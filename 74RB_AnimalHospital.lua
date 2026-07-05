@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.14 เลือกเฉพาะห้องที่มีงาน Enabled จริง — หายค้าง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.15 จอ touch: คลิกเมาส์ค้างที่ปุ่ม prompt fallback ชั้น 3)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -65,13 +65,32 @@ local fireAcc = 0
 local function pressPrompt(pp)
     if not (pp and pp.Parent and pp.Enabled) then return end
     if fp then pcall(fp, pp, pp.HoldDuration or 0); task.wait(0.15) end
-    if pp.Parent and pp.Enabled then
+    if pp.Parent and pp.Enabled then          -- fp ไม่ติด → กด E ค้างจริง
         pcall(function()
             VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
             task.wait((pp.HoldDuration or 0) + 0.2)
             VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
         end)
         task.wait(0.1)
+    end
+    if pp.Parent and pp.Enabled then          -- v4.15: จอ touch ไม่มี E → คลิกเมาส์ค้างที่ปุ่ม prompt บนจอ
+        local pos = partPos(pp.Parent)
+        if pos then
+            local sp, vis = cam:WorldToViewportPoint(pos)
+            if not vis then   -- prompt อยู่หลังกล้อง → หันกล้องหาก่อน
+                pcall(function() cam.CFrame = CFrame.new(cam.CFrame.Position, pos) end)
+                task.wait(0.05)
+                sp, vis = cam:WorldToViewportPoint(pos)
+            end
+            if vis then
+                pcall(function()
+                    VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
+                    task.wait((pp.HoldDuration or 0) + 0.25)
+                    VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
+                end)
+                task.wait(0.1)
+            end
+        end
     end
 end
 local function partPos(inst)
@@ -1023,4 +1042,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.14] เลือกห้องที่มีงานจริงเท่านั้น + Room8 ก่อนเสมอ + Inspect + pressPrompt + AUTO รักษา พร้อม")
+print("[74RB AnimalHospital v4.15] pressPrompt 3 ชั้น (fp→E→คลิกจอ) + เลือกห้องมีงานจริง + Room8 ก่อน + AUTO รักษา พร้อม")
