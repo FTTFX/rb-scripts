@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.22 ชัตเตอร์=วาปไปกดที่ปุ่ม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.23 FIX: เลิก EquipTool — เกมอ่าน slot ที่เลือก, กดปุ่ม slot จริงเท่านั้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -317,22 +317,16 @@ local function hasWork(room, pat)
     return false
 end
 
--- v4.19: เลือกของที่จะถือ "ตามชื่อ" — เร็ว+แม่นกว่าไล่กดปุ่ม 1-9
--- 1) ถืออยู่แล้ว = จบ  2) EquipTool ตรงๆ (ทันที)  3) fallback ไล่กด slot (รอ equip จริงต่อช่อง)
+-- v4.23: เลือกของด้วย "กดปุ่ม slot จริง" เท่านั้น — *** ห้ามใช้ EquipTool เด็ดขาด ***
+-- เกมอ่านจากช่อง hotbar ที่เลือก ไม่ใช่ Tool ที่ถือ (EquipTool ถือถูกแต่เกมเห็นช่องเก่า
+-- → Apply = ยาผิด = ตาย — พลาดมาแล้วใน v4.19-4.22) ; เร็วด้วย poll แทน wait คงที่
 local function heldName()
     local t = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
     return t and t.Name
 end
 local function selectTool(m)
-    if heldName() == m then return true end
-    local tool = findTool(m)
-    if tool then
-        pcall(function() hum():EquipTool(tool) end)
-        local t0 = os.clock()
-        repeat task.wait(0.03) until heldName() == m or os.clock() - t0 > 0.4
-        if heldName() == m then return true end
-    end
-    for slot = 1, math.min(9, #heldTools()) do   -- fallback: บาง executor EquipTool ไม่ติด
+    if heldName() == m then return true end   -- ถือด้วยการกด slot มาแล้ว = เกมเห็นช่องนี้อยู่
+    for slot = 1, math.min(9, #heldTools()) do
         pressSlot(slot)
         local t0 = os.clock()
         repeat task.wait(0.03) until heldName() == m or os.clock() - t0 > 0.25
@@ -1047,4 +1041,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.22] ชัตเตอร์วาปไปกด + ถอด Inspect + done=ยาหายจากมือ + เลือกของตามชื่อ พร้อม")
+print("[74RB AnimalHospital v4.23] เลือกของด้วยกด slot จริง (เลิก EquipTool — ต้นเหตุ Room8 ยาผิด) พร้อม")
