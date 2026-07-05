@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.18 fp + HoldDuration=0 bypass — ตัด E/คลิกจอทิ้งถาวร ไม่มีสแปม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.19 เลือกของตามชื่อ EquipTool — เร็ว+ไม่หลงตอนถือ 3-4 ชิ้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -316,6 +316,30 @@ local function hasWork(room, pat)
     return false
 end
 
+-- v4.19: เลือกของที่จะถือ "ตามชื่อ" — เร็ว+แม่นกว่าไล่กดปุ่ม 1-9
+-- 1) ถืออยู่แล้ว = จบ  2) EquipTool ตรงๆ (ทันที)  3) fallback ไล่กด slot (รอ equip จริงต่อช่อง)
+local function heldName()
+    local t = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+    return t and t.Name
+end
+local function selectTool(m)
+    if heldName() == m then return true end
+    local tool = findTool(m)
+    if tool then
+        pcall(function() hum():EquipTool(tool) end)
+        local t0 = os.clock()
+        repeat task.wait(0.03) until heldName() == m or os.clock() - t0 > 0.4
+        if heldName() == m then return true end
+    end
+    for slot = 1, math.min(9, #heldTools()) do   -- fallback: บาง executor EquipTool ไม่ติด
+        pressSlot(slot)
+        local t0 = os.clock()
+        repeat task.wait(0.03) until heldName() == m or os.clock() - t0 > 0.25
+        if heldName() == m then return true end
+    end
+    return false
+end
+
 -- หา NPC คนไข้ของห้องนี้ (จาก attribute DesignatedRoom)
 local function roomPatient(room)
     local npcs = workspace:FindFirstChild("NPCs")
@@ -386,12 +410,8 @@ local function killWithWrongMed(room)
     end
     if not findTool(wrongName) then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
-    for slot = 1, math.min(9, #heldTools()) do
-        pressSlot(slot); task.wait(0.08)
-        local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-        if held and held.Name == wrongName then
-            pressPrompt(bedPP, nil, true); task.wait(0.2); return true   -- fp เท่านั้น
-        end
+    if selectTool(wrongName) then
+        pressPrompt(bedPP); task.wait(0.2); return true
     end
     return false
 end
@@ -474,19 +494,11 @@ local function treatRoom(room)
     local bedPP = bedApplyPP(room)
     if not bedPP or not bedPP.Parent then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
-    local nslots = math.min(9, #heldTools())
     for _, fr in ipairs(invFrames(room)) do
         if roomDone(room) then break end
         if fr.Parent and not frameGiven(fr) then
             local m = frameMed(fr)
-            -- เลือก slot ที่ถือ m
-            local picked = false
-            for slot = 1, nslots do
-                pressSlot(slot); task.wait(0.08)
-                local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-                if held and held.Name == m then picked = true; break end
-            end
-            if not picked then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
+            if not selectTool(m) then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
             -- ให้ 1 ชิ้น — done = frame "ชิ้นนี้" ติ๊กจริง (กันกดซ้ำ = ยาเกิน = ตาย)
             pressPrompt(bedPP, function()
                 return not fr.Parent or frameGiven(fr) or roomDone(room)
@@ -919,11 +931,7 @@ local function doBurning(pp)
             pressPrompt(cream, function() return heldCount("Ointment") >= 1 end, true); task.wait(0.1)
             if heldCount("Ointment") < 1 then return end
         end
-        for slot = 1, math.min(9, #heldTools()) do         -- เลือก slot ที่ถือ Ointment
-            pressSlot(slot); task.wait(0.06)
-            local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-            if held and held.Name == "Ointment" then break end
-        end
+        if not selectTool("Ointment") then return end      -- เลือกครีมตามชื่อ
         tpTo(partPos(pp.Parent)); task.wait(0.15)          -- กลับไปหาคนไข้ (เผื่อวาปไปเก็บครีมมา)
         pressPrompt(pp, nil, true)                         -- ทาครีม (fp เท่านั้น — ถือของอยู่ กัน E มั่ว)
     end
@@ -1035,4 +1043,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.18] fp+Hold0 bypass (ไม่มี E/คลิกจอ ไม่มีสแปม) + กันยาซ้ำ + เลือกห้องมีงานจริง พร้อม")
+print("[74RB AnimalHospital v4.19] เลือกของตามชื่อ (EquipTool) เร็ว+แม่น + fp Hold0 + กันยาซ้ำ พร้อม")
