@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.25 โชว์เวอร์ชันบนหัว GUI + ชื่อยาใช้ fr.Name อังกฤษ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.26 touch: EquipTool fallback หลังกด slot ไม่ติด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -329,14 +329,22 @@ local function heldName()
     return t and t.Name
 end
 local function selectTool(m)
-    if heldName() == m then return true end   -- ถือด้วยการกด slot มาแล้ว = เกมเห็นช่องนี้อยู่
-    for slot = 1, math.min(9, #heldTools()) do
+    if heldName() == m then return true end
+    for slot = 1, math.min(9, #heldTools()) do   -- PC: กดเลข slot จริง
         pressSlot(slot)
         local t0 = os.clock()
         repeat task.wait(0.03) until heldName() == m or os.clock() - t0 > 0.25
         if heldName() == m then return true end
     end
-    return false
+    -- v4.26: จอ touch กดเลขไม่ได้ (VIM คีย์บอร์ดไม่ติด) → EquipTool เป็นทางสุดท้าย
+    -- ปลอดภัยเพราะ apply เช็ค done=ยาหายจากมือ — เกมไม่รับก็แค่ไม่ติ๊ก ไม่กดซ้ำ
+    local tool = findTool(m)
+    if tool then
+        pcall(function() hum():EquipTool(tool) end)
+        local t0 = os.clock()
+        repeat task.wait(0.03) until heldName() == m or os.clock() - t0 > 0.4
+    end
+    return heldName() == m
 end
 
 -- หา NPC คนไข้ของห้องนี้ (จาก attribute DesignatedRoom)
@@ -657,7 +665,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.25", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.26", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1045,4 +1053,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.25] เวอร์ชันบนหัว GUI + ชื่อยา fr.Name + กด slot จริง + done=ยาหายจากมือ พร้อม")
+print("[74RB AnimalHospital v4.26] touch: slot ไม่ติด→EquipTool fallback + ชื่อยา fr.Name + done=ยาหายจากมือ พร้อม")
