@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.17 จุดเกี่ยวกับของ/ยา = fp เท่านั้น ห้าม E/คลิกจอ — กัน Room8 คว้าของผิด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.18 fp + HoldDuration=0 bypass — ตัด E/คลิกจอทิ้งถาวร ไม่มีสแปม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -65,39 +65,20 @@ local fireAcc = 0
 -- v4.16: กด prompt 3 ชั้น (fp → E → คลิกจอ) แต่ "เช็คสำเร็จจากผลจริง" ก่อนลองชั้นถัดไป
 -- done() = ฟังก์ชันเช็คว่างานสำเร็จแล้ว (เช่น ยาติ๊ก/ของเข้ามือ) — สำคัญมาก:
 -- ปุ่มอย่าง Apply Treatment ไม่ดับหลังกดสำเร็จ ถ้าเช็คจาก Enabled จะกดซ้ำ = ให้ยาเกิน = คนไข้ตาย!
--- safeOnly=true → ใช้ fp อย่างเดียว ห้าม E/คลิกจอ (E ไม่เลือกเป้า — Room8 ของกองรอบเตียง
--- กด E ติดปุ่มข้างๆ = คว้าของผิด/ทิ้งของ) ใช้กับทุกจุดที่เกี่ยวกับของ/ยา
-local function pressPrompt(pp, done, safeOnly)
+-- v4.18: กด prompt ทางเดียว = fp + bypass กดค้าง (ตั้ง HoldDuration=0 ชั่วคราว → fp → คืนค่า)
+-- เกมบังคับกดค้าง 0.2-1.0s ทำให้ fp เฉยๆ โดนเมิน — ตัดชั้น E/คลิกจอทิ้งถาวร (สแปมมั่ว/คว้าของผิด)
+local function pressPrompt(pp, done)
     if not (pp and pp.Parent and pp.Enabled) then return true end
-    done = done or function() return not (pp.Parent and pp.Enabled) end   -- default: prompt ดับ = สำเร็จ (ใช้ได้กับ prompt one-shot เท่านั้น)
-    local function settled(timeout)
-        local t0 = os.clock()
-        repeat task.wait(0.05) until done() or os.clock() - t0 > timeout
-        return done()
-    end
+    done = done or function() return not (pp.Parent and pp.Enabled) end
     if fp then
-        pcall(fp, pp, pp.HoldDuration or 0)
-        if settled(0.4) then return true end
+        local hold = pp.HoldDuration
+        pp.HoldDuration = 0
+        pcall(fp, pp, 0)
+        pp.HoldDuration = hold
     end
-    if safeOnly then return done() end
-    pcall(function()                          -- ชั้น 2: กด E ค้างจริง
-        VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
-        task.wait((pp.HoldDuration or 0) + 0.2)
-        VIM:SendKeyEvent(false, pp.KeyboardKeyCode, false, game)
-    end)
-    if settled(0.3) then return true end
-    local pos = partPos(pp.Parent)            -- ชั้น 3: คลิกเมาส์ค้างที่ปุ่ม prompt (จอ touch) — ไม่หมุนกล้อง
-    if pos then
-        local sp, vis = cam:WorldToViewportPoint(pos)
-        if vis then
-            pcall(function()
-                VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
-                task.wait((pp.HoldDuration or 0) + 0.25)
-                VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
-            end)
-        end
-    end
-    return settled(0.3)
+    local t0 = os.clock()
+    repeat task.wait(0.05) until done() or os.clock() - t0 > 0.5
+    return done()
 end
 local function partPos(inst)
     if not inst then return nil end
@@ -1054,4 +1035,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.17] ของ/ยา=fp เท่านั้น (กัน E มั่ว Room8) + กันยาซ้ำ + เลือกห้องมีงานจริง พร้อม")
+print("[74RB AnimalHospital v4.18] fp+Hold0 bypass (ไม่มี E/คลิกจอ ไม่มีสแปม) + กันยาซ้ำ + เลือกห้องมีงานจริง พร้อม")
