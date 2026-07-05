@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.11 fp อาจโดน patch → ทุกจุดสำคัญกด E จริงผ่าน VIM fallback)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.12 เพิ่มสเต็ป Inspect + Apply เอาตัว Enabled + สลับห้องไว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -56,7 +56,7 @@ local CHECKIN_ACTS = {
 local TREATD_ACTS = {
     ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
     ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
-    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true,
+    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true, ["Inspect"]=true,   -- v4.12 เกมเพิ่มสเต็ป Inspect
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local fireAcc = 0
@@ -313,15 +313,24 @@ local function roomPatient(room)
 end
 -- หา prompt "Apply Treatment" — ในห้อง (Room7/8 มีเตียง) หรือ บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง)
 local function bedApplyPP(room)
+    -- v4.12: มี 'Apply Treatment' หลายตัว (InBed เก่า Enabled=false + Main ตัวจริง) → เอาตัว Enabled ก่อน
+    local first
     for _, p in ipairs(room:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then return p end
+        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then
+            if p.Enabled then return p end
+            first = first or p
+        end
     end
     local pat = roomPatient(room)   -- คนไข้ยืน: prompt อยู่บน NPC (ใน Workspace.NPCs ไม่ใช่ใต้ room)
     if pat then
         for _, p in ipairs(pat:GetDescendants()) do
-            if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then return p end
+            if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then
+                if p.Enabled then return p end
+                first = first or p
+            end
         end
     end
+    return first
 end
 -- ตำแหน่งห้อง (ใช้เตียง) สำหรับเรียงระยะใกล้
 local function roomPos(room)
@@ -380,6 +389,7 @@ local function treatRoom(room)
             ["Prepare Patient"]=true, ["Sleep Patient"]=true,           -- Emergency เตรียมคนไข้ลงเตียง
             ["Begin X-Ray"]=true, ["Set Up"]=true, ["Turn On"]=true,    -- Emergency เครื่อง (Room6 X-Ray / Room7 Heart)
             ["Begin"]=true, ["Collect"]=true,                           -- เริ่มเครื่อง / เก็บผล
+            ["Inspect"]=true,                                           -- v4.12 สเต็ปใหม่ของเกม (Monitor/Model)
         }
         -- prompt บน "ตัวคนไข้" (Talk/DNA): กดเฉพาะตอนคนไข้อยู่ในห้องจริง (InBed/ใกล้ห้อง <35)
         --   กันวาปไปกดคนไข้ที่ยังยืนอยู่เคาน์เตอร์ (roomPatient จับด้วย DesignatedRoom ตั้งแต่ก่อนเดินเข้าห้อง)
@@ -701,7 +711,7 @@ task.spawn(function()
                 if target then
                     local guard = 0
                     while AUTO_ON and _G.AH74_GEN == MYGEN
-                          and not roomDone(target) and guard < 30 do  -- ~6s/ห้อง กันค้าง
+                          and not roomDone(target) and guard < 8 do   -- v4.12: ~1.6s/ห้อง แล้วสลับดูห้องอื่น (เดิม 6s ทำให้ดูเหมือนรอ)
                         guard += 1
                         pcall(treatRoom, target)
                         task.wait(0.2)
@@ -989,4 +999,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.11] pressPrompt (fp + กด E จริง fallback) ทุกจุดสำคัญ + fix Room6/R6 + ESP + AUTO รักษา พร้อม")
+print("[74RB AnimalHospital v4.12] Inspect + Apply(Main) + สลับห้องไว 1.6s + pressPrompt fallback + ESP + AUTO รักษา พร้อม")
