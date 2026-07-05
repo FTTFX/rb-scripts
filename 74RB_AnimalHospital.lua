@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.23 FIX: เลิก EquipTool — เกมอ่าน slot ที่เลือก, กดปุ่ม slot จริงเท่านั้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.24 ชื่อยาใช้ fr.Name อังกฤษ — GUI แปลไทยทำบอทไม่ให้ยา)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -242,7 +242,9 @@ local function requiredMeds(room)
     for _, fr in ipairs(inv:GetChildren()) do
         if fr:IsA("GuiObject") then
             local nm = fr:FindFirstChild("name")
-            meds[#meds+1] = (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or fr.Name
+            local txt = (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or nil
+            -- ชื่อ frame (อังกฤษ) นำ — .name.Text โดนแปลไทย ใช้เป็น fallback เท่านั้น
+            meds[#meds+1] = (fr.Name ~= "" and fr.Name ~= "Template") and fr.Name or txt or fr.Name
         end
     end
     return meds
@@ -257,8 +259,10 @@ local function frameGiven(fr)
     if chk:IsA("ImageLabel") and chk.ImageTransparency >= 0.5 then return false end
     return true
 end
--- ชื่อยาของ frame (จาก .name.Text หรือชื่อ frame)
+-- ชื่อยาของ frame — v4.24: ใช้ "ชื่อ frame" ก่อน (อังกฤษเสมอ ตรงกับ Tool/ActionText)
+-- ห้ามใช้ .name.Text นำ: เกม auto-แปลไทย ("น้ำเชื่อมเมเปิ้ล") → เทียบ Tool "Maple Syrup" ไม่ตรง → บอทไม่ให้ยา
 local function frameMed(fr)
+    if fr.Name ~= "" and fr.Name ~= "Template" then return fr.Name end
     local nm = fr:FindFirstChild("name")
     return (nm and nm:IsA("TextLabel") and nm.Text ~= "") and nm.Text or fr.Name
 end
@@ -1041,4 +1045,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.23] เลือกของด้วยกด slot จริง (เลิก EquipTool — ต้นเหตุ Room8 ยาผิด) พร้อม")
+print("[74RB AnimalHospital v4.24] ชื่อยาใช้ fr.Name (กัน GUI แปลไทย) + กด slot จริง + done=ยาหายจากมือ พร้อม")
