@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.26 touch: EquipTool fallback หลังกด slot ไม่ติด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.27 เช็คอินวาปหาคนไข้ + เปิดชัตเตอร์ก่อนถ้าปิดอยู่)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -96,6 +96,21 @@ local function npcOwner(inst)
         n = n.Parent
     end
     return nil
+end
+
+-- v4.27: คนไข้จริง (ไม่ใช่ผี) ใกล้เคาน์เตอร์ที่ยังไม่เช็คอิน → คืน pos ตัวคนไข้ (ไว้วาปไปเช็คอิน)
+local function checkinPending()
+    local misc = workspace:FindFirstChild("Misc")
+    local cpos = misc and partPos(misc:FindFirstChild("CheckIn"))
+    if not cpos then return nil end
+    local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:IsA("Model") and m:GetAttribute("IsPatient") and not m:GetAttribute("Skinwalker")
+           and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
+            local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
+            if r and (r.Position - cpos).Magnitude < 25 then return r.Position end
+        end
+    end
 end
 
 local COL = {
@@ -582,7 +597,20 @@ bind(RS.Heartbeat, function(dt)
         fireAcc += dt
         if fireAcc >= 0.3 then   -- v4.9 เร็วขึ้น 2 เท่า
             fireAcc = 0
-            -- v4.9: เช็คอินไม่วาปหาคนไข้แล้ว — ยิง prompt จากที่ที่ยืนอยู่เลย (fp ยิงไกลได้)
+            -- v4.27: เช็คอินวาปหาคนไข้เหมือนเดิม — แต่ถ้าชัตเตอร์ปิดอยู่ วาปไปเปิดก่อน
+            if CHECKIN_ON then
+                local cpos = checkinPending()
+                if cpos then
+                    local misc = workspace:FindFirstChild("Misc")
+                    local sb = misc and misc:FindFirstChild("ShutterButton")
+                    local spp = sb and sb:FindFirstChild("PP")
+                    if spp and spp.Enabled and spp.ActionText == "Open" then   -- ประตูปิดอยู่ → เปิดก่อน
+                        tpTo(partPos(sb)); task.wait(0.15)
+                        pressPrompt(spp)
+                    end
+                    tpTo(cpos)   -- แล้วค่อยวาปไปข้างคนไข้
+                end
+            end
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
@@ -665,7 +693,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.26", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.27", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1053,4 +1081,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.26] touch: slot ไม่ติด→EquipTool fallback + ชื่อยา fr.Name + done=ยาหายจากมือ พร้อม")
+print("[74RB AnimalHospital v4.27] เช็คอิน: เปิดชัตเตอร์ก่อน→วาปหาคนไข้ + EquipTool fallback + done=ยาหายจากมือ พร้อม")
