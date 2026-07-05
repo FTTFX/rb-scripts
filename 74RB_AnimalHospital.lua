@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.28 fix ฆ่าผี: หยิบยาผิดจากตู้ยาจริง Model.Items เท่านั้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.29 หันหน้าหา prompt ก่อนยิงทุกครั้ง — กัน fp ลง prompt ตรงหน้าผิดตัว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -61,26 +61,6 @@ local TREATD_ACTS = {
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local fireAcc = 0
--- v4.11: กด prompt แบบชัวร์ — fp ก่อน ถ้า prompt ยัง Enabled อยู่ (fp โดน patch/ไม่ติด)
--- → กด E ค้างจริงผ่าน VIM ตาม HoldDuration (ต้องอยู่ใกล้ prompt ถึงจะติด)
--- v4.16: กด prompt 3 ชั้น (fp → E → คลิกจอ) แต่ "เช็คสำเร็จจากผลจริง" ก่อนลองชั้นถัดไป
--- done() = ฟังก์ชันเช็คว่างานสำเร็จแล้ว (เช่น ยาติ๊ก/ของเข้ามือ) — สำคัญมาก:
--- ปุ่มอย่าง Apply Treatment ไม่ดับหลังกดสำเร็จ ถ้าเช็คจาก Enabled จะกดซ้ำ = ให้ยาเกิน = คนไข้ตาย!
--- v4.18: กด prompt ทางเดียว = fp + bypass กดค้าง (ตั้ง HoldDuration=0 ชั่วคราว → fp → คืนค่า)
--- เกมบังคับกดค้าง 0.2-1.0s ทำให้ fp เฉยๆ โดนเมิน — ตัดชั้น E/คลิกจอทิ้งถาวร (สแปมมั่ว/คว้าของผิด)
-local function pressPrompt(pp, done)
-    if not (pp and pp.Parent and pp.Enabled) then return true end
-    done = done or function() return not (pp.Parent and pp.Enabled) end
-    if fp then
-        local hold = pp.HoldDuration
-        pp.HoldDuration = 0
-        pcall(fp, pp, 0)
-        pp.HoldDuration = hold
-    end
-    local t0 = os.clock()
-    repeat task.wait(0.05) until done() or os.clock() - t0 > 0.5
-    return done()
-end
 local function partPos(inst)
     if not inst then return nil end
     if inst:IsA("BasePart") then return inst.Position end
@@ -123,6 +103,31 @@ local LBL = { ghost="ผี", patient="คนไข้", mate="เพื่อ�
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+
+-- กด prompt: หันหน้าเข้าหาเป้า → fp พร้อม bypass กดค้าง (HoldDuration=0 ชั่วคราว) → รอ done()
+-- done() = เช็คสำเร็จจากผลจริง (ยาติ๊ก/ของเข้ามือ) — Apply ไม่ดับหลังสำเร็จ ห้ามใช้ Enabled เป็นเกณฑ์กดซ้ำ
+-- v4.29: ต้องหันหน้าก่อนยิง — executor มือถือบางตัว fp = จำลองกด E ใส่ตัว "ตรงหน้า" ไม่ใช่ตัวที่ระบุ
+--        (Room8 หันผิดนิดเดียว = จ่ายยาผิด) + ย้ายฟังก์ชันมาหลัง hrp/partPos (เดิมประกาศก่อน = เรียก nil)
+local function pressPrompt(pp, done)
+    if not (pp and pp.Parent and pp.Enabled) then return true end
+    done = done or function() return not (pp.Parent and pp.Enabled) end
+    local r, pos = hrp(), partPos(pp.Parent)
+    if r and pos then
+        pcall(function()
+            r.CFrame = CFrame.lookAt(r.Position, Vector3.new(pos.X, r.Position.Y, pos.Z))
+        end)
+        task.wait(0.05)
+    end
+    if fp then
+        local hold = pp.HoldDuration
+        pp.HoldDuration = 0
+        pcall(fp, pp, 0)
+        pp.HoldDuration = hold
+    end
+    local t0 = os.clock()
+    repeat task.wait(0.05) until done() or os.clock() - t0 > 0.5
+    return done()
+end
 
 -- ===== Auto รักษา (match ชื่อยา ไม่ฆ่าคนไข้) =====
 -- เดินไปหา pos (pathfinding อ้อมกำแพง) — ใช้เมื่อปิดโหมดวาป
@@ -701,7 +706,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.28", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.29", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1089,4 +1094,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.28] fix ฆ่าผี (ยาผิดจาก Model.Items) + เช็คอินเปิดชัตเตอร์ก่อน + EquipTool fallback พร้อม")
+print("[74RB AnimalHospital v4.29] หันหน้าหา prompt ก่อนยิง (กันจ่ายผิดตัว Room8) + fix ฆ่าผี Model.Items พร้อม")
