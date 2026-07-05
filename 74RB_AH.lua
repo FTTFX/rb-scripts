@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.30 สี R6 กดช้าลง 0.7s/ปุ่ม — กดรัวเกมนับผิด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.31 ดับไฟไม่วนค้าง — จุดกดไม่เข้าพัก 5s แล้วกลับไปรักษาต่อ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -706,7 +706,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.30", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.31", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -989,12 +989,15 @@ local function doBurning(pp)
     end
 end
 task.spawn(function()
+    local lastAct = {}   -- v4.31: เว้นจังหวะต่อ NPC 2s — กันวาปถี่จนไม่ได้กลับไปรักษา
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp then
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
-                if pp and pp:IsA("ProximityPrompt") and pp.Enabled then
+                if pp and pp:IsA("ProximityPrompt") and pp.Enabled
+                   and (not lastAct[m] or os.clock() - lastAct[m] > 2) then
+                    lastAct[m] = os.clock()
                     doBurning(pp)
                 end
             end end
@@ -1005,13 +1008,15 @@ end)
 
 -- ===== Auto ดับไฟกองพื้น: PP 'Put out fire' (ใต้ Rooms, attr Charges) — กด E ที่ไฟ ไม่ใช้ถัง =====
 task.spawn(function()
+    local cooldown = {}   -- v4.31: จุดที่กดไม่เข้า → พัก 5s กันวาปวนไม่จบ (ไม่กลับไปรักษา)
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then for _, d in ipairs(rooms:GetDescendants()) do
-                if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire" then
+                if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
+                   and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
                     tpTo(partPos(d.Parent)); task.wait(0.15)  -- วาปไปที่กองไฟก่อน
-                    pressPrompt(d)    -- ดับ 1 จุด (วนจน Charges หมด → prompt ปิด)
+                    if not pressPrompt(d) then cooldown[d] = os.clock() end  -- ไม่ดับ → พักจุดนี้
                 end
             end end
         end
@@ -1095,4 +1100,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.30] สี R6 กดช้าลง (0.7s/ปุ่ม รอโชว์จบ 3s) + หันหน้าก่อนยิง + fix ฆ่าผี พร้อม")
+print("[74RB AnimalHospital v4.31] ดับไฟมี cooldown (ไม่วนค้าง กลับไปรักษาต่อ) + สี R6 ช้าลง + หันหน้าก่อนยิง พร้อม")
