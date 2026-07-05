@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.5 เช็คอิน=วาปไปข้างคนไข้)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.6 fix: DesignatedRoom หาย → จับคนไข้จากตำแหน่งใกล้ห้อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -299,6 +299,19 @@ local function roomPatient(room)
     for _, m in ipairs(npcs:GetChildren()) do
         if m:GetAttribute("DesignatedRoom") == room.Name then return m end
     end
+    -- fallback (v4.6): เกมอาจไม่ตั้ง/เคลียร์ DesignatedRoom → จับจากตำแหน่ง:
+    -- NPC คนไข้ (IsPatient/InBed) ที่อยู่ใกล้ห้องนี้ <30 studs = คนไข้ของห้องนี้
+    local rpos = partPos(room:FindFirstChild("Minigame") or room)
+    if not rpos then return end
+    local best, bestD
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:IsA("Model") and (m:GetAttribute("InBed") or m:GetAttribute("IsPatient")) then
+            local p = partPos(m)
+            local d = p and (p - rpos).Magnitude
+            if d and d < 30 and (not best or d < bestD) then best, bestD = m, d end
+        end
+    end
+    return best
 end
 -- หา prompt "Apply Treatment" — ในห้อง (Room7/8 มีเตียง) หรือ บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง)
 local function bedApplyPP(room)
@@ -980,4 +993,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.5] เช็คอินวาปข้างคนไข้ + Room8 ลำดับจอ + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ พร้อม")
+print("[74RB AnimalHospital v4.6] fix จับคนไข้ในห้อง (fallback ตำแหน่ง) + ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ พร้อม")
