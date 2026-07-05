@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.8 ดับไฟ=วาปไปหา + กด E จริง fallback ถ้า fp ไม่ติด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.9 เช็คอินไม่วาป + สแกนห้องไวขึ้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -75,22 +75,6 @@ local function npcOwner(inst)
         n = n.Parent
     end
     return nil
-end
-
--- มีคนไข้จริง (ไม่ใช่ผี) ใกล้เคาน์เตอร์ที่ยังไม่เช็คอิน → คืน pos "ตัวคนไข้"
--- (วาปไปข้างคนไข้ ไม่ใช่ part เคาน์เตอร์ — วาปที่ CheckIn ตรงๆ = ไปยืนบนโต๊ะ/ผิดฝั่ง)
-local function checkinPending()
-    local misc = workspace:FindFirstChild("Misc")
-    local cpos = misc and partPos(misc:FindFirstChild("CheckIn"))
-    if not cpos then return nil end
-    local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
-    for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and m:GetAttribute("IsPatient") and not m:GetAttribute("Skinwalker")
-           and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
-            local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
-            if r and (r.Position - cpos).Magnitude < 25 then return r.Position end
-        end
-    end
 end
 
 local COL = {
@@ -520,13 +504,9 @@ bind(RS.Heartbeat, function(dt)
     -- Auto: ยิงสเต็ป เช็คอิน (CHECKIN_ON) + วินิจฉัย/เตรียม (AUTO_ON) ทุก 0.6s
     if (AUTO_ON or CHECKIN_ON) and fp then
         fireAcc += dt
-        if fireAcc >= 0.6 then
+        if fireAcc >= 0.3 then   -- v4.9 เร็วขึ้น 2 เท่า
             fireAcc = 0
-            -- มีคนไข้มารอเช็คอิน → วาปไปเคาน์เตอร์ก่อน (prompt บางตัวต้องอยู่ใกล้)
-            if CHECKIN_ON then
-                local cpos = checkinPending()
-                if cpos then tpTo(cpos) end
-            end
+            -- v4.9: เช็คอินไม่วาปหาคนไข้แล้ว — ยิง prompt จากที่ที่ยืนอยู่เลย (fp ยิงไกลได้)
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
@@ -716,7 +696,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(0.3)
+        task.wait(0.1)   -- v4.9: เดิม 0.3 — สแกนหาห้องใหม่ให้ไวขึ้น
     end
 end)
 
@@ -1008,4 +988,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.8] ดับไฟวาปไปหา+กด E fallback + fix จับคนไข้ในห้อง + ESP + AUTO รักษา + ชัตเตอร์ พร้อม")
+print("[74RB AnimalHospital v4.9] เช็คอินไม่วาป + สแกนห้องไว (0.1s) + ดับไฟวาปไปหา + ESP + AUTO รักษา + ชัตเตอร์ พร้อม")
