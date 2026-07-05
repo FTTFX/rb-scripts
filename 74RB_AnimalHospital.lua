@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.31 ดับไฟไม่วนค้าง — จุดกดไม่เข้าพัก 5s แล้วกลับไปรักษาต่อ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.32 หัว GUI โชว์สถานะสด — เห็นเลยว่าค้างที่อะไร)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -43,6 +43,7 @@ local NPCFAST_ON = false -- ลองเร่ง WalkSpeed ของ NPC (อ�
 local NPC_SPEED = 28     -- ปรับได้
 local SPEED = 50
 local cam = workspace.CurrentCamera
+local setStatus = function() end   -- v4.32: โชว์ว่ากำลังทำอะไรบนหัว GUI (ตัวจริงผูกหลังสร้าง GUI)
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
 -- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
@@ -706,7 +707,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.31", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชันบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.32", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.TextScaled = true
+setStatus = function(s) title.Text = "v4.32 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -806,6 +809,7 @@ task.spawn(function()
                     end end
                 end
                 if target then
+                    setStatus("รักษา " .. target.Name)
                     local guard = 0
                     while AUTO_ON and _G.AH74_GEN == MYGEN
                           and not roomDone(target)
@@ -814,6 +818,8 @@ task.spawn(function()
                         pcall(treatRoom, target)
                         task.wait(0.2)
                     end
+                else
+                    setStatus("ว่าง (ไม่มีห้องมีงาน)")
                 end
             end
         end
@@ -998,6 +1004,7 @@ task.spawn(function()
                 if pp and pp:IsA("ProximityPrompt") and pp.Enabled
                    and (not lastAct[m] or os.clock() - lastAct[m] > 2) then
                     lastAct[m] = os.clock()
+                    setStatus("ดับไฟ NPC " .. m.Name .. " (" .. pp.ActionText .. ")")
                     doBurning(pp)
                 end
             end end
@@ -1015,6 +1022,7 @@ task.spawn(function()
             if rooms then for _, d in ipairs(rooms:GetDescendants()) do
                 if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
                    and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
+                    setStatus("ดับไฟพื้น")
                     tpTo(partPos(d.Parent)); task.wait(0.15)  -- วาปไปที่กองไฟก่อน
                     if not pressPrompt(d) then cooldown[d] = os.clock() end  -- ไม่ดับ → พักจุดนี้
                 end
@@ -1100,4 +1108,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.31] ดับไฟมี cooldown (ไม่วนค้าง กลับไปรักษาต่อ) + สี R6 ช้าลง + หันหน้าก่อนยิง พร้อม")
+print("[74RB AnimalHospital v4.32] หัว GUI โชว์สถานะสด (รักษา RoomX / ดับไฟ / ว่าง) + ดับไฟ cooldown พร้อม")
