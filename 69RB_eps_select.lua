@@ -1,4 +1,4 @@
--- 69RB_eps_select.lua  v2.4.1
+-- 69RB_eps_select.lua  v2.4.2
 -- [,] = เป้าก่อนหน้า | [.] = เป้าถัดไป | [E] = เปิด/ปิดล็อค
 -- EPS AimLock — แกนเดียวกับ 06 ALL IN Watch mode (hookmetamethod camera override)
 -- ESP ทุกคน (แดง=คนอื่น เขียว=เป้าที่เลือก) | คลิกชื่อ = เลือกเป้า | AUTO = ใกล้สุดที่เห็น
@@ -14,14 +14,18 @@ end
 if _G.EPS69_TAGS then
     for _, t in pairs(_G.EPS69_TAGS) do pcall(function() t:Destroy() end) end
 end
+if _G.EPS69_BOXES then
+    for _, b in pairs(_G.EPS69_BOXES) do pcall(function() b:Destroy() end) end
+end
 if _G.EPS69_GUI  then pcall(function() _G.EPS69_GUI:Destroy() end) end
 if _G.EPS69_DRAW then pcall(function() _G.EPS69_DRAW:Remove() end) end
 _G.EPS69_CONNS = {}
 _G.EPS69_HLS   = {}
 _G.EPS69_TAGS  = {}         -- ป้ายชื่อ+ระยะลอยเหนือหัว (แยกผู้เล่นจริง)
+_G.EPS69_BOXES = {}         -- กล่อง ESP (เห็นแม้ตัวโปร่งใส เช่นเกมซ่อนหา)
 _G.EPS69_AIM_CFRAME = nil   -- รีเซ็ตเป้า (hook เก่ายังอยู่ได้ ไม่ stack)
 
-local V = "2.4.1"
+local V = "2.4.2"
 
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
@@ -106,8 +110,9 @@ local function isAlive(p)
 end
 
 -- ==================== ESP (Highlight ทุกคน) ====================
-local HLS  = _G.EPS69_HLS
-local TAGS = _G.EPS69_TAGS
+local HLS   = _G.EPS69_HLS
+local TAGS  = _G.EPS69_TAGS
+local BOXES = _G.EPS69_BOXES
 
 -- ระยะจากตัวเรา → player (nil ถ้าไม่มีตัว/ไม่มีตัวเรา)
 local function distTo(p, fromPos)
@@ -147,11 +152,34 @@ local function addHL(p)
     colorHL(p)
 end
 
+-- กล่อง ESP บน HumanoidRootPart — เรนเดอร์เสมอแม้ตัวละครโปร่งใส (Highlight ไม่ขึ้นถ้า Transparency=1)
+local function addBox(p)
+    local char = p.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local b = BOXES[p]
+    if not (b and b.Adornee == root) then
+        if b then pcall(function() b:Destroy() end) end
+        b = Instance.new("BoxHandleAdornment")
+        b.Adornee = root
+        b.Size = Vector3.new(4, 5.5, 2)
+        b.CFrame = CFrame.new(0, 0.25, 0)
+        b.AlwaysOnTop = true
+        b.ZIndex = 5
+        b.Transparency = 0.65
+        b.Parent = root
+        BOXES[p] = b
+    end
+    b.Color3 = (target == p) and Color3.fromRGB(40, 255, 90) or Color3.fromRGB(255, 40, 40)
+end
+
 local function removeHL(p)
     local hl = HLS[p]
     if hl then pcall(function() hl:Destroy() end) HLS[p] = nil end
     local t = TAGS[p]
     if t then pcall(function() t:Destroy() end) TAGS[p] = nil end
+    local b = BOXES[p]
+    if b then pcall(function() b:Destroy() end) BOXES[p] = nil end
 end
 
 -- ป้ายชื่อ+ระยะลอยเหนือหัว (สร้างครั้งเดียว/respawn, อัปข้อความใน loop)
@@ -371,6 +399,7 @@ local function rebuildList()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP then
             addHL(p)   -- ESP ทุกคน + สีตามเป้าที่เลือก
+            addBox(p)  -- กล่อง (เห็นแม้ตัวล่องหน)
             addTag(p)  -- ป้ายชื่อเหนือหัว
             local sel   = (target == p)
             local alive = isAlive(p)
@@ -476,6 +505,7 @@ table.insert(_G.EPS69_CONNS, RunSvc.RenderStepped:Connect(function(dt)
                     or (alive and Color3.fromRGB(165, 165, 185) or Color3.fromRGB(110, 70, 70))
                 btn.LayoutOrder = dist and math.floor(dist) or 99999   -- เรียงใกล้→ไกลสด
                 addHL(p)   -- ซ่อม ESP หลัง respawn + อัปสี
+                addBox(p)  -- ซ่อมกล่องหลัง respawn + อัปสี
                 addTag(p)  -- ซ่อมป้ายชื่อหลัง respawn
                 updateTag(p, sel, dStr)
             end
