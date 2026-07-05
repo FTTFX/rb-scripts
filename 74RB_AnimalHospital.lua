@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.12 เพิ่มสเต็ป Inspect + Apply เอาตัว Enabled + สลับห้องไว)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.13 Room8 ทำก่อนเสมอ + เกาะจนจบ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -704,6 +704,8 @@ task.spawn(function()
                         if pat and not roomDone(room) and (not ghost or KILLGHOST_ON) then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
+                            -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — เจอเมื่อไหร่ทำก่อนเสมอ ห้องอื่นเรียงตามระยะ
+                            if room.Name == "Room8" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
                         end
                     end end
@@ -711,7 +713,8 @@ task.spawn(function()
                 if target then
                     local guard = 0
                     while AUTO_ON and _G.AH74_GEN == MYGEN
-                          and not roomDone(target) and guard < 8 do   -- v4.12: ~1.6s/ห้อง แล้วสลับดูห้องอื่น (เดิม 6s ทำให้ดูเหมือนรอ)
+                          and not roomDone(target)
+                          and guard < (target.Name == "Room8" and 300 or 8) do  -- v4.13: Room8 เกาะจนจบ (~60s) ห้องอื่น 1.6s แล้วสลับ
                         guard += 1
                         pcall(treatRoom, target)
                         task.wait(0.2)
@@ -999,4 +1002,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.12] Inspect + Apply(Main) + สลับห้องไว 1.6s + pressPrompt fallback + ESP + AUTO รักษา พร้อม")
+print("[74RB AnimalHospital v4.13] Room8 ก่อนเสมอ+เกาะจนจบ + Inspect + Apply(Main) + pressPrompt fallback + AUTO รักษา พร้อม")
