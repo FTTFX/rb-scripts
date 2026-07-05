@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.16 FIX ด่วน: กันกดยาซ้ำ (เช็คผลจริงก่อนกดชั้นถัดไป) + เลิกหมุนกล้อง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.17 จุดเกี่ยวกับของ/ยา = fp เท่านั้น ห้าม E/คลิกจอ — กัน Room8 คว้าของผิด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -65,7 +65,9 @@ local fireAcc = 0
 -- v4.16: กด prompt 3 ชั้น (fp → E → คลิกจอ) แต่ "เช็คสำเร็จจากผลจริง" ก่อนลองชั้นถัดไป
 -- done() = ฟังก์ชันเช็คว่างานสำเร็จแล้ว (เช่น ยาติ๊ก/ของเข้ามือ) — สำคัญมาก:
 -- ปุ่มอย่าง Apply Treatment ไม่ดับหลังกดสำเร็จ ถ้าเช็คจาก Enabled จะกดซ้ำ = ให้ยาเกิน = คนไข้ตาย!
-local function pressPrompt(pp, done)
+-- safeOnly=true → ใช้ fp อย่างเดียว ห้าม E/คลิกจอ (E ไม่เลือกเป้า — Room8 ของกองรอบเตียง
+-- กด E ติดปุ่มข้างๆ = คว้าของผิด/ทิ้งของ) ใช้กับทุกจุดที่เกี่ยวกับของ/ยา
+local function pressPrompt(pp, done, safeOnly)
     if not (pp and pp.Parent and pp.Enabled) then return true end
     done = done or function() return not (pp.Parent and pp.Enabled) end   -- default: prompt ดับ = สำเร็จ (ใช้ได้กับ prompt one-shot เท่านั้น)
     local function settled(timeout)
@@ -77,6 +79,7 @@ local function pressPrompt(pp, done)
         pcall(fp, pp, pp.HoldDuration or 0)
         if settled(0.4) then return true end
     end
+    if safeOnly then return done() end
     pcall(function()                          -- ชั้น 2: กด E ค้างจริง
         VIM:SendKeyEvent(true, pp.KeyboardKeyCode, false, game)
         task.wait((pp.HoldDuration or 0) + 0.2)
@@ -208,7 +211,7 @@ local function discardTool(tool)
     if not (h and tp and tp.Parent) then return end
     pcall(function() h:EquipTool(tool) end); task.wait(0.15)
     tpTo(partPos(tp.Parent)); task.wait(0.2)
-    pressPrompt(tp); task.wait(0.2)
+    pressPrompt(tp, nil, true); task.wait(0.2)   -- fp เท่านั้น
 end
 -- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
 local function cleanInventory(needed)
@@ -397,7 +400,8 @@ local function killWithWrongMed(room)
     end
     if not wrongName then return false end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
-        tpTo(partPos(wrongPP.Parent)); task.wait(0.18); pressPrompt(wrongPP); task.wait(0.2)
+        tpTo(partPos(wrongPP.Parent)); task.wait(0.18)
+        pressPrompt(wrongPP, function() return findTool(wrongName) ~= nil end, true); task.wait(0.1)
     end
     if not findTool(wrongName) then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
@@ -405,7 +409,7 @@ local function killWithWrongMed(room)
         pressSlot(slot); task.wait(0.08)
         local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
         if held and held.Name == wrongName then
-            pressPrompt(bedPP); task.wait(0.2); return true
+            pressPrompt(bedPP, nil, true); task.wait(0.2); return true   -- fp เท่านั้น
         end
     end
     return false
@@ -474,7 +478,7 @@ local function treatRoom(room)
             if not pp or not pp.Parent then break end
             local before = heldCount(m)
             tpTo(partPos(pp.Parent)); task.wait(0.18)
-            pressPrompt(pp, function() return heldCount(m) > before end)   -- done = ของเข้ามือจริง
+            pressPrompt(pp, function() return heldCount(m) > before end, true)   -- fp เท่านั้น + done = ของเข้ามือจริง
             task.wait(0.1)
             if heldCount(m) <= before then break end  -- เก็บไม่ขึ้น → เลิก
         end
@@ -505,7 +509,7 @@ local function treatRoom(room)
             -- ให้ 1 ชิ้น — done = frame "ชิ้นนี้" ติ๊กจริง (กันกดซ้ำ = ยาเกิน = ตาย)
             pressPrompt(bedPP, function()
                 return not fr.Parent or frameGiven(fr) or roomDone(room)
-            end)
+            end, true)   -- fp เท่านั้น — E สแปมใกล้เตียง Room8 = คว้าของผิด
             -- poll: ยืนยัน frame "ชิ้นนี้" ถูกติ๊ก (Cured/check) เผื่อสูงสุด 0.5s
             local t0 = os.clock()
             repeat task.wait(0.03)
@@ -931,7 +935,7 @@ local function doBurning(pp)
             local cream = findPickup("Ointment")
             if not (cream and cream.Parent) then return end
             tpTo(partPos(cream.Parent)); task.wait(0.18)
-            pressPrompt(cream, function() return heldCount("Ointment") >= 1 end); task.wait(0.1)
+            pressPrompt(cream, function() return heldCount("Ointment") >= 1 end, true); task.wait(0.1)
             if heldCount("Ointment") < 1 then return end
         end
         for slot = 1, math.min(9, #heldTools()) do         -- เลือก slot ที่ถือ Ointment
@@ -940,7 +944,7 @@ local function doBurning(pp)
             if held and held.Name == "Ointment" then break end
         end
         tpTo(partPos(pp.Parent)); task.wait(0.15)          -- กลับไปหาคนไข้ (เผื่อวาปไปเก็บครีมมา)
-        pressPrompt(pp)                                    -- ทาครีม
+        pressPrompt(pp, nil, true)                         -- ทาครีม (fp เท่านั้น — ถือของอยู่ กัน E มั่ว)
     end
 end
 task.spawn(function()
@@ -1050,4 +1054,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.16] กันยาซ้ำ (done เช็คผลจริง) + ไม่หมุนกล้อง + เลือกห้องมีงานจริง + Room8 ก่อน พร้อม")
+print("[74RB AnimalHospital v4.17] ของ/ยา=fp เท่านั้น (กัน E มั่ว Room8) + กันยาซ้ำ + เลือกห้องมีงานจริง พร้อม")
