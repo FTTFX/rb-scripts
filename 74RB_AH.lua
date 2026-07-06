@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.63 บิน=ปิดชนชั่วคราว — กันฟิสิกส์ดีดขึ้นหลังคา)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.68 นับรายชนิดแทนราย frame — ของซ้ำติ๊กสลับใบไม่หลอกบอทแล้ว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -646,44 +646,60 @@ local function treatRoom(room)
     -- ===== v4.61: "ถือทีละชิ้นเดียว" — หยิบ 1 จ่าย 1 ตามลำดับจอ =====
     -- เกมอ่านช่อง hotbar ที่เลือก ไม่ใช่ Tool ที่ถือ (จอ touch เลือกช่องไม่ได้) — ถือหลายชิ้น
     -- = slot กับของในมือเหลื่อมกันได้ = จ่ายผิด = ตาย ; ถือชิ้นเดียวตลอด = ผิดไม่ได้
-    local need, given, order = medCounts(room)
-    if #order == 0 then return false end
-    for _, fr in ipairs(invFrames(room)) do
-        if roomDone(room) then break end
-        if fr.Parent and not frameGiven(fr) then
-            local m = frameMed(fr)
-            -- 1) เคลียร์มือ: ทิ้งทุกชิ้นที่ไม่ใช่ m (เหลือ 0 หรือ 1 ชิ้นที่ถูกเสมอ)
-            for _, t in ipairs(heldTools()) do
-                if t.Name ~= m then discardTool(t) end
-            end
-            -- 2) ยังไม่มี m → บินไปหยิบมา 1 ชิ้น
-            if heldCount(m) == 0 then
-                local pp = findPickup(m)
-                if not (pp and pp.Parent) then return false end
-                tpTo(partPos(pp.Parent)); task.wait(0.15)
-                pressPrompt(pp, function() return heldCount(m) > 0 end, true)
-                task.wait(0.1)
-                if heldCount(m) == 0 then return false end   -- หยิบไม่ขึ้น → หยุด
-            end
-            if not selectTool(m) then return false end       -- ชิ้นเดียวในมือ ยกขึ้นถือ
-            -- 3) บินไปเตียง → จ่าย ; done = ของหายจากมือ (consume ทันที แม่นกว่ารอติ๊ก)
-            -- v4.66: prompt อยู่บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง) → บินตามตำแหน่ง "ตัวคนไข้สด"
-            local bedPP = bedApplyPP(room)
-            if not (bedPP and bedPP.Parent) then return false end
-            local owner = npcOwner(bedPP)
-            tpTo(owner and partPos(owner) or partPos(bedPP.Parent)); task.wait(0.15)
-            local before = heldCount(m)
-            pressPrompt(bedPP, function()
-                return not fr.Parent or heldCount(m) < before or frameGiven(fr) or roomDone(room)
-            end)
-            if heldCount(m) < before then                    -- ของเข้าแล้ว → รอติ๊ก (ห้ามกดซ้ำ)
-                local t0 = os.clock()
-                repeat task.wait(0.05)
-                until not fr.Parent or frameGiven(fr) or roomDone(room) or os.clock() - t0 > 2
-            end
-            if fr.Parent and not frameGiven(fr) and not roomDone(room) then return false end -- ไม่คืบ = หยุด (ไม่เดา)
-            task.wait(0.1)
+    -- v4.68: เช็ค "รายชนิดแบบนับจำนวน" แทนราย frame — ของซ้ำ (Scalpel ×2) เกมอาจติ๊ก
+    -- คนละใบกับที่เราเล็ง → เช็คราย frame เห็นใบแรกว่างแล้วจ่ายชนิดเดิมซ้ำ = ผิดคิว = ตาย
+    local function givenCount(m)
+        local g = 0
+        for _, fr in ipairs(invFrames(room)) do
+            if frameMed(fr) == m and frameGiven(fr) then g += 1 end
         end
+        return g
+    end
+    -- ชิ้นถัดไปตามลำดับจอ = ชนิดแรกที่ "ลำดับที่เจอ" เกินจำนวนที่ให้ไปแล้ว
+    local function nextMed()
+        local cnt = {}
+        for _, fr in ipairs(invFrames(room)) do
+            local m = frameMed(fr)
+            cnt[m] = (cnt[m] or 0) + 1
+            if cnt[m] > givenCount(m) then return m end
+        end
+    end
+    if not nextMed() then return false end
+    local guard = 0
+    while not roomDone(room) and guard < 12 do
+        guard += 1
+        local m = nextMed()
+        if not m then break end
+        -- 1) เคลียร์มือ: ทิ้งทุกชิ้นที่ไม่ใช่ m (ถือชิ้นเดียวตลอด — slot ผิดไม่ได้)
+        for _, t in ipairs(heldTools()) do
+            if t.Name ~= m then discardTool(t) end
+        end
+        -- 2) ยังไม่มี m → บินไปหยิบมา 1 ชิ้น
+        if heldCount(m) == 0 then
+            local pp = findPickup(m)
+            if not (pp and pp.Parent) then return false end
+            tpTo(partPos(pp.Parent)); task.wait(0.15)
+            pressPrompt(pp, function() return heldCount(m) > 0 end, true)
+            task.wait(0.1)
+            if heldCount(m) == 0 then return false end   -- หยิบไม่ขึ้น → หยุด
+        end
+        if not selectTool(m) then return false end       -- ชิ้นเดียวในมือ ยกขึ้นถือ
+        -- 3) บินไปเตียง (prompt บนตัวคนไข้ = บินตามตัวสด) → จ่าย ; done = ของหายจากมือ/ยอดชนิดขยับ
+        local bedPP = bedApplyPP(room)
+        if not (bedPP and bedPP.Parent) then return false end
+        local owner = npcOwner(bedPP)
+        tpTo(owner and partPos(owner) or partPos(bedPP.Parent)); task.wait(0.15)
+        local gBefore, hBefore = givenCount(m), heldCount(m)
+        pressPrompt(bedPP, function()
+            return heldCount(m) < hBefore or givenCount(m) > gBefore or roomDone(room)
+        end)
+        if heldCount(m) < hBefore then                   -- ของเข้าแล้ว → รอยอดชนิดขยับ (ห้ามกดซ้ำ)
+            local t0 = os.clock()
+            repeat task.wait(0.05)
+            until givenCount(m) > gBefore or roomDone(room) or os.clock() - t0 > 2
+        end
+        if givenCount(m) <= gBefore and not roomDone(room) then return false end -- ไม่คืบ = หยุด (ไม่เดา)
+        task.wait(0.1)
     end
     return true
 end
@@ -862,13 +878,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.67", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.68", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.67 " .. lastStatus end
+    if not deadLock then title.Text = "v4.68 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
