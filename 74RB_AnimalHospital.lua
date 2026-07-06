@@ -80,16 +80,26 @@ local function npcOwner(inst)
 end
 
 -- v4.27: คนไข้จริง (ไม่ใช่ผี) ใกล้เคาน์เตอร์ที่ยังไม่เช็คอิน → คืน pos ตัวคนไข้ (ไว้วาปไปเช็คอิน)
+-- v4.38: รวม NPC อื่นที่มี prompt เปิดอยู่ด้วย (NPC เนื้อเรื่อง/??? มาขอคุยที่เคาน์เตอร์ — ไม่มี IsPatient)
 local function checkinPending()
     local misc = workspace:FindFirstChild("Misc")
     local cpos = misc and partPos(misc:FindFirstChild("CheckIn"))
     if not cpos then return nil end
     local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and m:GetAttribute("IsPatient") and not m:GetAttribute("Skinwalker")
-           and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
+        if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
             local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
-            if r and (r.Position - cpos).Magnitude < 25 then return r.Position end
+            if r and (r.Position - cpos).Magnitude < 25 then
+                -- คนไข้ยังไม่เช็คอิน = งานแน่ๆ
+                if m:GetAttribute("IsPatient") and m:GetAttribute("CheckedIn") ~= true
+                   and not m:GetAttribute("CompletedCheckIn") then
+                    return r.Position
+                end
+                -- NPC อื่นที่มี prompt เปิดรอกด (มอบใบ/คุยรับงาน/???)
+                for _, p in ipairs(m:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") and p.Enabled then return r.Position end
+                end
+            end
         end
     end
 end
@@ -734,9 +744,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.37", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.38", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.37 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.38 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
