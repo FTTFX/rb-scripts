@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.88 สไลด์ด้วย velocity ตาม waypoint — ฟิสิกส์จริง ไม่วาป ไม่ noclip)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.89 กันค้าง Treat Burns — เคลียร์มือก่อนเก็บครีม + พลาด 3 ครั้งพัก 15s)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -977,13 +977,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.88", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.89", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.88 " .. lastStatus end
+    if not deadLock then title.Text = "v4.89 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1322,6 +1322,10 @@ local function doBurning(pp)
         pressPrompt(pp)                                    -- ดับเปลว
     elseif a == "Treat Burns" then
         if heldCount("Ointment") < 1 then                  -- ยังไม่มีครีม → ไปเก็บ
+            -- v4.89: เคลียร์มือก่อน (กฎถือทีละชิ้น — ถือของอื่นอยู่ = เก็บครีมไม่เข้า → วนค้าง)
+            for _, t in ipairs(heldTools()) do
+                if t.Name ~= "Ointment" then discardTool(t) end
+            end
             local cream = findPickup("Ointment")
             if not (cream and cream.Parent) then return end
             tpTo(partPos(cream.Parent)); task.wait(0.18)
@@ -1335,16 +1339,29 @@ local function doBurning(pp)
 end
 task.spawn(function()
     local lastAct = {}   -- v4.31: เว้นจังหวะต่อ NPC 2s — กันวาปถี่จนไม่ได้กลับไปรักษา
+    local fails = {}     -- v4.89: นับพลาดต่อ NPC — 3 ครั้งติด = พัก 15s (กันค้าง Treat Burns วนไม่จบ)
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อนไฟ
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
+                local f = fails[m]
                 if pp and pp:IsA("ProximityPrompt") and pp.Enabled
-                   and (not lastAct[m] or os.clock() - lastAct[m] > 2) then
+                   and (not lastAct[m] or os.clock() - lastAct[m] > 2)
+                   and (not f or f.n < 3 or os.clock() - f.t > 15) then
                     lastAct[m] = os.clock()
                     setStatus("ดับไฟ NPC " .. m.Name .. " (" .. pp.ActionText .. ")")
+                    local before = pp.ActionText
                     doBurning(pp)
+                    -- ไม่คืบหน้า (prompt ยังอยู่ ActionText เดิม) = พลาด 1 ครั้ง
+                    if pp.Parent and pp.Enabled and pp.ActionText == before then
+                        f = f or { n = 0 }
+                        f.n, f.t = f.n + 1, os.clock()
+                        fails[m] = f
+                        if f.n >= 3 then setStatus("ทา " .. m.Name .. " ไม่เข้า — พัก 15s") end
+                    else
+                        fails[m] = nil
+                    end
                 end
             end end
         end
