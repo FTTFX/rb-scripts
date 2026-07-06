@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.96 roomPatient เอาคนที่อยู่ห้องจริงก่อน — NPC event attr ซ้ำห้องไม่ล็อคงานค้าง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.97 สถานะ "ว่าง" บอกเหตุผลข้ามรายห้อง: ไกล/ผี/จบ/ไม่มีปุ่ม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1029,13 +1029,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.96", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.97", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.96 " .. lastStatus end
+    if not deadLock then title.Text = "v4.97 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1148,6 +1148,7 @@ task.spawn(function()
             if rooms then
                 local fromPos = hrp() and hrp().Position
                 local target, bestD
+                local why = {}   -- v4.97: เหตุผลที่ข้ามห้องที่มีคนไข้ — โชว์ตอน "ว่าง" ไล่บั๊กจากหน้าจอได้เลย
                 for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8
                     local f = rooms:FindFirstChild(grp)
                     if f then for _, room in ipairs(f:GetChildren()) do
@@ -1168,6 +1169,10 @@ task.spawn(function()
                             -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — เจอเมื่อไหร่ทำก่อนเสมอ ห้องอื่นเรียงตามระยะ
                             if room.Name == "Room8" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
+                        elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
+                            why[#why+1] = room.Name:gsub("Room", "R") .. ":"
+                                .. (not present and "ไกล" or (ghost and not killable) and "ผี"
+                                    or roomDone(room) and "จบ" or "ไม่มีปุ่ม")
                         end
                     end end
                 end
@@ -1189,7 +1194,8 @@ task.spawn(function()
                         task.wait(0.2)
                     end
                 else
-                    setStatus("ว่าง (ไม่มีห้องมีงาน)")
+                    -- v4.97: โชว์ว่าห้องไหนโดนข้ามเพราะอะไร (ไกล/ผี/จบ/ไม่มีปุ่ม) — ไม่มีคนไข้เลย = ว่างจริง
+                    setStatus(#why > 0 and ("ว่าง " .. table.concat(why, " ")) or "ว่าง (ไม่มีห้องมีงาน)")
                 end
             end
         end
