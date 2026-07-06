@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.81 อุ้มวางแล้ว=จบถาวร — เช็คจากมือจริง ไม่เชื่อ CarriedBy ค้าง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.82 ไม่ปิดชัตเตอร์ขัง NPC ที่เพิ่งเช็คอินเสร็จ — รอเดินออกก่อน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -954,13 +954,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.81", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.82", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.81 " .. lastStatus end
+    if not deadLock then title.Text = "v4.82 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1242,9 +1242,9 @@ do
     --        (เคาน์เตอร์มี 2 ช่อง คนจริงใช้อีกช่องได้ ผีบอทไม่เช็คอินให้อยู่แล้ว)
     local INCOMING_RANGE = 60
     local function counterScan()
-        local cpos = counterPos(); if not cpos then return false, false end
-        local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return false, false end
-        local ghost, pending = false, false
+        local cpos = counterPos(); if not cpos then return false, false, false end
+        local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return false, false, false end
+        local ghost, pending, leaving = false, false, false
         for _, m in ipairs(npcs:GetChildren()) do
             if m:IsA("Model") then
                 local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
@@ -1253,15 +1253,18 @@ do
                     if m:GetAttribute("Skinwalker") then
                         if d < COUNTER_RANGE then ghost = true end          -- ผี (มี IsPatient ด้วยก็นับเป็นผี)
                     elseif (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
-                       and not m:GetAttribute("Anomaly")
-                       and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn")
-                       and d < INCOMING_RANGE then
-                        pending = true                                       -- คนจริงรอ/กำลังเดินมา
+                       and not m:GetAttribute("Anomaly") then
+                        if m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn")
+                           and d < INCOMING_RANGE then
+                            pending = true                                   -- คนจริงรอ/กำลังเดินมา
+                        end
+                        -- v4.82: เช็คอินเสร็จแล้วแต่ยังยืนหน้าเคาน์เตอร์ = ยังไม่เดินออก → ห้ามปิดขังเขา
+                        if d < COUNTER_RANGE then leaving = true end
                     end
                 end
             end
         end
-        return ghost, pending
+        return ghost, pending, leaving
     end
     -- ActionText: 'Close'=ประตูเปิดอยู่(กด→ปิด) | 'Open'=ประตูปิดอยู่(กด→เปิด)
     -- ลำดับ: คนไข้จริงยังไม่เช็คอิน → เปิดไว้ก่อน (เช็คอินคนดีก่อน แม้มีผีปนอยู่) ; เช็คอินครบแล้ว+ผียังอยู่ → ปิด
@@ -1270,9 +1273,10 @@ do
             if SHUTTER_ON and fp then
                 local pp = shutterPP()
                 if pp and pp.Parent then
-                    local ghost, pending = counterScan()
+                    local ghost, pending, leaving = counterScan()
                     local want = (pending and pp.ActionText == "Open")                   -- คนไข้จริงรอ → เปิด
-                              or (ghost and not pending and pp.ActionText == "Close")    -- ผีอยู่+คนดีครบ → ปิด
+                              -- v4.82: ปิดใส่ผีเฉพาะตอนหน้าเคาน์เตอร์เหลือแต่ผี (คนจริงเดินออกหมดแล้ว)
+                              or (ghost and not pending and not leaving and pp.ActionText == "Close")
                     if want then
                         tpTo(partPos(pp.Parent)); task.wait(0.15)   -- v4.22 วาปไปกดที่ปุ่ม
                         pressPrompt(pp)
