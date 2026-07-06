@@ -744,9 +744,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.38", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.39", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.38 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.39 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1064,13 +1064,20 @@ task.spawn(function()
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
+                -- v4.39: + สไลม์ (Workspace.Misc.Slime PP 'Clean Slime' — กดทีเดียวหาย)
                 local fires = {}
-                for _, d in ipairs(rooms:GetDescendants()) do
-                    if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
-                       and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
-                        fires[#fires+1] = d
+                local function collect(root)
+                    for _, d in ipairs(root:GetDescendants()) do
+                        if d:IsA("ProximityPrompt") and d.Enabled
+                           and (d.ActionText == "Put out fire" or d.ActionText == "Clean Slime")
+                           and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
+                            fires[#fires+1] = d
+                        end
                     end
                 end
+                collect(rooms)
+                local misc = workspace:FindFirstChild("Misc")
+                if misc then collect(misc) end
                 local me = hrp() and hrp().Position
                 if me then
                     table.sort(fires, function(a, b)
@@ -1081,7 +1088,7 @@ task.spawn(function()
                 for _, d in ipairs(fires) do
                     if not (FIRE_ON and _G.AH74_GEN == MYGEN) then break end
                     if d.Parent and d.Enabled then
-                        setStatus("ดับไฟพื้น")
+                        setStatus(d.ActionText == "Clean Slime" and "ล้างสไลม์" or "ดับไฟพื้น")
                         local pos = partPos(d.Parent)
                         local from = hrp() and hrp().Position
                         if pos then
