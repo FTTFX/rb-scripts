@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.61 ถือทีละชิ้น: หยิบ 1 จ่าย 1 — slot ผิดไม่ได้)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.63 บิน=ปิดชนชั่วคราว — กันฟิสิกส์ดีดขึ้นหลังคา)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -228,6 +228,14 @@ local function tpTo(pos)
         -- v4.59: "บินทะลุเร็ว" แทนวาปทันที — เกมจับการย้ายตำแหน่งก้าวใหญ่แล้วลงโทษบ้าคลั่ง
         -- (กล่องดำ: ตายตอนวาปไกลโดยไม่มีผีใกล้) ; ขยับ ~5 studs/frame (~300/s) ทะลุกำแพง
         local target = pos + Vector3.new(0, 3, 0)
+        -- v4.63: ปิดการชนระหว่างบิน — CFrame ทะลุกำแพงแล้วฟิสิกส์ดีดตัวขึ้น = โผล่หลังคา
+        local function setClip(on)
+            local c = LP.Character
+            if c then for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = on end
+            end end
+        end
+        setClip(false)
         local t0 = os.clock()
         while r and r.Parent and (r.Position - target).Magnitude > 4 and os.clock() - t0 < 3 do
             local step = target - r.Position
@@ -239,6 +247,7 @@ local function tpTo(pos)
         if r and (r.Position - target).Magnitude <= 8 then
             r.CFrame = CFrame.new(target)   -- จูนลงจุดพอดีตอนใกล้แล้ว (ก้าวเล็ก ปลอดภัย)
         end
+        if not NOCLIP_ON then setClip(true) end   -- คืนการชน (ถ้าไม่ได้เปิด NOCLIP อยู่)
     else
         walkTo(pos)
     end
@@ -841,13 +850,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.62", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.63", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.62 " .. lastStatus end
+    if not deadLock then title.Text = "v4.63 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
