@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.34 รวมปุ่มเคาน์เตอร์ + ดับไฟยืนนอกกองไฟ ไล่จากขอบนอก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.35 กันบ้าคลั่ง: ทุกวาปถอยห่างผี ≥12 studs)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -156,10 +156,35 @@ local function walkTo(pos)
     end
 end
 -- ไปหา pos: วาป หรือ เดิน ตามโหมด
+-- v4.35: กันบ้าคลั่งตาย — จุดหมายใกล้ผี (Skinwalker) <12 studs → ถอยออกมายืนห่างผี 12 studs
+-- (อยู่ใกล้ผี sanity ไหลจนตาย ; fp ยิงถึงจากระยะนั้นอยู่แล้ว ไม่ต้องจ่อ)
+local GHOST_GAP = 12
+local function ghostSafe(pos)
+    local npcs = workspace:FindFirstChild("NPCs")
+    if not npcs then return pos end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:GetAttribute("Skinwalker") then
+            local g = partPos(m)
+            if g and (g - pos).Magnitude < GHOST_GAP then
+                local away = (pos - g)
+                away = away.Magnitude > 0.5 and away.Unit or Vector3.new(1, 0, 0)
+                pos = g + away * GHOST_GAP
+            end
+        end
+    end
+    return pos
+end
 local function tpTo(pos)
     if not pos then return end
+    -- v4.36: กันวาปหลุดโลก — เป้าต่ำกว่า Y=-50 หรือไกลเกิน 400 studs = เป้าเพี้ยน (prompt/ของนอกแมพ) ไม่ไป
+    if pos.Y < -50 then return end
+    local r = hrp()
+    if r and (pos - r.Position).Magnitude > 400 then
+        setStatus("บล็อควาปเพี้ยน " .. math.floor((pos - r.Position).Magnitude) .. "m")
+        return
+    end
+    pos = ghostSafe(pos)
     if TP_ON then
-        local r = hrp()
         if r then r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
     else
         walkTo(pos)
@@ -707,9 +732,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.34", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.36", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.34 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.36 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1132,4 +1157,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.34] ปุ่มเคาน์เตอร์ (เช็คอิน+ชัตเตอร์) + ดับไฟยืนห่าง 8 studs ไล่ขอบนอก พร้อม")
+print("[74RB AnimalHospital v4.35] ทุกวาปถอยห่างผี ≥12 studs (กัน sanity หมดตาย) + ปุ่มเคาน์เตอร์ + ดับไฟนอกกอง พร้อม")
