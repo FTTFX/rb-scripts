@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.45 ห้ามวาปตอนตัวลอย — วาปกลางกระโดด=ตาย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.46 กล่องดำตอนตาย: โชว์ว่าตายตอนทำอะไร+ผีใกล้แค่ไหน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -760,9 +760,38 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.45", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.46", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.45 " .. (s or "") end
+-- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
+local lastStatus, deadLock = "", false
+setStatus = function(s)
+    lastStatus = s or ""
+    if not deadLock then title.Text = "v4.46 " .. lastStatus end
+end
+local function armDeathLog(char)
+    local h = char:WaitForChild("Humanoid", 5)
+    if not h then return end
+    CONNS[#CONNS+1] = h.Died:Connect(function()
+        local r = char:FindFirstChild("HumanoidRootPart")
+        local gd = math.huge
+        local npcs = workspace:FindFirstChild("NPCs")
+        if r and npcs then
+            for _, m in ipairs(npcs:GetChildren()) do
+                if m:GetAttribute("Skinwalker") or m:GetAttribute("Anomaly") then
+                    local p = partPos(m)
+                    if p then gd = math.min(gd, (p - r.Position).Magnitude) end
+                end
+            end
+        end
+        deadLock = true
+        title.Text = ("💀ตายตอน: %s | ผีใกล้สุด %s"):format(
+            lastStatus ~= "" and lastStatus or "?", gd < math.huge and math.floor(gd).."m" or "-")
+        print("[AH74 กล่องดำ] " .. title.Text)
+        task.delay(20, function() deadLock = false end)   -- โชว์ค้าง 20s แล้วกลับมาปกติ
+    end)
+end
+if LP.Character then armDeathLog(LP.Character) end
+bind(LP.CharacterAdded, armDeathLog)
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
