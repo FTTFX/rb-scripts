@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.46 กล่องดำตอนตาย: โชว์ว่าตายตอนทำอะไร+ผีใกล้แค่ไหน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.47 ปิดกระโดดตอน auto+วาป — ไม่มีจังหวะตัวลอย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -651,6 +651,14 @@ local acc = 0
 bind(RS.Heartbeat, function(dt)
     -- Speed (ทุก frame กัน reset/respawn)
     if RUN_ON then local h = hum(); if h then h.WalkSpeed = SPEED end end
+    -- v4.47: โหมดวาป + auto ทำงานอยู่ = ปิดกระโดด (ไม่มีจังหวะตัวลอย → วาปพลาดตาย)
+    do
+        local h = hum()
+        if h then
+            local block = TP_ON and (AUTO_ON or FIRE_ON or CHECKIN_ON)
+            h:SetStateEnabled(Enum.HumanoidStateType.Jumping, not block)
+        end
+    end
     -- Noclip (ทุก frame)
     if NOCLIP_ON then
         local c = LP.Character
@@ -760,13 +768,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.46", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.47", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.46 " .. lastStatus end
+    if not deadLock then title.Text = "v4.47 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1199,7 +1207,11 @@ end)
 btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON, FIRE_ON =
         false, false, false, false, false, false, false, false, false, false, false
-    local h = hum(); if h then h.WalkSpeed = 16 end
+    local h = hum()
+    if h then
+        h.WalkSpeed = 16
+        h:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)   -- คืนกระโดด
+    end
     local c = LP.Character
     if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = true end end end
     for m, e in pairs(ESP) do pcall(function() e:Destroy() end) end
