@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.48 อยู่ใกล้เป้าแล้วไม่วาปซ้ำ — หายตัวกระตุก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.49 NPC ยิงเฉพาะ Talk — 'Ask to Leave'=ผีปลอม attr สะอาด ห้ามแตะ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -95,9 +95,10 @@ local function checkinPending()
                    and not m:GetAttribute("CompletedCheckIn") then
                     return r.Position
                 end
-                -- NPC อื่นที่มี prompt เปิดรอกด (มอบใบ/คุยรับงาน/???)
+                -- NPC อื่นที่มี prompt 'Talk' เปิดรอกด (มอบใบ/คุยรับงาน) — v4.49: Talk เท่านั้น
+                -- ('Ask to Leave' = ผีปลอม attr สะอาด ห้ามวาปเข้าไปหา/ห้ามกด)
                 for _, p in ipairs(m:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.Enabled then return r.Position end
+                    if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Talk" then return r.Position end
                 end
             end
         end
@@ -646,6 +647,10 @@ local function npcKind(m)
     -- ตัวไหนมีแต่ยังไม่ขึ้น Skinwalker = ผีปลอมตัวที่เกมยังไม่เฉลย → ส้ม "น่าสงสัย!"
     if m:GetAttribute("CameraEffect") or m:GetAttribute("PhotoEffect")
        or m:GetAttribute("HasCameraEffect") or m:GetAttribute("HasPhotoEffect") then return "sus" end
+    -- v4.49: มี prompt 'Ask to Leave' = ผีปลอมตัวแบบ attr สะอาด (เจอจาก Jack Hawks) → น่าสงสัย
+    for _, p in ipairs(m:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.ActionText == "Ask to Leave" then return "sus" end
+    end
     if m:GetAttribute("IsPatient")  then return "patient" end   -- คนไข้จริง
     if m:GetAttribute("IsVisitor")  then return "visitor" end   -- v4.44 คนมาเยี่ยมไข้ (DesignatedRoom=ห้องที่จะไปเยี่ยม)
     return "npc"   -- Fake/พนักงาน = NPC ทั่วไป (ไม่ใช่ผี)
@@ -698,8 +703,9 @@ bind(RS.Heartbeat, function(dt)
                     -- *** ห้ามยุ่งกับผี: ไม่กด prompt ใดๆ บนตัว Skinwalker (Talk/DNA/มอบใบ) ไม่ว่า toggle ไหนเปิด ***
                     -- (Talk อยู่ใน TREATD_ACTS ด้วย → ต้องกันที่ระดับ owner ไม่ใช่แค่ npcStep) — ใช้ชัตเตอร์/ยาผิดจัดการผีแทน
                     if not (owner and owner:GetAttribute("Skinwalker")) then
-                        -- มอบใบรับหมาย = กด E ที่ NPC (ขึ้น "พูดคุย"/Talk) → ยิงทุก prompt บนตัว NPC (ที่ไม่ใช่ผี) ตอนเช็คอิน
-                        local npcStep = CHECKIN_ON and owner ~= nil
+                        -- มอบใบรับหมาย = กด E ที่ NPC — v4.49: ยิงเฉพาะ 'Talk' เท่านั้น
+                        -- ห้ามยิง prompt อื่นบน NPC ('Ask to Leave' = กับดักผีปลอมตัว attr สะอาด กดแล้วซวย)
+                        local npcStep = CHECKIN_ON and owner ~= nil and a == "Talk"
                         if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
                             pcall(fp, p, 0)   -- เกม gate ลำดับเอง
                         end
@@ -773,13 +779,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.48", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.49", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.48 " .. lastStatus end
+    if not deadLock then title.Text = "v4.49 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
