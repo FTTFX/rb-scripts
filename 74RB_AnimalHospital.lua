@@ -259,8 +259,11 @@ local function findPickup(medName)
     for _, p in ipairs(workspace:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.ActionText == medName and p.Parent then
             local pos = partPos(p.Parent)
-            local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
-            if not best or d < bestD then best, bestD = p, d end
+            -- v4.67: ตัดจุดเก็บนอกแมพทิ้ง (เกมพักไอเทมไว้ใต้น้ำ/ไกล — บินตามไป = ลอยน้ำ)
+            if pos and (not fromPos or (pos - fromPos).Magnitude < 150) and pos.Y > -50 then
+                local d = fromPos and (pos - fromPos).Magnitude or math.huge
+                if not best or d < bestD then best, bestD = p, d end
+            end
         end
     end
     return best
@@ -859,13 +862,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.66", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.67", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.66 " .. lastStatus end
+    if not deadLock then title.Text = "v4.67 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
