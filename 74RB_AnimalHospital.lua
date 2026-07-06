@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.44 ESP คนเยี่ยมไข้ฟ้า + roomPatient ไม่คว้าคนเยี่ยม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.45 ห้ามวาปตอนตัวลอย — วาปกลางกระโดด=ตาย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -191,6 +191,14 @@ local function tpTo(pos)
     if not pos then return end
     -- v4.36: กันวาปหลุดโลก — เป้าต่ำกว่า Y=-50 หรือไกลเกิน 400 studs = เป้าเพี้ยน (prompt/ของนอกแมพ) ไม่ไป
     if pos.Y < -50 then return end
+    -- v4.45: ห้ามวาปตอนตัวลอย (กระโดด/ตกอยู่) — วาปกลางอากาศ = ตาย ; รอลงพื้นก่อน สูงสุด 1s
+    local h = hum()
+    if h and h.FloorMaterial == Enum.Material.Air then
+        local t0 = os.clock()
+        repeat task.wait(0.05); h = hum()
+        until not h or h.FloorMaterial ~= Enum.Material.Air or os.clock() - t0 > 1
+        if h and h.FloorMaterial == Enum.Material.Air then return end   -- ยังลอยอยู่ = ไม่วาปรอบนี้
+    end
     local r = hrp()
     if r and (pos - r.Position).Magnitude > 400 then
         setStatus("บล็อควาปเพี้ยน " .. math.floor((pos - r.Position).Magnitude) .. "m")
@@ -752,9 +760,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.44", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.45", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.44 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.45 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
