@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.59 บินทะลุเร็วแทนวาปทันที — เกมจับวาปไกลลงโทษบ้าคลั่ง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.60 Apply เลือก InBed ก่อน Main + คนไข้หาย=หยุดทันที)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -473,13 +473,18 @@ local function bedApplyPP(room)
     -- v4.12: มี 'Apply Treatment' หลายตัว (InBed เก่า Enabled=false + Main ตัวจริง) → เอาตัว Enabled ก่อน
     -- v4.50: ตัว Enabled ต้องอยู่ใกล้ห้องจริง <40 studs — obj 'Main' บางทีลอยอยู่นอกแมพ/ใต้น้ำ
     --        (บอทวาปตามแล้วหลุดแมพตอนรักษา) ; ไกลเกิน = ใช้ตัวในห้องแทน
+    -- v4.60: obj=Main เปิดค้างข้ามห้อง/ก่อนวินิจฉัย (กลไกใหม่ ไม่ใช่ Apply ประจำเตียง)
+    -- ลำดับเลือก: InBed(Enabled) > บนตัวคนไข้(Enabled) > Enabled อื่นในห้อง(Main) > ตัวแรกที่เจอ
     local rpos = partPos(room:FindFirstChild("Minigame") or room)
-    local first
+    local first, other
     for _, p in ipairs(room:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then
             if p.Enabled then
                 local pp = partPos(p.Parent)
-                if pp and rpos and (pp - rpos).Magnitude < 40 then return p end
+                if pp and rpos and (pp - rpos).Magnitude < 40 then
+                    if p.Parent.Name == "InBed" then return p end   -- ตัวจริงประจำเตียง
+                    other = other or p                              -- Main ฯลฯ เก็บเป็นตัวเลือกท้าย
+                end
             end
             first = first or p
         end
@@ -493,7 +498,7 @@ local function bedApplyPP(room)
             end
         end
     end
-    return first
+    return other or first
 end
 -- ตำแหน่งห้อง (ใช้เตียง) สำหรับเรียงระยะใกล้
 local function roomPos(room)
@@ -559,6 +564,7 @@ local function treatRoom(room)
     -- v4.54: ผีประจำห้อง (เปิดฆ่าผี) = รักษาตามขั้นตอนครบเหมือนคนไข้จริง (DNA/เครื่อง/วินิจฉัย)
     -- แล้ว "หักมุมตอนจ่ายยา" — Apply พร้อมเมื่อไหร่ค่อยยาผิด ; ห้ามไหลไปเก็บ/ให้ยาถูก (จะกลายเป็นรักษาผีหาย)
     local patient = roomPatient(room)
+    if not patient then return false end   -- v4.60: ไม่มีคนไข้ (ตาย/ออกไปแล้ว) = ห้ามทำอะไรกับห้องนี้
     local ghost = patient and patient:GetAttribute("Skinwalker")
     if ghost then
         if not KILLGHOST_ON then return false end
@@ -835,13 +841,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.59", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.60", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.59 " .. lastStatus end
+    if not deadLock then title.Text = "v4.60 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -978,6 +984,7 @@ task.spawn(function()
                     local guard = 0
                     while AUTO_ON and _G.AH74_GEN == MYGEN
                           and not roomDone(target)
+                          and roomPatient(target)   -- v4.60: คนไข้หาย (ตาย/ออก) = เลิกเกาะทันที ไม่ค้าง 60s
                           and guard < (target.Name == "Room8" and 300 or 8) do  -- v4.13: Room8 เกาะจนจบ (~60s) ห้องอื่น 1.6s แล้วสลับ
                         guard += 1
                         pcall(treatRoom, target)
