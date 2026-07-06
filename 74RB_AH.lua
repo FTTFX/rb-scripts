@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.94 กันน้ำเชื่อมไล่ผีพื้นโดนทิ้งขยะ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.95 แชร์ cooldown ไฟ/สไลม์ให้ pending — จุดหลอกไม่บล็อคเช็คอินค้าง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -514,16 +514,29 @@ local function faintPending()
     end
 end
 -- v4.75: ลำดับความสำคัญ — ไฟ (อันดับ 2), สไลม์ (อันดับ 3)
+-- v4.95: ตาราง cooldown แชร์กันระหว่าง loop ดับไฟ กับ firePending/slimePending
+--        (เดิม cooldown เป็น local ใน loop — จุดหลอก/เอื้อมไม่ถึงที่พักอยู่ ยังถูกนับว่า
+--         "มีไฟค้าง" → บล็อคเช็คอิน/รักษาถาวร สถานะค้าง "ดับไฟพื้น")
+local FIRE_COOL, FIRE_FAILN = {}, {}   -- ไฟพื้น/สไลม์: [prompt] = os.clock() หมดพัก / นับพลาด
+local BURN_FAIL = {}                   -- ไฟตัว NPC: [npc] = {n, t}
+local function fireResting(d)   -- จุดนี้พักอยู่ = ข้าม ไม่นับว่างานค้าง
+    return FIRE_COOL[d] and os.clock() - FIRE_COOL[d] <= 5
+end
+local function burnResting(m)
+    local f = BURN_FAIL[m]
+    return f and f.n >= 3 and os.clock() - f.t <= 15
+end
 local function firePending()
     local npcs = workspace:FindFirstChild("NPCs")
     if npcs then for _, m in ipairs(npcs:GetChildren()) do
         local pp = m:FindFirstChild("FirePP")
-        if pp and pp:IsA("ProximityPrompt") and pp.Enabled then return true end
+        if pp and pp:IsA("ProximityPrompt") and pp.Enabled and not burnResting(m) then return true end
     end end
     local rooms = workspace:FindFirstChild("Rooms")
     local me = hrp() and hrp().Position
     if rooms and me then for _, d in ipairs(rooms:GetDescendants()) do
-        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire" then
+        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
+           and not fireResting(d) then
             local pos = partPos(d.Parent)
             if pos and (pos - me).Magnitude < 120 then return true end
         end
@@ -534,7 +547,8 @@ local function slimePending()
     local misc = workspace:FindFirstChild("Misc")
     local me = hrp() and hrp().Position
     if misc and me then for _, d in ipairs(misc:GetDescendants()) do
-        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Clean Slime" then
+        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Clean Slime"
+           and not fireResting(d) then
             local pos = partPos(d.Parent)
             if pos and (pos - me).Magnitude < 120 then return true end
         end
@@ -1005,13 +1019,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.94", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.95", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.94 " .. lastStatus end
+    if not deadLock then title.Text = "v4.95 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1367,7 +1381,8 @@ local function doBurning(pp)
 end
 task.spawn(function()
     local lastAct = {}   -- v4.31: เว้นจังหวะต่อ NPC 2s — กันวาปถี่จนไม่ได้กลับไปรักษา
-    local fails = {}     -- v4.89: นับพลาดต่อ NPC — 3 ครั้งติด = พัก 15s (กันค้าง Treat Burns วนไม่จบ)
+    -- v4.95: ตารางพลาดย้ายไปแชร์เป็น BURN_FAIL — firePending จะได้ข้าม NPC ที่พักอยู่
+    local fails = BURN_FAIL
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อนไฟ
             local npcs = workspace:FindFirstChild("NPCs")
@@ -1399,8 +1414,8 @@ end)
 
 -- ===== Auto ดับไฟกองพื้น: PP 'Put out fire' (ใต้ Rooms, attr Charges) — กด E ที่ไฟ ไม่ใช้ถัง =====
 task.spawn(function()
-    local cooldown = {}   -- v4.31: จุดที่กดไม่เข้า → พัก 5s กันวาปวนไม่จบ (ไม่กลับไปรักษา)
-    local failN = {}      -- v4.90: นับพลาดต่อจุด — 3 ครั้ง = พักยาว 1 นาที (จุดเอื้อมไม่ถึง/หลอก)
+    -- v4.95: cooldown/failN ย้ายไปแชร์เป็น FIRE_COOL/FIRE_FAILN — pending จะได้ข้ามจุดที่พัก
+    local cooldown, failN = FIRE_COOL, FIRE_FAILN
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อน
             local rooms = workspace:FindFirstChild("Rooms")
