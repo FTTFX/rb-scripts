@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.82 ไม่ปิดชัตเตอร์ขัง NPC ที่เพิ่งเช็คอินเสร็จ — รอเดินออกก่อน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.83 ระยะรอเดินออกเหลือ 5 studs — ปิดใส่ผีไวขึ้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -954,13 +954,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.82", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.83", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.82 " .. lastStatus end
+    if not deadLock then title.Text = "v4.83 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1259,7 +1259,8 @@ do
                             pending = true                                   -- คนจริงรอ/กำลังเดินมา
                         end
                         -- v4.82: เช็คอินเสร็จแล้วแต่ยังยืนหน้าเคาน์เตอร์ = ยังไม่เดินออก → ห้ามปิดขังเขา
-                        if d < COUNTER_RANGE then leaving = true end
+                        -- v4.83: 5 studs พอ (ผู้ใช้จูน — 20 รอนานไป แค่พ้นหน้าประตูก็ปิดได้แล้ว)
+                        if d < 5 then leaving = true end
                     end
                 end
             end
