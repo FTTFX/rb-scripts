@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.89 กันค้าง Treat Burns — เคลียร์มือก่อนเก็บครีม + พลาด 3 ครั้งพัก 15s)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.90 กันค้างสไลม์/ไฟพื้น — พลาด 3 ครั้งพักจุดนั้น 1 นาที)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -977,13 +977,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.89", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.90", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.89 " .. lastStatus end
+    if not deadLock then title.Text = "v4.90 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1372,6 +1372,7 @@ end)
 -- ===== Auto ดับไฟกองพื้น: PP 'Put out fire' (ใต้ Rooms, attr Charges) — กด E ที่ไฟ ไม่ใช้ถัง =====
 task.spawn(function()
     local cooldown = {}   -- v4.31: จุดที่กดไม่เข้า → พัก 5s กันวาปวนไม่จบ (ไม่กลับไปรักษา)
+    local failN = {}      -- v4.90: นับพลาดต่อจุด — 3 ครั้ง = พักยาว 1 นาที (จุดเอื้อมไม่ถึง/หลอก)
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อน
             local rooms = workspace:FindFirstChild("Rooms")
@@ -1415,7 +1416,14 @@ task.spawn(function()
                             local dir = from and (from - pos).Magnitude > 1 and (from - pos).Unit or Vector3.new(1, 0, 0)
                             tpTo(pos + dir * 8); task.wait(0.15)
                         end
-                        if not pressPrompt(d) then cooldown[d] = os.clock() end  -- ไม่ดับ → พักจุดนี้
+                        -- v4.90: พลาดสะสม 3 ครั้ง = จุดนี้เอื้อมไม่ถึงจริง (สไลม์หลังกำแพง/จุดหลอก) → พักยาว 1 นาที
+                        if not pressPrompt(d) then
+                            local n = (failN[d] or 0) + 1; failN[d] = n
+                            cooldown[d] = os.clock() + (n >= 3 and 55 or 0)
+                            if n >= 3 then setStatus((d.ActionText == "Clean Slime" and "สไลม์" or "ไฟ") .. "เอื้อมไม่ถึง — พัก 1 นาที") end
+                        else
+                            failN[d] = nil
+                        end
                     end
                 end
             end
