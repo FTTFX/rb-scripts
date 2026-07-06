@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.54 ฆ่าผี: รักษาครบขั้นตอนก่อน แล้วหักมุมยาผิดตอนจ่าย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.55 ฆ่าผี: หยิบยาผิดก่อนรอ Apply — Apply เปิดเฉพาะตอนถือของ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -479,11 +479,17 @@ end
 -- ฆ่าผี: จงใจให้ยา "ผิด" (ยาที่ไม่ใช่ของห้องนี้) 1 ตัว
 -- *** ทำเฉพาะตอนผีถึงขั้น "จ่ายยา" แล้ว (Apply Treatment พร้อม) — ก่อนหน้านั้นปล่อย flow ปกติ ***
 local function killWithWrongMed(room)
-    -- รอจนผีอยู่ในเตียง + ถึงขั้นจ่ายยา (prompt Apply Treatment เปิดใช้งาน)
+    -- v4.55: เงื่อนไขเริ่ม = "วินิจฉัยเสร็จ (จอขึ้นรายการยา)" ไม่ใช่รอ Apply เปิด
+    -- เพราะ Apply เปิดเฉพาะตอน "ถือไอเทมอยู่" — รอ Apply ก่อนไปหยิบยา = กับดักไก่กับไข่ ค้างตลอด
+    local meds = requiredMeds(room)
     local bedPP = bedApplyPP(room)
-    if not bedPP or not bedPP.Parent or not bedPP.Enabled then return false end  -- ยังไม่ถึงขั้นจ่ายยา → รอ
+    local applyOpen = bedPP and bedPP.Parent and bedPP.Enabled
+    if #meds == 0 and not applyOpen then
+        setStatus("ผี" .. room.Name .. ": รอวินิจฉัยเสร็จ")
+        return false
+    end
     local needed = {}
-    for _, m in ipairs(requiredMeds(room)) do needed[m] = true end
+    for _, m in ipairs(meds) do needed[m] = true end
     -- v4.28: หา "ยาผิด" จากตู้ยาจริงเท่านั้น (Workspace.Model.Items.<ชื่อ>.PP)
     -- เดิมสแกน prompt ทั้ง workspace → คว้า 'Interact'/'Trash Item' มาเป็นยา → หา Tool ไม่เจอ → ฆ่าผีล้มเงียบ
     local wrongName, wrongPP
@@ -497,19 +503,32 @@ local function killWithWrongMed(room)
             end
         end
     end
-    if not wrongName then return false end
+    if not wrongName then setStatus("ผี" .. room.Name .. ": หายาผิดไม่เจอ (Model.Items?)"); return false end
+    setStatus("ผี" .. room.Name .. ": ยาผิด=" .. wrongName)
     -- ถือยาเต็ม 3 ช่อง = เก็บเพิ่มไม่ได้ → ทิ้งอันแรกก่อน
     if not findTool(wrongName) and #heldTools() >= 3 then discardTool(heldTools()[1]) end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
         tpTo(partPos(wrongPP.Parent)); task.wait(0.18)
         pressPrompt(wrongPP, function() return findTool(wrongName) ~= nil end, true); task.wait(0.1)
     end
-    if not findTool(wrongName) then return false end
-    tpTo(partPos(bedPP.Parent)); task.wait(0.18)
-    if selectTool(wrongName) then
-        pressPrompt(bedPP); task.wait(0.2); return true
+    if not findTool(wrongName) then setStatus("ผี" .. room.Name .. ": เก็บยาผิดไม่ขึ้น"); return false end
+    if not selectTool(wrongName) then
+        setStatus("ผี" .. room.Name .. ": หยิบ " .. wrongName .. " ขึ้นมือไม่ได้")
+        return false
     end
-    return false
+    -- ถือยาผิดแล้ว → ไปเตียง แล้วรอ Apply เปิด (เปิดตอนถือของ) สูงสุด 3s
+    bedPP = bedApplyPP(room)
+    if not (bedPP and bedPP.Parent) then return false end
+    tpTo(partPos(bedPP.Parent)); task.wait(0.18)
+    local t0 = os.clock()
+    repeat task.wait(0.1); bedPP = bedApplyPP(room)
+    until (bedPP and bedPP.Parent and bedPP.Enabled) or os.clock() - t0 > 3
+    if not (bedPP and bedPP.Parent and bedPP.Enabled) then
+        setStatus("ผี" .. room.Name .. ": ถือ " .. wrongName .. " แล้วแต่ Apply ไม่เปิด")
+        return false
+    end
+    setStatus("ผี" .. room.Name .. ": จ่าย " .. wrongName)
+    pressPrompt(bedPP); task.wait(0.2); return true
 end
 -- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
 local function treatRoom(room)
@@ -521,8 +540,9 @@ local function treatRoom(room)
     if ghost then
         if not KILLGHOST_ON then return false end
         local bedPP = bedApplyPP(room)
-        if bedPP and bedPP.Parent and bedPP.Enabled then
-            return killWithWrongMed(room)         -- ถึงขั้นจ่ายยาแล้ว → ยาผิด
+        -- v4.55: วินิจฉัยเสร็จ (จอขึ้นรายการยา) หรือ Apply เปิด = เข้าขั้นจ่ายยาผิดได้เลย
+        if (bedPP and bedPP.Parent and bedPP.Enabled) or #requiredMeds(room) > 0 then
+            return killWithWrongMed(room)
         end
         -- ยังไม่ถึง → ทำสเต็ปวินิจฉัยข้างล่างเหมือนคนไข้ปกติ (บังคับเข้า branch วินิจฉัยเสมอ)
     end
@@ -792,13 +812,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.54", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.55", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.54 " .. lastStatus end
+    if not deadLock then title.Text = "v4.55 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
