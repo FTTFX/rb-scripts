@@ -1354,7 +1354,7 @@ task.spawn(function()
                         end
                     end
                 end
-            end end
+            end
         end
         task.wait(0.15)   -- v4.71: สแกนถี่เท่าดับไฟ — เจอปุ๊บอุ้มทันที
     end
