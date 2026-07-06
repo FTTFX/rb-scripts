@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.68 นับรายชนิดแทนราย frame — ของซ้ำติ๊กสลับใบไม่หลอกบอทแล้ว)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.70 อุ้มคนเป็นลมส่งห้อง + สลับหลายห้องพร้อมกัน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -878,13 +878,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.69", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.70", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.69 " .. lastStatus end
+    if not deadLock then title.Text = "v4.70 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1285,6 +1285,66 @@ task.spawn(function()
             end
         end
         task.wait(0.35)
+    end
+end)
+
+-- ===== v4.70 อุ้มคนเป็นลมส่งห้อง: NPC (คนไข้/คนเยี่ยม ไม่ใช่ผี) มี PP 'Carry' =====
+-- flow: บินไปหา → Carry → บินไปห้อง DesignatedRoom → กด prompt วาง (บนตัว NPC/เตียง)
+task.spawn(function()
+    while _G.AH74_GEN == MYGEN do
+        if AUTO_ON and fp then
+            local npcs = workspace:FindFirstChild("NPCs")
+            if npcs then for _, m in ipairs(npcs:GetChildren()) do
+                if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
+                    local carryPP
+                    for _, p in ipairs(m:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Carry" then
+                            carryPP = p; break
+                        end
+                    end
+                    if carryPP then
+                        setStatus("อุ้ม " .. m.Name)
+                        tpTo(partPos(m)); task.wait(0.15)
+                        pressPrompt(carryPP)
+                        task.wait(0.3)
+                        -- พาไปห้องที่เขาต้องไป
+                        local roomName = m:GetAttribute("DesignatedRoom")
+                        local rooms = workspace:FindFirstChild("Rooms")
+                        local room
+                        if rooms and roomName then
+                            for _, grp in ipairs({"Medical", "Emergency"}) do
+                                local g = rooms:FindFirstChild(grp)
+                                local rr = g and g:FindFirstChild(roomName)
+                                if rr then room = rr end
+                            end
+                        end
+                        if room then
+                            setStatus("อุ้ม " .. m.Name .. " → " .. roomName)
+                            tpTo(roomPos(room)); task.wait(0.3)
+                            -- วางตัว: prompt เปิดบนตัว NPC (Drop/Place?) ก่อน แล้วค่อยหาในห้อง
+                            local dropped = false
+                            for _, p in ipairs(m:GetDescendants()) do
+                                if p:IsA("ProximityPrompt") and p.Enabled then
+                                    setStatus("วาง (" .. p.ActionText .. ")")
+                                    pressPrompt(p); dropped = true; break
+                                end
+                            end
+                            if not dropped then
+                                for _, p in ipairs(room:GetDescendants()) do
+                                    if p:IsA("ProximityPrompt") and p.Enabled and (
+                                        p.ActionText:find("Place") or p.ActionText:find("Drop")
+                                        or p.ActionText:find("Lay") or p.ActionText:find("Put")) then
+                                        setStatus("วาง (" .. p.ActionText .. ")")
+                                        pressPrompt(p); break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end end
+        end
+        task.wait(0.5)
     end
 end)
 
