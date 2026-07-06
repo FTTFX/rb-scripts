@@ -520,20 +520,32 @@ local function killWithWrongMed(room)
     end
     local needed = {}
     for _, m in ipairs(meds) do needed[m] = true end
-    -- v4.28: หา "ยาผิด" จากตู้ยาจริงเท่านั้น (Workspace.Model.Items.<ชื่อ>.PP)
-    -- เดิมสแกน prompt ทั้ง workspace → คว้า 'Interact'/'Trash Item' มาเป็นยา → หา Tool ไม่เจอ → ฆ่าผีล้มเงียบ
-    local wrongName, wrongPP
-    local items = workspace:FindFirstChild("Model")
-    items = items and items:FindFirstChild("Items")
-    if items then
-        for _, it in ipairs(items:GetChildren()) do
-            local ppp = it:FindFirstChild("PP")
-            if ppp and ppp:IsA("ProximityPrompt") and not needed[it.Name] then
-                wrongName, wrongPP = it.Name, ppp; break
-            end
+    -- v4.62: หา "ยาผิด" จากรายชื่อยาที่รู้จัก ผ่าน findPickup (ค้น ActionText ทั้งแมพ —
+    -- ไม่ผูก path Model.Items ที่เกมย้าย/ลบไปแล้ว) ; เลือกตัวแรกที่ไม่อยู่ในรายการของห้องนี้
+    local MED_NAMES = {
+        "Herbs", "Eye Drops", "Cough Syrup", "Maple Syrup", "Medicine", "Ointment", "Thermo",
+        "Bandages", "Medkit", "Antibiotics", "IV Drops",
+    }
+    -- + ไดนามิก: ยาที่จอ "ห้องอื่น" เรียกอยู่ = เป็นยาแน่นอน (กันเกมออกยาใหม่ที่ไม่อยู่ในลิสต์)
+    local rooms = workspace:FindFirstChild("Rooms")
+    if rooms then
+        for _, grp in ipairs({"Medical", "Emergency"}) do
+            local g = rooms:FindFirstChild(grp)
+            if g then for _, r2 in ipairs(g:GetChildren()) do
+                if r2 ~= room then
+                    for _, mm in ipairs(requiredMeds(r2)) do MED_NAMES[#MED_NAMES+1] = mm end
+                end
+            end end
         end
     end
-    if not wrongName then setStatus("ผี" .. room.Name .. ": หายาผิดไม่เจอ (Model.Items?)"); return false end
+    local wrongName, wrongPP
+    for _, name in ipairs(MED_NAMES) do
+        if not needed[name] then
+            local pp = findPickup(name)
+            if pp and pp.Parent then wrongName, wrongPP = name, pp; break end
+        end
+    end
+    if not wrongName then setStatus("ผี" .. room.Name .. ": หายาผิดไม่เจอ"); return false end
     setStatus("ผี" .. room.Name .. ": ยาผิด=" .. wrongName)
     -- ถือยาเต็ม 3 ช่อง = เก็บเพิ่มไม่ได้ → ทิ้งอันแรกก่อน
     if not findTool(wrongName) and #heldTools() >= 3 then discardTool(heldTools()[1]) end
@@ -829,13 +841,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.61", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.62", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.61 " .. lastStatus end
+    if not deadLock then title.Text = "v4.62 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
