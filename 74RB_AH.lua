@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.91 ลำดับงานฉุกเฉิน: อุ้มทีละคน + ล็อค CARRYING ไฟ/ชัตเตอร์ห้ามแทรก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.92 whitelist ของห้ามทิ้งขยะ: Taser/ถังดับเพลิง/Gun/Cola/Coffee)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -331,8 +331,18 @@ local function trashPrompt()
     end
     return best
 end
+-- v4.92: ของห้ามทิ้งขยะ — ต้องคืน station (Taser/ถังดับเพลิง) หรือซื้อมาด้วยเงิน (Gun/Cola/Coffee)
+local NO_DISCARD = { "taser", "extinguisher", "gun", "cola", "coffee" }
+local function protectedTool(tool)
+    local n = tool.Name:lower()
+    for _, k in ipairs(NO_DISCARD) do
+        if n:find(k, 1, true) then return true end
+    end
+    return false
+end
 -- ทิ้ง Tool 1 ชิ้น: equip → วาปไปถังขยะ → fire
 local function discardTool(tool)
+    if protectedTool(tool) then return end   -- v4.92: ห้ามทิ้งของสำคัญ
     local h = hum()
     local tp = trashPrompt()
     if not (h and tp and tp.Parent) then return end
@@ -660,7 +670,12 @@ local function killWithWrongMed(room)
     if not wrongName then setStatus("ผี" .. room.Name .. ": หายาผิดไม่เจอ"); return false end
     setStatus("ผี" .. room.Name .. ": ยาผิด=" .. wrongName)
     -- ถือยาเต็ม 3 ช่อง = เก็บเพิ่มไม่ได้ → ทิ้งอันแรกก่อน
-    if not findTool(wrongName) and #heldTools() >= 3 then discardTool(heldTools()[1]) end
+    if not findTool(wrongName) and #heldTools() >= 3 then
+        -- v4.92: เลือกชิ้นแรกที่ "ทิ้งได้จริง" (ข้ามของห้ามทิ้ง — ไม่งั้น no-op แล้ววนค้าง)
+        for _, t in ipairs(heldTools()) do
+            if not protectedTool(t) then discardTool(t) break end
+        end
+    end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
         tpTo(partPos(wrongPP.Parent)); task.wait(0.18)
         pressPrompt(wrongPP, function() return findTool(wrongName) ~= nil end, true); task.wait(0.1)
@@ -986,13 +1001,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.91", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.92", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.91 " .. lastStatus end
+    if not deadLock then title.Text = "v4.92 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
