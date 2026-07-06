@@ -749,9 +749,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.41", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.42", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.41 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.42 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1027,8 +1027,13 @@ end
 local function doBurning(pp)
     local a = pp.ActionText
     if a == "Fire" then
-        tpTo(partPos(pp.Parent)); task.wait(0.15)          -- วาปไปหาคนติดไฟก่อน (เหมือนเช็คอิน)
-        pressPrompt(pp)                                    -- ดับเปลว (fp + fallback กด E)
+        -- v4.42: ยืนห่างคนติดไฟ 8 studs (เหมือนไฟพื้น/สไลม์) — ไม่วาปเข้าไปโดนเปลว
+        local pos, from = partPos(pp.Parent), hrp() and hrp().Position
+        if pos then
+            local dir = (from and (from - pos).Magnitude > 1) and (from - pos).Unit or Vector3.new(1, 0, 0)
+            tpTo(pos + dir * 8); task.wait(0.15)
+        end
+        pressPrompt(pp)                                    -- ดับเปลว
     elseif a == "Treat Burns" then
         if heldCount("Ointment") < 1 then                  -- ยังไม่มีครีม → ไปเก็บ
             local cream = findPickup("Ointment")
