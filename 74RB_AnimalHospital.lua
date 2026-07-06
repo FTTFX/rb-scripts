@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.80 ชัตเตอร์ไม่ปิดใส่คนไข้/ผู้เยี่ยมที่กำลังมาเช็คอิน — เปิดรอถึง 60 studs)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.81 อุ้มวางแล้ว=จบถาวร — เช็คจากมือจริง ไม่เชื่อ CarriedBy ค้าง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -452,7 +452,17 @@ local function faintPending()
            and not m:GetAttribute("InBed")   -- v4.77: ขึ้นเตียงแล้ว = จบงาน (เกมอาจไม่เคลียร์ CarriedBy)
            and (not FAINT_DONE[m] or os.clock() - FAINT_DONE[m] > 10) then
             -- ยังอุ้มอยู่ (เราเป็นคนอุ้ม) ก็นับว่างานยังไม่จบ — ทำจนวางลงเตียง
-            if m:GetAttribute("CarriedBy") == LP.UserId then return m, nil end
+            -- v4.81: เช็ค "จากมือจริง" — อุ้มอยู่จริงตัว NPC ต้องติดตัวเรา (<10 studs)
+            --        เกมไม่เคลียร์ CarriedBy หลังวางเตียงห้องอื่น → attr ค้างแต่ตัวอยู่ไกล = วางแล้ว จบถาวร
+            if m:GetAttribute("CarriedBy") == LP.UserId then
+                local me, np = hrp() and hrp().Position, partPos(m)
+                if me and np then
+                    if (np - me).Magnitude < 10 then return m, nil end
+                    FAINT_DONE[m] = math.huge   -- วางไปแล้ว — ไม่กลับมาวนอีก
+                else
+                    return m, nil
+                end
+            end
             for _, p in ipairs(m:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Carry" then
                     return m, p
@@ -944,13 +954,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.80", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.81", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.80 " .. lastStatus end
+    if not deadLock then title.Text = "v4.81 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1441,11 +1451,22 @@ task.spawn(function()
                                     return not dropPP.Parent or not dropPP.Enabled
                                         or m:GetAttribute("CarriedBy") == nil or m:GetAttribute("InBed")
                                 end)
-                                setStatus("วาง " .. m.Name .. " เสร็จ")
+                                task.wait(0.2)
+                                -- v4.81: วางสำเร็จจริง (ตัวหลุดจากมือ/ขึ้นเตียง) = จบถาวร กลับไปทำงานอื่นเลย
+                                local me, np = hrp() and hrp().Position, partPos(m)
+                                if m:GetAttribute("InBed") or m:GetAttribute("CarriedBy") == nil
+                                   or (me and np and (np - me).Magnitude > 10) then
+                                    FAINT_DONE[m] = math.huge
+                                    setStatus("วาง " .. m.Name .. " เสร็จ")
+                                else
+                                    setStatus("วาง " .. m.Name .. " ไม่สำเร็จ — ลองใหม่ 10s")
+                                end
                             else
                                 setStatus("หาเตียงวาง " .. m.Name .. " ไม่ได้ — พัก 10s")
                             end
-                            FAINT_DONE[m] = os.clock()   -- v4.78: พักทุกกรณี — วางไม่ได้ก็ห้ามวนติด
+                            if not FAINT_DONE[m] or FAINT_DONE[m] ~= math.huge then
+                                FAINT_DONE[m] = os.clock()   -- v4.78: พักทุกกรณี — วางไม่ได้ก็ห้ามวนติด
+                            end
                         end
                     end
                 end
