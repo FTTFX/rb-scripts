@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.72 อุ้มคนเป็นลมย้ายไปปุ่มดับไฟ + ไม่รู้ห้อง=วางหน้าเคาน์เตอร์)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.73 วางคนเป็นลม = 'Place Patient' ที่เตียงห้องปลายทาง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -893,13 +893,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.72", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.73", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.72 " .. lastStatus end
+    if not deadLock then title.Text = "v4.73 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1339,23 +1339,27 @@ task.spawn(function()
                         if dest then
                             setStatus("อุ้ม " .. m.Name .. " → " .. (room and roomName or "เคาน์เตอร์"))
                             tpTo(dest); task.wait(0.3)
-                            -- วางตัว: prompt เปิดบนตัว NPC (Drop/Place?) ก่อน แล้วค่อยหาในห้อง
-                            local dropped = false
-                            for _, p in ipairs(m:GetDescendants()) do
-                                if p:IsA("ProximityPrompt") and p.Enabled then
-                                    setStatus("วาง (" .. p.ActionText .. ")")
-                                    pressPrompt(p); dropped = true; break
-                                end
-                            end
-                            if not dropped and room then
+                            -- v4.73: ปุ่มวางตัวจริง = 'Place Patient' ที่เตียงของห้อง (ยืนยันจาก dump)
+                            local dropPP
+                            if room then
                                 for _, p in ipairs(room:GetDescendants()) do
-                                    if p:IsA("ProximityPrompt") and p.Enabled and (
-                                        p.ActionText:find("Place") or p.ActionText:find("Drop")
-                                        or p.ActionText:find("Lay") or p.ActionText:find("Put")) then
-                                        setStatus("วาง (" .. p.ActionText .. ")")
-                                        pressPrompt(p); break
+                                    if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
+                                        dropPP = p; break
                                     end
                                 end
+                            end
+                            if not dropPP then   -- fallback: prompt เปิดบนตัว NPC (Drop ฯลฯ)
+                                for _, p in ipairs(m:GetDescendants()) do
+                                    if p:IsA("ProximityPrompt") and p.Enabled then dropPP = p; break end
+                                end
+                            end
+                            if dropPP then
+                                setStatus("วาง (" .. dropPP.ActionText .. ")")
+                                tpTo(partPos(dropPP.Parent)); task.wait(0.15)
+                                pressPrompt(dropPP, function()
+                                    return not dropPP.Parent or not dropPP.Enabled
+                                        or m:GetAttribute("CarriedBy") == nil
+                                end)
                             end
                         end
                     end
