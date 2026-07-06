@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.73 วางคนเป็นลม = 'Place Patient' ที่เตียงห้องปลายทาง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.74 กุญแจล็อค WORKING — สไลม์/ไฟ/อุ้ม/blind-fire ห้ามแทรกตอนจ่ายยา)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -44,6 +44,9 @@ local NPC_SPEED = 28     -- ปรับได้
 local SPEED = 50
 local cam = workspace.CurrentCamera
 local setStatus = function() end   -- v4.32: โชว์ว่ากำลังทำอะไรบนหัว GUI (ตัวจริงผูกหลังสร้าง GUI)
+-- v4.74: กุญแจล็อคงาน — ตอน treatRoom กำลังจ่ายยา ห้าม loop อื่น (สไลม์/ดับไฟ/อุ้ม) ลากตัวไปไหน
+-- (เคยโดน: สไลม์เกิดกลางคิวผ่าตัด → บินไปล้าง → fp ยิงใส่ของตรงหน้า = จ่ายผิด = ตาย)
+local WORKING = false
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
 -- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
@@ -791,8 +794,8 @@ bind(RS.Heartbeat, function(dt)
         end end
     end
 
-    -- Auto: ยิงสเต็ป เช็คอิน (CHECKIN_ON) + วินิจฉัย/เตรียม (AUTO_ON) ทุก 0.6s
-    if (AUTO_ON or CHECKIN_ON) and fp then
+    -- Auto: ยิงสเต็ป เช็คอิน (CHECKIN_ON) + วินิจฉัย/เตรียม (AUTO_ON) — หยุดตอนกำลังจ่ายยา (WORKING)
+    if (AUTO_ON or CHECKIN_ON) and fp and not WORKING then
         fireAcc += dt
         if fireAcc >= 0.3 then   -- v4.9 เร็วขึ้น 2 เท่า
             fireAcc = 0
@@ -893,13 +896,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.73", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.74", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.73 " .. lastStatus end
+    if not deadLock then title.Text = "v4.74 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1044,7 +1047,9 @@ task.spawn(function()
                           and roomPatient(target)   -- v4.60: คนไข้หาย (ตาย/ออก) = เลิกเกาะทันที
                           and guard < 8 do
                         guard += 1
+                        WORKING = true
                         pcall(treatRoom, target)
+                        WORKING = false
                         task.wait(0.2)
                     end
                 else
@@ -1234,7 +1239,7 @@ end
 task.spawn(function()
     local lastAct = {}   -- v4.31: เว้นจังหวะต่อ NPC 2s — กันวาปถี่จนไม่ได้กลับไปรักษา
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp then
+        if FIRE_ON and fp and not WORKING then
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
@@ -1254,7 +1259,7 @@ end)
 task.spawn(function()
     local cooldown = {}   -- v4.31: จุดที่กดไม่เข้า → พัก 5s กันวาปวนไม่จบ (ไม่กลับไปรักษา)
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp then
+        if FIRE_ON and fp and not WORKING then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1310,7 +1315,7 @@ end)
 -- v4.72: อยู่ในปุ่ม "ดับไฟ" (กลุ่มงานฉุกเฉิน) — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp then
+        if FIRE_ON and fp and not WORKING then
             do
                 local m, carryPP = faintPending()
                 do
