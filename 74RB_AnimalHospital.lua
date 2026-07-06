@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.53 รัศมีเคาน์เตอร์ 15)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.54 ฆ่าผี: รักษาครบขั้นตอนก่อน แล้วหักมุมยาผิดตอนจ่าย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -514,16 +514,22 @@ end
 -- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
 local function treatRoom(room)
     if roomDone(room) then return false end          -- เสร็จ/ฟื้นแล้ว → ไม่วาปซ้ำ
-    -- คนไข้เป็นผี? → ฆ่าด้วยยาผิด (ถ้าเปิดโหมด) / ข้าม (ถ้าปิด — ไม่รักษาผี)
+    -- v4.54: ผีประจำห้อง (เปิดฆ่าผี) = รักษาตามขั้นตอนครบเหมือนคนไข้จริง (DNA/เครื่อง/วินิจฉัย)
+    -- แล้ว "หักมุมตอนจ่ายยา" — Apply พร้อมเมื่อไหร่ค่อยยาผิด ; ห้ามไหลไปเก็บ/ให้ยาถูก (จะกลายเป็นรักษาผีหาย)
     local patient = roomPatient(room)
-    if patient and patient:GetAttribute("Skinwalker") then
-        if KILLGHOST_ON then return killWithWrongMed(room) end
-        return false
+    local ghost = patient and patient:GetAttribute("Skinwalker")
+    if ghost then
+        if not KILLGHOST_ON then return false end
+        local bedPP = bedApplyPP(room)
+        if bedPP and bedPP.Parent and bedPP.Enabled then
+            return killWithWrongMed(room)         -- ถึงขั้นจ่ายยาแล้ว → ยาผิด
+        end
+        -- ยังไม่ถึง → ทำสเต็ปวินิจฉัยข้างล่างเหมือนคนไข้ปกติ (บังคับเข้า branch วินิจฉัยเสมอ)
     end
     local meds = requiredMeds(room)
     -- ยังไม่วินิจฉัย: คนไข้นอนเตียงแล้ว → ทำเครื่อง (Talk/DNA ที่ตัว + Analyze/Process ในห้อง)
     -- MACHINE_ON=ON วาปไปก่อนยิง | OFF ยิงในที่ (ไม่วาป — เราเดินไปเอง เหมือน Ver.ก่อน)
-    if #meds == 0 then
+    if #meds == 0 or ghost then   -- v4.54: ผี = อยู่ในโหมดวินิจฉัยตลอด ไม่มีวันไปเก็บ/ให้ยาถูก
         -- v4.10: ถอด gate "R6_ON ข้าม Room6" ออก — เดิมทำให้บอทไม่วาปไป Room6 เลยตอนเปิดสี R6
         -- (ช่วงเล่นปริศนาสี prompt ในห้อง Enabled=false หมดอยู่แล้ว → ไม่มีวาปแย่งกัน)
         local DIAG_NPC  = { ["Talk"]=true, ["Take DNA Sample"]=true }   -- prompt บนตัวคนไข้
@@ -786,13 +792,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.53", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.54", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.53 " .. lastStatus end
+    if not deadLock then title.Text = "v4.54 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
