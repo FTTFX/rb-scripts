@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.47 ปิดกระโดดตอน auto+วาป — ไม่มีจังหวะตัวลอย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.48 อยู่ใกล้เป้าแล้วไม่วาปซ้ำ — หายตัวกระตุก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -191,6 +191,11 @@ local function tpTo(pos)
     if not pos then return end
     -- v4.36: กันวาปหลุดโลก — เป้าต่ำกว่า Y=-50 หรือไกลเกิน 400 studs = เป้าเพี้ยน (prompt/ของนอกแมพ) ไม่ไป
     if pos.Y < -50 then return end
+    -- v4.48: อยู่ใกล้เป้า ≤6 studs แล้ว = ไม่วาปซ้ำ (เดิม loop สั่งวาปจุดเดิมทุก 0.3s → ตัวกระตุกตลอด)
+    do
+        local r0 = hrp()
+        if r0 and (pos - r0.Position).Magnitude <= 6 then return end
+    end
     -- v4.45: ห้ามวาปตอนตัวลอย (กระโดด/ตกอยู่) — วาปกลางอากาศ = ตาย ; รอลงพื้นก่อน สูงสุด 1s
     local h = hum()
     if h and h.FloorMaterial == Enum.Material.Air then
@@ -768,13 +773,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.47", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.48", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.47 " .. lastStatus end
+    if not deadLock then title.Text = "v4.48 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
