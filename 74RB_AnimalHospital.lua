@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.76 ข้ามผีดื้อยา MedicineImmune + เคลียร์สถานะหลังวางคนเป็นลม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.77 วางเสร็จ=จบงานจริง — InBed/พัก 10s ต่อหัว กันวนอุ้มซ้ำ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -437,11 +437,14 @@ local function hasWork(room, pat)
 end
 
 -- v4.71: คนเป็นลม (มี PP 'Carry' บนตัว, ไม่ใช่ผี) = งานด่วนอันดับ 1
+local FAINT_DONE = {}   -- v4.77: พักต่อหัวหลังพยายามวาง — กันวนซ้ำถ้าเกมไม่เคลียร์ CarriedBy
 local function faintPending()
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return nil, nil end
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
+        if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly")
+           and not m:GetAttribute("InBed")   -- v4.77: ขึ้นเตียงแล้ว = จบงาน (เกมอาจไม่เคลียร์ CarriedBy)
+           and (not FAINT_DONE[m] or os.clock() - FAINT_DONE[m] > 10) then
             -- ยังอุ้มอยู่ (เราเป็นคนอุ้ม) ก็นับว่างานยังไม่จบ — ทำจนวางลงเตียง
             if m:GetAttribute("CarriedBy") == LP.UserId then return m, nil end
             for _, p in ipairs(m:GetDescendants()) do
@@ -935,13 +938,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.76", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.77", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.76 " .. lastStatus end
+    if not deadLock then title.Text = "v4.77 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1407,11 +1410,10 @@ task.spawn(function()
                                 tpTo(partPos(dropPP.Parent)); task.wait(0.15)
                                 pressPrompt(dropPP, function()
                                     return not dropPP.Parent or not dropPP.Enabled
-                                        or m:GetAttribute("CarriedBy") == nil
+                                        or m:GetAttribute("CarriedBy") == nil or m:GetAttribute("InBed")
                                 end)
-                                if m:GetAttribute("CarriedBy") == nil then
-                                    setStatus("วาง " .. m.Name .. " เสร็จ")   -- v4.76: เคลียร์สถานะค้าง
-                                end
+                                FAINT_DONE[m] = os.clock()   -- v4.77: พัก 10s ไม่วนซ้ำหัวนี้
+                                setStatus("วาง " .. m.Name .. " เสร็จ")
                             end
                         end
                     end
