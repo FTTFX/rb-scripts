@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.79 กันบินขึ้นฟ้าไปเก็บยาก๊อปปี้นอกแมพ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.80 ชัตเตอร์ไม่ปิดใส่คนไข้/ผู้เยี่ยมที่กำลังมาเช็คอิน — เปิดรอถึง 60 studs)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -944,13 +944,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.79", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.80", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.79 " .. lastStatus end
+    if not deadLock then title.Text = "v4.80 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1226,7 +1226,11 @@ do
         if not misc then return nil end
         return partPos(misc:FindFirstChild("CheckIn")) or partPos(misc:FindFirstChild("ShutterButton"))
     end
-    -- สแกนใกล้เคาน์เตอร์ → ghost(ผีอยู่), pending(คนไข้จริงที่ "ยังไม่เช็คอิน")
+    -- สแกนใกล้เคาน์เตอร์ → ghost(ผีอยู่), pending(คนไข้/ผู้เยี่ยมจริงที่ "ยังไม่เช็คอิน")
+    -- v4.80: pending นับ IsVisitor ด้วย (เดิมปิดใส่กลางคันตอนเช็คอินให้ผู้เยี่ยม) + ขยายรัศมีเป็น
+    --        INCOMING_RANGE 60 — คนไข้จริง "กำลังเดินมา" ก็ถือว่ารอ → เปิดประตูรอ ไม่ปิดใส่
+    --        (เคาน์เตอร์มี 2 ช่อง คนจริงใช้อีกช่องได้ ผีบอทไม่เช็คอินให้อยู่แล้ว)
+    local INCOMING_RANGE = 60
     local function counterScan()
         local cpos = counterPos(); if not cpos then return false, false end
         local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return false, false end
@@ -1234,11 +1238,15 @@ do
         for _, m in ipairs(npcs:GetChildren()) do
             if m:IsA("Model") then
                 local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
-                if r and (r.Position - cpos).Magnitude < COUNTER_RANGE then
-                    if m:GetAttribute("Skinwalker") then ghost = true       -- ผี (มี IsPatient ด้วยก็นับเป็นผี)
-                    elseif m:GetAttribute("IsPatient")                       -- คนไข้จริงยังไม่เช็คอินเสร็จ
-                       and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
-                        pending = true
+                local d = r and (r.Position - cpos).Magnitude
+                if d then
+                    if m:GetAttribute("Skinwalker") then
+                        if d < COUNTER_RANGE then ghost = true end          -- ผี (มี IsPatient ด้วยก็นับเป็นผี)
+                    elseif (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
+                       and not m:GetAttribute("Anomaly")
+                       and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn")
+                       and d < INCOMING_RANGE then
+                        pending = true                                       -- คนจริงรอ/กำลังเดินมา
                     end
                 end
             end
