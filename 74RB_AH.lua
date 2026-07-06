@@ -744,9 +744,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.39", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.40", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.39 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.40 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -1066,12 +1066,18 @@ task.spawn(function()
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
                 -- v4.39: + สไลม์ (Workspace.Misc.Slime PP 'Clean Slime' — กดทีเดียวหาย)
                 local fires = {}
+                local mypos = hrp() and hrp().Position
                 local function collect(root)
                     for _, d in ipairs(root:GetDescendants()) do
                         if d:IsA("ProximityPrompt") and d.Enabled
                            and (d.ActionText == "Put out fire" or d.ActionText == "Clean Slime")
                            and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
-                            fires[#fires+1] = d
+                            -- v4.40: เอาเฉพาะเป้าใกล้ตัว <120 studs — Misc.Slime ตอน "ไม่มีเหตุ" เกมจอดไว้
+                            -- นอกแมพแต่ PP ยัง Enabled → เวอร์ชันก่อนวาปตามไปตกตาย
+                            local pos = partPos(d.Parent)
+                            if pos and mypos and (pos - mypos).Magnitude < 120 then
+                                fires[#fires+1] = d
+                            end
                         end
                     end
                 end
