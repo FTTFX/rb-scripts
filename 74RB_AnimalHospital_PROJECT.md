@@ -278,6 +278,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 | **NPC เนื้อเรื่อง** | `StoryForced=true` (Barney `CoffeeArcDay=N`, "???", 'Let him hide with you', 'Accept Suitcase') | ยังไม่ auto — ชื่อ NPC ทั่วไปสุ่ม ใช้ชื่อจับผีไม่ได้ |
 | **คนเยี่ยมไข้ (Visitor)** | `IsVisitor=N + VisitingName + DesignatedRoom=ห้องที่มาเยี่ยม` (ไม่มี IsPatient) | **ต้องเช็คอินเหมือนคนไข้** (v4.52 ✅ ยืนยันทำงาน): checkinPending นับ IsVisitor เท่า IsPatient → วาปไปหา + blind-fire CHECKIN_ACTS ; ESP ฟ้า "เยี่ยมไข้" ; โต๊ะต้อนรับอยู่คนละช่องกับเช็คอิน → รัศมีเคาน์เตอร์ 60 studs ; ⚠️ roomPatient ต้องกรอง IsVisitor ทิ้ง (DesignatedRoom ชนกับคนไข้) |
 | **ผี 'Ask to Leave'** | attr สะอาดหมด (ดูเหมือนคนไข้ปกติ!) แต่มี PP `'Ask to Leave'` | **ห้ามกด/ห้ามเข้าใกล้** — NPC blind-fire ยิงเฉพาะ `'Talk'` เท่านั้น (v4.49) ; ESP ใช้ prompt นี้เป็นตัวเฉลย → ส้ม "น่าสงสัย!" |
+| **เคาน์เตอร์ช่อง 2** | `Misc.CheckIn2` (Camera/Form/Badge ชุดของตัวเอง) + คนไข้ attr `AsignedCheckIn=2` = ต้องไปช่อง 2 | v4.58: checkinPending เช็คระยะกับทุกช่อง (CheckIn/CheckIn2) รัศมี 15/ช่อง |
 | **เหตุการณ์ force spawn** | `WasForceSpawnedByEvent=true + SkippedCheckIn=true` ทั้งล็อต (ผีนอนเตียงเลย ไม่เช็คอิน) | เปิด "ฆ่าผี" (v4.54): **รักษาผีตามขั้นตอนครบเหมือนคนไข้จริง** (DNA/เครื่อง/วินิจฉัย — เกมบังคับ flow) แล้ว "หักมุมตอนจ่ายยา" = Apply พร้อมค่อยให้ยาผิดจาก Model.Items ; ห้ามไหลเข้า path เก็บ/ให้ยาถูก (จะรักษาผีหายฟรี) ; บาง event ผีมี `MedicineImmune=true` |
 
 ### 10.5 โครง pressPrompt / selectTool ปัจจุบัน (v4.41)
