@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.56 ฆ่าผี: จ่ายยาผิดแบบเดียวกับ path ปกติเป๊ะ ไม่รอ Enabled)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.57 เลือกห้องเฉพาะคนไข้ยังอยู่จริง — กันหลงห้องเปล่า)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -810,13 +810,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.56", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.57", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.56 " .. lastStatus end
+    if not deadLock then title.Text = "v4.57 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -932,7 +932,13 @@ task.spawn(function()
                     if f then for _, room in ipairs(f:GetChildren()) do
                         local pat = roomPatient(room)
                         local ghost = pat and pat:GetAttribute("Skinwalker")
-                        if pat and not roomDone(room) and (not ghost or KILLGHOST_ON)
+                        -- v4.57: คนไข้ต้อง "อยู่ที่ห้องจริง" (InBed/ใกล้ห้อง <35) — รักษาเสร็จเดินออกไปแล้ว
+                        -- attr DesignatedRoom + รายการยาเก่าบนจอยังค้าง ทำบอทหลงว่าห้องมีงาน
+                        local present = pat and (pat:GetAttribute("InBed") or (function()
+                            local pPos, rPos = partPos(pat), roomPos(room)
+                            return pPos and rPos and (pPos - rPos).Magnitude < 35
+                        end)())
+                        if pat and present and not roomDone(room) and (not ghost or KILLGHOST_ON)
                            and hasWork(room, pat) then   -- v4.14: ข้ามห้องที่ยังไม่มีงานให้ทำ
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
