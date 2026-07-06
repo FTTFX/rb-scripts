@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.74 กุญแจล็อค WORKING — สไลม์/ไฟ/อุ้ม/blind-fire ห้ามแทรกตอนจ่ายยา)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.75 ลำดับงาน: คนเป็นลม>ไฟ>สไลม์>รักษา>เช็คอิน(ว่างจริงค่อยทำ))
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -47,6 +47,7 @@ local setStatus = function() end   -- v4.32: โชว์ว่ากำลั�
 -- v4.74: กุญแจล็อคงาน — ตอน treatRoom กำลังจ่ายยา ห้าม loop อื่น (สไลม์/ดับไฟ/อุ้ม) ลากตัวไปไหน
 -- (เคยโดน: สไลม์เกิดกลางคิวผ่าตัด → บินไปล้าง → fp ยิงใส่ของตรงหน้า = จ่ายผิด = ตาย)
 local WORKING = false
+local TREAT_BUSY = false   -- v4.75: treat loop มีห้องให้ทำอยู่ไหม (ใช้กั้นเช็คอิน = งานอันดับท้าย)
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
 -- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
@@ -435,12 +436,14 @@ local function hasWork(room, pat)
     return false
 end
 
--- v4.71: คนเป็นลม (มี PP 'Carry' บนตัว, ไม่ใช่ผี) = งานด่วนระดับดับไฟ
+-- v4.71: คนเป็นลม (มี PP 'Carry' บนตัว, ไม่ใช่ผี) = งานด่วนอันดับ 1
 local function faintPending()
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return nil, nil end
     for _, m in ipairs(npcs:GetChildren()) do
         if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
+            -- ยังอุ้มอยู่ (เราเป็นคนอุ้ม) ก็นับว่างานยังไม่จบ — ทำจนวางลงเตียง
+            if m:GetAttribute("CarriedBy") == LP.UserId then return m, nil end
             for _, p in ipairs(m:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Carry" then
                     return m, p
@@ -448,6 +451,34 @@ local function faintPending()
             end
         end
     end
+end
+-- v4.75: ลำดับความสำคัญ — ไฟ (อันดับ 2), สไลม์ (อันดับ 3)
+local function firePending()
+    local npcs = workspace:FindFirstChild("NPCs")
+    if npcs then for _, m in ipairs(npcs:GetChildren()) do
+        local pp = m:FindFirstChild("FirePP")
+        if pp and pp:IsA("ProximityPrompt") and pp.Enabled then return true end
+    end end
+    local rooms = workspace:FindFirstChild("Rooms")
+    local me = hrp() and hrp().Position
+    if rooms and me then for _, d in ipairs(rooms:GetDescendants()) do
+        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire" then
+            local pos = partPos(d.Parent)
+            if pos and (pos - me).Magnitude < 120 then return true end
+        end
+    end end
+    return false
+end
+local function slimePending()
+    local misc = workspace:FindFirstChild("Misc")
+    local me = hrp() and hrp().Position
+    if misc and me then for _, d in ipairs(misc:GetDescendants()) do
+        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Clean Slime" then
+            local pos = partPos(d.Parent)
+            if pos and (pos - me).Magnitude < 120 then return true end
+        end
+    end end
+    return false
 end
 
 -- v4.23: เลือกของด้วย "กดปุ่ม slot จริง" เท่านั้น — *** ห้ามใช้ EquipTool เด็ดขาด ***
@@ -799,8 +830,10 @@ bind(RS.Heartbeat, function(dt)
         fireAcc += dt
         if fireAcc >= 0.3 then   -- v4.9 เร็วขึ้น 2 เท่า
             fireAcc = 0
-            -- v4.27: เช็คอินวาปหาคนไข้เหมือนเดิม — แต่ถ้าชัตเตอร์ปิดอยู่ วาปไปเปิดก่อน
-            if CHECKIN_ON then
+            -- v4.27: เช็คอินวาปหาคนไข้ — v4.75: งานอันดับท้ายสุด ทำเฉพาะตอน "ว่างจริง"
+            -- (ไม่มีคนเป็นลม/ไฟ/สไลม์ และ treat loop ไม่มีห้องให้ทำ)
+            if CHECKIN_ON and not TREAT_BUSY and not faintPending()
+               and not firePending() and not slimePending() then
                 local cpos = checkinPending()
                 if cpos then
                     local misc = workspace:FindFirstChild("Misc")
@@ -896,13 +929,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.74", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.75", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.74 " .. lastStatus end
+    if not deadLock then title.Text = "v4.75 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1036,6 +1069,7 @@ task.spawn(function()
                         end
                     end end
                 end
+                TREAT_BUSY = target ~= nil
                 if target then
                     setStatus("รักษา " .. target.Name)
                     local guard = 0
@@ -1239,7 +1273,7 @@ end
 task.spawn(function()
     local lastAct = {}   -- v4.31: เว้นจังหวะต่อ NPC 2s — กันวาปถี่จนไม่ได้กลับไปรักษา
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING then
+        if FIRE_ON and fp and not WORKING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อนไฟ
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
@@ -1259,20 +1293,18 @@ end)
 task.spawn(function()
     local cooldown = {}   -- v4.31: จุดที่กดไม่เข้า → พัก 5s กันวาปวนไม่จบ (ไม่กลับไปรักษา)
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING then
+        if FIRE_ON and fp and not WORKING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อน
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
-                -- v4.39: + สไลม์ (Workspace.Misc.Slime PP 'Clean Slime' — กดทีเดียวหาย)
+                -- v4.75: ไฟมาก่อนสไลม์ — เก็บสไลม์เฉพาะตอนไม่มีไฟเหลือ
                 local fires = {}
                 local mypos = hrp() and hrp().Position
-                local function collect(root)
+                local function collect(root, act)
                     for _, d in ipairs(root:GetDescendants()) do
-                        if d:IsA("ProximityPrompt") and d.Enabled
-                           and (d.ActionText == "Put out fire" or d.ActionText == "Clean Slime")
+                        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == act
                            and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
-                            -- v4.40: เอาเฉพาะเป้าใกล้ตัว <120 studs — Misc.Slime ตอน "ไม่มีเหตุ" เกมจอดไว้
-                            -- นอกแมพแต่ PP ยัง Enabled → เวอร์ชันก่อนวาปตามไปตกตาย
+                            -- v4.40: เอาเฉพาะเป้าใกล้ตัว <120 studs (กันของหลอกนอกแมพ)
                             local pos = partPos(d.Parent)
                             if pos and mypos and (pos - mypos).Magnitude < 120 then
                                 fires[#fires+1] = d
@@ -1280,9 +1312,11 @@ task.spawn(function()
                         end
                     end
                 end
-                collect(rooms)
-                local misc = workspace:FindFirstChild("Misc")
-                if misc then collect(misc) end
+                collect(rooms, "Put out fire")
+                if #fires == 0 then
+                    local misc = workspace:FindFirstChild("Misc")
+                    if misc then collect(misc, "Clean Slime") end
+                end
                 local me = hrp() and hrp().Position
                 if me then
                     table.sort(fires, function(a, b)
@@ -1319,11 +1353,13 @@ task.spawn(function()
             do
                 local m, carryPP = faintPending()
                 do
-                    if carryPP then
-                        setStatus("อุ้ม " .. m.Name)
-                        tpTo(partPos(m)); task.wait(0.15)
-                        pressPrompt(carryPP)
-                        task.wait(0.3)
+                    if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
+                        if carryPP then
+                            setStatus("อุ้ม " .. m.Name)
+                            tpTo(partPos(m)); task.wait(0.15)
+                            pressPrompt(carryPP)
+                            task.wait(0.3)
+                        end
                         -- พาไปห้องที่เขาต้องไป
                         local roomName = m:GetAttribute("DesignatedRoom")
                         local rooms = workspace:FindFirstChild("Rooms")
