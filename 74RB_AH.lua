@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.77 วางเสร็จ=จบงานจริง — InBed/พัก 10s ต่อหัว กันวนอุ้มซ้ำ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.78 หาเตียงว่างห้องไหนก็ได้ + พักทุกกรณี — เลิกวนอุ้มติด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -938,13 +938,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.77", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.78", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.77 " .. lastStatus end
+    if not deadLock then title.Text = "v4.78 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1400,6 +1400,21 @@ task.spawn(function()
                                     end
                                 end
                             end
+                            -- v4.78: ห้องเป้าหมายไม่มีปุ่มวาง (เตียงไม่ว่าง?) → หาเตียงว่างห้องไหนก็ได้
+                            if not dropPP and rooms then
+                                for _, grp in ipairs({"Medical", "Emergency"}) do
+                                    local g = rooms:FindFirstChild(grp)
+                                    if g then for _, r2 in ipairs(g:GetChildren()) do
+                                        for _, p in ipairs(r2:GetDescendants()) do
+                                            if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
+                                                dropPP = p; break
+                                            end
+                                        end
+                                        if dropPP then break end
+                                    end end
+                                    if dropPP then break end
+                                end
+                            end
                             if not dropPP then   -- fallback: prompt เปิดบนตัว NPC (Drop ฯลฯ)
                                 for _, p in ipairs(m:GetDescendants()) do
                                     if p:IsA("ProximityPrompt") and p.Enabled then dropPP = p; break end
@@ -1412,9 +1427,11 @@ task.spawn(function()
                                     return not dropPP.Parent or not dropPP.Enabled
                                         or m:GetAttribute("CarriedBy") == nil or m:GetAttribute("InBed")
                                 end)
-                                FAINT_DONE[m] = os.clock()   -- v4.77: พัก 10s ไม่วนซ้ำหัวนี้
                                 setStatus("วาง " .. m.Name .. " เสร็จ")
+                            else
+                                setStatus("หาเตียงวาง " .. m.Name .. " ไม่ได้ — พัก 10s")
                             end
+                            FAINT_DONE[m] = os.clock()   -- v4.78: พักทุกกรณี — วางไม่ได้ก็ห้ามวนติด
                         end
                     end
                 end
