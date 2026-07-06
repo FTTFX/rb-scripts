@@ -276,6 +276,8 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 | **Slime** | `Workspace.Misc.Slime` attr `SpeedMod=0.5` (หน่วงขา+ดาเมจ บังเตียง) | PP `'Clean Slime'` กดทีเดียวหาย — auto ใน toggle ดับไฟ |
 | **ผีปลอมไม่เฉลย** | มี `CameraEffect/PhotoEffect/Has*Effect` แต่ยังไม่มี Skinwalker | ESP ส้ม "น่าสงสัย!" — attr กลุ่มนี้เจอเฉพาะผี ไม่เคยอยู่บนคนไข้จริง |
 | **NPC เนื้อเรื่อง** | `StoryForced=true` (Barney `CoffeeArcDay=N`, "???", 'Let him hide with you', 'Accept Suitcase') | ยังไม่ auto — ชื่อ NPC ทั่วไปสุ่ม ใช้ชื่อจับผีไม่ได้ |
+| **คนเยี่ยมไข้ (Visitor)** | `IsVisitor=N + VisitingName + DesignatedRoom=ห้องที่มาเยี่ยม` (ไม่มี IsPatient) | **ต้องเช็คอินเหมือนคนไข้** (v4.52 ✅ ยืนยันทำงาน): checkinPending นับ IsVisitor เท่า IsPatient → วาปไปหา + blind-fire CHECKIN_ACTS ; ESP ฟ้า "เยี่ยมไข้" ; โต๊ะต้อนรับอยู่คนละช่องกับเช็คอิน → รัศมีเคาน์เตอร์ 60 studs ; ⚠️ roomPatient ต้องกรอง IsVisitor ทิ้ง (DesignatedRoom ชนกับคนไข้) |
+| **ผี 'Ask to Leave'** | attr สะอาดหมด (ดูเหมือนคนไข้ปกติ!) แต่มี PP `'Ask to Leave'` | **ห้ามกด/ห้ามเข้าใกล้** — NPC blind-fire ยิงเฉพาะ `'Talk'` เท่านั้น (v4.49) ; ESP ใช้ prompt นี้เป็นตัวเฉลย → ส้ม "น่าสงสัย!" |
 | **เหตุการณ์ force spawn** | `WasForceSpawnedByEvent=true + SkippedCheckIn=true` ทั้งล็อต (ผีนอนเตียงเลย ไม่เช็คอิน) | เปิด "ฆ่าผี" — แยกด้วย Skinwalker ต่อห้องตามปกติ |
 
 ### 10.5 โครง pressPrompt / selectTool ปัจจุบัน (v4.41)
