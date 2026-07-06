@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.95 แชร์ cooldown ไฟ/สไลม์ให้ pending — จุดหลอกไม่บล็อคเช็คอินค้าง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.96 roomPatient เอาคนที่อยู่ห้องจริงก่อน — NPC event attr ซ้ำห้องไม่ล็อคงานค้าง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -586,23 +586,33 @@ end
 local function roomPatient(room)
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return end
+    local rpos = partPos(room:FindFirstChild("Minigame") or room)
+    -- v4.96: DesignatedRoom ซ้ำกันได้หลายตัว (NPC event เช่น Ratthew ยืนอีกฝั่งแมพ แต่ attr=Room1)
+    --        ต้องเอาคนที่ "อยู่ห้องจริง" (InBed/ใกล้ <35) ก่อน — ไม่งั้นห้องโดนล็อคด้วยเจ้าของที่ไม่อยู่
+    local cand
     for _, m in ipairs(npcs:GetChildren()) do
         -- v4.44: ต้องเป็นคนไข้จริง — คนเยี่ยม (IsVisitor) ก็มี DesignatedRoom เดียวกัน อย่าคว้าผิดตัว
-        if m:GetAttribute("DesignatedRoom") == room.Name and not m:GetAttribute("IsVisitor") then return m end
+        if m:GetAttribute("DesignatedRoom") == room.Name and not m:GetAttribute("IsVisitor") then
+            if m:GetAttribute("InBed") then return m end
+            local p = partPos(m)
+            if p and rpos and (p - rpos).Magnitude < 35 then return m end
+            cand = cand or m
+        end
     end
     -- fallback (v4.6): เกมอาจไม่ตั้ง/เคลียร์ DesignatedRoom → จับจากตำแหน่ง:
     -- NPC คนไข้ (IsPatient/InBed) ที่อยู่ใกล้ห้องนี้ <30 studs = คนไข้ของห้องนี้
-    local rpos = partPos(room:FindFirstChild("Minigame") or room)
-    if not rpos then return end
-    local best, bestD
-    for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and (m:GetAttribute("InBed") or m:GetAttribute("IsPatient")) then
-            local p = partPos(m)
-            local d = p and (p - rpos).Magnitude
-            if d and d < 30 and (not best or d < bestD) then best, bestD = m, d end
+    if rpos then
+        local best, bestD
+        for _, m in ipairs(npcs:GetChildren()) do
+            if m:IsA("Model") and (m:GetAttribute("InBed") or m:GetAttribute("IsPatient")) then
+                local p = partPos(m)
+                local d = p and (p - rpos).Magnitude
+                if d and d < 30 and (not best or d < bestD) then best, bestD = m, d end
+            end
         end
+        if best then return best end
     end
-    return best
+    return cand   -- เจ้าของตาม attr ที่ยังเดินไม่ถึงห้อง (treat loop เช็ค present เองอยู่แล้ว)
 end
 -- หา prompt "Apply Treatment" — ในห้อง (Room7/8 มีเตียง) หรือ บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง)
 local function bedApplyPP(room)
@@ -1019,13 +1029,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.95", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.96", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.95 " .. lastStatus end
+    if not deadLock then title.Text = "v4.96 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
