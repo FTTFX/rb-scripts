@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.58 รองรับเคาน์เตอร์ช่อง 2 — CheckIn2/AsignedCheckIn=2)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.59 บินทะลุเร็วแทนวาปทันที — เกมจับวาปไกลลงโทษบ้าคลั่ง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -225,7 +225,20 @@ local function tpTo(pos)
     end
     pos = ghostSafe(pos)
     if TP_ON then
-        if r then r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
+        -- v4.59: "บินทะลุเร็ว" แทนวาปทันที — เกมจับการย้ายตำแหน่งก้าวใหญ่แล้วลงโทษบ้าคลั่ง
+        -- (กล่องดำ: ตายตอนวาปไกลโดยไม่มีผีใกล้) ; ขยับ ~5 studs/frame (~300/s) ทะลุกำแพง
+        local target = pos + Vector3.new(0, 3, 0)
+        local t0 = os.clock()
+        while r and r.Parent and (r.Position - target).Magnitude > 4 and os.clock() - t0 < 3 do
+            local step = target - r.Position
+            r.CFrame = CFrame.new(r.Position + step.Unit * math.min(5, step.Magnitude))
+            r.AssemblyLinearVelocity = Vector3.zero   -- กันฟิสิกส์เหวี่ยง/ร่วงระหว่างบิน
+            task.wait()
+            r = hrp()
+        end
+        if r and (r.Position - target).Magnitude <= 8 then
+            r.CFrame = CFrame.new(target)   -- จูนลงจุดพอดีตอนใกล้แล้ว (ก้าวเล็ก ปลอดภัย)
+        end
     else
         walkTo(pos)
     end
@@ -822,13 +835,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.58", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.59", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.58 " .. lastStatus end
+    if not deadLock then title.Text = "v4.59 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
