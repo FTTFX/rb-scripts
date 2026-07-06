@@ -2,7 +2,8 @@
 
 เอกสารสรุปสำหรับนักพัฒนาต่อยอด สคริปต์ช่วยเล่นเกม **Animal Hospital** (แนว horror social-deduction: เป็นหมอรักษาคนไข้ NPC แต่บางตัวเป็นผีปลอมตัว/Skinwalker)
 
-> สถานะ: ใช้งานได้ — ESP, Speed, Noclip, Auto รักษา (Medical 1-5 + Emergency 6/7), มินิเกม whack + ปริศนาสี, แยกเช็คอิน/รักษา. **ค้าง: Room8 (Surgery) ยังไม่รองรับ** (ดู §8)
+> สถานะ (v4.41, 2026-07-06): ใช้งานได้ครบ — ESP (ผี/ผีซ่อน/น่าสงสัย/คนไข้), Auto รักษา 1-8, เช็คอิน+ชัตเตอร์ (ปุ่มเดียว), ดับไฟ+ล้างสไลม์, ฆ่าผีด้วยยาผิด, whack + ปริศนาสี
+> **อ่าน §10 ก่อนแก้อะไร — บทเรียน executor + กับดักที่เคยทำคนไข้ตายมาแล้ว**
 
 ---
 
@@ -18,10 +19,11 @@
 | `74RB_AnimalHospital_R6auto.lua` | (เลิกใช้/อ้างอิง) ต้นแบบ auto Room6 ก่อนรวมเข้า main |
 | `gh_upload.py` | อัปทุกไฟล์ขึ้น GitHub (repo `rb-scripts`) — แก้เสร็จรันอันนี้ |
 
-**โหลดในเกม** (loadstring + `?v=tick()` กัน cache):
+**โหลดในเกม** (ใช้ URL สำเนา `74RB_AH.lua` เป็นหลัก — ตัวเต็มเคยโดน executor cache ค้าง):
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/FTTFX/rb-scripts/main/74RB_AnimalHospital.lua?v="..tick()))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/FTTFX/rb-scripts/main/74RB_AH.lua?v="..tick()))()
 ```
+เช็คหัว GUI ต้องขึ้นเลขเวอร์ชันล่าสุด (เช่น "AH74 v4.41") — ไม่ตรง = cache ค้าง รอ 1-2 นาทีรันใหม่
 
 ---
 
@@ -233,8 +235,56 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 ---
 
 ## 9. กฎการพัฒนา (สำคัญ)
-- **แก้เสร็จ = อัปทันที** (`python gh_upload.py`) ไม่ต้องถาม
-- ทุกสคริปต์ต้องมี **single-instance guard** (`_G.<PREFIX>_CONNS`)
+- **แก้เสร็จ = อัปทันที** (`python gh_upload.py 74RB_AnimalHospital.lua 74RB_AH` — ระบุชื่อไฟล์ = อัปเฉพาะตัวนั้น เร็ว, ไฟล์ไม่เปลี่ยน = ข้ามอัตโนมัติ) ไม่ต้องถาม
+- **อัป 2 ชื่อเสมอ**: `74RB_AnimalHospital.lua` + สำเนา `74RB_AH.lua` — executor ผู้ใช้ cache HttpGet ตาม URL (`?v=tick()` เอาไม่อยู่) ชื่อไหน cache ค้างให้สลับอีกชื่อ
+- **bump เลขเวอร์ชัน 3 จุดทุกครั้ง**: หัวไฟล์ (comment), `title.Text "AH74 vX.Y"`, `setStatus` — เลขบนหัว GUI = ทางเดียวที่ผู้ใช้เช็คได้ว่าโหลดตัวใหม่จริง
+- ทุกสคริปต์ต้องมี **single-instance guard** (`_G.<PREFIX>_CONNS` + `_G.AH74_GEN` token)
 - ห้ามใส่ ping prediction (เกม client-sided hitreg)
-- โหลด GitHub raw + `?v=tick()` กัน cache
 - ของอันตราย (ให้ยา/Apply) = **ไม่ชัวร์ ไม่กด** (ยอมรักษาไม่จบ ดีกว่าฆ่าคนไข้)
+
+---
+
+## 10. ⚠️ บทเรียน v4.11-v4.41 (2026-07-05/06) — อ่านก่อนแก้
+
+### 10.1 พฤติกรรม executor ของผู้ใช้ (จอ touch / มือถือ)
+| เรื่อง | ความจริงที่พิสูจน์แล้ว |
+|---|---|
+| `fireproximityprompt` | **ยิงลง prompt ที่ตัวละคร "หันหน้าหา" ไม่ใช่ตัวที่ส่งเป็น argument** → ต้องหมุน HRP `CFrame.lookAt` เข้าหาเป้าก่อนยิงเสมอ (ทำแล้วใน `pressPrompt` + `click6`) |
+| prompt กดค้าง (HoldDuration 0.2-1.0) | fp เฉยๆ โดนเมิน → **bypass: ตั้ง `pp.HoldDuration=0` → fp → คืนค่า** |
+| VIM SendKeyEvent (กดเลข slot/กด E) | **ไม่ติดบนจอ touch** — เลือกของต้องมี `EquipTool` เป็น fallback ท้ายสุด (ดู 10.2) |
+| VIM คลิกจอ / กด E ใส่ prompt | ห้ามใช้เป็น fallback ของ prompt — ไม่เลือกเป้า เคยคว้าของผิด/สแปมจนคนไข้ตาย (v4.15-4.17 ถอดทิ้งแล้ว) |
+| `fireclickdetector` | เป้าแม่น (object-level) — เหตุที่ปุ่มสี R6 เคยแม่นในอดีต; เกมอัปเดตเพิ่ม PP บนปุ่มสี + path fcd อาจไม่มี → click6 ต้องหันหน้าก่อนเช่นกัน |
+
+### 10.2 กันคนไข้ตาย (แก่นของทั้งสคริปต์)
+- **สัญญาณ "Apply สำเร็จ" ที่ถูกต้อง = ยาหายจากมือ (`heldCount` ลด)** — เกม consume Tool ทันที; ติ๊กบนจอ (check/Cured) ขึ้นช้าตอนแลค **ห้าม**ใช้เป็นเกณฑ์กดซ้ำ (เคยกดซ้ำ=ยาเกิน=ตาย)
+- ปุ่ม Apply Treatment **ไม่ดับหลังกดสำเร็จ** (ใช้ซ้ำทุกชิ้น) → default done ของ pressPrompt (prompt ดับ=สำเร็จ) ใช้กับ Apply ไม่ได้ ต้องส่ง done เอง
+- **เลือกของ = กดปุ่ม slot 1-9 จริงก่อนเสมอ** (เกมอ่านช่อง hotbar ที่เลือก) → `EquipTool` เป็นทางสุดท้ายเฉพาะจอ touch ที่กดเลขไม่ติด — ปลอดภัยเพราะ done=ยาหายจากมือกันกดซ้ำ
+- **ชื่อยา: ใช้ `fr.Name` (อังกฤษ) นำเสมอ** — `.name.Text` โดนเกมแปลไทย ("น้ำเชื่อมเมเปิ้ล" vs Tool "Maple Syrup") ทำ match ไม่ติด บอทหยุดให้ยา
+- ฆ่าผี (`killWithWrongMed`): หยิบ "ยาผิด" จาก `Workspace.Model.Items.*` เท่านั้น — ห้ามสแกน ActionText ทั้ง workspace (เคยคว้า 'Interact'/'Trash Item' มาเป็นยา = ล้มเงียบ)
+
+### 10.3 กับดัก prompt/การวาป
+- **'Inspect' ไม่ใช่สเต็ปรักษา** — เป็นปุ่มซูมกล้องเข้าจอ TV; ใส่ในลิสต์ act = กล้องล็อคติดจอ/จอรายงานค้าง **ห้ามใส่กลับ**
+- `tpTo` มีการ์ด: เป้า `Y < -50` หรือไกล `>400 studs` = ไม่ไป (prompt/ของนอกแมพ) + `ghostSafe` ถอยห่างผี 12 studs
+- ดับไฟ/สไลม์: รับเป้าเฉพาะ `<120 studs` จากตัวเรา — `Misc.Slime` ตอนไม่มีเหตุเกมจอดไว้นอกแมพแต่ PP ยัง Enabled (เคยวาปตามไปตกตาย) + จุดกดไม่เข้า cooldown 5s (กันวนค้างไม่กลับไปรักษา)
+- เลือกห้อง: `hasWork()` — เอาเฉพาะห้องที่มี prompt งาน Enabled จริง/มียาต้องเก็บ (กัน commit ห้องเปล่า) ; **Room8 priority สูงสุด + เกาะจนจบ** (~60s) ห้องอื่นสลับทุก 1.6s
+
+### 10.4 อัปเดตเกม ก.ค. 2026 — entity ใหม่
+| ตัว | attr | จัดการ |
+|---|---|---|
+| **Hider** | `Anomaly=true + Skinwalker=true + WaterEntity=true` | ESP ม่วง "ผีซ่อน" ; วิธีกำจัดยังไม่ยืนยัน (คาด: ถังดับเพลิง — remote `RE/ExtinguisherBubbleHit*`) |
+| **Ghost** | `Anomaly=true + Ghost=true + GhostVisible + Fake=true` (ไม่มี Skinwalker!) | ESP ม่วง — **เช็ค `Anomaly` ก่อน Skinwalker เสมอ** |
+| **Slime** | `Workspace.Misc.Slime` attr `SpeedMod=0.5` (หน่วงขา+ดาเมจ บังเตียง) | PP `'Clean Slime'` กดทีเดียวหาย — auto ใน toggle ดับไฟ |
+| **ผีปลอมไม่เฉลย** | มี `CameraEffect/PhotoEffect/Has*Effect` แต่ยังไม่มี Skinwalker | ESP ส้ม "น่าสงสัย!" — attr กลุ่มนี้เจอเฉพาะผี ไม่เคยอยู่บนคนไข้จริง |
+| **NPC เนื้อเรื่อง** | `StoryForced=true` (Barney `CoffeeArcDay=N`, "???", 'Let him hide with you', 'Accept Suitcase') | ยังไม่ auto — ชื่อ NPC ทั่วไปสุ่ม ใช้ชื่อจับผีไม่ได้ |
+| **เหตุการณ์ force spawn** | `WasForceSpawnedByEvent=true + SkippedCheckIn=true` ทั้งล็อต (ผีนอนเตียงเลย ไม่เช็คอิน) | เปิด "ฆ่าผี" — แยกด้วย Skinwalker ต่อห้องตามปกติ |
+
+### 10.5 โครง pressPrompt / selectTool ปัจจุบัน (v4.41)
+```
+pressPrompt(pp, done):
+  หัน HRP เข้าหา pp → HoldDuration=0 → fp → คืน Hold → poll done() ≤0.5s → คืน done()
+  (done default = prompt ดับ — ใช้ได้เฉพาะ prompt one-shot; Apply/เก็บของต้องส่ง done เอง)
+selectTool(m):
+  ถืออยู่แล้ว → true | กด slot 1-9 (poll 0.25s/ช่อง) | EquipTool fallback (จอ touch)
+```
+- สถานะสดบนหัว GUI: `setStatus(s)` → "v4.41 รักษา Room3 / ดับไฟพื้น / ล้างสไลม์ / ว่าง / บล็อควาปเพี้ยน XXXm" — ใช้ไล่บัคกับผู้ใช้ได้เร็วมาก
+- debug หลัก: `74RB_AnimalHospital_RoomDebug.lua` v1.3 (GUI+RESCAN+COPY) — dump NPC attrs + PP ทุกห้อง + INV + SLIME/ANOMALY scan
