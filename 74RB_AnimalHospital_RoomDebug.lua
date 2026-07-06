@@ -15,7 +15,44 @@ end
 local function scan()
     local out = {}
     local function L(s) out[#out+1] = s end
-    L("=== AH74 RoomDebug v1.4 ===")
+    L("=== AH74 RoomDebug v1.5 ===")
+    -- v1.5: dump ของที่ถืออยู่ (หา่ชื่อจริงของน้ำเชื่อม/ของ station)
+    L("=== TOOLS ในมือ/กระเป๋า ===")
+    local bp = LP:FindFirstChild("Backpack")
+    for _, holder in ipairs({bp, LP.Character}) do
+        if holder then
+            for _, t in ipairs(holder:GetChildren()) do
+                if t:IsA("Tool") then
+                    local a = {}
+                    for k, v in pairs(t:GetAttributes()) do a[#a+1] = k.."="..tostring(v) end
+                    L("[TOOL] '"..t.Name.."' ที่="..holder.Name.." "..table.concat(a, " "))
+                end
+            end
+        end
+    end
+    -- v1.5: หา "ผีพื้น" — Model มี Humanoid/AnimationController ใกล้เรา ≤120 ที่ไม่ใช่ player/NPC folder
+    L("=== ตัวเคลื่อนไหวใกล้เรา (นอก NPCs) ===")
+    local myp = LP.Character and partPos(LP.Character)
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("Humanoid") or d:IsA("AnimationController") then
+            local m = d.Parent
+            if m and m:IsA("Model") and not Players:GetPlayerFromCharacter(m)
+               and not (m.Parent and m.Parent.Name == "NPCs") then
+                local p = partPos(m)
+                local dist = p and myp and (p - myp).Magnitude
+                if dist and dist <= 120 then
+                    local a = {}
+                    for k, v in pairs(m:GetAttributes()) do a[#a+1] = k.."="..tostring(v) end
+                    L(("[MOB] %s ระยะ=%d | %s"):format(m:GetFullName(), dist, table.concat(a, " ")))
+                    for _, p2 in ipairs(m:GetDescendants()) do
+                        if p2:IsA("ProximityPrompt") then
+                            L(("   PP '%s' obj=%s Enabled=%s"):format(p2.ActionText, p2.Parent.Name, tostring(p2.Enabled)))
+                        end
+                    end
+                end
+            end
+        end
+    end
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then L("!! ไม่มี workspace.NPCs") else
         L("=== NPCs ("..#npcs:GetChildren()..") ===")
