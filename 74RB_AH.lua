@@ -850,13 +850,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.63", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.64", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.63 " .. lastStatus end
+    if not deadLock then title.Text = "v4.64 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1054,6 +1054,8 @@ do
     end
     local fcd = fireclickdetector
     local function click6(b)
+        -- v4.64: บินเข้าไปหาปุ่มก่อน (เหมือนงานเช็คอิน) — กดใกล้ๆ แม่นกว่ายิงข้ามห้อง
+        tpTo(b.Position); task.wait(0.05)
         -- v4.33: หันหน้าเข้าหาปุ่มก่อนกด — executor นี้ fp/คลิกลงตัว "ตรงหน้า" (ปุ่ม 6 อันติดกัน หันเฉียง = กดผิดสี)
         local r = hrp()
         if r then
