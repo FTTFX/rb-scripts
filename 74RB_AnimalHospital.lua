@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.71 คนเป็นลม=งานด่วนระดับดับไฟ — treat หลีกทาง สแกน 0.15s)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.72 อุ้มคนเป็นลมย้ายไปปุ่มดับไฟ + ไม่รู้ห้อง=วางหน้าเคาน์เตอร์)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -893,13 +893,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.71", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.72", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.71 " .. lastStatus end
+    if not deadLock then title.Text = "v4.72 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1005,8 +1005,8 @@ end)
 -- เลือกห้องใกล้สุดที่ยังต้องทำ → commit ทำจน done (หรือหมดเวลา ~6s) ก่อนเปลี่ยนห้อง
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if AUTO_ON and fp and faintPending() then
-            task.wait(0.2)   -- v4.71: มีคนเป็นลม = หลีกทางให้ loop อุ้ม (งานด่วนกว่า)
+        if AUTO_ON and fp and FIRE_ON and faintPending() then
+            task.wait(0.2)   -- v4.72: มีคนเป็นลม (โหมดฉุกเฉินเปิด) = หลีกทางให้ loop อุ้ม
         elseif AUTO_ON and fp then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
@@ -1307,10 +1307,10 @@ end)
 
 -- ===== v4.70 อุ้มคนเป็นลมส่งห้อง: NPC (คนไข้/คนเยี่ยม ไม่ใช่ผี) มี PP 'Carry' =====
 -- flow: บินไปหา → Carry → บินไปห้อง DesignatedRoom → กด prompt วาง (บนตัว NPC/เตียง)
--- v4.71: งานเร่งด่วนระดับเดียวกับดับไฟ — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
+-- v4.72: อยู่ในปุ่ม "ดับไฟ" (กลุ่มงานฉุกเฉิน) — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if AUTO_ON and fp then
+        if FIRE_ON and fp then
             do
                 local m, carryPP = faintPending()
                 do
@@ -1330,9 +1330,15 @@ task.spawn(function()
                                 if rr then room = rr end
                             end
                         end
-                        if room then
-                            setStatus("อุ้ม " .. m.Name .. " → " .. roomName)
-                            tpTo(roomPos(room)); task.wait(0.3)
+                        -- v4.72: ไม่รู้ห้อง (คนเยี่ยม/ไม่มี DesignatedRoom) → พาไปวางหน้าเคาน์เตอร์
+                        local dest = room and roomPos(room)
+                        if not dest then
+                            local misc = workspace:FindFirstChild("Misc")
+                            dest = misc and partPos(misc:FindFirstChild("CheckIn"))
+                        end
+                        if dest then
+                            setStatus("อุ้ม " .. m.Name .. " → " .. (room and roomName or "เคาน์เตอร์"))
+                            tpTo(dest); task.wait(0.3)
                             -- วางตัว: prompt เปิดบนตัว NPC (Drop/Place?) ก่อน แล้วค่อยหาในห้อง
                             local dropped = false
                             for _, p in ipairs(m:GetDescendants()) do
@@ -1341,7 +1347,7 @@ task.spawn(function()
                                     pressPrompt(p); dropped = true; break
                                 end
                             end
-                            if not dropped then
+                            if not dropped and room then
                                 for _, p in ipairs(room:GetDescendants()) do
                                     if p:IsA("ProximityPrompt") and p.Enabled and (
                                         p.ActionText:find("Place") or p.ActionText:find("Drop")
