@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.87 เดินเร็วตามเส้นทางจริง ไม่ noclip + กู้ตัวจากหลังคา)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.88 สไลด์ด้วย velocity ตาม waypoint — ฟิสิกส์จริง ไม่วาป ไม่ noclip)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -256,24 +256,30 @@ local function tpTo(pos)
             end
             if not NOCLIP_ON then clip(true) end
         end
-        local boost = math.max(SPEED, 60)
+        -- v4.88: "สไลด์" ตาม waypoint — ดันด้วย velocity จริง (แบบ Climb Forsaken)
+        --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
+        local SLIDE_SPEED = 80          -- studs/s แนวราบ (ปรับได้ถ้าเกมดักความเร็ว)
         local wps
         local path = PathSvc:CreatePath({ AgentRadius = 2, AgentCanJump = false })
         local ok = pcall(function() path:ComputeAsync(r.Position, pos) end)
         if ok and path.Status == Enum.PathStatus.Success then wps = path:GetWaypoints() end
-        if not wps or #wps == 0 then wps = { { Position = pos } } end   -- หาเส้นทางไม่ได้ → เดินตรง
+        if not wps or #wps == 0 then wps = { { Position = pos } } end   -- หาเส้นทางไม่ได้ → ไถลตรง
         local t0 = os.clock()
         for _, wp in ipairs(wps) do
             if _G.AH74_GEN ~= MYGEN or os.clock() - t0 > 10 then break end
-            h, r = hum(), hrp()
-            if not (h and r) then break end
-            h.WalkSpeed = boost
-            h:MoveTo(wp.Position)
             local t1 = os.clock()
-            repeat task.wait(0.05); r = hrp()
-            until not r or (r.Position - wp.Position).Magnitude < 4 or os.clock() - t1 > 3
+            repeat
+                r = hrp(); if not r then break end
+                local dir = wp.Position - r.Position
+                dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
+                if dir.Magnitude < 3 then break end
+                -- กดลงพื้นเบาๆ (-15) กันลอย/เด้งขึ้นขอบ — ห้ามมี velocity ขึ้น
+                r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED + Vector3.new(0, -15, 0)
+                task.wait()
+            until os.clock() - t1 > 3
         end
-        if not RUN_ON then local h2 = hum(); if h2 then h2.WalkSpeed = 16 end end
+        -- ถึงแล้วหยุดไถล (ตัดความเร็วค้าง — ไม่งั้นตัวไถลเลยเป้า)
+        r = hrp(); if r then r.AssemblyLinearVelocity = Vector3.zero end
     else
         walkTo(pos)
     end
@@ -971,13 +977,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.87", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.88", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.87 " .. lastStatus end
+    if not deadLock then title.Text = "v4.88 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
