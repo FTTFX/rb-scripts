@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.70 อุ้มคนเป็นลมส่งห้อง + สลับหลายห้องพร้อมกัน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.71 คนเป็นลม=งานด่วนระดับดับไฟ — treat หลีกทาง สแกน 0.15s)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -430,6 +430,21 @@ local function hasWork(room, pat)
     end
     if #requiredMeds(room) > 0 then return true end   -- มียาต้องเก็บ/ให้ = มีงาน
     return false
+end
+
+-- v4.71: คนเป็นลม (มี PP 'Carry' บนตัว, ไม่ใช่ผี) = งานด่วนระดับดับไฟ
+local function faintPending()
+    local npcs = workspace:FindFirstChild("NPCs")
+    if not npcs then return nil, nil end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
+            for _, p in ipairs(m:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Carry" then
+                    return m, p
+                end
+            end
+        end
+    end
 end
 
 -- v4.23: เลือกของด้วย "กดปุ่ม slot จริง" เท่านั้น — *** ห้ามใช้ EquipTool เด็ดขาด ***
@@ -878,13 +893,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.70", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.71", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.70 " .. lastStatus end
+    if not deadLock then title.Text = "v4.71 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -990,7 +1005,9 @@ end)
 -- เลือกห้องใกล้สุดที่ยังต้องทำ → commit ทำจน done (หรือหมดเวลา ~6s) ก่อนเปลี่ยนห้อง
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if AUTO_ON and fp then
+        if AUTO_ON and fp and faintPending() then
+            task.wait(0.2)   -- v4.71: มีคนเป็นลม = หลีกทางให้ loop อุ้ม (งานด่วนกว่า)
+        elseif AUTO_ON and fp then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 local fromPos = hrp() and hrp().Position
@@ -1290,18 +1307,13 @@ end)
 
 -- ===== v4.70 อุ้มคนเป็นลมส่งห้อง: NPC (คนไข้/คนเยี่ยม ไม่ใช่ผี) มี PP 'Carry' =====
 -- flow: บินไปหา → Carry → บินไปห้อง DesignatedRoom → กด prompt วาง (บนตัว NPC/เตียง)
+-- v4.71: งานเร่งด่วนระดับเดียวกับดับไฟ — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if AUTO_ON and fp then
-            local npcs = workspace:FindFirstChild("NPCs")
-            if npcs then for _, m in ipairs(npcs:GetChildren()) do
-                if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
-                    local carryPP
-                    for _, p in ipairs(m:GetDescendants()) do
-                        if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Carry" then
-                            carryPP = p; break
-                        end
-                    end
+            do
+                local m, carryPP = faintPending()
+                do
                     if carryPP then
                         setStatus("อุ้ม " .. m.Name)
                         tpTo(partPos(m)); task.wait(0.15)
@@ -1344,7 +1356,7 @@ task.spawn(function()
                 end
             end end
         end
-        task.wait(0.5)
+        task.wait(0.15)   -- v4.71: สแกนถี่เท่าดับไฟ — เจอปุ๊บอุ้มทันที
     end
 end)
 
