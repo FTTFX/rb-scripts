@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.78 หาเตียงว่างห้องไหนก็ได้ + พักทุกกรณี — เลิกวนอุ้มติด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.79 กันบินขึ้นฟ้าไปเก็บยาก๊อปปี้นอกแมพ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -227,6 +227,11 @@ local function tpTo(pos)
         setStatus("บล็อควาปเพี้ยน " .. math.floor((pos - r.Position).Magnitude) .. "m")
         return
     end
+    -- v4.79: กันบิน "ขึ้นฟ้า" — เป้าสูงกว่าตัวเรา >30 studs = เป้านอกแมพ (ลงต่ำได้ปกติ เผื่อหลุดไปอยู่ที่สูงแล้วต้องกลับพื้น)
+    if r and pos.Y - r.Position.Y > 30 then
+        setStatus("บล็อคเป้าบนฟ้า +" .. math.floor(pos.Y - r.Position.Y) .. "m")
+        return
+    end
     pos = ghostSafe(pos)
     if TP_ON then
         -- v4.59: "บินทะลุเร็ว" แทนวาปทันที — เกมจับการย้ายตำแหน่งก้าวใหญ่แล้วลงโทษบ้าคลั่ง
@@ -264,7 +269,8 @@ local function findPickup(medName)
         if p:IsA("ProximityPrompt") and p.ActionText == medName and p.Parent then
             local pos = partPos(p.Parent)
             -- v4.67: ตัดจุดเก็บนอกแมพทิ้ง (เกมพักไอเทมไว้ใต้น้ำ/ไกล — บินตามไป = ลอยน้ำ)
-            if pos and (not fromPos or (pos - fromPos).Magnitude < 150) and pos.Y > -50 then
+            -- v4.79: กันของที่จอด "บนฟ้า" ด้วย (สูงกว่าตัวเรา >25 studs = ก๊อปปี้นอกแมพ — บินขึ้นฟ้ากลางทะเล)
+            if pos and (not fromPos or ((pos - fromPos).Magnitude < 150 and pos.Y - fromPos.Y < 25)) and pos.Y > -50 then
                 local d = fromPos and (pos - fromPos).Magnitude or math.huge
                 if not best or d < bestD then best, bestD = p, d end
             end
@@ -938,13 +944,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.78", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.79", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.78 " .. lastStatus end
+    if not deadLock then title.Text = "v4.79 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
