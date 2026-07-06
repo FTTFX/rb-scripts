@@ -664,9 +664,11 @@ local function treatRoom(room)
             end
             if not selectTool(m) then return false end       -- ชิ้นเดียวในมือ ยกขึ้นถือ
             -- 3) บินไปเตียง → จ่าย ; done = ของหายจากมือ (consume ทันที แม่นกว่ารอติ๊ก)
+            -- v4.66: prompt อยู่บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง) → บินตามตำแหน่ง "ตัวคนไข้สด"
             local bedPP = bedApplyPP(room)
             if not (bedPP and bedPP.Parent) then return false end
-            tpTo(partPos(bedPP.Parent)); task.wait(0.15)
+            local owner = npcOwner(bedPP)
+            tpTo(owner and partPos(owner) or partPos(bedPP.Parent)); task.wait(0.15)
             local before = heldCount(m)
             pressPrompt(bedPP, function()
                 return not fr.Parent or heldCount(m) < before or frameGiven(fr) or roomDone(room)
@@ -857,13 +859,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.65", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.66", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.65 " .. lastStatus end
+    if not deadLock then title.Text = "v4.66 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
