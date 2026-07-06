@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.52 คนเยี่ยม = เช็คอินเหมือนคนไข้ วาปไปหาเลย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.53 รัศมีเคาน์เตอร์ 15)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -89,8 +89,8 @@ local function checkinPending()
     for _, m in ipairs(npcs:GetChildren()) do
         if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
             local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
-            -- v4.51: รัศมี 25→60 — โต๊ะต้อนรับ "ผู้เยี่ยมไข้" อยู่คนละจุดกับเคาน์เตอร์เช็คอิน
-            if r and (r.Position - cpos).Magnitude < 60 then
+            -- v4.53: รัศมีเคาน์เตอร์ 15 (ผู้ใช้จูน — 60 กว้างไป วาปหาคนที่ยังไม่ถึงคิว)
+            if r and (r.Position - cpos).Magnitude < 15 then
                 -- v4.52: คนไข้ *หรือ* คนเยี่ยม (IsVisitor) ที่ยังไม่เช็คอิน = วาปไปหาเหมือนกัน
                 if (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
                    and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
@@ -786,13 +786,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.52", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.53", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.52 " .. lastStatus end
+    if not deadLock then title.Text = "v4.53 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
