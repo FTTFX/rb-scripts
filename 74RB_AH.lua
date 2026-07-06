@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.92 whitelist ของห้ามทิ้งขยะ: Taser/ถังดับเพลิง/Gun/Cola/Coffee)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.93 ของสำคัญได้ช่องเพิ่ม — นับ slot เต็มเฉพาะของทิ้งได้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -670,10 +670,14 @@ local function killWithWrongMed(room)
     if not wrongName then setStatus("ผี" .. room.Name .. ": หายาผิดไม่เจอ"); return false end
     setStatus("ผี" .. room.Name .. ": ยาผิด=" .. wrongName)
     -- ถือยาเต็ม 3 ช่อง = เก็บเพิ่มไม่ได้ → ทิ้งอันแรกก่อน
-    if not findTool(wrongName) and #heldTools() >= 3 then
-        -- v4.92: เลือกชิ้นแรกที่ "ทิ้งได้จริง" (ข้ามของห้ามทิ้ง — ไม่งั้น no-op แล้ววนค้าง)
-        for _, t in ipairs(heldTools()) do
-            if not protectedTool(t) then discardTool(t) break end
+    if not findTool(wrongName) then
+        -- v4.93: ของสำคัญ (Taser/ถังดับเพลิง/Gun) ได้ช่องเพิ่ม ไม่กินโควต้า 3 ช่องยา — นับเฉพาะของทิ้งได้
+        local n = 0
+        for _, t in ipairs(heldTools()) do if not protectedTool(t) then n += 1 end end
+        if n >= 3 then
+            for _, t in ipairs(heldTools()) do
+                if not protectedTool(t) then discardTool(t) break end
+            end
         end
     end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
@@ -1001,13 +1005,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.92", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.93", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.92 " .. lastStatus end
+    if not deadLock then title.Text = "v4.93 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
