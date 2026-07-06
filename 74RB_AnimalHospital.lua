@@ -878,13 +878,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.68", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.69", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.68 " .. lastStatus end
+    if not deadLock then title.Text = "v4.69 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1019,10 +1019,13 @@ task.spawn(function()
                 if target then
                     setStatus("รักษา " .. target.Name)
                     local guard = 0
+                    -- v4.69: ทุกห้องสลับไวเท่ากัน (~1.6s) = คนไข้ 2 คนทำสลับกันได้ (บินไปมา)
+                    -- ห้องที่เครื่องกำลังหมุน = ไม่มีปุ่มเปิด = โดนข้ามไปทำอีกห้องเอง ; ลำดับจ่ายยา
+                    -- ทำจบใน treatRoom ครั้งเดียวอยู่แล้ว ไม่มีทางโดนขัดกลางคิว (เกาะ 60s เดิมไม่จำเป็น)
                     while AUTO_ON and _G.AH74_GEN == MYGEN
                           and not roomDone(target)
-                          and roomPatient(target)   -- v4.60: คนไข้หาย (ตาย/ออก) = เลิกเกาะทันที ไม่ค้าง 60s
-                          and guard < (target.Name == "Room8" and 300 or 8) do  -- v4.13: Room8 เกาะจนจบ (~60s) ห้องอื่น 1.6s แล้วสลับ
+                          and roomPatient(target)   -- v4.60: คนไข้หาย (ตาย/ออก) = เลิกเกาะทันที
+                          and guard < 8 do
                         guard += 1
                         pcall(treatRoom, target)
                         task.wait(0.2)
