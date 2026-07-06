@@ -15,7 +15,7 @@ end
 local function scan()
     local out = {}
     local function L(s) out[#out+1] = s end
-    L("=== AH74 RoomDebug v1.2 ===")
+    L("=== AH74 RoomDebug v1.3 ===")
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then L("!! ไม่มี workspace.NPCs") else
         L("=== NPCs ("..#npcs:GetChildren()..") ===")
@@ -27,6 +27,23 @@ local function scan()
             for _, p in ipairs(m:GetDescendants()) do
                 if p:IsA("ProximityPrompt") then
                     L(("   PP '%s' obj=%s Enabled=%s"):format(p.ActionText, p.Parent.Name, tostring(p.Enabled)))
+                end
+            end
+        end
+    end
+    -- v1.3: ตามหาสไลม์/Grime/Anomaly ทั้ง workspace (ไม่อยู่ใต้ NPCs)
+    L("=== SLIME/GRIME/ANOMALY ===")
+    for _, d in ipairs(workspace:GetDescendants()) do
+        local n = d.Name:lower()
+        if d:IsA("Model") or d:IsA("BasePart") then
+            if n:find("slime") or n:find("grime") or n:find("goo") or n:find("anomal") or n:find("puddle") then
+                local a = {}
+                for k, v in pairs(d:GetAttributes()) do a[#a+1] = k.."="..tostring(v) end
+                L("[OBJ] "..d:GetFullName().." | "..table.concat(a, " "))
+                for _, p in ipairs(d:GetDescendants()) do
+                    if p:IsA("ProximityPrompt") then
+                        L(("   PP '%s' obj=%s Enabled=%s"):format(p.ActionText, p.Parent.Name, tostring(p.Enabled)))
+                    end
                 end
             end
         end
