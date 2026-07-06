@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.35 กันบ้าคลั่ง: ทุกวาปถอยห่างผี ≥12 studs)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.43 รวมปุ่ม: รักษา=เครื่อง+ตีตัว+สี R6, แถวบน=รักษา|เคาน์เตอร์)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -737,7 +737,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 292
+local FULL_H = 226   -- v4.43: ยุบเหลือ 5 แถว + CLOSE (รวมปุ่มแล้ว)
 local f = Instance.new("Frame", gui)
 f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
@@ -749,9 +749,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.42", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.43", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.42 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.43 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -779,7 +779,7 @@ local function btn(txt, x, y, w, h, col)
     return b
 end
 
-local espB = btn("ESP: ON", 8, 34, 86, 30, Color3.fromRGB(40,150,70))
+local espB = btn("ESP: ON", 8, 66, 86, 30, Color3.fromRGB(40,150,70))
 espB.MouseButton1Click:Connect(function()
     ESP_ON = not ESP_ON
     espB.Text = "ESP: " .. (ESP_ON and "ON" or "OFF")
@@ -789,7 +789,7 @@ espB.MouseButton1Click:Connect(function()
     end
 end)
 
-local runB = btn("RUN: OFF", 98, 34, 86, 30)
+local runB = btn("RUN: OFF", 98, 66, 86, 30)
 runB.MouseButton1Click:Connect(function()
     RUN_ON = not RUN_ON
     runB.Text = "RUN: " .. (RUN_ON and "ON" or "OFF")
@@ -797,15 +797,15 @@ runB.MouseButton1Click:Connect(function()
     if not RUN_ON then local h = hum(); if h then h.WalkSpeed = 16 end end
 end)
 
-local spdL = btn(tostring(SPEED), 8, 226, 34, 30); spdL.Active = false
-btn("−", 44, 226, 24, 30).MouseButton1Click:Connect(function()
+local spdL = btn(tostring(SPEED), 98, 162, 34, 30); spdL.Active = false
+btn("−", 134, 162, 24, 30).MouseButton1Click:Connect(function()
     SPEED = math.max(16, SPEED - 10); spdL.Text = tostring(SPEED)
 end)
-btn("+", 70, 226, 24, 30).MouseButton1Click:Connect(function()
+btn("+", 160, 162, 24, 30).MouseButton1Click:Connect(function()
     SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
 end)
 
-local clipB = btn("NOCLIP: OFF", 8, 66, 86, 30)
+local clipB = btn("NOCLIP: OFF", 8, 98, 86, 30)
 clipB.MouseButton1Click:Connect(function()
     NOCLIP_ON = not NOCLIP_ON
     clipB.Text = "NOCLIP: " .. (NOCLIP_ON and "ON" or "OFF")
@@ -818,9 +818,11 @@ clipB.MouseButton1Click:Connect(function()
     end
 end)
 
-local autoB = btn("รักษา: OFF", 98, 66, 86, 30)
+-- v4.43: ปุ่มรักษา = รวม ทำเครื่อง+ตีตัว(whack)+สี R6 ในปุ่มเดียว (แถวบนสุด)
+local autoB = btn("รักษา: OFF", 8, 34, 86, 30)
 autoB.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
+    MACHINE_ON, WHACK_ON, R6_ON = AUTO_ON, AUTO_ON, AUTO_ON
     autoB.Text = "รักษา: " .. (AUTO_ON and "ON" or "OFF")
     autoB.BackgroundColor3 = AUTO_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
     if AUTO_ON and not fp then autoB.Text = "ไม่มี fp!" end
@@ -1027,12 +1029,7 @@ end
 local function doBurning(pp)
     local a = pp.ActionText
     if a == "Fire" then
-        -- v4.42: ยืนห่างคนติดไฟ 8 studs (เหมือนไฟพื้น/สไลม์) — ไม่วาปเข้าไปโดนเปลว
-        local pos, from = partPos(pp.Parent), hrp() and hrp().Position
-        if pos then
-            local dir = (from and (from - pos).Magnitude > 1) and (from - pos).Unit or Vector3.new(1, 0, 0)
-            tpTo(pos + dir * 8); task.wait(0.15)
-        end
+        tpTo(partPos(pp.Parent)); task.wait(0.15)          -- วาปประชิดคนติดไฟ (ผู้ใช้ยืนยันว่าดีแล้ว)
         pressPrompt(pp)                                    -- ดับเปลว
     elseif a == "Treat Burns" then
         if heldCount("Ointment") < 1 then                  -- ยังไม่มีครีม → ไปเก็บ
@@ -1121,43 +1118,23 @@ task.spawn(function()
     end
 end)
 
-local killB = btn("ฆ่าผี: OFF", 8, 98, 86, 30)
+local killB = btn("ฆ่าผี: OFF", 98, 98, 86, 30)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
     killB.Text = "ฆ่าผี: " .. (KILLGHOST_ON and "ON" or "OFF")
     killB.BackgroundColor3 = KILLGHOST_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(45,45,58)
 end)
 
-local moveB = btn("ไปของ: วาป", 98, 98, 86, 30, Color3.fromRGB(55,35,80))
+local moveB = btn("ไปของ: วาป", 8, 130, 86, 30, Color3.fromRGB(55,35,80))
 moveB.MouseButton1Click:Connect(function()
     TP_ON = not TP_ON
     moveB.Text = "ไปของ: " .. (TP_ON and "วาป" or "เดิน")
     moveB.BackgroundColor3 = TP_ON and Color3.fromRGB(55,35,80) or Color3.fromRGB(35,70,55)
 end)
 
-local machB = btn("ทำเครื่อง: ON", 8, 130, 86, 30, Color3.fromRGB(40,150,70))
-machB.MouseButton1Click:Connect(function()
-    MACHINE_ON = not MACHINE_ON
-    machB.Text = "ทำเครื่อง: " .. (MACHINE_ON and "ON" or "OFF")
-    machB.BackgroundColor3 = MACHINE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-end)
-
-local whackB = btn("ตีตัว: OFF", 98, 130, 86, 30, Color3.fromRGB(120,60,30))
-whackB.MouseButton1Click:Connect(function()
-    WHACK_ON = not WHACK_ON
-    whackB.Text = "ตีตัว: " .. (WHACK_ON and "ON" or "OFF")
-    whackB.BackgroundColor3 = WHACK_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
-end)
-
-local r6B = btn("สี R6: OFF", 8, 162, 86, 30, Color3.fromRGB(120,60,30))
-r6B.MouseButton1Click:Connect(function()
-    R6_ON = not R6_ON
-    r6B.Text = "สี R6: " .. (R6_ON and "ON" or "OFF")
-    r6B.BackgroundColor3 = R6_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
-end)
-
--- v4.34: รวม เช็คอิน+ชัตเตอร์ เป็นปุ่มเดียว (งานหน้าเคาน์เตอร์เหมือนกัน)
-local ciB = btn("เคาน์เตอร์: OFF", 98, 162, 86, 30, Color3.fromRGB(45,45,58))
+-- (v4.43: ทำเครื่อง/ตีตัว/สี R6 รวมเข้าปุ่ม "รักษา" แล้ว — ไม่มีปุ่มแยก)
+-- v4.34: รวม เช็คอิน+ชัตเตอร์ เป็นปุ่มเดียว (งานหน้าเคาน์เตอร์เหมือนกัน) — แถวบนสุดคู่กับรักษา
+local ciB = btn("เคาน์เตอร์: OFF", 98, 34, 86, 30, Color3.fromRGB(45,45,58))
 ciB.MouseButton1Click:Connect(function()
     CHECKIN_ON = not CHECKIN_ON
     SHUTTER_ON = CHECKIN_ON
@@ -1165,21 +1142,21 @@ ciB.MouseButton1Click:Connect(function()
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local fireB = btn("ดับไฟ: OFF", 8, 194, 86, 30, Color3.fromRGB(120,60,30))
+local fireB = btn("ดับไฟ: OFF", 98, 130, 86, 30, Color3.fromRGB(120,60,30))
 fireB.MouseButton1Click:Connect(function()
     FIRE_ON = not FIRE_ON
     fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local npcfB = btn("NPC เร็ว: OFF", 98, 194, 86, 30, Color3.fromRGB(60,60,80))
+local npcfB = btn("NPC เร็ว: OFF", 8, 162, 86, 30, Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
     NPCFAST_ON = not NPCFAST_ON
     npcfB.Text = "NPC เร็ว: " .. (NPCFAST_ON and "ON" or "OFF")
     npcfB.BackgroundColor3 = NPCFAST_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(60,60,80)
 end)
 
-btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON, FIRE_ON =
         false, false, false, false, false, false, false, false, false, false, false
     local h = hum(); if h then h.WalkSpeed = 16 end
