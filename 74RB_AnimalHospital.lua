@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.33 สี R6 หันหน้าเข้าปุ่มก่อนกด — กันกดผิดสี)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.34 รวมปุ่มเคาน์เตอร์ + ดับไฟยืนนอกกองไฟ ไล่จากขอบนอก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -707,9 +707,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.33", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.34", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.33 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.34 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
@@ -755,11 +755,11 @@ runB.MouseButton1Click:Connect(function()
     if not RUN_ON then local h = hum(); if h then h.WalkSpeed = 16 end end
 end)
 
-local spdL = btn(tostring(SPEED), 98, 226, 34, 30); spdL.Active = false
-btn("−", 134, 226, 24, 30).MouseButton1Click:Connect(function()
+local spdL = btn(tostring(SPEED), 8, 226, 34, 30); spdL.Active = false
+btn("−", 44, 226, 24, 30).MouseButton1Click:Connect(function()
     SPEED = math.max(16, SPEED - 10); spdL.Text = tostring(SPEED)
 end)
-btn("+", 160, 226, 24, 30).MouseButton1Click:Connect(function()
+btn("+", 70, 226, 24, 30).MouseButton1Click:Connect(function()
     SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
 end)
 
@@ -1025,14 +1025,37 @@ task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp then
             local rooms = workspace:FindFirstChild("Rooms")
-            if rooms then for _, d in ipairs(rooms:GetDescendants()) do
-                if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
-                   and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
-                    setStatus("ดับไฟพื้น")
-                    tpTo(partPos(d.Parent)); task.wait(0.15)  -- วาปไปที่กองไฟก่อน
-                    if not pressPrompt(d) then cooldown[d] = os.clock() end  -- ไม่ดับ → พักจุดนี้
+            if rooms then
+                -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
+                local fires = {}
+                for _, d in ipairs(rooms:GetDescendants()) do
+                    if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
+                       and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
+                        fires[#fires+1] = d
+                    end
                 end
-            end end
+                local me = hrp() and hrp().Position
+                if me then
+                    table.sort(fires, function(a, b)
+                        local pa, pb = partPos(a.Parent), partPos(b.Parent)
+                        return ((pa or me) - me).Magnitude < ((pb or me) - me).Magnitude
+                    end)
+                end
+                for _, d in ipairs(fires) do
+                    if not (FIRE_ON and _G.AH74_GEN == MYGEN) then break end
+                    if d.Parent and d.Enabled then
+                        setStatus("ดับไฟพื้น")
+                        local pos = partPos(d.Parent)
+                        local from = hrp() and hrp().Position
+                        if pos then
+                            -- ยืนห่างกองไฟ 8 studs ฝั่งที่เรามา (ไม่เหยียบไฟ) ; fp ยิงถึงจากตรงนั้น
+                            local dir = from and (from - pos).Magnitude > 1 and (from - pos).Unit or Vector3.new(1, 0, 0)
+                            tpTo(pos + dir * 8); task.wait(0.15)
+                        end
+                        if not pressPrompt(d) then cooldown[d] = os.clock() end  -- ไม่ดับ → พักจุดนี้
+                    end
+                end
+            end
         end
         task.wait(0.35)
     end
@@ -1073,28 +1096,23 @@ r6B.MouseButton1Click:Connect(function()
     r6B.BackgroundColor3 = R6_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local ciB = btn("เช็คอิน: OFF", 98, 162, 86, 30, Color3.fromRGB(45,45,58))
+-- v4.34: รวม เช็คอิน+ชัตเตอร์ เป็นปุ่มเดียว (งานหน้าเคาน์เตอร์เหมือนกัน)
+local ciB = btn("เคาน์เตอร์: OFF", 98, 162, 86, 30, Color3.fromRGB(45,45,58))
 ciB.MouseButton1Click:Connect(function()
     CHECKIN_ON = not CHECKIN_ON
-    ciB.Text = "เช็คอิน: " .. (CHECKIN_ON and "ON" or "OFF")
+    SHUTTER_ON = CHECKIN_ON
+    ciB.Text = "เคาน์เตอร์: " .. (CHECKIN_ON and "ON" or "OFF")
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local shutB = btn("ชัตเตอร์: OFF", 8, 194, 86, 30, Color3.fromRGB(120,30,30))
-shutB.MouseButton1Click:Connect(function()
-    SHUTTER_ON = not SHUTTER_ON
-    shutB.Text = "ชัตเตอร์: " .. (SHUTTER_ON and "ON" or "OFF")
-    shutB.BackgroundColor3 = SHUTTER_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,30,30)
-end)
-
-local fireB = btn("ดับไฟ: OFF", 98, 194, 86, 30, Color3.fromRGB(120,60,30))
+local fireB = btn("ดับไฟ: OFF", 8, 194, 86, 30, Color3.fromRGB(120,60,30))
 fireB.MouseButton1Click:Connect(function()
     FIRE_ON = not FIRE_ON
     fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local npcfB = btn("NPC เร็ว: OFF", 8, 226, 86, 30, Color3.fromRGB(60,60,80))
+local npcfB = btn("NPC เร็ว: OFF", 98, 194, 86, 30, Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
     NPCFAST_ON = not NPCFAST_ON
     npcfB.Text = "NPC เร็ว: " .. (NPCFAST_ON and "ON" or "OFF")
@@ -1114,4 +1132,4 @@ btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.33] สี R6 หันหน้าเข้าปุ่ม (กันกดผิดสี) + สถานะสดบนหัว GUI พร้อม")
+print("[74RB AnimalHospital v4.34] ปุ่มเคาน์เตอร์ (เช็คอิน+ชัตเตอร์) + ดับไฟยืนห่าง 8 studs ไล่ขอบนอก พร้อม")
