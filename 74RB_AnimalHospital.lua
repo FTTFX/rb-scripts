@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.55 ฆ่าผี: หยิบยาผิดก่อนรอ Apply — Apply เปิดเฉพาะตอนถือของ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.56 ฆ่าผี: จ่ายยาผิดแบบเดียวกับ path ปกติเป๊ะ ไม่รอ Enabled)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -516,19 +516,17 @@ local function killWithWrongMed(room)
         setStatus("ผี" .. room.Name .. ": หยิบ " .. wrongName .. " ขึ้นมือไม่ได้")
         return false
     end
-    -- ถือยาผิดแล้ว → ไปเตียง แล้วรอ Apply เปิด (เปิดตอนถือของ) สูงสุด 3s
+    -- v4.56: ถือยาผิดแล้ว → ไปเตียง → ยิงเลย เหมือน path รักษาปกติเป๊ะ (ไม่รอ/ไม่เช็ค Enabled)
     bedPP = bedApplyPP(room)
     if not (bedPP and bedPP.Parent) then return false end
     tpTo(partPos(bedPP.Parent)); task.wait(0.18)
-    local t0 = os.clock()
-    repeat task.wait(0.1); bedPP = bedApplyPP(room)
-    until (bedPP and bedPP.Parent and bedPP.Enabled) or os.clock() - t0 > 3
-    if not (bedPP and bedPP.Parent and bedPP.Enabled) then
-        setStatus("ผี" .. room.Name .. ": ถือ " .. wrongName .. " แล้วแต่ Apply ไม่เปิด")
-        return false
-    end
     setStatus("ผี" .. room.Name .. ": จ่าย " .. wrongName)
-    pressPrompt(bedPP); task.wait(0.2); return true
+    if bedPP.Enabled then
+        pressPrompt(bedPP)
+    else
+        pcall(fp, bedPP, 0)   -- prompt ยังไม่ Enabled ก็ลองยิงตรงแบบเดิม (pressPrompt จะ no-op)
+    end
+    task.wait(0.2); return true
 end
 -- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
 local function treatRoom(room)
@@ -812,13 +810,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.55", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.56", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.55 " .. lastStatus end
+    if not deadLock then title.Text = "v4.56 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
