@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.43 รวมปุ่ม: รักษา=เครื่อง+ตีตัว+สี R6, แถวบน=รักษา|เคาน์เตอร์)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.44 ESP คนเยี่ยมไข้ฟ้า + roomPatient ไม่คว้าคนเยี่ยม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -108,11 +108,12 @@ local COL = {
     ghost   = Color3.fromRGB(255, 40, 40),    -- ผี (Skinwalker = อันตรายจริง)
     anomaly = Color3.fromRGB(190, 60, 255),   -- v4.37 Hider/Anomaly (ผีซ่อน — อัปเดตใหม่)
     sus     = Color3.fromRGB(255, 150, 30),   -- v4.41 น่าสงสัย: มี Camera/PhotoEffect แต่ยังไม่ขึ้น Skinwalker
+    visitor = Color3.fromRGB(60, 230, 230),   -- v4.44 คนมาเยี่ยมไข้ (IsVisitor — ไม่ใช่คนไข้ แต่ต้องต้อนรับ)
     patient = Color3.fromRGB(60, 255, 90),    -- คนไข้จริง
     mate    = Color3.fromRGB(60, 160, 255),   -- เพื่อนผู้เล่น
     npc     = Color3.fromRGB(220, 210, 110),  -- NPC ทั่วไป/visitor (Fake=true ไม่ใช่ผี)
 }
-local LBL = { ghost="ผี", anomaly="ผีซ่อน", sus="น่าสงสัย!", patient="คนไข้", mate="เพื่อน", npc="NPC" }
+local LBL = { ghost="ผี", anomaly="ผีซ่อน", sus="น่าสงสัย!", patient="คนไข้", visitor="เยี่ยมไข้", mate="เพื่อน", npc="NPC" }
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
@@ -410,7 +411,8 @@ local function roomPatient(room)
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return end
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:GetAttribute("DesignatedRoom") == room.Name then return m end
+        -- v4.44: ต้องเป็นคนไข้จริง — คนเยี่ยม (IsVisitor) ก็มี DesignatedRoom เดียวกัน อย่าคว้าผิดตัว
+        if m:GetAttribute("DesignatedRoom") == room.Name and not m:GetAttribute("IsVisitor") then return m end
     end
     -- fallback (v4.6): เกมอาจไม่ตั้ง/เคลียร์ DesignatedRoom → จับจากตำแหน่ง:
     -- NPC คนไข้ (IsPatient/InBed) ที่อยู่ใกล้ห้องนี้ <30 studs = คนไข้ของห้องนี้
@@ -632,7 +634,8 @@ local function npcKind(m)
     if m:GetAttribute("CameraEffect") or m:GetAttribute("PhotoEffect")
        or m:GetAttribute("HasCameraEffect") or m:GetAttribute("HasPhotoEffect") then return "sus" end
     if m:GetAttribute("IsPatient")  then return "patient" end   -- คนไข้จริง
-    return "npc"   -- Fake/visitor/พนักงาน = NPC ทั่วไป (ไม่ใช่ผี)
+    if m:GetAttribute("IsVisitor")  then return "visitor" end   -- v4.44 คนมาเยี่ยมไข้ (DesignatedRoom=ห้องที่จะไปเยี่ยม)
+    return "npc"   -- Fake/พนักงาน = NPC ทั่วไป (ไม่ใช่ผี)
 end
 
 -- ===== ESP refresh loop (re-check attr ทุก 0.5s — ผีเปลี่ยนสภาพกลางเกมก็เห็น) =====
@@ -749,9 +752,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.43", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.44", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.43 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.44 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
