@@ -15,7 +15,7 @@ end
 local function scan()
     local out = {}
     local function L(s) out[#out+1] = s end
-    L("=== AH74 RoomDebug v1.3 ===")
+    L("=== AH74 RoomDebug v1.4 ===")
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then L("!! ไม่มี workspace.NPCs") else
         L("=== NPCs ("..#npcs:GetChildren()..") ===")
@@ -48,6 +48,18 @@ local function scan()
             end
         end
     end
+    -- v1.4: dump prompt ทุกตัวใต้ Misc (เคาน์เตอร์/โต๊ะต้อนรับผู้เยี่ยม/กริ่ง/กล้อง)
+    L("=== MISC PROMPTS ===")
+    local misc = workspace:FindFirstChild("Misc")
+    if misc then
+        for _, p in ipairs(misc:GetDescendants()) do
+            if p:IsA("ProximityPrompt") then
+                L(("[MISC] '%s' obj=%s path=%s Enabled=%s Hold=%.1f"):format(
+                    p.ActionText, p.Parent.Name,
+                    p.Parent.Parent and p.Parent.Parent.Name or "?", tostring(p.Enabled), p.HoldDuration))
+            end
+        end
+    else L("!! ไม่มี workspace.Misc") end
     L("=== ROOMS ===")
     local rooms = workspace:FindFirstChild("Rooms")
     if not rooms then L("!! ไม่มี workspace.Rooms") end
