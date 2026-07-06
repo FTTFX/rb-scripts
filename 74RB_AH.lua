@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.85 เลิกบิน CFrame — เดินจริงเร็วด้วย MoveTo+WalkSpeed กันตายบ้าคลั่ง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.86 เดินตรง MoveTo 200 + noclip ชั่วคราว — เร็วทะลุกำแพง ไม่วาป)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -235,27 +235,26 @@ local function tpTo(pos)
     pos = ghostSafe(pos)
     if TP_ON then
         -- v4.85: เลิกบิน CFrame ทั้งหมด — เกมยังจับได้ (ตายบ้าคลั่งซ้ำ Shift19)
-        --        เปลี่ยนเป็น "เดินจริงแบบเร็ว": pathfinding + MoveTo + เร่ง WalkSpeed
-        --        เกมเห็นเป็นการเดินปกติ ไม่มีการย้ายตำแหน่งก้าวใหญ่ให้ตรวจจับ
+        -- v4.86: เดินจริงตรงเป้า MoveTo 200 + noclip ชั่วคราว — ทะลุกำแพงเลย ไม่ต้อง pathfind
+        --        เกมเห็นเป็นการ "เดิน" ปกติ (มี velocity ต่อเนื่อง) ไม่มีการกระโดดตำแหน่ง
         local h = hum()
         if not h then return end
-        local boost = math.max(SPEED, 40)
-        local wps
-        local path = PathSvc:CreatePath({ AgentRadius = 2, AgentCanJump = false })
-        local ok = pcall(function() path:ComputeAsync(r.Position, pos) end)
-        if ok and path.Status == Enum.PathStatus.Success then wps = path:GetWaypoints() end
-        if not wps or #wps == 0 then wps = { { Position = pos } } end   -- หาเส้นทางไม่ได้ → เดินตรง
-        local t0 = os.clock()
-        for _, wp in ipairs(wps) do
-            if _G.AH74_GEN ~= MYGEN or os.clock() - t0 > 10 then break end
-            h, r = hum(), hrp()
-            if not (h and r) then break end
-            h.WalkSpeed = boost
-            h:MoveTo(wp.Position)
-            local t1 = os.clock()
-            repeat task.wait(0.05); r = hrp()
-            until not r or (r.Position - wp.Position).Magnitude < 4 or os.clock() - t1 > 4
+        local function setClip(on)
+            local c = LP.Character
+            if c then for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = on end
+            end end
         end
+        local WALK_BOOST = 200
+        local t0 = os.clock()
+        h:MoveTo(pos)
+        repeat
+            setClip(false)                       -- ย้ำทุกรอบ (เกม/animation ชอบคืนค่าการชน)
+            h = hum(); if h then h.WalkSpeed = WALK_BOOST end
+            task.wait(0.05); r = hrp()
+        until not r or _G.AH74_GEN ~= MYGEN
+            or (r.Position - pos).Magnitude < 4 or os.clock() - t0 > 6
+        if not NOCLIP_ON then setClip(true) end   -- คืนการชน (ถ้าไม่ได้เปิด NOCLIP อยู่)
         if not RUN_ON then local h2 = hum(); if h2 then h2.WalkSpeed = 16 end end
     else
         walkTo(pos)
@@ -954,13 +953,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.85", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.86", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.85 " .. lastStatus end
+    if not deadLock then title.Text = "v4.86 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
