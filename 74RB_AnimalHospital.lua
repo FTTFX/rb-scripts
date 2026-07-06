@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.75 ลำดับงาน: คนเป็นลม>ไฟ>สไลม์>รักษา>เช็คอิน(ว่างจริงค่อยทำ))
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.76 ข้ามผีดื้อยา MedicineImmune + เคลียร์สถานะหลังวางคนเป็นลม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -648,6 +648,12 @@ local function treatRoom(room)
     local ghost = patient and patient:GetAttribute("Skinwalker")
     if ghost then
         if not KILLGHOST_ON then return false end
+        -- v4.76: ผีดื้อยา (MedicineImmune) — ยาผิดฆ่าไม่เข้า ("the mass of eyes seems unaffected")
+        -- ป้อนต่อ = เปลืองยา+เสียเวลาฟรี → ข้ามห้องนี้ไปเลย
+        if patient:GetAttribute("MedicineImmune") then
+            setStatus("ผี" .. room.Name .. " ดื้อยา — ข้าม")
+            return false
+        end
         local bedPP = bedApplyPP(room)
         -- v4.55: วินิจฉัยเสร็จ (จอขึ้นรายการยา) หรือ Apply เปิด = เข้าขั้นจ่ายยาผิดได้เลย
         if (bedPP and bedPP.Parent and bedPP.Enabled) or #requiredMeds(room) > 0 then
@@ -929,13 +935,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.75", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.76", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.75 " .. lastStatus end
+    if not deadLock then title.Text = "v4.76 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1059,7 +1065,9 @@ task.spawn(function()
                             local pPos, rPos = partPos(pat), roomPos(room)
                             return pPos and rPos and (pPos - rPos).Magnitude < 35
                         end)())
-                        if pat and present and not roomDone(room) and (not ghost or KILLGHOST_ON)
+                        -- v4.76: ผีดื้อยา (MedicineImmune) ไม่นับเป็นงาน — ฆ่าด้วยยาผิดไม่ได้
+                        local killable = ghost and KILLGHOST_ON and not pat:GetAttribute("MedicineImmune")
+                        if pat and present and not roomDone(room) and (not ghost or killable)
                            and hasWork(room, pat) then   -- v4.14: ข้ามห้องที่ยังไม่มีงานให้ทำ
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
@@ -1401,6 +1409,9 @@ task.spawn(function()
                                     return not dropPP.Parent or not dropPP.Enabled
                                         or m:GetAttribute("CarriedBy") == nil
                                 end)
+                                if m:GetAttribute("CarriedBy") == nil then
+                                    setStatus("วาง " .. m.Name .. " เสร็จ")   -- v4.76: เคลียร์สถานะค้าง
+                                end
                             end
                         end
                     end
