@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.90 กันค้างสไลม์/ไฟพื้น — พลาด 3 ครั้งพักจุดนั้น 1 นาที)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.91 ลำดับงานฉุกเฉิน: อุ้มทีละคน + ล็อค CARRYING ไฟ/ชัตเตอร์ห้ามแทรก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -48,6 +48,7 @@ local setStatus = function() end   -- v4.32: โชว์ว่ากำลั�
 -- (เคยโดน: สไลม์เกิดกลางคิวผ่าตัด → บินไปล้าง → fp ยิงใส่ของตรงหน้า = จ่ายผิด = ตาย)
 local WORKING = false
 local TREAT_BUSY = false   -- v4.75: treat loop มีห้องให้ทำอยู่ไหม (ใช้กั้นเช็คอิน = งานอันดับท้าย)
+local CARRYING = false     -- v4.91: กำลังอุ้มคนเป็นลม — ห้ามทุก loop (ไฟ/สไลม์/ชัตเตอร์) แทรกจนกว่าจะวางเสร็จ
 
 -- prompt การรักษา/เช็คอิน/quest (จาก spy) — ยิงตัวที่ enabled อยู่ เกมจะไล่สเต็ปเอง
 -- สเต็ปปลอดภัย (ยิงมั่วได้ ไม่ทำคนไข้ตาย): เช็คอิน + วินิจฉัย เท่านั้น
@@ -467,25 +468,33 @@ end
 
 -- v4.71: คนเป็นลม (มี PP 'Carry' บนตัว, ไม่ใช่ผี) = งานด่วนอันดับ 1
 local FAINT_DONE = {}   -- v4.77: พักต่อหัวหลังพยายามวาง — กันวนซ้ำถ้าเกมไม่เคลียร์ CarriedBy
+local function faintEligible(m)
+    return m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly")
+       and not m:GetAttribute("InBed")   -- v4.77: ขึ้นเตียงแล้ว = จบงาน (เกมอาจไม่เคลียร์ CarriedBy)
+       and (not FAINT_DONE[m] or os.clock() - FAINT_DONE[m] > 10)
+end
 local function faintPending()
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return nil, nil end
-    for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly")
-           and not m:GetAttribute("InBed")   -- v4.77: ขึ้นเตียงแล้ว = จบงาน (เกมอาจไม่เคลียร์ CarriedBy)
-           and (not FAINT_DONE[m] or os.clock() - FAINT_DONE[m] > 10) then
-            -- ยังอุ้มอยู่ (เราเป็นคนอุ้ม) ก็นับว่างานยังไม่จบ — ทำจนวางลงเตียง
+    local kids = npcs:GetChildren()
+    -- v4.91: รอบแรก — คนที่ "อุ้มติดมืออยู่จริง" มาก่อนเสมอ
+    --        (เป็นลม 2 คนพร้อมกัน: เดิมอาจคืนคนที่ 2 ทั้งที่ยังอุ้มคนแรก → กด Carry ซ้อน งานพันกัน คนตาย)
+    for _, m in ipairs(kids) do
+        if faintEligible(m) and m:GetAttribute("CarriedBy") == LP.UserId then
             -- v4.81: เช็ค "จากมือจริง" — อุ้มอยู่จริงตัว NPC ต้องติดตัวเรา (<10 studs)
             --        เกมไม่เคลียร์ CarriedBy หลังวางเตียงห้องอื่น → attr ค้างแต่ตัวอยู่ไกล = วางแล้ว จบถาวร
-            if m:GetAttribute("CarriedBy") == LP.UserId then
-                local me, np = hrp() and hrp().Position, partPos(m)
-                if me and np then
-                    if (np - me).Magnitude < 10 then return m, nil end
-                    FAINT_DONE[m] = math.huge   -- วางไปแล้ว — ไม่กลับมาวนอีก
-                else
-                    return m, nil
-                end
+            local me, np = hrp() and hrp().Position, partPos(m)
+            if me and np then
+                if (np - me).Magnitude < 10 then return m, nil end
+                FAINT_DONE[m] = math.huge   -- วางไปแล้ว — ไม่กลับมาวนอีก
+            else
+                return m, nil
             end
+        end
+    end
+    -- รอบสอง — คนเป็นลมที่ยังไม่มีใครอุ้ม (มี Carry prompt)
+    for _, m in ipairs(kids) do
+        if faintEligible(m) then
             for _, p in ipairs(m:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Carry" then
                     return m, p
@@ -977,13 +986,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.90", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.91", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.90 " .. lastStatus end
+    if not deadLock then title.Text = "v4.91 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1294,7 +1303,7 @@ do
     -- ลำดับ: คนไข้จริงยังไม่เช็คอิน → เปิดไว้ก่อน (เช็คอินคนดีก่อน แม้มีผีปนอยู่) ; เช็คอินครบแล้ว+ผียังอยู่ → ปิด
     task.spawn(function()
         while _G.AH74_GEN == MYGEN do
-            if SHUTTER_ON and fp then
+            if SHUTTER_ON and fp and not CARRYING then   -- v4.91: ห้ามแทรกตอนอุ้มคน
                 local pp = shutterPP()
                 if pp and pp.Parent then
                     local ghost, pending, leaving = counterScan()
@@ -1341,7 +1350,7 @@ task.spawn(function()
     local lastAct = {}   -- v4.31: เว้นจังหวะต่อ NPC 2s — กันวาปถี่จนไม่ได้กลับไปรักษา
     local fails = {}     -- v4.89: นับพลาดต่อ NPC — 3 ครั้งติด = พัก 15s (กันค้าง Treat Burns วนไม่จบ)
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อนไฟ
+        if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อนไฟ
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
@@ -1374,7 +1383,7 @@ task.spawn(function()
     local cooldown = {}   -- v4.31: จุดที่กดไม่เข้า → พัก 5s กันวาปวนไม่จบ (ไม่กลับไปรักษา)
     local failN = {}      -- v4.90: นับพลาดต่อจุด — 3 ครั้ง = พักยาว 1 นาที (จุดเอื้อมไม่ถึง/หลอก)
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อน
+        if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อน
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1406,7 +1415,9 @@ task.spawn(function()
                     end)
                 end
                 for _, d in ipairs(fires) do
-                    if not (FIRE_ON and _G.AH74_GEN == MYGEN) then break end
+                    -- v4.91: เช็คคนเป็นลม "ทุกกอง" ก่อนดับ — เดิมเช็คแค่ต้นรอบ พอไฟหลายกอง
+                    --        มีคนเป็นลมกลางคันก็ยังดับต่อจนครบ (แย่งกับ loop อุ้ม = อุ้มคนไปดับไฟ)
+                    if not (FIRE_ON and _G.AH74_GEN == MYGEN) or CARRYING or faintPending() then break end
                     if d.Parent and d.Enabled then
                         setStatus(d.ActionText == "Clean Slime" and "ล้างสไลม์" or "ดับไฟพื้น")
                         local pos = partPos(d.Parent)
@@ -1442,6 +1453,7 @@ task.spawn(function()
                 local m, carryPP = faintPending()
                 do
                     if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
+                        CARRYING = true   -- v4.91: ล็อคงานอุ้ม — ไฟ/สไลม์/ชัตเตอร์ห้ามแทรกจนวางเสร็จ
                         if carryPP then
                             setStatus("อุ้ม " .. m.Name)
                             tpTo(partPos(m)); task.wait(0.15)
@@ -1521,6 +1533,7 @@ task.spawn(function()
                                 FAINT_DONE[m] = os.clock()   -- v4.78: พักทุกกรณี — วางไม่ได้ก็ห้ามวนติด
                             end
                         end
+                        CARRYING = false   -- v4.91: ปลดล็อค — งานอุ้มรอบนี้จบ (สำเร็จ/พักก็ตาม)
                     end
                 end
             end
