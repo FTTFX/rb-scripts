@@ -586,6 +586,13 @@ local function treatRoom(room)
     -- แล้ว "หักมุมตอนจ่ายยา" — Apply พร้อมเมื่อไหร่ค่อยยาผิด ; ห้ามไหลไปเก็บ/ให้ยาถูก (จะกลายเป็นรักษาผีหาย)
     local patient = roomPatient(room)
     if not patient then return false end   -- v4.60: ไม่มีคนไข้ (ตาย/ออกไปแล้ว) = ห้ามทำอะไรกับห้องนี้
+    -- v4.65: บินไปหาตัวคนไข้ก่อนเริ่มงาน (เหมือนเช็คอิน) — อยู่ไกลเกิน 10 ค่อยบิน, ghostSafe กันจ่อผีเอง
+    do
+        local pPos, me = partPos(patient), hrp() and hrp().Position
+        if pPos and me and (pPos - me).Magnitude > 10 then
+            tpTo(pPos); task.wait(0.1)
+        end
+    end
     local ghost = patient and patient:GetAttribute("Skinwalker")
     if ghost then
         if not KILLGHOST_ON then return false end
@@ -850,13 +857,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.64", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.65", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.64 " .. lastStatus end
+    if not deadLock then title.Text = "v4.65 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
