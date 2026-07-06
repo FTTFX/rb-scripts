@@ -96,11 +96,12 @@ end
 
 local COL = {
     ghost   = Color3.fromRGB(255, 40, 40),    -- ผี (Skinwalker = อันตรายจริง)
+    anomaly = Color3.fromRGB(190, 60, 255),   -- v4.37 Hider/Anomaly (ผีซ่อน — อัปเดตใหม่)
     patient = Color3.fromRGB(60, 255, 90),    -- คนไข้จริง
     mate    = Color3.fromRGB(60, 160, 255),   -- เพื่อนผู้เล่น
     npc     = Color3.fromRGB(220, 210, 110),  -- NPC ทั่วไป/visitor (Fake=true ไม่ใช่ผี)
 }
-local LBL = { ghost="ผี", patient="คนไข้", mate="เพื่อน", npc="NPC" }
+local LBL = { ghost="ผี", anomaly="ผีซ่อน", patient="คนไข้", mate="เพื่อน", npc="NPC" }
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
@@ -613,6 +614,7 @@ local function applyESP(model, kind, distStr)
 end
 
 local function npcKind(m)
+    if m:GetAttribute("Anomaly")    then return "anomaly" end   -- v4.37 Hider/ผีซ่อน (WaterEntity ฯลฯ)
     if m:GetAttribute("Skinwalker") then return "ghost" end     -- อันตรายจริง
     if m:GetAttribute("IsPatient")  then return "patient" end   -- คนไข้จริง
     return "npc"   -- Fake/visitor/พนักงาน = NPC ทั่วไป (ไม่ใช่ผี)
@@ -732,9 +734,9 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.36", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.37", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
-setStatus = function(s) title.Text = "v4.36 " .. (s or "") end
+setStatus = function(s) title.Text = "v4.37 " .. (s or "") end
 title.TextXAlignment = Enum.TextXAlignment.Left
 
 -- ปุ่มย่อ/ขยาย (มุมขวาบน) — กดยุบเหลือแถบหัว กดอีกทีกาง
