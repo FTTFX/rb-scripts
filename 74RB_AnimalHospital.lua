@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.60 Apply เลือก InBed ก่อน Main + คนไข้หาย=หยุดทันที)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.61 ถือทีละชิ้น: หยิบ 1 จ่าย 1 — slot ผิดไม่ได้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -612,50 +612,38 @@ local function treatRoom(room)
         end
         return false
     end
-    -- ===== แบบนับจำนวน (รองรับของซ้ำ เช่น มีดผ่าตัด ×2) =====
+    -- ===== v4.61: "ถือทีละชิ้นเดียว" — หยิบ 1 จ่าย 1 ตามลำดับจอ =====
+    -- เกมอ่านช่อง hotbar ที่เลือก ไม่ใช่ Tool ที่ถือ (จอ touch เลือกช่องไม่ได้) — ถือหลายชิ้น
+    -- = slot กับของในมือเหลื่อมกันได้ = จ่ายผิด = ตาย ; ถือชิ้นเดียวตลอด = ผิดไม่ได้
     local need, given, order = medCounts(room)
     if #order == 0 then return false end
-    local needed = {}
-    for _, m in ipairs(order) do needed[m] = true end
-    -- 0) ทิ้งยาเก่า/ผิดที่ไม่ใช่ของคนไข้นี้ก่อน (กัน slot เต็ม → ให้ยาผิด → ตาย)
-    cleanInventory(needed)
-    -- 1) เก็บยาให้ "ครบจำนวนที่ยังขาด" (ต้องการ − ที่ให้ไปแล้ว) ต่อชนิด
-    for _, m in ipairs(order) do
-        local want = need[m] - (given[m] or 0)        -- จำนวนที่ต้องถือ
-        local guard = 0
-        while heldCount(m) < want and guard < 8 do
-            guard += 1
-            local pp = findPickup(m)
-            if not pp or not pp.Parent then break end
-            local before = heldCount(m)
-            tpTo(partPos(pp.Parent)); task.wait(0.18)
-            pressPrompt(pp, function() return heldCount(m) > before end, true)   -- fp เท่านั้น + done = ของเข้ามือจริง
-            task.wait(0.1)
-            if heldCount(m) <= before then break end  -- เก็บไม่ขึ้น → เลิก
-        end
-    end
-    -- กันตาย: ต้องถือครบทุกชนิดตามจำนวนที่ยังขาด ไม่งั้นไม่ Apply
-    for _, m in ipairs(order) do
-        local g = givenOf(room, m)
-        if heldCount(m) < (need[m] - g) then return false end
-    end
-    -- 2) ไปเตียง แล้วให้ยา "ทีละ frame ตามลำดับบนจอ" (Room8 ผ่าตัดสั่งสลับชนิดได้
-    --    เช่น Scalpel→Bandages→Scalpel — ให้ทีละชนิดจนครบแบบเดิม = ผิดคิว เกมไม่รับ/นับพลาด)
-    local bedPP = bedApplyPP(room)
-    if not bedPP or not bedPP.Parent then return false end
-    tpTo(partPos(bedPP.Parent)); task.wait(0.18)
     for _, fr in ipairs(invFrames(room)) do
         if roomDone(room) then break end
         if fr.Parent and not frameGiven(fr) then
             local m = frameMed(fr)
-            if not selectTool(m) then return false end   -- ไม่มี m ในมือ → หยุด (กันกดยาผิด)
-            -- v4.20: done = "ยาหายจากมือ" (เกม consume ทันทีที่รับ) — เร็ว+แม่นกว่ารอติ๊กบนจอ
-            -- ติ๊กขึ้นช้าตอนแลค → เวอร์ชันก่อนคิดว่าไม่ติดแล้วกดซ้ำ = ยาเกิน = ตาย
+            -- 1) เคลียร์มือ: ทิ้งทุกชิ้นที่ไม่ใช่ m (เหลือ 0 หรือ 1 ชิ้นที่ถูกเสมอ)
+            for _, t in ipairs(heldTools()) do
+                if t.Name ~= m then discardTool(t) end
+            end
+            -- 2) ยังไม่มี m → บินไปหยิบมา 1 ชิ้น
+            if heldCount(m) == 0 then
+                local pp = findPickup(m)
+                if not (pp and pp.Parent) then return false end
+                tpTo(partPos(pp.Parent)); task.wait(0.15)
+                pressPrompt(pp, function() return heldCount(m) > 0 end, true)
+                task.wait(0.1)
+                if heldCount(m) == 0 then return false end   -- หยิบไม่ขึ้น → หยุด
+            end
+            if not selectTool(m) then return false end       -- ชิ้นเดียวในมือ ยกขึ้นถือ
+            -- 3) บินไปเตียง → จ่าย ; done = ของหายจากมือ (consume ทันที แม่นกว่ารอติ๊ก)
+            local bedPP = bedApplyPP(room)
+            if not (bedPP and bedPP.Parent) then return false end
+            tpTo(partPos(bedPP.Parent)); task.wait(0.15)
             local before = heldCount(m)
             pressPrompt(bedPP, function()
                 return not fr.Parent or heldCount(m) < before or frameGiven(fr) or roomDone(room)
             end)
-            if heldCount(m) < before then                -- ยาเข้าแล้ว → รอติ๊กได้นานหน่อย (ไม่กดซ้ำแน่นอน)
+            if heldCount(m) < before then                    -- ของเข้าแล้ว → รอติ๊ก (ห้ามกดซ้ำ)
                 local t0 = os.clock()
                 repeat task.wait(0.05)
                 until not fr.Parent or frameGiven(fr) or roomDone(room) or os.clock() - t0 > 2
@@ -841,13 +829,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.60", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.61", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.60 " .. lastStatus end
+    if not deadLock then title.Text = "v4.61 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
