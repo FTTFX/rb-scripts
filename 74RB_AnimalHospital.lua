@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.02 เช็คอิน: ยืนกลางปริ้น↔คอม + เดิน 80 noclip ไม่ไถล)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.03 ciGo วัดระยะแนวราบ — เป้าบนโต๊ะไม่ทำให้หยุดก่อนถึง/เดินไม่สุด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -316,7 +316,13 @@ end
 local function ciGo(pos)
     local r, h, c = hrp(), hum(), LP.Character
     if not (r and h and c and pos) then return end
-    if (r.Position - pos).Magnitude < 4 then return end
+    -- v5.03: วัดระยะ "แนวราบ" เท่านั้น — เป้าอยู่บนโต๊ะ (สูงกว่าพื้น) ระยะ 3D ไม่มีวันเข้าใกล้พอ
+    local function flatDist()
+        r = hrp(); if not r then return 0 end
+        local d = pos - r.Position
+        return Vector3.new(d.X, 0, d.Z).Magnitude
+    end
+    if flatDist() < 2 then return end
     local old = h.WalkSpeed
     h.WalkSpeed = 80
     local t0 = os.clock()
@@ -324,10 +330,9 @@ local function ciGo(pos)
         for _, p in ipairs(c:GetDescendants()) do
             if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
         end
-        h:MoveTo(pos)
+        h:MoveTo(Vector3.new(pos.X, r.Position.Y, pos.Z))   -- เดินเข้าจุดแนวราบ (ไม่ปีนโต๊ะ)
         task.wait(0.05)
-        r = hrp()
-    until not r or (r.Position - pos).Magnitude < 4 or os.clock() - t0 > 4
+    until not hrp() or flatDist() < 2 or os.clock() - t0 > 6
     if h.Parent then h.WalkSpeed = old end
     if not NOCLIP_ON then   -- คืน collide เฉพาะตอนผู้ใช้ไม่ได้เปิด NOCLIP เอง
         for _, p in ipairs(c:GetDescendants()) do
@@ -1062,13 +1067,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.02", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.03", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.02 " .. lastStatus end
+    if not deadLock then title.Text = "v5.03 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
