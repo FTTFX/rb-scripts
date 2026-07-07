@@ -98,17 +98,20 @@ local function shootRE()
     if not re then L("!! หา PlayShootEffect ไม่เจอ"); return end
     local head = tgt.m:FindFirstChild("Head") or tgt.m:FindFirstChildWhichIsA("BasePart")
     if not head then L("!! หา Head ผีไม่เจอ"); return end
-    -- v2.2: ยิงรัว 5 นัด (เผื่อผีมี HP หลายนัด / เผื่อนัดหลุดเน็ต) + เช็คตายทุกนัด
-    for i = 1, 5 do
-        if not tgt.m.Parent then break end
-        local r = hrp()
-        local muzzle = r and r.Position or head.Position
-        if not head.Parent then break end
-        pcall(function() re:FireServer(muzzle, head) end)
-        task.wait(0.35)
-        if not tgt.m.Parent then L(("[RE] นัดที่ %d → ผี %s ตาย! ✅✅✅"):format(i, tgt.m.Name)); return end
-    end
-    L(("[RE] ยิง 5 นัด %s ยังไม่ตาย (remote=แค่ effect ยืนยัน)"):format(tgt.m.Name))
+    -- v2.3: (1) หยิบปืนขึ้นมือก่อน (เงื่อนไข: ต้อง equip) (2) ยิงนัดเดียว (กินกระสุน 1 นัด)
+    local gun, equipped = gunTool()
+    if not gun then L("!! ไม่มีปืน"); return end
+    local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    if not equipped and h then pcall(function() h:EquipTool(gun) end); task.wait(0.25) end
+    local ch0 = gun:GetAttribute("Charges")
+    local r = hrp()
+    local muzzle = r and r.Position or head.Position
+    pcall(function() re:FireServer(muzzle, head) end)
+    task.wait(0.5)
+    local ch1 = gun and gun.Parent and gun:GetAttribute("Charges")
+    L(("[RE] ยิง 1 นัด %s | Charges %s→%s | ผี%s"):format(
+        tgt.m.Name, tostring(ch0), tostring(ch1),
+        tgt.m.Parent and "ยังอยู่" or "ตาย! ✅"))
 end
 
 -- GUI
@@ -127,7 +130,7 @@ box.TextWrapped, box.TextXAlignment, box.TextYAlignment = false, Enum.TextXAlign
 box.Font, box.TextSize = Enum.Font.Code, 11
 box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
 local function refresh()
-    local t = { "=== GunTest v2.2 (SHOOT-RE รัว5) ===" }
+    local t = { "=== GunTest v2.3 (equip+1นัด) ===" }
     for _, g in ipairs(ghosts()) do
         t[#t+1] = ("[ผี] %s ระยะ=%.0f"):format(g.m.Name, g.d)
     end
