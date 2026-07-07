@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.03 ciGo วัดระยะแนวราบ — เป้าบนโต๊ะไม่ทำให้หยุดก่อนถึง/เดินไม่สุด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.04 จุดยืนเช็คอิน/ชัตเตอร์ hardcode จากพิกัด spy จริง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -102,13 +102,15 @@ local function checkinPending()
             if (p - c.pos).Magnitude < 15 then return c end
         end
     end
-    -- v5.01: จุดยืน = "ข้างใน" เคาน์เตอร์ช่องนั้น แทนยืนข้างตัวคนไข้ด้านหน้า
-    -- v5.02: ชิดเครื่องปริ้น+คอม (ผู้ใช้จูนจากภาพ) — มีทั้งคู่ = ยืนกึ่งกลางระหว่างสองเครื่อง
+    -- v5.04: จุดยืน hardcode จากผู้ใช้ไปยืน spy พิกัดจริง (แม่นกว่าคำนวณจากตำแหน่งเครื่อง)
+    --        โต๊ะกาแฟ = -120.1, 3.4, 10.3 (จดไว้เผื่อทำ auto กาแฟ)
+    local CI_STAND = {
+        ["CheckIn"]  = Vector3.new(-103.5, 3.4, -0.2),
+        ["Check-In"] = Vector3.new(-103.5, 3.4, -0.2),
+        ["CheckIn2"] = Vector3.new(-100.2, 3.4, 5.9),
+    }
     local function standPos(c)
-        local a = partPos(c.inst:FindFirstChild("Printer"))
-        local b = partPos(c.inst:FindFirstChild("Computer"))
-        if a and b then return a:Lerp(b, 0.5) end
-        return a or b or partPos(c.inst:FindFirstChild("Camera")) or c.pos
+        return CI_STAND[c.inst.Name] or c.pos
     end
     local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
     for _, m in ipairs(npcs:GetChildren()) do
@@ -978,7 +980,7 @@ bind(RS.Heartbeat, function(dt)
                     local sb = misc and misc:FindFirstChild("ShutterButton")
                     local spp = sb and sb:FindFirstChild("PP")
                     if spp and spp.Enabled and spp.ActionText == "Open" then   -- ประตูปิดอยู่ → เปิดก่อน
-                        ciGo(partPos(sb)); task.wait(0.15)
+                        ciGo(Vector3.new(-113.5, 3.4, -0.6)); task.wait(0.15)   -- v5.04: จุดยืนปุ่มชัตเตอร์ (spy)
                         pressPrompt(spp)
                     end
                     ciGo(cpos)   -- v5.02: เดินเข้าจุดในเคาน์เตอร์ (80, ไม่ไถล) — ไม่ใช้สไลด์ 250
@@ -1067,13 +1069,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.03", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.04", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.03 " .. lastStatus end
+    if not deadLock then title.Text = "v5.04 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1415,7 +1417,7 @@ do
                               -- v4.82: ปิดใส่ผีเฉพาะตอนหน้าเคาน์เตอร์เหลือแต่ผี (คนจริงเดินออกหมดแล้ว)
                               or (ghost and not pending and not leaving and pp.ActionText == "Close")
                     if want then
-                        tpTo(partPos(pp.Parent)); task.wait(0.15)   -- v4.22 วาปไปกดที่ปุ่ม
+                        tpTo(Vector3.new(-113.5, 3.4, -0.6)); task.wait(0.15)   -- v5.04: จุดยืนปุ่มชัตเตอร์ (spy)
                         pressPrompt(pp)
                     end
                 end
