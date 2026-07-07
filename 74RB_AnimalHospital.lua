@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.00 สไลด์ 80 → 250 studs/s)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.01 เช็คอินยืนข้างในเคาน์เตอร์ ตรงเครื่อง Computer/Camera)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -92,31 +92,37 @@ local function checkinPending()
     -- v4.58: เกมมีเคาน์เตอร์ 2 ช่อง (CheckIn + CheckIn2, attr AsignedCheckIn=2 บอกช่อง) → เช็คทุกช่อง
     local counters = {}
     for _, n in ipairs({"CheckIn", "CheckIn2", "Check-In"}) do
-        local p = partPos(misc:FindFirstChild(n))
-        if p then counters[#counters+1] = p end
+        local inst = misc:FindFirstChild(n)
+        local p = partPos(inst)
+        if p then counters[#counters+1] = { pos = p, inst = inst } end
     end
     if #counters == 0 then return nil end
     local function nearCounter(p)
         for _, c in ipairs(counters) do
-            if (p - c).Magnitude < 15 then return true end
+            if (p - c.pos).Magnitude < 15 then return c end
         end
-        return false
+    end
+    -- v5.01: จุดยืน = "ข้างใน" เคาน์เตอร์ช่องนั้น (ตรงเครื่อง Computer/Camera หลังโต๊ะ)
+    --        แทนยืนข้างตัวคนไข้ด้านหน้า — prompt ทุกตัวของช่องอยู่ฝั่งใน เอื้อมถึงหมด
+    local function standPos(c)
+        return partPos(c.inst:FindFirstChild("Computer") or c.inst:FindFirstChild("Camera")) or c.pos
     end
     local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
     for _, m in ipairs(npcs:GetChildren()) do
         if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
             local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
             -- v4.53: รัศมี 15 ต่อช่อง (ผู้ใช้จูน) — v4.58 เช็คใกล้ช่องไหนก็ได้
-            if r and nearCounter(r.Position) then
+            local c = r and nearCounter(r.Position)
+            if c then
                 -- v4.52: คนไข้ *หรือ* คนเยี่ยม (IsVisitor) ที่ยังไม่เช็คอิน = วาปไปหาเหมือนกัน
                 if (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
                    and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
-                    return r.Position
+                    return standPos(c)
                 end
                 -- NPC อื่นที่มี prompt 'Talk' เปิดรอกด (มอบใบ/คุยรับงาน) — v4.49: Talk เท่านั้น
                 -- ('Ask to Leave' = ผีปลอม attr สะอาด ห้ามวาปเข้าไปหา/ห้ามกด)
                 for _, p in ipairs(m:GetDescendants()) do
-                    if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Talk" then return r.Position end
+                    if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Talk" then return standPos(c) end
                 end
             end
         end
@@ -1029,13 +1035,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.00", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.01", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.00 " .. lastStatus end
+    if not deadLock then title.Text = "v5.01 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
