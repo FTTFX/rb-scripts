@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.17 fix ค้น remote ค้างทั้งเกม → RS เท่านั้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.18 ปุ่ม "ยิงผี" วาร์ปไปยิง Skinwalker/Anomaly + แซงเช็คอิน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -39,8 +39,9 @@ local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequ
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
 local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี: Skinwalker ใกล้เคาน์เตอร์ → ปิดชัตเตอร์
 local FIRE_ON = false    -- ดับไฟที่ตัว NPC: ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
-local NPCFAST_ON = false -- ลองเร่ง WalkSpeed ของ NPC (อาจไม่เวิร์ค ถ้า server คุมการเดิน)
+local NPCFAST_ON = false -- (เลิกใช้ v5.18 — ปุ่มนี้กลายเป็น "ยิงผี")
 local NPC_SPEED = 28     -- ปรับได้
+local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
 local SPEED = 50
 local cam = workspace.CurrentCamera
 local setStatus = function() end   -- v4.32: โชว์ว่ากำลังทำอะไรบนหัว GUI (ตัวจริงผูกหลังสร้าง GUI)
@@ -593,6 +594,26 @@ local function slimePending()
     end end
     return false
 end
+-- v5.18: มีผี (Skinwalker/Anomaly) ให้ยิงไหม — ใช้กันเช็คอินแทรก (ยิงผีสำคัญกว่า)
+local function ghostToShoot(m)
+    if not (m:IsA("Model") and (m:GetAttribute("Skinwalker") or m:GetAttribute("Anomaly"))
+            and not m:GetAttribute("MedicineImmune")) then return false end
+    local h = m:FindFirstChildOfClass("Humanoid")
+    return not h or h.Health > 0   -- ยังไม่ตาย
+end
+local function gunPending()
+    if not GUNKILL_ON then return false end
+    local npcs = workspace:FindFirstChild("NPCs")
+    local me = hrp() and hrp().Position
+    if not (npcs and me) then return false end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if ghostToShoot(m) then
+            local p = partPos(m)
+            if p and (p - me).Magnitude < 200 then return true end
+        end
+    end
+    return false
+end
 
 -- v4.23: เลือกของด้วย "กดปุ่ม slot จริง" เท่านั้น — *** ห้ามใช้ EquipTool เด็ดขาด ***
 -- เกมอ่านจากช่อง hotbar ที่เลือก ไม่ใช่ Tool ที่ถือ (EquipTool ถือถูกแต่เกมเห็นช่องเก่า
@@ -980,7 +1001,7 @@ bind(RS.Heartbeat, function(dt)
             -- v4.27: เช็คอินวาปหาคนไข้ — v4.75: งานอันดับท้ายสุด ทำเฉพาะตอน "ว่างจริง"
             -- (ไม่มีคนเป็นลม/ไฟ/สไลม์ และ treat loop ไม่มีห้องให้ทำ)
             if CHECKIN_ON and not TREAT_BUSY and not faintPending()
-               and not firePending() and not slimePending() then
+               and not firePending() and not slimePending() and not gunPending() then   -- v5.18: ยิงผีก่อนเช็คอิน
                 local cpos = checkinPending()
                 if cpos then
                     local misc = workspace:FindFirstChild("Misc")
@@ -1076,13 +1097,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.17", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.18", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.17 " .. lastStatus end
+    if not deadLock then title.Text = "v5.18 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1214,32 +1235,50 @@ local function findShootRE()
         if d:IsA("RemoteEvent") and d.Name:find("PlayShootEffect") then shootRE = d; return d end
     end
 end
+local function equipGun()   -- v5.18: หยิบปืนขึ้นมือ (เงื่อนไข remote = ต้อง equip ก่อน)
+    local c = LP.Character
+    local held = c and c:FindFirstChild("Gun")
+    if held then return held end
+    local gun = c and c:FindFirstChild("Gun")
+        or (LP:FindFirstChild("Backpack") and LP.Backpack:FindFirstChild("Gun"))
+    local h = hum()
+    if gun and h then pcall(function() h:EquipTool(gun) end); task.wait(0.2) end
+    return c and c:FindFirstChild("Gun")
+end
+-- v5.18: วาร์ปไปยิงผี — ระบบสไลด์ปกติ (Y-lock) + equip + ยิง 1 นัด/ตัว + จำว่ายิงแล้ว (กระสุนจำกัด)
 task.spawn(function()
-    local cd = {}   -- ยิงซ้ำจุดเดิมทุก 3s (เผื่อนัดแรกหลุด) จนผีตาย/หาย
+    local shotAt = {}   -- ยิงแล้วพัก 3s/ตัว (เผื่อนัดหลุด) — เช็ค Humanoid ตายก่อนยิงซ้ำ
     while _G.AH74_GEN == MYGEN do
-        if KILLGHOST_ON and not WORKING and not CARRYING then
+        if GUNKILL_ON and not WORKING and not CARRYING and not faintPending() then
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
             if re and npcs and me then
+                -- หาผีใกล้สุดที่ยังไม่ตาย + ยังไม่เพิ่งยิง
+                local target, td, thead
                 for _, m in ipairs(npcs:GetChildren()) do
-                    -- *** เฉพาะผีจริง (Skinwalker) — attr เชื่อได้ ไม่มีวันโดน NPC ดี ***
-                    if m:IsA("Model") and m:GetAttribute("Skinwalker")
-                       and not m:GetAttribute("MedicineImmune")   -- ดื้อยา = เผื่อดื้อปืนด้วย ข้ามไว้ก่อน
-                       and (not cd[m] or os.clock() - cd[m] > 3) then
+                    if ghostToShoot(m) and (not shotAt[m] or os.clock() - shotAt[m] > 3) then
                         local head = m:FindFirstChild("Head") or m:FindFirstChildWhichIsA("BasePart")
                         local hpos = head and head.Position
-                        if head and hpos and (hpos - me).Magnitude < 150 then
-                            cd[m] = os.clock()
-                            local r = hrp()
-                            setStatus("ยิงผี " .. m.Name)
-                            pcall(function() re:FireServer(r and r.Position or hpos, head) end)
+                        local d = hpos and (hpos - me).Magnitude
+                        if head and d and d < 200 and (not target or d < td) then
+                            target, td, thead = m, d, head
                         end
+                    end
+                end
+                if target then
+                    shotAt[target] = os.clock()
+                    setStatus("วาร์ปยิงผี " .. target.Name)
+                    if td > 12 then tpTo(thead.Position); task.wait(0.1) end   -- วาร์ปเข้าไป (สไลด์+Y-lock)
+                    local gun = equipGun()
+                    local r = hrp()
+                    if gun and r and thead.Parent then
+                        pcall(function() re:FireServer(r.Position, thead) end)
                     end
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(0.4)
     end
 end)
 
@@ -1845,16 +1884,17 @@ fireB.MouseButton1Click:Connect(function()
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local npcfB = btn("NPC เร็ว: OFF", 8, 162, 86, 30, Color3.fromRGB(60,60,80))
+local npcfB = btn("ยิงผี: OFF", 8, 162, 86, 30, Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
-    NPCFAST_ON = not NPCFAST_ON
-    npcfB.Text = "NPC เร็ว: " .. (NPCFAST_ON and "ON" or "OFF")
-    npcfB.BackgroundColor3 = NPCFAST_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(60,60,80)
+    GUNKILL_ON = not GUNKILL_ON
+    npcfB.Text = "ยิงผี: " .. (GUNKILL_ON and "ON" or "OFF")
+    npcfB.BackgroundColor3 = GUNKILL_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(60,60,80)
+    if GUNKILL_ON and not fp then npcfB.Text = "ไม่มี fp!" end
 end)
 
 btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON, FIRE_ON =
-        false, false, false, false, false, false, false, false, false, false, false
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON, FIRE_ON, GUNKILL_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
