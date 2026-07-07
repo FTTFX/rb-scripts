@@ -10,7 +10,7 @@ local LOG = {}
 local function L(s)
     LOG[#LOG+1] = s
     if #LOG > 40 then table.remove(LOG, 1) end
-    if _G.AH74GS_BOX then _G.AH74GS_BOX.Text = "=== GunSpy v1.2 (namecall+dot+tool) ===\n" .. table.concat(LOG, "\n") end
+    if _G.AH74GS_BOX then _G.AH74GS_BOX.Text = "=== GunSpy v1.3 (จับตอนผีตาย) ===\n" .. table.concat(LOG, "\n") end
 end
 
 local function short(v)
@@ -36,7 +36,9 @@ if mt and hookmetamethod then
         if (m == "FireServer" or m == "InvokeServer") and typeof(self) == "Instance" then
             -- log ทุกตัว แต่ตัดพวกที่ยิงถี่ประจำ (เดิน/heartbeat) ที่ไม่เกี่ยว
             local n = self.Name:lower()
-            if not (n:find("chat") or n:find("typing") or n:find("replic") or n:find("ping")) then
+            -- v1.3: ตัดตัวรู้แล้วว่าไม่เกี่ยว (effect/sanity/chat) — ให้เหลือแต่ remote ดาเมจจริง
+            if not (n:find("chat") or n:find("typing") or n:find("replic") or n:find("ping")
+                    or n:find("shooteffect") or n:find("lostsanity") or n:find("footstep")) then
                 L(("[%s] %s(%s)"):format(m, self:GetFullName():gsub("^.-Net%.?", ""), argstr(...)))
             end
         end
@@ -61,7 +63,8 @@ if hookfunction then
                     hookfunction(orig, function(self, ...)
                         if self == d then
                             local n = d.Name:lower()
-                            if not (n:find("chat") or n:find("ping") or n:find("replic")) then
+                            if not (n:find("chat") or n:find("ping") or n:find("replic")
+                                    or n:find("shooteffect") or n:find("lostsanity") or n:find("footstep")) then
                                 L(("[dot:%s] %s(%s)"):format(key, d.Name, argstr(...)))
                             end
                         end
@@ -73,6 +76,26 @@ if hookfunction then
     end
     hookRemotes()
     L("hook v1.2 dot-call ติดแล้ว (" .. tostring(#RS:GetDescendants()) .. " nodes)")
+end
+
+-- v1.3: เฝ้าดูผีตาย — NPC ผี (Skinwalker/Anomaly) หายจาก folder หรือ Humanoid ตาย
+--        → ปัก marker ตัวใหญ่ ให้รู้ว่า remote ที่โผล่ "ก่อน" บรรทัดนี้ = ตัวทำดาเมจ
+do
+    local npcs = workspace:FindFirstChild("NPCs")
+    local function watch(m)
+        if not (m:IsA("Model") and (m:GetAttribute("Skinwalker") or m:GetAttribute("Anomaly"))) then return end
+        m.AncestryChanged:Connect(function(_, parent)
+            if not parent then L("★★★ ผีหาย/ตาย: " .. m.Name .. " ★★★ (remote ข้างบน = ตัวฆ่า!)") end
+        end)
+        local h = m:FindFirstChildOfClass("Humanoid")
+        if h then h.Died:Connect(function() L("★★★ ผี Humanoid ตาย: " .. m.Name .. " ★★★") end)
+        end
+    end
+    if npcs then
+        for _, m in ipairs(npcs:GetChildren()) do watch(m) end
+        npcs.ChildAdded:Connect(watch)
+        L("เฝ้าผีตายแล้ว (" .. #npcs:GetChildren() .. " NPC)")
+    end
 end
 
 -- v1.2: จับ Tool.Activated (บางเกม server ยิงจาก tool activation ไม่ใช่ remote)
@@ -100,7 +123,7 @@ box.MultiLine, box.ClearTextOnFocus, box.TextEditable = true, false, false
 box.TextWrapped, box.TextXAlignment, box.TextYAlignment = true, Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
 box.Font, box.TextSize = Enum.Font.Code, 11
 box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
-box.Text = "=== GunSpy v1.2 (namecall+dot+tool) ==="
+box.Text = "=== GunSpy v1.3 (จับตอนผีตาย) ==="
 _G.AH74GS_BOX = box
 local function mkbtn(txt, x, cb)
     local b = Instance.new("TextButton", f)
