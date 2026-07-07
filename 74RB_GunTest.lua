@@ -85,6 +85,28 @@ local function shoot()
         tgt.m.Parent and "" or "ไม่"))
 end
 
+-- v2.0: ยิงผ่าน remote RE/PlayShootEffect(จุดยิง, part หัวผี) — เล็งหัวเป๊ะ ไม่พลาด
+local function shootRE()
+    local list = ghosts()
+    local tgt = list[1]
+    if not tgt then L("ไม่เจอผี"); return end
+    -- หา remote
+    local RS = game:GetService("ReplicatedStorage")
+    local re
+    for _, d in ipairs(RS:GetDescendants()) do
+        if d:IsA("RemoteEvent") and d.Name == "PlayShootEffect" then re = d; break end
+    end
+    if not re then L("!! หา RE/PlayShootEffect ไม่เจอ"); return end
+    local head = tgt.m:FindFirstChild("Head") or tgt.m:FindFirstChildWhichIsA("BasePart")
+    if not head then L("!! หา Head ผีไม่เจอ"); return end
+    local r = hrp()
+    local muzzle = r and r.Position or head.Position   -- arg1 = จุดยิง (ตำแหน่งเรา)
+    local before = tgt.m.Parent ~= nil
+    pcall(function() re:FireServer(muzzle, head) end)
+    task.wait(0.5)
+    L(("[RE] ยิงหัว %s | ผี%s"):format(tgt.m.Name, tgt.m.Parent and "ยังอยู่ (remote=แค่ effect?)" or "ตาย! ✅"))
+end
+
 -- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GT", false, 10000
@@ -101,7 +123,7 @@ box.TextWrapped, box.TextXAlignment, box.TextYAlignment = false, Enum.TextXAlign
 box.Font, box.TextSize = Enum.Font.Code, 11
 box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
 local function refresh()
-    local t = { "=== GunTest v1.0 ===" }
+    local t = { "=== GunTest v2.0 (SHOOT-RE) ===" }
     for _, g in ipairs(ghosts()) do
         t[#t+1] = ("[ผี] %s ระยะ=%.0f"):format(g.m.Name, g.d)
     end
@@ -110,16 +132,17 @@ local function refresh()
     box.Text = table.concat(t, "\n")
 end
 refresh()
-local function mkbtn(txt, x, cb)
+local function mkbtn(txt, x, w, cb)
     local b = Instance.new("TextButton", f)
-    b.Size, b.Position = UDim2.new(0, 76, 0, 32), UDim2.new(0, x, 1, -40)
+    b.Size, b.Position = UDim2.new(0, w, 0, 32), UDim2.new(0, x, 1, -40)
     b.Text, b.TextScaled = txt, true
     b.BackgroundColor3, b.TextColor3 = Color3.fromRGB(50, 50, 70), Color3.fromRGB(255, 255, 255)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
     b.MouseButton1Click:Connect(cb)
 end
-mkbtn("TARGETS", 6, refresh)
-mkbtn("SHOOT", 88, function() shoot(); refresh() end)
-mkbtn("COPY", 170, function() pcall(function() (setclipboard or toclipboard)(box.Text) end) end)
-mkbtn("CLOSE", 252, function() gui:Destroy(); _G.AH74GT_GUI = nil end)
-print("[74RB GunTest v1.0] พร้อม — ถือปืน/มีปืนในกระเป๋า แล้วกด SHOOT")
+mkbtn("TARGETS", 6, 62, refresh)
+mkbtn("SHOOT-คลิก", 72, 82, function() shoot(); refresh() end)
+mkbtn("SHOOT-RE", 158, 78, function() shootRE(); refresh() end)
+mkbtn("COPY", 240, 50, function() pcall(function() (setclipboard or toclipboard)(box.Text) end) end)
+mkbtn("X", 294, 40, function() gui:Destroy(); _G.AH74GT_GUI = nil end)
+print("[74RB GunTest v2.0] พร้อม — กด SHOOT-RE ยิงผ่าน remote (เล็งหัวเป๊ะ)")
