@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.18 ปุ่ม "ยิงผี" วาร์ปไปยิง Skinwalker/Anomaly + แซงเช็คอิน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.19 ยิงผี: เฉพาะ Skinwalker+Hider + หามุมยิงโล่งไม่ติดกำแพง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -594,9 +594,9 @@ local function slimePending()
     end end
     return false
 end
--- v5.18: มีผี (Skinwalker/Anomaly) ให้ยิงไหม — ใช้กันเช็คอินแทรก (ยิงผีสำคัญกว่า)
+-- v5.19: ยิงเฉพาะ Skinwalker (= คนไข้ปลอม + Hider ที่มี Skinwalker=true) — ตัด Ghost (ไม่มี Skinwalker) ออก
 local function ghostToShoot(m)
-    if not (m:IsA("Model") and (m:GetAttribute("Skinwalker") or m:GetAttribute("Anomaly"))
+    if not (m:IsA("Model") and m:GetAttribute("Skinwalker")
             and not m:GetAttribute("MedicineImmune")) then return false end
     local h = m:FindFirstChildOfClass("Humanoid")
     return not h or h.Health > 0   -- ยังไม่ตาย
@@ -1097,13 +1097,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.18", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.19", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.18 " .. lastStatus end
+    if not deadLock then title.Text = "v5.19 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1245,6 +1245,26 @@ local function equipGun()   -- v5.18: หยิบปืนขึ้นมือ
     if gun and h then pcall(function() h:EquipTool(gun) end); task.wait(0.2) end
     return c and c:FindFirstChild("Gun")
 end
+-- v5.19: หาจุดยืนยิงที่ "ไม่ติดกำแพง" — วน 8 มุมรอบผี ห่าง ~10 studs, raycast ไปหัวผีต้องโล่ง
+--        คืนจุดใกล้ตัวเราสุดที่ยิงโดนแน่ (nil = รอบตัวมันมีกำแพงหมด → ข้ามไว้ก่อน)
+local function clearShotSpot(m, head)
+    local hpos = head.Position
+    local me = hrp() and hrp().Position
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { m, LP.Character }
+    local best, bestD
+    for i = 0, 7 do
+        local ang = i * math.pi / 4
+        local cand = hpos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * 10
+        local res = workspace:Raycast(cand, hpos - cand, params)   -- โล่ง = ไม่โดนอะไร (ผี exclude ไว้)
+        if not res then
+            local d = me and (cand - me).Magnitude or 0
+            if not best or d < bestD then best, bestD = cand, d end
+        end
+    end
+    return best
+end
 -- v5.18: วาร์ปไปยิงผี — ระบบสไลด์ปกติ (Y-lock) + equip + ยิง 1 นัด/ตัว + จำว่ายิงแล้ว (กระสุนจำกัด)
 task.spawn(function()
     local shotAt = {}   -- ยิงแล้วพัก 3s/ตัว (เผื่อนัดหลุด) — เช็ค Humanoid ตายก่อนยิงซ้ำ
@@ -1267,13 +1287,21 @@ task.spawn(function()
                     end
                 end
                 if target then
-                    shotAt[target] = os.clock()
-                    setStatus("วาร์ปยิงผี " .. target.Name)
-                    if td > 12 then tpTo(thead.Position); task.wait(0.1) end   -- วาร์ปเข้าไป (สไลด์+Y-lock)
-                    local gun = equipGun()
-                    local r = hrp()
-                    if gun and r and thead.Parent then
-                        pcall(function() re:FireServer(r.Position, thead) end)
+                    -- v5.19: หามุมยิงโล่ง (ไม่ติดกำแพง) แล้ววาร์ปไปยืนตรงนั้นก่อนยิง
+                    local spot = clearShotSpot(target, thead)
+                    if spot then
+                        shotAt[target] = os.clock()
+                        setStatus("วาร์ปยิงผี " .. target.Name)
+                        tpTo(spot); task.wait(0.1)   -- วาร์ปไปจุดยิงโล่ง (สไลด์+Y-lock)
+                        local gun = equipGun()
+                        local r = hrp()
+                        if gun and r and thead.Parent then
+                            pcall(function() re:FireServer(r.Position, thead) end)
+                        end
+                    else
+                        -- รอบตัวผีมีกำแพงหมด (เอื้อมไม่ถึงมุมยิง) → พักตัวนี้ 3s ไปตัวอื่นก่อน
+                        shotAt[target] = os.clock()
+                        setStatus("ผี " .. target.Name .. " ติดกำแพง — ข้าม")
                     end
                 end
             end
