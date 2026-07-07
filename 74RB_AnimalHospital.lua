@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.09 ไถลตรงทุกหมวด 250 — เลิก pathfinding เร็วสุด ไม่อ้อม ไม่ติดกำแพง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.10 ตาข่ายนิรภัย: หลุดต่ำกว่าพื้น Y<0 ดึงกลับอัตโนมัติ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -955,6 +955,15 @@ bind(RS.Heartbeat, function(dt)
             h:SetStateEnabled(Enum.HumanoidStateType.Jumping, not block)
         end
     end
+    -- v5.10: ตาข่ายนิรภัยกันจมแมพ — หลุดต่ำกว่าพื้น (พื้นจริง Y≈3.4) = ดึงกลับทันที
+    do
+        local r = hrp()
+        if r and r.Position.Y < 0 then
+            r.AssemblyLinearVelocity = Vector3.zero
+            r.CFrame = CFrame.new(Vector3.new(r.Position.X, 4, r.Position.Z))
+                * (r.CFrame - r.CFrame.Position)
+        end
+    end
     -- Noclip (ทุก frame)
     if NOCLIP_ON then
         local c = LP.Character
@@ -1067,13 +1076,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.09", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.10", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.09 " .. lastStatus end
+    if not deadLock then title.Text = "v5.10 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
