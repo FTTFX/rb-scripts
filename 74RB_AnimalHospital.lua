@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.21 ยิงผี: ตัด Hider ออก ยิงแค่คนไข้ปลอม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.22 อุ้มส่ง: รอปุ่มวางห้องที่ถูก 3s ก่อน fallback)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1098,13 +1098,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.21", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.22", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.21 " .. lastStatus end
+    if not deadLock then title.Text = "v5.22 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1823,11 +1823,17 @@ task.spawn(function()
                             -- v4.73: ปุ่มวางตัวจริง = 'Place Patient' ที่เตียงของห้อง (ยืนยันจาก dump)
                             local dropPP
                             if room then
-                                for _, p in ipairs(room:GetDescendants()) do
-                                    if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
-                                        dropPP = p; break
+                                -- v5.22: รอปุ่มห้องที่ถูกสูงสุด 3s ก่อน fallback — Streaming ทำ prompt โผล่ช้า
+                                --        เดิม fallback ทันที = วางผิดห้อง (บัคที่เห็นว่าคนไข้อยากไปอีกห้อง)
+                                local t0 = os.clock()
+                                repeat
+                                    for _, p in ipairs(room:GetDescendants()) do
+                                        if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
+                                            dropPP = p; break
+                                        end
                                     end
-                                end
+                                    if not dropPP then task.wait(0.3) end
+                                until dropPP or os.clock() - t0 > 3
                             end
                             -- v4.78: ห้องเป้าหมายไม่มีปุ่มวาง (เตียงไม่ว่าง?) → หาเตียงว่างห้องไหนก็ได้
                             if not dropPP and rooms then
