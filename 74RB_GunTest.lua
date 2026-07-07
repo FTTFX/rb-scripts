@@ -85,16 +85,21 @@ local function shoot()
         tgt.m.Parent and "" or "ไม่"))
 end
 
+-- v2.3: หา remote ครั้งเดียวแล้วจำ (game:GetDescendants ทั้งเกม = ค้างนาน → ค้นแค่ RS)
+local _re
+local function findRE()
+    if _re and _re.Parent then return _re end
+    local RS = game:GetService("ReplicatedStorage")
+    for _, d in ipairs(RS:GetDescendants()) do
+        if d:IsA("RemoteEvent") and d.Name:find("PlayShootEffect") then _re = d; return d end
+    end
+end
 -- v2.0: ยิงผ่าน remote RE/PlayShootEffect(จุดยิง, part หัวผี) — เล็งหัวเป๊ะ ไม่พลาด
 local function shootRE()
     local list = ghosts()
     local tgt = list[1]
     if not tgt then L("ไม่เจอผี"); return end
-    -- หา remote
-    local re
-    for _, d in ipairs(game:GetDescendants()) do   -- v2.1: ชื่อจริง = "RE/PlayShootEffect" (มี RE/ ในชื่อ)
-        if d:IsA("RemoteEvent") and d.Name:find("PlayShootEffect") then re = d; break end
-    end
+    local re = findRE()
     if not re then L("!! หา PlayShootEffect ไม่เจอ"); return end
     local head = tgt.m:FindFirstChild("Head") or tgt.m:FindFirstChildWhichIsA("BasePart")
     if not head then L("!! หา Head ผีไม่เจอ"); return end
@@ -130,7 +135,7 @@ box.TextWrapped, box.TextXAlignment, box.TextYAlignment = false, Enum.TextXAlign
 box.Font, box.TextSize = Enum.Font.Code, 11
 box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
 local function refresh()
-    local t = { "=== GunTest v2.3 (equip+1นัด) ===" }
+    local t = { "=== GunTest v2.4 (equip+1นัด+เร็ว) ===" }
     for _, g in ipairs(ghosts()) do
         t[#t+1] = ("[ผี] %s ระยะ=%.0f"):format(g.m.Name, g.d)
     end
