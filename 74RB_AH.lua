@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.10 ตาข่ายนิรภัย: หลุดต่ำกว่าพื้น Y<0 ดึงกลับอัตโนมัติ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.11 auto น้ำเชื่อมไล่ผีพื้น — NPC มี PP 'Help' = ผีคลาน ถือ Syrup เดินประชิด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1076,13 +1076,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.10", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.11", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.10 " .. lastStatus end
+    if not deadLock then title.Text = "v5.11 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1554,6 +1554,70 @@ task.spawn(function()
             end
         end
         task.wait(0.35)
+    end
+end)
+
+-- ===== v5.11 น้ำเชื่อมไล่ผีพื้น: NPC มี PP 'Help' บน HumanoidRootPart = ผีคลาน =====
+-- (Jojo Yamada Room5 — attr สะอาดเหมือนคนไข้ แต่มี prompt 'Help' แปลก ; ผู้ใช้ยืนยัน:
+--  ต้อง "ถือน้ำเชื่อม" แล้วเดินเข้าใกล้ = ไล่มันหนี ; ห้ามกด 'Help' เด็ดขาด — กับดัก)
+task.spawn(function()
+    local lastChase = 0
+    while _G.AH74_GEN == MYGEN do
+        if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending()
+           and os.clock() - lastChase > 3 then
+            local ghost
+            local npcs = workspace:FindFirstChild("NPCs")
+            if npcs then
+                for _, m in ipairs(npcs:GetChildren()) do
+                    local p = m:FindFirstChild("HumanoidRootPart")
+                    p = p and p:FindFirstChildWhichIsA("ProximityPrompt")
+                    if p and p.Enabled and p.ActionText == "Help" then ghost = m; break end
+                end
+            end
+            if ghost then
+                lastChase = os.clock()
+                -- 1) หาน้ำเชื่อมในมือ (ชื่อมีคำว่า Syrup เช่น Maple Syrup)
+                local name
+                local function findSyrup()
+                    for _, t in ipairs(heldTools()) do
+                        if t.Name:lower():find("syrup") then return t.Name end
+                    end
+                end
+                name = findSyrup()
+                -- 2) ไม่มี → ไปหยิบ (prompt เก็บของ ActionText = ชื่อยา)
+                if not name then
+                    local pk
+                    for _, p in ipairs(workspace:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText:lower():find("syrup") then
+                            pk = p; break
+                        end
+                    end
+                    if pk and pk.Parent then
+                        setStatus("ไปหยิบน้ำเชื่อม (ไล่ผีพื้น)")
+                        -- มือเต็ม 3 ช่องยา = หยิบไม่เข้า → ทิ้งยา 1 ชิ้น (ของสำคัญไม่โดนอยู่แล้ว)
+                        local n = 0
+                        for _, t in ipairs(heldTools()) do if not protectedTool(t) then n += 1 end end
+                        if n >= 3 then
+                            for _, t in ipairs(heldTools()) do
+                                if not protectedTool(t) then discardTool(t) break end
+                            end
+                        end
+                        tpTo(partPos(pk.Parent)); task.wait(0.2)
+                        pressPrompt(pk, function() return findSyrup() ~= nil end, true); task.wait(0.2)
+                        name = findSyrup()
+                    end
+                end
+                -- 3) ถือน้ำเชื่อม → เดินประชิดผี (แค่เข้าใกล้ = ไล่)
+                if name and selectTool(name) then
+                    setStatus("ถือน้ำเชื่อมไล่ผี " .. ghost.Name)
+                    local gp = partPos(ghost)
+                    if gp then tpTo(gp); task.wait(0.5) end
+                else
+                    setStatus("หาน้ำเชื่อมไม่เจอ — ไล่ผีพื้นไม่ได้")
+                end
+            end
+        end
+        task.wait(0.5)
     end
 end)
 
