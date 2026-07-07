@@ -1,0 +1,125 @@
+-- 74RB_GunTest.lua v1.0 — ทดสอบยิงผีด้วยปืน (วาปห่าง 8 → คลิกที่ตัวเป้าผ่าน VIM)
+-- ปุ่ม: TARGETS ดูรายชื่อผี | SHOOT ยิงผีใกล้สุด 1 นัด | COPY | CLOSE
+-- ผลที่ต้องดู: Charges ลดไหม / ผีตาย-หนีไหม / มีโทษไหม (Strikes/สุขภาพจิต)
+local Players = game:GetService("Players")
+local VIM = game:GetService("VirtualInputManager")
+local LP = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+if _G.AH74GT_GUI then pcall(function() _G.AH74GT_GUI:Destroy() end) end
+
+local function partPos(i)
+    if not i then return nil end
+    if i:IsA("BasePart") then return i.Position end
+    local b = i:FindFirstChild("HumanoidRootPart") or i:FindFirstChildWhichIsA("BasePart", true)
+    return b and b.Position
+end
+local function hrp()
+    local c = LP.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function gunTool()
+    local bp = LP:FindFirstChild("Backpack")
+    if LP.Character then
+        local t = LP.Character:FindFirstChild("Gun")
+        if t and t:IsA("Tool") then return t, true end
+    end
+    if bp then
+        local t = bp:FindFirstChild("Gun")
+        if t and t:IsA("Tool") then return t, false end
+    end
+end
+-- ผีเป้าหมาย: Skinwalker/Anomaly ที่ไม่นอนเตียง (ผีเดิน/ผียืน)
+local function ghosts()
+    local out = {}
+    local me = hrp() and hrp().Position
+    local npcs = workspace:FindFirstChild("NPCs")
+    if npcs and me then
+        for _, m in ipairs(npcs:GetChildren()) do
+            if m:IsA("Model") and (m:GetAttribute("Skinwalker") or m:GetAttribute("Anomaly"))
+               and not m:GetAttribute("InBed") then
+                local p = partPos(m)
+                if p then out[#out+1] = { m = m, d = (p - me).Magnitude } end
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.d < b.d end)
+    return out
+end
+
+local LOG = {}
+local function L(s) LOG[#LOG+1] = s; if #LOG > 30 then table.remove(LOG, 1) end end
+
+local function shoot()
+    local list = ghosts()
+    local tgt = list[1]
+    if not tgt then L("ไม่เจอผีเดิน/ยืน (Skinwalker/Anomaly นอกเตียง)"); return end
+    local gun, equipped = gunTool()
+    if not gun then L("ไม่มีปืนในมือ/กระเป๋า — ซื้อก่อน (Buy Gun)"); return end
+    local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    if not equipped and h then pcall(function() h:EquipTool(gun) end); task.wait(0.2) end
+    local ch0 = gun:GetAttribute("Charges")
+    -- วาปเข้า 8 studs (velocity slide ไม่มีในตัวเทสต์ — ใช้ CFrame สั้นๆ ระวัง insanity: ทดสอบเท่านั้น)
+    local r, gp = hrp(), partPos(tgt.m)
+    if r and gp and tgt.d > 9 then
+        local dir = (r.Position - gp).Unit
+        r.CFrame = CFrame.new(gp + dir * 8 + Vector3.new(0, 1, 0))
+        task.wait(0.15)
+    end
+    -- หันหน้า + คลิกที่ตัวผีบนจอ
+    gp = partPos(tgt.m)
+    if r and gp then
+        pcall(function() r.CFrame = CFrame.lookAt(r.Position, Vector3.new(gp.X, r.Position.Y, gp.Z)) end)
+        task.wait(0.1)
+    end
+    local sp, vis = cam:WorldToViewportPoint(gp)
+    if not vis then L("เป้าไม่อยู่ในจอ — ลองใหม่"); return end
+    pcall(function() gun:Activate() end)   -- เผื่อ tool ใช้ Activate
+    VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, true, game, 0)
+    task.wait(0.05)
+    VIM:SendMouseButtonEvent(sp.X, sp.Y, 0, false, game, 0)
+    task.wait(0.4)
+    local ch1 = gun and gun.Parent and gun:GetAttribute("Charges")
+    L(("ยิง %s (%.0f studs) Charges %s → %s | ผียัง%sอยู่"):format(
+        tgt.m.Name, tgt.d, tostring(ch0), tostring(ch1),
+        tgt.m.Parent and "" or "ไม่"))
+end
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GT", false, 10000
+gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
+_G.AH74GT_GUI = gui
+local f = Instance.new("Frame", gui)
+f.Size, f.Position = UDim2.new(0, 340, 0, 260), UDim2.new(0.5, -170, 0.5, -130)
+f.BackgroundColor3, f.Active, f.Draggable = Color3.fromRGB(15, 15, 20), true, true
+Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+local box = Instance.new("TextBox", f)
+box.Size, box.Position = UDim2.new(1, -12, 1, -50), UDim2.new(0, 6, 0, 6)
+box.MultiLine, box.ClearTextOnFocus, box.TextEditable = true, false, false
+box.TextWrapped, box.TextXAlignment, box.TextYAlignment = false, Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
+box.Font, box.TextSize = Enum.Font.Code, 11
+box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
+local function refresh()
+    local t = { "=== GunTest v1.0 ===" }
+    for _, g in ipairs(ghosts()) do
+        t[#t+1] = ("[ผี] %s ระยะ=%.0f"):format(g.m.Name, g.d)
+    end
+    t[#t+1] = "--- LOG ---"
+    for _, s in ipairs(LOG) do t[#t+1] = s end
+    box.Text = table.concat(t, "\n")
+end
+refresh()
+local function mkbtn(txt, x, cb)
+    local b = Instance.new("TextButton", f)
+    b.Size, b.Position = UDim2.new(0, 76, 0, 32), UDim2.new(0, x, 1, -40)
+    b.Text, b.TextScaled = txt, true
+    b.BackgroundColor3, b.TextColor3 = Color3.fromRGB(50, 50, 70), Color3.fromRGB(255, 255, 255)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+    b.MouseButton1Click:Connect(cb)
+end
+mkbtn("TARGETS", 6, refresh)
+mkbtn("SHOOT", 88, function() shoot(); refresh() end)
+mkbtn("COPY", 170, function() pcall(function() (setclipboard or toclipboard)(box.Text) end) end)
+mkbtn("CLOSE", 252, function() gui:Destroy(); _G.AH74GT_GUI = nil end)
+print("[74RB GunTest v1.0] พร้อม — ถือปืน/มีปืนในกระเป๋า แล้วกด SHOOT")
