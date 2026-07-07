@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.14 ไล่ผีใต้เตียงหยุดขอบโซนแดง 10 studs — ไม่เดินเข้าเขตจับ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.15 อ่านแบนเนอร์ฉุกเฉิน — ห้องวิกฤตแซงคิวทุกห้อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1076,13 +1076,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.14", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.15", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.14 " .. lastStatus end
+    if not deadLock then title.Text = "v5.15 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1184,6 +1184,25 @@ autoB.MouseButton1Click:Connect(function()
     if AUTO_ON and not fp then autoB.Text = "ไม่มี fp!" end
 end)
 
+-- v5.15: อ่านแบนเนอร์ภาวะฉุกเฉิน (PlayerGui.EmergencyCounter.Frame.Feed — text+timer ต่อเหตุการณ์)
+--        "ผู้ป่วยวิกฤตในห้อง X" / "Patient being eaten in room X" → ห้องนั้นแซงคิวทุกห้อง
+local function criticalRooms()
+    local out = {}
+    local pg = LP:FindFirstChild("PlayerGui")
+    local feed = pg and pg:FindFirstChild("EmergencyCounter")
+    feed = feed and feed:FindFirstChild("Frame")
+    feed = feed and feed:FindFirstChild("Feed")
+    if not feed then return out end
+    for _, fr in ipairs(feed:GetChildren()) do
+        local t = fr:FindFirstChild("text")
+        if t and t:IsA("TextLabel") then
+            local n = t.Text:match("ห้อง%s*(%d+)") or t.Text:lower():match("room%s*(%d+)")
+            if n then out["Room" .. n] = true end
+        end
+    end
+    return out
+end
+
 -- loop ให้ยา: ทำ "ทีละห้องจนจบ" (ไม่วนข้ามห้องไปมา = กันวาปสับสน/ให้ยาผิด)
 -- เลือกห้องใกล้สุดที่ยังต้องทำ → commit ทำจน done (หรือหมดเวลา ~6s) ก่อนเปลี่ยนห้อง
 task.spawn(function()
@@ -1197,6 +1216,7 @@ task.spawn(function()
                 local fromPos = hrp() and hrp().Position
                 local target, bestD
                 local why = {}   -- v4.97: เหตุผลที่ข้ามห้องที่มีคนไข้ — โชว์ตอน "ว่าง" ไล่บั๊กจากหน้าจอได้เลย
+                local crit = criticalRooms()   -- v5.15: ห้องวิกฤต (มีเวลานับถอยหลัง) มาก่อนทุกห้อง
                 for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8
                     local f = rooms:FindFirstChild(grp)
                     if f then for _, room in ipairs(f:GetChildren()) do
@@ -1219,8 +1239,9 @@ task.spawn(function()
                         if pat and present and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
-                            -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — เจอเมื่อไหร่ทำก่อนเสมอ ห้องอื่นเรียงตามระยะ
-                            if room.Name == "Room8" then d = -1 end
+                            -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — v5.15: ห้องวิกฤตแซงอีกชั้น
+                            if crit[room.Name] then d = -2
+                            elseif room.Name == "Room8" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
                         elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
                             local reason = not present and "ไกล" or (ghost and not killable) and "ผี"
@@ -1231,7 +1252,7 @@ task.spawn(function()
                 end
                 TREAT_BUSY = target ~= nil
                 if target then
-                    setStatus("รักษา " .. target.Name)
+                    setStatus((crit[target.Name] and "วิกฤต! รีบรักษา " or "รักษา ") .. target.Name)
                     -- v4.99: ห้องเป้าหมายยังไม่โหลด → สั่งโหลด + บินเข้าไปเลย (โหลดระหว่างเดินทาง
                     --        = ดีเลย์น้อยสุด) — ไม่งั้น roomDone อ่านจอไม่ได้จะเด้งออกก่อนเริ่มงาน
                     if not getScreenUI(target) then
