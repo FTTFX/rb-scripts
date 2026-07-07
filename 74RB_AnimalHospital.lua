@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.08 NOCLIP เปิดอยู่ = สไลด์ทุกหมวดล็อค Y ไม่ใส่แรงกดลง — กันจมแมพ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.09 ไถลตรงทุกหมวด 250 — เลิก pathfinding เร็วสุด ไม่อ้อม ไม่ติดกำแพง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -272,15 +272,10 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
         --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
         local SLIDE_SPEED = speedOpt or 250   -- studs/s แนวราบ (v5.00 ผู้ใช้ขอ 250 — ถ้าตาย insanity ให้ลดกลับ)
         local wps
-        -- v5.06: หมวดเช็คอิน (speedOpt) = ระยะสั้นหลังเคาน์เตอร์ → ไถลตรง + noclip ชั่วคราว
-        --        (pathfinding มองโต๊ะเป็นสิ่งกีดขวาง เลยพาเดินอ้อมไปเข้าทางประตู)
-        local straight = speedOpt ~= nil
-        if not straight then
-            local path = PathSvc:CreatePath({ AgentRadius = 2, AgentCanJump = false })
-            local ok = pcall(function() path:ComputeAsync(r.Position, pos) end)
-            if ok and path.Status == Enum.PathStatus.Success then wps = path:GetWaypoints() end
-        end
-        if not wps or #wps == 0 then wps = { { Position = pos } } end   -- หาเส้นทางไม่ได้ → ไถลตรง
+        -- v5.09: ไถลตรง "ทุกหมวด" (ผู้ใช้เน้นเร็วสุด) — เลิก pathfinding ทั้งหมด
+        --        เส้นตรง + noclip ชั่วคราว + ล็อค Y (v5.07) = ไม่อ้อม ไม่ติดกำแพง ไม่จมแมพ
+        local straight = true
+        wps = { { Position = pos } }
         local clipOff = straight
         if clipOff then
             local c = LP.Character
@@ -1072,13 +1067,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.08", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.09", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.08 " .. lastStatus end
+    if not deadLock then title.Text = "v5.09 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
