@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.98 ห้องโดน stream out ตอนเดินไกล → RequestStreamAround โหลดกลับ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.99 attr คนไข้ตัดสินงานทันที ไม่รอโหลด — โหลดห้องระหว่างบินไป)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1029,13 +1029,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.98", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v4.99", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.98 " .. lastStatus end
+    if not deadLock then title.Text = "v4.99 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1163,8 +1163,13 @@ task.spawn(function()
                         end)())
                         -- v4.76: ผีดื้อยา (MedicineImmune) ไม่นับเป็นงาน — ฆ่าด้วยยาผิดไม่ได้
                         local killable = ghost and KILLGHOST_ON and not pat:GetAttribute("MedicineImmune")
-                        if pat and present and not roomDone(room) and (not ghost or killable)
-                           and hasWork(room, pat) then   -- v4.14: ข้ามห้องที่ยังไม่มีงานให้ทำ
+                        -- v4.99: ห้องโดน stream out (ไม่มีจอ) → จอ/ปุ่มเชื่อไม่ได้ ใช้ attr คนไข้แทน
+                        --        (attr ติดตัว NPC ตลอด อ่านได้ทันที): IsPatient + ยังไม่ Treated = มีงาน
+                        local loaded = getScreenUI(room) ~= nil
+                        local work = loaded and (not roomDone(room) and hasWork(room, pat))
+                            or (not loaded and pat and pat:GetAttribute("IsPatient")
+                                and not pat:GetAttribute("Treated"))
+                        if pat and present and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
                             -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — เจอเมื่อไหร่ทำก่อนเสมอ ห้องอื่นเรียงตามระยะ
@@ -1172,22 +1177,25 @@ task.spawn(function()
                             if not target or d < bestD then target, bestD = room, d end
                         elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
                             local reason = not present and "ไกล" or (ghost and not killable) and "ผี"
-                                or roomDone(room) and "จบ" or "ไม่มีปุ่ม"
+                                or not loaded and "รักษาแล้ว" or roomDone(room) and "จบ" or "ไม่มีปุ่ม"
                             why[#why+1] = room.Name:gsub("Room", "R") .. ":" .. reason
-                            -- v4.98: เดินแทนวาปแล้ว ห้องไกลโดน stream out (เครื่อง/จอ/prompt หายจาก
-                            --        client → เห็นเป็น "จบ/ไม่มีปุ่ม" ทั้งที่คนไข้นอนรอ) → ขอเกมโหลดรอบห้อง
-                            if present and (reason == "จบ" or reason == "ไม่มีปุ่ม")
-                               and workspace.StreamingEnabled and os.clock() - lastStream > 3 then
-                                lastStream = os.clock()
-                                local pos = roomPos(room)
-                                if pos then pcall(function() LP:RequestStreamAroundAsync(pos, 1) end) end
-                            end
                         end
                     end end
                 end
                 TREAT_BUSY = target ~= nil
                 if target then
                     setStatus("รักษา " .. target.Name)
+                    -- v4.99: ห้องเป้าหมายยังไม่โหลด → สั่งโหลด + บินเข้าไปเลย (โหลดระหว่างเดินทาง
+                    --        = ดีเลย์น้อยสุด) — ไม่งั้น roomDone อ่านจอไม่ได้จะเด้งออกก่อนเริ่มงาน
+                    if not getScreenUI(target) then
+                        local pos = roomPos(target)
+                        if pos then
+                            pcall(function() LP:RequestStreamAroundAsync(pos, 1) end)
+                            tpTo(pos)
+                            local t0 = os.clock()
+                            repeat task.wait(0.1) until getScreenUI(target) or os.clock() - t0 > 3
+                        end
+                    end
                     local guard = 0
                     -- v4.69: ทุกห้องสลับไวเท่ากัน (~1.6s) = คนไข้ 2 คนทำสลับกันได้ (บินไปมา)
                     -- ห้องที่เครื่องกำลังหมุน = ไม่มีปุ่มเปิด = โดนข้ามไปทำอีกห้องเอง ; ลำดับจ่ายยา
