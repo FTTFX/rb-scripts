@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.11 auto น้ำเชื่อมไล่ผีพื้น — NPC มี PP 'Help' = ผีคลาน ถือ Syrup เดินประชิด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.12 'Help' = คนโดนผีจับ → สแปมช่วย + ถือน้ำเชื่อมไล่ต่อ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1076,13 +1076,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.11", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.12", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.11 " .. lastStatus end
+    if not deadLock then title.Text = "v5.12 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1557,34 +1557,42 @@ task.spawn(function()
     end
 end)
 
--- ===== v5.11 น้ำเชื่อมไล่ผีพื้น: NPC มี PP 'Help' บน HumanoidRootPart = ผีคลาน =====
--- (Jojo Yamada Room5 — attr สะอาดเหมือนคนไข้ แต่มี prompt 'Help' แปลก ; ผู้ใช้ยืนยัน:
---  ต้อง "ถือน้ำเชื่อม" แล้วเดินเข้าใกล้ = ไล่มันหนี ; ห้ามกด 'Help' เด็ดขาด — กับดัก)
+-- ===== v5.12 ผีคลาน (ผู้ใช้อธิบาย 2 วิธีไล่) =====
+-- 1) มีคนโดนจับ → prompt 'Help' โผล่บนตัวเหยื่อ (HumanoidRootPart) → สแปมกด ~4 รอบ (แบบดับไฟ)
+-- 2) ผียังไม่จับใคร → ถือน้ำเชื่อม (Maple Syrup) เดินเข้าหามัน = มันหายไป
+--    (ยังไม่รู้ชื่อ model ผีตอนเดินเพ่นพ่าน — ใช้จุดเหยื่อเป็นตำแหน่งผี: หลังช่วยเสร็จ
+--     ถือน้ำเชื่อมยืนตรงนั้นกันจับซ้ำ ; เจอ model จริงเมื่อไหร่ค่อยเพิ่มวิธี 2 เต็มรูปแบบ)
 task.spawn(function()
-    local lastChase = 0
+    local lastHelp = 0
+    local function findSyrup()
+        for _, t in ipairs(heldTools()) do
+            if t.Name:lower():find("syrup") then return t.Name end
+        end
+    end
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending()
-           and os.clock() - lastChase > 3 then
-            local ghost
-            local npcs = workspace:FindFirstChild("NPCs")
-            if npcs then
-                for _, m in ipairs(npcs:GetChildren()) do
-                    local p = m:FindFirstChild("HumanoidRootPart")
-                    p = p and p:FindFirstChildWhichIsA("ProximityPrompt")
-                    if p and p.Enabled and p.ActionText == "Help" then ghost = m; break end
+        if FIRE_ON and fp and not WORKING and not CARRYING
+           and os.clock() - lastHelp > 2 then
+            -- หา prompt 'Help' ทั้ง workspace (เหยื่อเป็นได้ทั้ง NPC และผู้เล่น)
+            local hp
+            local me = hrp() and hrp().Position
+            for _, p in ipairs(workspace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Help" then
+                    local pos = partPos(p.Parent)
+                    if pos and me and (pos - me).Magnitude < 150 then hp = p; break end
                 end
             end
-            if ghost then
-                lastChase = os.clock()
-                -- 1) หาน้ำเชื่อมในมือ (ชื่อมีคำว่า Syrup เช่น Maple Syrup)
-                local name
-                local function findSyrup()
-                    for _, t in ipairs(heldTools()) do
-                        if t.Name:lower():find("syrup") then return t.Name end
-                    end
+            if hp then
+                lastHelp = os.clock()
+                setStatus("ช่วยคนโดนผีจับ! (สแปม Help)")
+                tpTo(partPos(hp.Parent)); task.wait(0.1)
+                for _ = 1, 8 do   -- ผู้ใช้บอก ~4 รอบ — เผื่อเป็น 8 (prompt ดับเองเมื่อหลุด)
+                    if not (hp.Parent and hp.Enabled) then break end
+                    pressPrompt(hp, nil, true)
+                    task.wait(0.25)
                 end
-                name = findSyrup()
-                -- 2) ไม่มี → ไปหยิบ (prompt เก็บของ ActionText = ชื่อยา)
+                -- ช่วยเสร็จ → ถือน้ำเชื่อมยืนตรงนั้น ไล่ผีที่ยังอยู่แถวนี้ (วิธี 2)
+                local victimPos = partPos(hp.Parent)
+                local name = findSyrup()
                 if not name then
                     local pk
                     for _, p in ipairs(workspace:GetDescendants()) do
@@ -1593,9 +1601,8 @@ task.spawn(function()
                         end
                     end
                     if pk and pk.Parent then
-                        setStatus("ไปหยิบน้ำเชื่อม (ไล่ผีพื้น)")
-                        -- มือเต็ม 3 ช่องยา = หยิบไม่เข้า → ทิ้งยา 1 ชิ้น (ของสำคัญไม่โดนอยู่แล้ว)
-                        local n = 0
+                        setStatus("ไปหยิบน้ำเชื่อม (ไล่ผี)")
+                        local n = 0   -- มือเต็ม 3 ช่องยา = หยิบไม่เข้า → ทิ้งยา 1 ชิ้นก่อน
                         for _, t in ipairs(heldTools()) do if not protectedTool(t) then n += 1 end end
                         if n >= 3 then
                             for _, t in ipairs(heldTools()) do
@@ -1607,17 +1614,13 @@ task.spawn(function()
                         name = findSyrup()
                     end
                 end
-                -- 3) ถือน้ำเชื่อม → เดินประชิดผี (แค่เข้าใกล้ = ไล่)
-                if name and selectTool(name) then
-                    setStatus("ถือน้ำเชื่อมไล่ผี " .. ghost.Name)
-                    local gp = partPos(ghost)
-                    if gp then tpTo(gp); task.wait(0.5) end
-                else
-                    setStatus("หาน้ำเชื่อมไม่เจอ — ไล่ผีพื้นไม่ได้")
+                if name and selectTool(name) and victimPos then
+                    setStatus("ถือน้ำเชื่อมไล่ผีพื้น")
+                    tpTo(victimPos); task.wait(1)
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(0.4)
     end
 end)
 
