@@ -98,12 +98,17 @@ local function shootRE()
     if not re then L("!! หา PlayShootEffect ไม่เจอ"); return end
     local head = tgt.m:FindFirstChild("Head") or tgt.m:FindFirstChildWhichIsA("BasePart")
     if not head then L("!! หา Head ผีไม่เจอ"); return end
-    local r = hrp()
-    local muzzle = r and r.Position or head.Position   -- arg1 = จุดยิง (ตำแหน่งเรา)
-    local before = tgt.m.Parent ~= nil
-    pcall(function() re:FireServer(muzzle, head) end)
-    task.wait(0.5)
-    L(("[RE] ยิงหัว %s | ผี%s"):format(tgt.m.Name, tgt.m.Parent and "ยังอยู่ (remote=แค่ effect?)" or "ตาย! ✅"))
+    -- v2.2: ยิงรัว 5 นัด (เผื่อผีมี HP หลายนัด / เผื่อนัดหลุดเน็ต) + เช็คตายทุกนัด
+    for i = 1, 5 do
+        if not tgt.m.Parent then break end
+        local r = hrp()
+        local muzzle = r and r.Position or head.Position
+        if not head.Parent then break end
+        pcall(function() re:FireServer(muzzle, head) end)
+        task.wait(0.35)
+        if not tgt.m.Parent then L(("[RE] นัดที่ %d → ผี %s ตาย! ✅✅✅"):format(i, tgt.m.Name)); return end
+    end
+    L(("[RE] ยิง 5 นัด %s ยังไม่ตาย (remote=แค่ effect ยืนยัน)"):format(tgt.m.Name))
 end
 
 -- GUI
@@ -122,7 +127,7 @@ box.TextWrapped, box.TextXAlignment, box.TextYAlignment = false, Enum.TextXAlign
 box.Font, box.TextSize = Enum.Font.Code, 11
 box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
 local function refresh()
-    local t = { "=== GunTest v2.1 (SHOOT-RE) ===" }
+    local t = { "=== GunTest v2.2 (SHOOT-RE รัว5) ===" }
     for _, g in ipairs(ghosts()) do
         t[#t+1] = ("[ผี] %s ระยะ=%.0f"):format(g.m.Name, g.d)
     end
