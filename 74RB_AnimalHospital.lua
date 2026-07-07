@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.19 ยิงผี: เฉพาะ Skinwalker+Hider + หามุมยิงโล่งไม่ติดกำแพง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.20 ยิงผี: 1 นัด/ตัว ไม่ยิงซ้ำ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1097,13 +1097,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.19", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.20", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.19 " .. lastStatus end
+    if not deadLock then title.Text = "v5.20 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1290,7 +1290,7 @@ task.spawn(function()
                     -- v5.19: หามุมยิงโล่ง (ไม่ติดกำแพง) แล้ววาร์ปไปยืนตรงนั้นก่อนยิง
                     local spot = clearShotSpot(target, thead)
                     if spot then
-                        shotAt[target] = os.clock()
+                        shotAt[target] = math.huge   -- v5.20: ยิงแล้ว = ไม่ยิงตัวนี้ซ้ำอีก (ragdoll ค้างทำให้เข้าใจผิดว่ายังไม่ตาย)
                         setStatus("วาร์ปยิงผี " .. target.Name)
                         tpTo(spot); task.wait(0.1)   -- วาร์ปไปจุดยิงโล่ง (สไลด์+Y-lock)
                         local gun = equipGun()
