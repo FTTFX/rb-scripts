@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.13 เจอตัวผีคลาน = MonsterBed ใต้เตียง — ถือน้ำเชื่อมไล่ก่อนมันจับคน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.14 ไล่ผีใต้เตียงหยุดขอบโซนแดง 10 studs — ไม่เดินเข้าเขตจับ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1076,13 +1076,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.13", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.14", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.13 " .. lastStatus end
+    if not deadLock then title.Text = "v5.14 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1637,7 +1637,13 @@ task.spawn(function()
                     local name = ensureSyrup()
                     if name and selectTool(name) then
                         setStatus("ถือน้ำเชื่อมไล่ผีใต้เตียง")
-                        tpTo(partPos(mb)); task.wait(1)
+                        -- v5.14: พื้นแดงรอบตัวมัน = เขตจับ — หยุดขอบโซน 10 studs ฝั่งเรา (แบบกองไฟ)
+                        local gp = partPos(mb)
+                        local from = hrp() and hrp().Position
+                        if gp then
+                            local dir = from and (from - gp).Magnitude > 1 and (from - gp).Unit or Vector3.new(1, 0, 0)
+                            tpTo(gp + dir * 10); task.wait(1)
+                        end
                     else
                         setStatus("หาน้ำเชื่อมไม่เจอ — ไล่ผีใต้เตียงไม่ได้")
                     end
