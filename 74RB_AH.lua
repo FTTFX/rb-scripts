@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.04 จุดยืนเช็คอิน/ชัตเตอร์ hardcode จากพิกัด spy จริง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.05 เช็คอินใช้สไลด์ 80 ระบบเดียวกับงานอื่น — เลิก MoveTo แยก แก้กระตุก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -217,7 +217,7 @@ local function ghostSafe(pos)
     end
     return pos
 end
-local function tpTo(pos)
+local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเร็วสไลด์ (เช็คอิน=80)
     if not pos then return end
     -- v4.36: กันวาปหลุดโลก — เป้าต่ำกว่า Y=-50 หรือไกลเกิน 400 studs = เป้าเพี้ยน (prompt/ของนอกแมพ) ไม่ไป
     if pos.Y < -50 then return end
@@ -270,7 +270,7 @@ local function tpTo(pos)
         end
         -- v4.88: "สไลด์" ตาม waypoint — ดันด้วย velocity จริง (แบบ Climb Forsaken)
         --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
-        local SLIDE_SPEED = 250         -- studs/s แนวราบ (v5.00 ผู้ใช้ขอ 250 — ถ้าตาย insanity ให้ลดกลับ)
+        local SLIDE_SPEED = speedOpt or 250   -- studs/s แนวราบ (v5.00 ผู้ใช้ขอ 250 — ถ้าตาย insanity ให้ลดกลับ)
         local wps
         local path = PathSvc:CreatePath({ AgentRadius = 2, AgentCanJump = false })
         local ok = pcall(function() path:ComputeAsync(r.Position, pos) end)
@@ -313,35 +313,9 @@ local function findPickup(medName)
     end
     return best
 end
--- v5.02: เดินหมวดเช็คอิน — WalkSpeed 80 + noclip ชั่วคราว + MoveTo เดินจริง (ไม่ไถล ไม่พุ่งเลยเป้า)
---        ระยะสั้นแถวเคาน์เตอร์ ไม่ต้องใช้สไลด์ 250 ของงานอื่น
-local function ciGo(pos)
-    local r, h, c = hrp(), hum(), LP.Character
-    if not (r and h and c and pos) then return end
-    -- v5.03: วัดระยะ "แนวราบ" เท่านั้น — เป้าอยู่บนโต๊ะ (สูงกว่าพื้น) ระยะ 3D ไม่มีวันเข้าใกล้พอ
-    local function flatDist()
-        r = hrp(); if not r then return 0 end
-        local d = pos - r.Position
-        return Vector3.new(d.X, 0, d.Z).Magnitude
-    end
-    if flatDist() < 2 then return end
-    local old = h.WalkSpeed
-    h.WalkSpeed = 80
-    local t0 = os.clock()
-    repeat
-        for _, p in ipairs(c:GetDescendants()) do
-            if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
-        end
-        h:MoveTo(Vector3.new(pos.X, r.Position.Y, pos.Z))   -- เดินเข้าจุดแนวราบ (ไม่ปีนโต๊ะ)
-        task.wait(0.05)
-    until not hrp() or flatDist() < 2 or os.clock() - t0 > 6
-    if h.Parent then h.WalkSpeed = old end
-    if not NOCLIP_ON then   -- คืน collide เฉพาะตอนผู้ใช้ไม่ได้เปิด NOCLIP เอง
-        for _, p in ipairs(c:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = true end
-        end
-    end
-end
+-- v5.05: เดินหมวดเช็คอิน = ระบบสไลด์เดียวกับงานอื่น (pathfinding + กันตกหลังคา/เป้าบนฟ้า)
+--        แค่ลดความเร็วเหลือ 80 — เดิมใช้ MoveTo แยกระบบ พอชนกับ loop ดับไฟแล้วตัวกระตุก
+local function ciGo(pos) return tpTo(pos, 80) end
 -- หา Tool ชื่อตรงยา (ที่ถืออยู่ใน Backpack/ตัว)
 local function findTool(medName)
     local bp = LP:FindFirstChild("Backpack")
@@ -1069,13 +1043,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.04", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.05", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.04 " .. lastStatus end
+    if not deadLock then title.Text = "v5.05 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
