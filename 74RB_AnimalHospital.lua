@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.01 เช็คอินยืนข้างในเคาน์เตอร์ ตรงเครื่อง Computer/Camera)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.02 เช็คอิน: ยืนกลางปริ้น↔คอม + เดิน 80 noclip ไม่ไถล)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -102,10 +102,13 @@ local function checkinPending()
             if (p - c.pos).Magnitude < 15 then return c end
         end
     end
-    -- v5.01: จุดยืน = "ข้างใน" เคาน์เตอร์ช่องนั้น (ตรงเครื่อง Computer/Camera หลังโต๊ะ)
-    --        แทนยืนข้างตัวคนไข้ด้านหน้า — prompt ทุกตัวของช่องอยู่ฝั่งใน เอื้อมถึงหมด
+    -- v5.01: จุดยืน = "ข้างใน" เคาน์เตอร์ช่องนั้น แทนยืนข้างตัวคนไข้ด้านหน้า
+    -- v5.02: ชิดเครื่องปริ้น+คอม (ผู้ใช้จูนจากภาพ) — มีทั้งคู่ = ยืนกึ่งกลางระหว่างสองเครื่อง
     local function standPos(c)
-        return partPos(c.inst:FindFirstChild("Computer") or c.inst:FindFirstChild("Camera")) or c.pos
+        local a = partPos(c.inst:FindFirstChild("Printer"))
+        local b = partPos(c.inst:FindFirstChild("Computer"))
+        if a and b then return a:Lerp(b, 0.5) end
+        return a or b or partPos(c.inst:FindFirstChild("Camera")) or c.pos
     end
     local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return nil end
     for _, m in ipairs(npcs:GetChildren()) do
@@ -307,6 +310,30 @@ local function findPickup(medName)
         end
     end
     return best
+end
+-- v5.02: เดินหมวดเช็คอิน — WalkSpeed 80 + noclip ชั่วคราว + MoveTo เดินจริง (ไม่ไถล ไม่พุ่งเลยเป้า)
+--        ระยะสั้นแถวเคาน์เตอร์ ไม่ต้องใช้สไลด์ 250 ของงานอื่น
+local function ciGo(pos)
+    local r, h, c = hrp(), hum(), LP.Character
+    if not (r and h and c and pos) then return end
+    if (r.Position - pos).Magnitude < 4 then return end
+    local old = h.WalkSpeed
+    h.WalkSpeed = 80
+    local t0 = os.clock()
+    repeat
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
+        end
+        h:MoveTo(pos)
+        task.wait(0.05)
+        r = hrp()
+    until not r or (r.Position - pos).Magnitude < 4 or os.clock() - t0 > 4
+    if h.Parent then h.WalkSpeed = old end
+    if not NOCLIP_ON then   -- คืน collide เฉพาะตอนผู้ใช้ไม่ได้เปิด NOCLIP เอง
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = true end
+        end
+    end
 end
 -- หา Tool ชื่อตรงยา (ที่ถืออยู่ใน Backpack/ตัว)
 local function findTool(medName)
@@ -946,10 +973,10 @@ bind(RS.Heartbeat, function(dt)
                     local sb = misc and misc:FindFirstChild("ShutterButton")
                     local spp = sb and sb:FindFirstChild("PP")
                     if spp and spp.Enabled and spp.ActionText == "Open" then   -- ประตูปิดอยู่ → เปิดก่อน
-                        tpTo(partPos(sb)); task.wait(0.15)
+                        ciGo(partPos(sb)); task.wait(0.15)
                         pressPrompt(spp)
                     end
-                    tpTo(cpos)   -- แล้วค่อยวาปไปข้างคนไข้
+                    ciGo(cpos)   -- v5.02: เดินเข้าจุดในเคาน์เตอร์ (80, ไม่ไถล) — ไม่ใช้สไลด์ 250
                 end
             end
             for _, p in ipairs(workspace:GetDescendants()) do
@@ -1035,13 +1062,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.01", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.02", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.01 " .. lastStatus end
+    if not deadLock then title.Text = "v5.02 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
