@@ -15,7 +15,22 @@ end
 local function scan()
     local out = {}
     local function L(s) out[#out+1] = s end
-    L("=== AH74 RoomDebug v1.5 ===")
+    L("=== AH74 RoomDebug v1.6 ===")
+    -- v1.6: dump ข้อความบนจอ (PlayerGui) — หาแบนเนอร์เหตุการณ์ เช่น "ผู้ป่วยวิกฤตในห้อง 3 — 28s"
+    L("=== PLAYERGUI TEXTS (ที่มองเห็น) ===")
+    local pg = LP:FindFirstChild("PlayerGui")
+    if pg then
+        for _, g in ipairs(pg:GetDescendants()) do
+            if (g:IsA("TextLabel") or g:IsA("TextButton")) and g.Visible and g.Text ~= ""
+               and #g.Text <= 80 then
+                local sg = g:FindFirstAncestorWhichIsA("ScreenGui")
+                local root = sg and sg.Name or "?"
+                if root ~= "AH74DBG" and root:sub(1, 4) ~= "AH74" then
+                    L(("[UI] %s | '%s'"):format(g:GetFullName():gsub("Players%.[^.]+%.PlayerGui%.", ""), g.Text))
+                end
+            end
+        end
+    end
     -- v1.5: dump ของที่ถืออยู่ (หา่ชื่อจริงของน้ำเชื่อม/ของ station)
     L("=== TOOLS ในมือ/กระเป๋า ===")
     local bp = LP:FindFirstChild("Backpack")
