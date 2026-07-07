@@ -91,12 +91,11 @@ local function shootRE()
     local tgt = list[1]
     if not tgt then L("ไม่เจอผี"); return end
     -- หา remote
-    local RS = game:GetService("ReplicatedStorage")
     local re
-    for _, d in ipairs(RS:GetDescendants()) do
-        if d:IsA("RemoteEvent") and d.Name == "PlayShootEffect" then re = d; break end
+    for _, d in ipairs(game:GetDescendants()) do   -- v2.1: ชื่อจริง = "RE/PlayShootEffect" (มี RE/ ในชื่อ)
+        if d:IsA("RemoteEvent") and d.Name:find("PlayShootEffect") then re = d; break end
     end
-    if not re then L("!! หา RE/PlayShootEffect ไม่เจอ"); return end
+    if not re then L("!! หา PlayShootEffect ไม่เจอ"); return end
     local head = tgt.m:FindFirstChild("Head") or tgt.m:FindFirstChildWhichIsA("BasePart")
     if not head then L("!! หา Head ผีไม่เจอ"); return end
     local r = hrp()
@@ -123,7 +122,7 @@ box.TextWrapped, box.TextXAlignment, box.TextYAlignment = false, Enum.TextXAlign
 box.Font, box.TextSize = Enum.Font.Code, 11
 box.BackgroundColor3, box.TextColor3 = Color3.fromRGB(25, 25, 32), Color3.fromRGB(200, 255, 200)
 local function refresh()
-    local t = { "=== GunTest v2.0 (SHOOT-RE) ===" }
+    local t = { "=== GunTest v2.1 (SHOOT-RE) ===" }
     for _, g in ipairs(ghosts()) do
         t[#t+1] = ("[ผี] %s ระยะ=%.0f"):format(g.m.Name, g.d)
     end
