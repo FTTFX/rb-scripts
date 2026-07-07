@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.06 เช็คอินไถลตรง+noclip ชั่วคราว — เลิกอ้อมโต๊ะตาม pathfinding)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.07 ไถลตรงล็อค Y — แก้ noclip+แรงกดลงจมทะลุแมพตาย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -289,6 +289,9 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
             end end
         end
         local t0 = os.clock()
+        -- v5.07: โหมดไถลตรง (noclip อยู่) ห้ามมีแรงกดลง — ไม่มีพื้นรับ = จมทะลุแมพตาย
+        --        ล็อคความสูง Y เดิมทุกเฟรมแทน (ก้าวแนวดิ่งสั้นๆ แบบ roof recovery — ปลอดภัย)
+        local yLock = r.Position.Y
         for _, wp in ipairs(wps) do
             if _G.AH74_GEN ~= MYGEN or os.clock() - t0 > 10 then break end
             local t1 = os.clock()
@@ -297,8 +300,14 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
                 local dir = wp.Position - r.Position
                 dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
                 if dir.Magnitude < 3 then break end
-                -- กดลงพื้นเบาๆ (-15) กันลอย/เด้งขึ้นขอบ — ห้ามมี velocity ขึ้น
-                r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED + Vector3.new(0, -15, 0)
+                if straight then
+                    r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED
+                    r.CFrame = CFrame.new(Vector3.new(r.Position.X, yLock, r.Position.Z))
+                        * (r.CFrame - r.CFrame.Position)
+                else
+                    -- กดลงพื้นเบาๆ (-15) กันลอย/เด้งขึ้นขอบ — ห้ามมี velocity ขึ้น
+                    r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED + Vector3.new(0, -15, 0)
+                end
                 task.wait()
             until os.clock() - t1 > 3
         end
@@ -1061,13 +1070,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.06", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.07", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.06 " .. lastStatus end
+    if not deadLock then title.Text = "v5.07 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
