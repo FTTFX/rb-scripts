@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.07 ไถลตรงล็อค Y — แก้ noclip+แรงกดลงจมทะลุแมพตาย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.08 NOCLIP เปิดอยู่ = สไลด์ทุกหมวดล็อค Y ไม่ใส่แรงกดลง — กันจมแมพ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -300,7 +300,9 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
                 local dir = wp.Position - r.Position
                 dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
                 if dir.Magnitude < 3 then break end
-                if straight then
+                -- v5.08: ตัวไม่มี collide (ไถลตรง หรือผู้ใช้เปิด NOCLIP) = ห้ามใส่แรงกดลง
+                --        ไม่มีพื้นรับจะจมทะลุแมพ (ตายตอนรักษา Room3 เพราะ NOCLIP ON + แรงกด -15)
+                if straight or NOCLIP_ON then
                     r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED
                     r.CFrame = CFrame.new(Vector3.new(r.Position.X, yLock, r.Position.Z))
                         * (r.CFrame - r.CFrame.Position)
@@ -1070,13 +1072,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.07", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.08", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.07 " .. lastStatus end
+    if not deadLock then title.Text = "v5.08 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
