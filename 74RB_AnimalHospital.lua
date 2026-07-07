@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.15 อ่านแบนเนอร์ฉุกเฉิน — ห้องวิกฤตแซงคิวทุกห้อง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.16 ยิงผีด้วยปืน remote — ไม่กินกระสุน ไม่ต้องเล็ง อยู่ในปุ่มฆ่าผี)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1076,13 +1076,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.15", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.16", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.15 " .. lastStatus end
+    if not deadLock then title.Text = "v5.16 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1202,6 +1202,45 @@ local function criticalRooms()
     end
     return out
 end
+
+-- ===== v5.16 ยิงผีด้วยปืน (remote PlayShootEffect) — ไม่กินกระสุน ไม่ต้องเล็ง/หมุนตัว =====
+-- พิสูจน์แล้ว: FireServer(จุดยิง, หัวผี) = server ฆ่าให้ ; ยิงเฉพาะ Skinwalker จริง กัน NPC ดีเป็นลม
+-- (เกมทำดาเมจฝั่ง server แต่ "เชื่อ" part ที่เราส่งไป → ส่งหัวผีเป๊ะ 100% ไม่พลาด)
+local shootRE
+local function findShootRE()
+    if shootRE and shootRE.Parent then return shootRE end
+    for _, d in ipairs(game:GetDescendants()) do
+        if d:IsA("RemoteEvent") and d.Name:find("PlayShootEffect") then shootRE = d; return d end
+    end
+end
+task.spawn(function()
+    local cd = {}   -- ยิงซ้ำจุดเดิมทุก 3s (เผื่อนัดแรกหลุด) จนผีตาย/หาย
+    while _G.AH74_GEN == MYGEN do
+        if KILLGHOST_ON and not WORKING and not CARRYING then
+            local re = findShootRE()
+            local npcs = workspace:FindFirstChild("NPCs")
+            local me = hrp() and hrp().Position
+            if re and npcs and me then
+                for _, m in ipairs(npcs:GetChildren()) do
+                    -- *** เฉพาะผีจริง (Skinwalker) — attr เชื่อได้ ไม่มีวันโดน NPC ดี ***
+                    if m:IsA("Model") and m:GetAttribute("Skinwalker")
+                       and not m:GetAttribute("MedicineImmune")   -- ดื้อยา = เผื่อดื้อปืนด้วย ข้ามไว้ก่อน
+                       and (not cd[m] or os.clock() - cd[m] > 3) then
+                        local head = m:FindFirstChild("Head") or m:FindFirstChildWhichIsA("BasePart")
+                        local hpos = head and head.Position
+                        if head and hpos and (hpos - me).Magnitude < 150 then
+                            cd[m] = os.clock()
+                            local r = hrp()
+                            setStatus("ยิงผี " .. m.Name)
+                            pcall(function() re:FireServer(r and r.Position or hpos, head) end)
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
 
 -- loop ให้ยา: ทำ "ทีละห้องจนจบ" (ไม่วนข้ามห้องไปมา = กันวาปสับสน/ให้ยาผิด)
 -- เลือกห้องใกล้สุดที่ยังต้องทำ → commit ทำจน done (หรือหมดเวลา ~6s) ก่อนเปลี่ยนห้อง
