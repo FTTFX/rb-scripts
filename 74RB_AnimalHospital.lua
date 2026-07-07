@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v4.99 attr คนไข้ตัดสินงานทันที ไม่รอโหลด — โหลดห้องระหว่างบินไป)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.00 สไลด์ 80 → 250 studs/s)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -259,7 +259,7 @@ local function tpTo(pos)
         end
         -- v4.88: "สไลด์" ตาม waypoint — ดันด้วย velocity จริง (แบบ Climb Forsaken)
         --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
-        local SLIDE_SPEED = 80          -- studs/s แนวราบ (ปรับได้ถ้าเกมดักความเร็ว)
+        local SLIDE_SPEED = 250         -- studs/s แนวราบ (v5.00 ผู้ใช้ขอ 250 — ถ้าตาย insanity ให้ลดกลับ)
         local wps
         local path = PathSvc:CreatePath({ AgentRadius = 2, AgentCanJump = false })
         local ok = pcall(function() path:ComputeAsync(r.Position, pos) end)
@@ -1029,13 +1029,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v4.99", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.00", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v4.99 " .. lastStatus end
+    if not deadLock then title.Text = "v5.00 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
