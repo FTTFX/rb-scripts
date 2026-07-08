@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.24 ผีใต้เตียง: เลิกใช้น้ำเชื่อม — ช่วยเฉพาะคนโดนดึง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.25 ลดดีเลย์: สแกนถี่ขึ้นทุก loop + รอห้องโหลด 1.5s)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1101,13 +1101,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.24", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.25", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.24 " .. lastStatus end
+    if not deadLock then title.Text = "v5.25 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1310,7 +1310,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(0.4)
+        task.wait(0.15)   -- v5.25: เดิม 0.4 — สแกนผีถี่ขึ้น
     end
 end)
 
@@ -1373,7 +1373,7 @@ task.spawn(function()
                             pcall(function() LP:RequestStreamAroundAsync(pos, 1) end)
                             tpTo(pos)
                             local t0 = os.clock()
-                            repeat task.wait(0.1) until getScreenUI(target) or os.clock() - t0 > 3
+                            repeat task.wait(0.1) until getScreenUI(target) or os.clock() - t0 > 1.5   -- v5.25: เดิม 3 (ผู้ใช้ขอ)
                         end
                     end
                     local guard = 0
@@ -1562,7 +1562,7 @@ do
                     end
                 end
             end
-            task.wait(0.4)
+            task.wait(0.2)   -- v5.25: เดิม 0.4 — ชัตเตอร์ไวขึ้น
         end
     end)
 end
@@ -1686,7 +1686,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(0.35)
+        task.wait(0.15)   -- v5.25: เดิม 0.35 — สแกนไฟถี่ขึ้น
     end
 end)
 
@@ -1696,7 +1696,7 @@ task.spawn(function()
     local lastHelp = 0
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING and not CARRYING
-           and os.clock() - lastHelp > 2 then
+           and os.clock() - lastHelp > 1 then   -- v5.25: เดิม 2
             local me = hrp() and hrp().Position
             -- วิธี 1: มีคนโดนจับ — prompt 'Help' บนตัวเหยื่อ (NPC/ผู้เล่น) → สแปมช่วย
             local hp
@@ -1717,7 +1717,7 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(0.4)
+        task.wait(0.15)   -- v5.25: เดิม 0.4 — เจอคนโดนดึงไวขึ้น
     end
 end)
 
@@ -1770,8 +1770,8 @@ task.spawn(function()
                                             dropPP = p; break
                                         end
                                     end
-                                    if not dropPP then task.wait(0.3) end
-                                until dropPP or os.clock() - t0 > 3
+                                    if not dropPP then task.wait(0.15) end   -- v5.25: เดิม 0.3
+                                until dropPP or os.clock() - t0 > 1.5        -- v5.25: เดิม 3 (ผู้ใช้ขอ)
                             end
                             -- v4.78: ห้องเป้าหมายไม่มีปุ่มวาง (เตียงไม่ว่าง?) → หาเตียงว่างห้องไหนก็ได้
                             if not dropPP and rooms then
