@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.23 ห้อง 6/7/8 ด่วนสุด + สไลด์ 1000 พร้อมเบรกใกล้เป้า)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.24 ผีใต้เตียง: เลิกใช้น้ำเชื่อม — ช่วยเฉพาะคนโดนดึง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1101,13 +1101,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.23", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.24", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.23 " .. lastStatus end
+    if not deadLock then title.Text = "v5.24 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1690,41 +1690,10 @@ task.spawn(function()
     end
 end)
 
--- ===== v5.12 ผีคลาน (ผู้ใช้อธิบาย 2 วิธีไล่) =====
--- 1) มีคนโดนจับ → prompt 'Help' โผล่บนตัวเหยื่อ (HumanoidRootPart) → สแปมกด ~4 รอบ (แบบดับไฟ)
--- 2) ผียังไม่จับใคร → ถือน้ำเชื่อม (Maple Syrup) เดินเข้าหามัน = มันหายไป
---    (ยังไม่รู้ชื่อ model ผีตอนเดินเพ่นพ่าน — ใช้จุดเหยื่อเป็นตำแหน่งผี: หลังช่วยเสร็จ
---     ถือน้ำเชื่อมยืนตรงนั้นกันจับซ้ำ ; เจอ model จริงเมื่อไหร่ค่อยเพิ่มวิธี 2 เต็มรูปแบบ)
+-- ===== v5.12 ผีคลาน =====
+-- v5.24: ตัดน้ำเชื่อมทิ้งทั้งหมด (ผู้ใช้สั่ง) — รออย่างเดียว มีคนโดนดึงค่อยไปสแปม Help
 task.spawn(function()
     local lastHelp = 0
-    local function findSyrup()
-        for _, t in ipairs(heldTools()) do
-            if t.Name:lower():find("syrup") then return t.Name end
-        end
-    end
-    -- หยิบน้ำเชื่อมให้อยู่ในมือ (มือเต็ม 3 ช่องยา = ทิ้งยา 1 ชิ้นก่อน) → คืนชื่อ tool
-    local function ensureSyrup()
-        local name = findSyrup()
-        if name then return name end
-        local pk
-        for _, p in ipairs(workspace:GetDescendants()) do
-            if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText:lower():find("syrup") then
-                pk = p; break
-            end
-        end
-        if not (pk and pk.Parent) then return nil end
-        setStatus("ไปหยิบน้ำเชื่อม (ไล่ผี)")
-        local n = 0
-        for _, t in ipairs(heldTools()) do if not protectedTool(t) then n += 1 end end
-        if n >= 3 then
-            for _, t in ipairs(heldTools()) do
-                if not protectedTool(t) then discardTool(t) break end
-            end
-        end
-        tpTo(partPos(pk.Parent)); task.wait(0.2)
-        pressPrompt(pk, function() return findSyrup() ~= nil end, true); task.wait(0.2)
-        return findSyrup()
-    end
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING and not CARRYING
            and os.clock() - lastHelp > 2 then
@@ -1745,41 +1714,6 @@ task.spawn(function()
                     if not (hp.Parent and hp.Enabled) then break end
                     pressPrompt(hp, nil, true)
                     task.wait(0.25)
-                end
-                local victimPos = partPos(hp.Parent)
-                local name = ensureSyrup()
-                if name and selectTool(name) and victimPos then
-                    setStatus("ถือน้ำเชื่อมไล่ผีพื้น")
-                    tpTo(victimPos); task.wait(1)
-                end
-            else
-                -- วิธี 2 (v5.13): ผียังไม่จับใคร — ตัวจริง = Rooms.<กลุ่ม>.<ห้อง>.Minigame.MonsterBed
-                --                (ผีใต้เตียง — RoomDebug เจอ MonsterBed.Arms ห้อง 4) → ถือน้ำเชื่อมเดินประชิด
-                local mb
-                local rooms = workspace:FindFirstChild("Rooms")
-                if rooms then
-                    for _, d in ipairs(rooms:GetDescendants()) do
-                        if d.Name == "MonsterBed" and d:FindFirstChild("Arms") then
-                            local pos = partPos(d)
-                            if pos and me and (pos - me).Magnitude < 150 then mb = d; break end
-                        end
-                    end
-                end
-                if mb then
-                    lastHelp = os.clock()
-                    local name = ensureSyrup()
-                    if name and selectTool(name) then
-                        setStatus("ถือน้ำเชื่อมไล่ผีใต้เตียง")
-                        -- v5.14: พื้นแดงรอบตัวมัน = เขตจับ — หยุดขอบโซน 10 studs ฝั่งเรา (แบบกองไฟ)
-                        local gp = partPos(mb)
-                        local from = hrp() and hrp().Position
-                        if gp then
-                            local dir = from and (from - gp).Magnitude > 1 and (from - gp).Unit or Vector3.new(1, 0, 0)
-                            tpTo(gp + dir * 10); task.wait(1)
-                        end
-                    else
-                        setStatus("หาน้ำเชื่อมไม่เจอ — ไล่ผีใต้เตียงไม่ได้")
-                    end
                 end
             end
         end
