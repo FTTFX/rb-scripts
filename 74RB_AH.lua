@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.22 อุ้มส่ง: รอปุ่มวางห้องที่ถูก 3s ก่อน fallback)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.23 ห้อง 6/7/8 ด่วนสุด + สไลด์ 1000 พร้อมเบรกใกล้เป้า)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -271,7 +271,7 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
         end
         -- v4.88: "สไลด์" ตาม waypoint — ดันด้วย velocity จริง (แบบ Climb Forsaken)
         --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
-        local SLIDE_SPEED = speedOpt or 250   -- studs/s แนวราบ (v5.00 ผู้ใช้ขอ 250 — ถ้าตาย insanity ให้ลดกลับ)
+        local SLIDE_SPEED = speedOpt or 1000  -- studs/s แนวราบ (v5.23 ผู้ใช้ขอ 1000 — ถ้าตาย insanity ให้ลดกลับ)
         local wps
         -- v5.09: ไถลตรง "ทุกหมวด" (ผู้ใช้เน้นเร็วสุด) — เลิก pathfinding ทั้งหมด
         --        เส้นตรง + noclip ชั่วคราว + ล็อค Y (v5.07) = ไม่อ้อม ไม่ติดกำแพง ไม่จมแมพ
@@ -298,13 +298,16 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
                 if dir.Magnitude < 3 then break end
                 -- v5.08: ตัวไม่มี collide (ไถลตรง หรือผู้ใช้เปิด NOCLIP) = ห้ามใส่แรงกดลง
                 --        ไม่มีพื้นรับจะจมทะลุแมพ (ตายตอนรักษา Room3 เพราะ NOCLIP ON + แรงกด -15)
+                -- v5.23: เบรกใกล้เป้า — ความเร็ว 1000 วิ่ง ~16 studs/เฟรม จะกระโดดข้ามเป้า (เกณฑ์หยุด 3 studs)
+                --        ลดความเร็วตามระยะที่เหลือ (dir*8 = ถึงใน ~0.125s) → จอดนิ่ม ไม่ไถลเลย/เด้งไปมา
+                local spd = math.min(SLIDE_SPEED, dir.Magnitude * 8)
                 if straight or NOCLIP_ON then
-                    r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED
+                    r.AssemblyLinearVelocity = dir.Unit * spd
                     r.CFrame = CFrame.new(Vector3.new(r.Position.X, yLock, r.Position.Z))
                         * (r.CFrame - r.CFrame.Position)
                 else
                     -- กดลงพื้นเบาๆ (-15) กันลอย/เด้งขึ้นขอบ — ห้ามมี velocity ขึ้น
-                    r.AssemblyLinearVelocity = dir.Unit * SLIDE_SPEED + Vector3.new(0, -15, 0)
+                    r.AssemblyLinearVelocity = dir.Unit * spd + Vector3.new(0, -15, 0)
                 end
                 task.wait()
             until os.clock() - t1 > 3
@@ -1098,13 +1101,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.22", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.23", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.22 " .. lastStatus end
+    if not deadLock then title.Text = "v5.23 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1347,9 +1350,10 @@ task.spawn(function()
                         if pat and present and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
-                            -- v4.13: Room8 (ผ่าตัด) สำคัญสุด — v5.15: ห้องวิกฤตแซงอีกชั้น
-                            if crit[room.Name] then d = -2
-                            elseif room.Name == "Room8" then d = -1 end
+                            -- v5.23: ห้องฉุกเฉิน 6/7/8 เร่งด่วนสุด (Room8 นำใน 3 ห้อง) — ห้องวิกฤตแซงทุกอย่าง
+                            if crit[room.Name] then d = -3
+                            elseif room.Name == "Room8" then d = -2
+                            elseif grp == "Emergency" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
                         elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
                             local reason = not present and "ไกล" or (ghost and not killable) and "ผี"
