@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.54 กาแฟ: กดเฉพาะป้าย 'พร้อม' — กันเด้งหน้าซื้อ Robux ตอนเครื่องชง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.55 Hider หลายตัว: ตัวละ 12s ไม่มอง=พัก 45s ไปตัวถัดไป วนครบทุกตัว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -590,7 +590,11 @@ local function ghostToShoot(m)
     return not h or h.Health > 0   -- ยังไม่ตาย
 end
 local SHOT_AT = {}   -- v5.40: [ผี]=os.clock()/huge — แชร์ระหว่าง loop ยิงกับ gunPending
-local HIDER_DONE = {}   -- v5.42: [Hider]=true มันเห็นเราแล้ว (OriginalFace เปลี่ยน) — จบตัวนี้ ไปตัวถัดไป
+local HIDER_DONE = {}   -- v5.55: [Hider]=huge เห็นเราแล้ว(ถาวร) | =os.clock() หมดเวลา 12s (พัก 45s แล้วลองใหม่)
+local function hiderSkip(m)
+    local t = HIDER_DONE[m]
+    return t and (t == math.huge or os.clock() - t < 45)
+end
 local SYRUP_DONE = {}   -- v5.48: [MonsterBed]=os.clock() เอาน้ำเชื่อมไปแล้ว "รอบเดียว" (พัก 60s ต่อเตียง)
 local BOUGHT = {}       -- v5.49: [Buy prompt]=os.clock() กดซื้อไปแล้ว (พัก 30s — เงินไม่พอค่อยลองใหม่)
 -- v5.41: ตัวกวาดขยะ — ตารางจำทั้งหมด key เป็น instance ที่ตาย/หายไปแล้ว = ลบทิ้ง (เล่นยาวๆ แรมไม่บวม)
@@ -627,7 +631,7 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
     if not (npcs and me) then return false end
     for _, m in ipairs(npcs:GetChildren()) do
         -- v5.45: เฉพาะ Hider — Ghost (Anomaly+Ghost=true) ไม่เกี่ยวกับระบบนี้ (ผู้ใช้สั่ง)
-        if m:IsA("Model") and m:GetAttribute("Anomaly") and not m:GetAttribute("Ghost") and not HIDER_DONE[m] then
+        if m:IsA("Model") and m:GetAttribute("Anomaly") and not m:GetAttribute("Ghost") and not hiderSkip(m) then
             local p = partPos(m)
             if p and (p - me).Magnitude < 200 then return true end
         end
@@ -1119,13 +1123,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.54", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.55", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.54 " .. lastStatus end
+    if not deadLock then title.Text = "v5.55 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1813,7 +1817,7 @@ task.spawn(function()
             if npcs and me2 then
                 for _, m2 in ipairs(npcs:GetChildren()) do
                     if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not m2:GetAttribute("Ghost")
-                       and not HIDER_DONE[m2] then   -- v5.45: ไม่ยุ่งกับ Ghost
+                       and not hiderSkip(m2) then   -- v5.45: ไม่ยุ่งกับ Ghost
                         local p2 = partPos(m2)
                         local d2 = p2 and (p2 - me2).Magnitude
                         if d2 and d2 < 200 and (not hd or d2 < hd) then hider, hd = m2, d2 end
@@ -1842,7 +1846,7 @@ task.spawn(function()
                     local best, bd
                     for _, m2 in ipairs(npcs:GetChildren()) do
                         if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not m2:GetAttribute("Ghost")
-                           and not HIDER_DONE[m2] then   -- v5.45: ไม่ยุ่งกับ Ghost
+                           and not hiderSkip(m2) then   -- v5.45: ไม่ยุ่งกับ Ghost
                             local p2 = partPos(m2)
                             local d2 = p2 and (p2 - me3).Magnitude
                             if d2 and d2 < 200 and (not bd or d2 < bd) then best, bd = m2, d2 end
@@ -1878,9 +1882,11 @@ task.spawn(function()
                         rayP.FilterType = Enum.RaycastFilterType.Exclude
                         rayP.FilterDescendantsInstances = { hider, LP.Character }
                         local lastPick, dirPick = 0, nil
+                        local hoverT0 = os.clock()   -- v5.55: ตัวละไม่เกิน 12s — ไม่มองก็ไปตัวอื่นก่อน
                         local r = hrp()
                         while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
-                              and hider:GetAttribute("Anomaly") and not seen do
+                              and hider:GetAttribute("Anomaly") and not seen
+                              and os.clock() - hoverT0 < 12 do
                             local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                             if not head then break end
                             if os.clock() - lastPick > 0.5 then   -- raycast แพง — เลือกมุมใหม่ทุก 0.5s พอ
@@ -1904,8 +1910,12 @@ task.spawn(function()
                         end
                         aconn:Disconnect()
                         if seen then
-                            HIDER_DONE[hider] = true
+                            HIDER_DONE[hider] = math.huge   -- เห็นแล้ว = จบถาวร
                             setStatus("Hider เห็นเราแล้ว → ตัวถัดไป")
+                        elseif hider.Parent and hider:GetAttribute("Anomaly") then
+                            -- v5.55: 12s ไม่มอง — พักตัวนี้ 45s ไปตัวอื่นก่อน (เดิมแช่ค้างตัวเดียว ตัวอื่นไม่โดนจัดการ)
+                            HIDER_DONE[hider] = os.clock()
+                            setStatus("Hider ไม่มอง — พัก ไปตัวถัดไป")
                         end
                     end
                     hider = nextHider()
