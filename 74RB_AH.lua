@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.51 ร้านค้า: ซื้อเฉพาะ [ UPGRADE ] ข้าม [ CURRENCY ] — อ่านป้าย Type/Description จริง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.52 ปุ่มกาแฟ: auto หยิบติดกระเป๋า ไม่กิน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -41,6 +41,7 @@ local SHOP_ON = false    -- v5.49: auto ซื้อของอัปเกร�
 -- v5.51: กฎซื้อ (จาก ShopSpy): ช่องร้านมีป้าย Type='[ UPGRADE ]'/'[ CURRENCY ]' + Description=ชื่อของ
 -- ซื้อเฉพาะ UPGRADE (CURRENCY = สุ่มเหรียญ เผาเงิน — ข้าม) ; SHOP_SKIP บล็อกชื่อที่ไม่เอาเพิ่มได้
 local SHOP_SKIP = {}   -- เช่น { ["+10% NPC Speed"]=true }
+local COFFEE_ON = false  -- v5.52: auto หยิบกาแฟติดกระเป๋า (หยิบอย่างเดียว ไม่กิน — ไม่ equip/activate)
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
@@ -1118,13 +1119,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.51", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.52", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.51 " .. lastStatus end
+    if not deadLock then title.Text = "v5.52 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1965,6 +1966,19 @@ task.spawn(function()
                 end
             end
         end
+        -- v5.52: auto หยิบกาแฟ (หยิบเก็บกระเป๋า ห้าม equip = ไม่มีทางกิน) — งานว่างเหมือนซื้อของ
+        if COFFEE_ON and fp and not WORKING and not CARRYING and not busyBefore(7) and not checkinPending()
+           and heldCount("Coffee") == 0 then
+            local cpp
+            for _, p in ipairs(workspace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.ActionText == "Coffee" and p.Enabled then cpp = p; break end
+            end
+            if cpp then
+                setStatus("หยิบกาแฟ")
+                tpTo(partPos(cpp.Parent)); task.wait(0.15)
+                pressPrompt(cpp, function() return heldCount("Coffee") > 0 end)
+            end
+        end
         task.wait(2)
     end
 end)
@@ -2131,10 +2145,17 @@ shopB.MouseButton1Click:Connect(function()
     shopB.Text = "ซื้อของ: " .. (SHOP_ON and "ON" or "OFF")
     shopB.BackgroundColor3 = SHOP_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
+-- v5.52: auto หยิบกาแฟ (ไม่กิน)
+local cofB = btn("กาแฟ: OFF", 98, 194, 86, 30, Color3.fromRGB(45,45,58))
+cofB.MouseButton1Click:Connect(function()
+    COFFEE_ON = not COFFEE_ON
+    cofB.Text = "กาแฟ: " .. (COFFEE_ON and "ON" or "OFF")
+    cofB.BackgroundColor3 = COFFEE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
 
 btn("CLOSE", 8, 226, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON =
-        false, false, false, false, false, false, false, false, false, false, false, false, false
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
