@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.42 Hider เห็นเราแล้ว (OriginalFace เปลี่ยน) = จบตัวนี้ ไปตัวถัดไปทันที)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.43 รักษาอันดับ 1 เด็ดขาด — ไฟ/สไลม์/อุ้ม/ยิงผี รอรักษาเสร็จก่อน แก้ ping-pong)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -614,11 +614,13 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
     return false
 end
 -- busyBefore(rank) = มีงานสำคัญกว่าค้างอยู่ → loop ระดับ rank ต้องหลีกทาง
+-- v5.43: รักษาขึ้นอันดับ 1 (ผู้ใช้สั่ง — เดิมไฟ/สไลม์แทรกกลางคิวรักษา = ping-pong ไม่ได้อะไรเลย)
+-- ลำดับ: 1 รักษา > 2 อุ้ม > 3 ไฟ/สไลม์ > 4 ยิงผี > 5 ช่วยคนโดนจับ > 6 Hider > 7 เช็คอิน
 local function busyBefore(rank)
-    if rank > 1 and (CARRYING or faintPending()) then return true end
-    if rank > 2 and (firePending() or slimePending()) then return true end
-    if rank > 3 and gunPending() then return true end
-    if rank > 5 and TREAT_BUSY then return true end
+    if rank > 1 and TREAT_BUSY then return true end
+    if rank > 2 and (CARRYING or faintPending()) then return true end
+    if rank > 3 and (firePending() or slimePending()) then return true end
+    if rank > 4 and gunPending() then return true end
     if rank > 6 and hiderPending() then return true end
     return false
 end
@@ -1096,13 +1098,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.42", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.43", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.42 " .. lastStatus end
+    if not deadLock then title.Text = "v5.43 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1246,7 +1248,7 @@ end
 task.spawn(function()
     local shotAt = SHOT_AT   -- v5.40: แชร์กับ gunPending (ยิงแล้วไม่บล็อคงานอื่น)
     while _G.AH74_GEN == MYGEN do
-        if GUNKILL_ON and not WORKING and not busyBefore(3) then
+        if GUNKILL_ON and not WORKING and not busyBefore(4) then
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
@@ -1292,9 +1294,7 @@ end)
 task.spawn(function()
     local lastStream = 0   -- v4.98: กันยิง RequestStream ถี่เกิน (yield ทีละ ~เฟรม)
     while _G.AH74_GEN == MYGEN do
-        if AUTO_ON and fp and FIRE_ON and faintPending() then
-            task.wait(0.2)   -- v4.72: มีคนเป็นลม (โหมดฉุกเฉินเปิด) = หลีกทางให้ loop อุ้ม
-        elseif AUTO_ON and fp then
+        if AUTO_ON and fp then   -- v5.43: รักษาอันดับ 1 — ไม่หลีกทางให้ใครแล้ว (เดิมหลบคนเป็นลม)
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 local fromPos = hrp() and hrp().Position
@@ -1571,7 +1571,7 @@ task.spawn(function()
     -- v4.95: ตารางพลาดย้ายไปแชร์เป็น BURN_FAIL — firePending จะได้ข้าม NPC ที่พักอยู่
     local fails = BURN_FAIL
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not busyBefore(2) then   -- v4.75: คนเป็นลมมาก่อนไฟ
+        if FIRE_ON and fp and not WORKING and not busyBefore(3) then   -- v4.75: คนเป็นลมมาก่อนไฟ
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
@@ -1604,7 +1604,7 @@ task.spawn(function()
     -- v4.95: cooldown/failN ย้ายไปแชร์เป็น FIRE_COOL/FIRE_FAILN — pending จะได้ข้ามจุดที่พัก
     local cooldown, failN = FIRE_COOL, FIRE_FAILN
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not busyBefore(2) then   -- v4.75: คนเป็นลมมาก่อน
+        if FIRE_ON and fp and not WORKING and not busyBefore(3) then   -- v4.75: คนเป็นลมมาก่อน
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1711,7 +1711,7 @@ task.spawn(function()
             repeat spamE(); task.wait(0.1)
             until not selfGrabbed() or os.clock() - t0 > 10 or _G.AH74_GEN ~= MYGEN
         end
-        if FIRE_ON and fp and not WORKING and not busyBefore(4)
+        if FIRE_ON and fp and not WORKING and not busyBefore(5)
            and os.clock() - lastHelp > 1 then   -- v5.25: เดิม 2
             local me = hrp() and hrp().Position
             -- วิธี 1: มีคนโดนจับ — prompt 'Help' บนตัวเหยื่อ (NPC/ผู้เล่น) → สแปมช่วย
@@ -1819,7 +1819,7 @@ end)
 -- v4.72: อยู่ในปุ่ม "ดับไฟ" (กลุ่มงานฉุกเฉิน) — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING then
+        if FIRE_ON and fp and not WORKING and not busyBefore(2) then   -- v5.43: อุ้มรอรักษาเสร็จก่อน
             local m, carryPP = faintPending()
             if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
                         CARRYING = true   -- v4.91: ล็อคงานอุ้ม — ไฟ/สไลม์/ชัตเตอร์ห้ามแทรกจนวางเสร็จ
