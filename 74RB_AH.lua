@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.44 Hider บินต่อเนื่อง: เห็นแล้วบินไปตัวถัดไปกลางอากาศ ไม่ลงพื้นจนกว่าออกจากแมพ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.45 ระบบ Hider ไม่ยุ่งกับ Ghost — เฉพาะ Anomaly ที่ไม่มี attr Ghost)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -606,7 +606,8 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
     local me = hrp() and hrp().Position
     if not (npcs and me) then return false end
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and m:GetAttribute("Anomaly") and not HIDER_DONE[m] then   -- v5.42: เห็นเราแล้ว=จบ
+        -- v5.45: เฉพาะ Hider — Ghost (Anomaly+Ghost=true) ไม่เกี่ยวกับระบบนี้ (ผู้ใช้สั่ง)
+        if m:IsA("Model") and m:GetAttribute("Anomaly") and not m:GetAttribute("Ghost") and not HIDER_DONE[m] then
             local p = partPos(m)
             if p and (p - me).Magnitude < 200 then return true end
         end
@@ -1098,13 +1099,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.44", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.45", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.44 " .. lastStatus end
+    if not deadLock then title.Text = "v5.45 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1741,7 +1742,8 @@ task.spawn(function()
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs and me2 then
                 for _, m2 in ipairs(npcs:GetChildren()) do
-                    if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not HIDER_DONE[m2] then
+                    if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not m2:GetAttribute("Ghost")
+                       and not HIDER_DONE[m2] then   -- v5.45: ไม่ยุ่งกับ Ghost
                         local p2 = partPos(m2)
                         local d2 = p2 and (p2 - me2).Magnitude
                         if d2 and d2 < 200 and (not hd or d2 < hd) then hider, hd = m2, d2 end
@@ -1769,7 +1771,8 @@ task.spawn(function()
                     if not me3 then return nil end
                     local best, bd
                     for _, m2 in ipairs(npcs:GetChildren()) do
-                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not HIDER_DONE[m2] then
+                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not m2:GetAttribute("Ghost")
+                           and not HIDER_DONE[m2] then   -- v5.45: ไม่ยุ่งกับ Ghost
                             local p2 = partPos(m2)
                             local d2 = p2 and (p2 - me3).Magnitude
                             if d2 and d2 < 200 and (not bd or d2 < bd) then best, bd = m2, d2 end
@@ -1781,7 +1784,7 @@ task.spawn(function()
                     local me3 = hrp() and hrp().Position
                     if not me3 then return false end
                     for _, m2 in ipairs(npcs:GetChildren()) do
-                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") then
+                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not m2:GetAttribute("Ghost") then
                             local p2 = partPos(m2)
                             if p2 and (p2 - me3).Magnitude < dist then return true end
                         end
