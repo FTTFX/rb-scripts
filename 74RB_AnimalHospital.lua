@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.31 ระยะยืนแยกชนิด: ไฟ 10 / สไลม์ 4 studs)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.32 จ่ายยาผิดฆ่าผี = ประชิดเตียงผีได้ ไม่โดนดันถอย 12 studs)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -216,7 +216,7 @@ local function ghostSafe(pos)
     end
     return pos
 end
-local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเร็วสไลด์ (เช็คอิน=80)
+local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override ความเร็ว | v5.32: noGap=ยอมประชิดผี (จ่ายยาผิด)
     if not pos then return end
     -- v4.36: กันวาปหลุดโลก — เป้าต่ำกว่า Y=-50 หรือไกลเกิน 400 studs = เป้าเพี้ยน (prompt/ของนอกแมพ) ไม่ไป
     if pos.Y < -50 then return end
@@ -243,7 +243,7 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
         setStatus("บล็อคเป้าบนฟ้า +" .. math.floor(pos.Y - r.Position.Y) .. "m")
         return
     end
-    pos = ghostSafe(pos)
+    if not noGap then pos = ghostSafe(pos) end   -- v5.32: จ่ายยาผิดต้องถึงเตียงผีจริง (12m กดไม่ถึง)
     if TP_ON then
         -- v4.85: เลิกบิน CFrame ทั้งหมด — เกมยังจับได้ (ตายบ้าคลั่งซ้ำ Shift19)
         -- v4.87: เดินเร็วตาม "เส้นทางจริง" (pathfinding) ไม่ใช้ noclip —
@@ -743,7 +743,7 @@ local function killWithWrongMed(room)
     -- v4.56: ถือยาผิดแล้ว → ไปเตียง → ยิงเลย เหมือน path รักษาปกติเป๊ะ (ไม่รอ/ไม่เช็ค Enabled)
     bedPP = bedApplyPP(room)
     if not (bedPP and bedPP.Parent) then return false end
-    tpTo(partPos(bedPP.Parent)); task.wait(0.18)
+    tpTo(partPos(bedPP.Parent), nil, true); task.wait(0.18)   -- v5.32: ประชิดเตียงผี (ไม่ถอย 12)
     setStatus("ผี" .. room.Name .. ": จ่าย " .. wrongName)
     if bedPP.Enabled then
         pressPrompt(bedPP)
@@ -1057,13 +1057,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.31", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.32", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.31 " .. lastStatus end
+    if not deadLock then title.Text = "v5.32 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
