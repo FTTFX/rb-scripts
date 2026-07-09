@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.43 รักษาอันดับ 1 เด็ดขาด — ไฟ/สไลม์/อุ้ม/ยิงผี รอรักษาเสร็จก่อน แก้ ping-pong)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.44 Hider บินต่อเนื่อง: เห็นแล้วบินไปตัวถัดไปกลางอากาศ ไม่ลงพื้นจนกว่าออกจากแมพ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1098,13 +1098,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.43", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.44", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.43 " .. lastStatus end
+    if not deadLock then title.Text = "v5.44 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1749,63 +1749,109 @@ task.spawn(function()
                 end
             end
             if hider then
-                setStatus("ลอยหน้า Hider")
-                -- ไกล → สไลด์เข้าไปใกล้ก่อน (ระบบปกติ ปลอดภัย) แล้วค่อยเข้าประจำหน้ามัน
-                local hp0 = partPos(hider)
-                if hp0 and me2 and (hp0 - me2).Magnitude > 15 then tpTo(hp0 + Vector3.new(0, 0, 8)) end
-                -- v5.33: บนหัวมันมองไม่เห็นเรา (ผู้ใช้เทส) — ต้องอยู่ "ข้างหน้า" ให้มันเห็นค้าง 2-3s
-                -- ponytail: ค่าจูนจากสนาม — FRONT ระยะหน้ามัน / UP ความสูงกันมันตีถึง ปรับได้
-                local FRONT, UP = 8, 5   -- v5.39: ผู้ใช้จูน — หน้ามัน 8 / สูง 5
-                -- v5.37: "ล็อกการบิน" จนกว่า Hider หาย (ผู้ใช้สั่ง — เดิมหลุดไปทำงานอื่นกลางคัน = ร่วงพื้นโดนตี)
-                --        WORKING=true กันทุก loop (ไฟ/อุ้ม/รักษา) แทรกดึงตัวเราออกจากหน้ามัน
+                -- v5.44: โหมดบินต่อเนื่อง (ผู้ใช้สั่ง — เดิมเห็นแล้วตกพื้นข้างตัวมัน = โดนตี)
+                --        เห็นแล้วบินกลางอากาศไปตัวถัดไปเลย และไม่เลิกบินจนกว่า Anomaly ออกจากแมพ
+                local FRONT, UP = 8, 5   -- ponytail: ค่าจูนสนาม — หน้ามัน / สูงกันตี
                 WORKING = true
-                -- v5.40: spy ฝังใน — ผู้ใช้จะเทส "ตอนมันเห็นเรา" attr ไหนเปลี่ยนจะ print+โชว์บนหัว GUI
-                -- v5.42: มันเห็นเราแล้ว (OriginalFace เปลี่ยน = เกมสลับหน้า "!!") → จบตัวนี้ ไปต่อ
-                local seen = false
-                local aconn = hider.AttributeChanged:Connect(function(a)
-                    local v = tostring(hider:GetAttribute(a))
-                    print("[AH74 HiderAttr] " .. a .. " = " .. v)
-                    setStatus("HiderAttr " .. a .. "=" .. v)
-                    if a == "OriginalFace" then seen = true end
-                end)
-                -- v5.41: "!!" ที่โผล่หัวมันไม่ใช่ attr — จับ "ของงอกในตัวมัน" แทน (Billboard/Effect)
-                local dconn = hider.DescendantAdded:Connect(function(d)
-                    print("[AH74 HiderChild] +" .. d.ClassName .. " " .. d:GetFullName())
-                    setStatus("Hider+ " .. d.ClassName .. ":" .. d.Name)
-                end)
-                -- v5.40: เลือกมุมที่ "ไม่มีกำแพงบัง" — หน้าตรงก่อน แล้วเบี่ยงทีละ 45° (ผู้ใช้เจอลอยหลังกำแพง)
-                local rayP = RaycastParams.new()
-                rayP.FilterType = Enum.RaycastFilterType.Exclude
-                rayP.FilterDescendantsInstances = { hider, LP.Character }
-                local lastPick, dirPick = 0, nil
-                local r = hrp()
-                while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
-                      and hider:GetAttribute("Anomaly") and not seen do
-                    local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
-                    if not head then break end
-                    if os.clock() - lastPick > 0.5 then   -- raycast แพง — เลือกมุมใหม่ทุก 0.5s พอ
-                        lastPick = os.clock(); dirPick = nil
-                        local lv = head.CFrame.LookVector
-                        for i = 0, 7 do
-                            local ang = (i % 2 == 0 and 1 or -1) * math.ceil(i / 2) * math.pi / 4  -- 0,+45,-45,+90,...
-                            local d = Vector3.new(lv.X * math.cos(ang) - lv.Z * math.sin(ang), 0,
-                                                  lv.X * math.sin(ang) + lv.Z * math.cos(ang))
-                            local spot = head.Position + d * FRONT + Vector3.new(0, UP, 0)
-                            if not workspace:Raycast(spot, head.Position - spot, rayP) then
-                                dirPick = d; break   -- มุมนี้มองเห็นหัวมันโล่ง
-                            end
-                        end
-                        dirPick = dirPick or head.CFrame.LookVector   -- บังหมดทุกมุม = ใช้หน้าตรงไปก่อน
+                local function flyTo(dest)   -- ก้าวกลางอากาศสั้นๆ ทุกเฟรม (ไม่ใช้ tpTo — tpTo รอลงพื้นก่อนถึงยอมวาป)
+                    local r = hrp()
+                    local t0 = os.clock()
+                    while r and dest and HIDER_ON and _G.AH74_GEN == MYGEN and os.clock() - t0 < 10 do
+                        local d = dest - r.Position
+                        if d.Magnitude < 2 then break end
+                        r.CFrame = r.CFrame + d.Unit * math.min(3, d.Magnitude)   -- ~180 studs/s
+                        r.AssemblyLinearVelocity = Vector3.zero
+                        task.wait(); r = hrp()
                     end
-                    local spot = head.Position + dirPick * FRONT + Vector3.new(0, UP, 0)
-                    r.CFrame = CFrame.lookAt(spot, head.Position)
-                    r.AssemblyLinearVelocity = Vector3.zero
-                    task.wait(); r = hrp()   -- v5.35: อัปเดตทุกเฟรม (เดิม 0.1s มีช่องให้ฟิสิกส์ดึง = กระตุก)
                 end
-                aconn:Disconnect(); dconn:Disconnect()
-                if seen then
-                    HIDER_DONE[hider] = true
-                    setStatus("Hider เห็นเราแล้ว — ไปต่อ")
+                local function nextHider()
+                    local me3 = hrp() and hrp().Position
+                    if not me3 then return nil end
+                    local best, bd
+                    for _, m2 in ipairs(npcs:GetChildren()) do
+                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not HIDER_DONE[m2] then
+                            local p2 = partPos(m2)
+                            local d2 = p2 and (p2 - me3).Magnitude
+                            if d2 and d2 < 200 and (not bd or d2 < bd) then best, bd = m2, d2 end
+                        end
+                    end
+                    return best
+                end
+                local function anomalyNear(dist)   -- มี Anomaly (เห็นแล้วก็นับ) ใกล้เราไหม — ใกล้ = ห้ามลงพื้น
+                    local me3 = hrp() and hrp().Position
+                    if not me3 then return false end
+                    for _, m2 in ipairs(npcs:GetChildren()) do
+                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") then
+                            local p2 = partPos(m2)
+                            if p2 and (p2 - me3).Magnitude < dist then return true end
+                        end
+                    end
+                    return false
+                end
+                while HIDER_ON and _G.AH74_GEN == MYGEN do
+                    if hider and hider.Parent and hider:GetAttribute("Anomaly") then
+                        setStatus("ลอยหน้า Hider")
+                        local h0 = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                        if h0 then flyTo(h0.Position + h0.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)) end
+                        -- spy ฝังใน + สัญญาณ "มันเห็นเราแล้ว" = OriginalFace เปลี่ยน (พิสูจน์แล้ว)
+                        local seen = false
+                        local aconn = hider.AttributeChanged:Connect(function(a)
+                            local v = tostring(hider:GetAttribute(a))
+                            print("[AH74 HiderAttr] " .. a .. " = " .. v)
+                            if a == "OriginalFace" then seen = true end
+                        end)
+                        -- เลือกมุมไม่มีกำแพงบัง: หน้าตรงก่อน เบี่ยงทีละ 45°
+                        local rayP = RaycastParams.new()
+                        rayP.FilterType = Enum.RaycastFilterType.Exclude
+                        rayP.FilterDescendantsInstances = { hider, LP.Character }
+                        local lastPick, dirPick = 0, nil
+                        local r = hrp()
+                        while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
+                              and hider:GetAttribute("Anomaly") and not seen do
+                            local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                            if not head then break end
+                            if os.clock() - lastPick > 0.5 then   -- raycast แพง — เลือกมุมใหม่ทุก 0.5s พอ
+                                lastPick = os.clock(); dirPick = nil
+                                local lv = head.CFrame.LookVector
+                                for i = 0, 7 do
+                                    local ang = (i % 2 == 0 and 1 or -1) * math.ceil(i / 2) * math.pi / 4
+                                    local d = Vector3.new(lv.X * math.cos(ang) - lv.Z * math.sin(ang), 0,
+                                                          lv.X * math.sin(ang) + lv.Z * math.cos(ang))
+                                    local spot = head.Position + d * FRONT + Vector3.new(0, UP, 0)
+                                    if not workspace:Raycast(spot, head.Position - spot, rayP) then
+                                        dirPick = d; break
+                                    end
+                                end
+                                dirPick = dirPick or head.CFrame.LookVector
+                            end
+                            local spot = head.Position + dirPick * FRONT + Vector3.new(0, UP, 0)
+                            r.CFrame = CFrame.lookAt(spot, head.Position)
+                            r.AssemblyLinearVelocity = Vector3.zero
+                            task.wait(); r = hrp()
+                        end
+                        aconn:Disconnect()
+                        if seen then
+                            HIDER_DONE[hider] = true
+                            setStatus("Hider เห็นเราแล้ว → ตัวถัดไป")
+                        end
+                    end
+                    hider = nextHider()
+                    if not hider then
+                        -- ทุกตัวเห็นเราแล้ว — ยังอยู่ใกล้ = ลอยนิ่งกลางอากาศรอมันออกจากแมพ (ห้ามลงพื้น)
+                        if not anomalyNear(60) then break end
+                        setStatus("ลอยรอ Hider ออกจากแมพ")
+                        local holdR = hrp()
+                        local holdPos = holdR and holdR.Position
+                        local t1 = os.clock()
+                        while holdPos and HIDER_ON and _G.AH74_GEN == MYGEN and os.clock() - t1 < 2 do
+                            local r2 = hrp()
+                            if not r2 then break end
+                            r2.CFrame = CFrame.new(holdPos) * (r2.CFrame - r2.CFrame.Position)
+                            r2.AssemblyLinearVelocity = Vector3.zero
+                            task.wait()
+                        end
+                        hider = nextHider()   -- เผื่อตัวใหม่ spawn ระหว่างรอ
+                    end
                 end
                 WORKING = false
             end
