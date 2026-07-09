@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.28 ลบ dead code ~45 บรรทัด — พฤติกรรมเดิมทุกอย่าง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.29 ลดดีเลย์ชุดสุดท้าย: ทิ้งยา/prompt timeout/Room8 รอบจ่าย/อุ้ม/Help)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -168,7 +168,7 @@ local function pressPrompt(pp, done)
         pp.HoldDuration = hold
     end
     local t0 = os.clock()
-    repeat task.wait(0.05) until done() or os.clock() - t0 > 0.5
+    repeat task.wait(0.05) until done() or os.clock() - t0 > 0.35   -- v5.29: เดิม 0.5 — สเต็ปจริงตอบใน ~0.2s
     return done()
 end
 
@@ -368,9 +368,9 @@ local function discardTool(tool)
     local h = hum()
     local tp = trashPrompt()
     if not (h and tp and tp.Parent) then return end
-    pcall(function() h:EquipTool(tool) end); task.wait(0.15)
-    tpTo(partPos(tp.Parent)); task.wait(0.2)
-    pressPrompt(tp); task.wait(0.2)
+    pcall(function() h:EquipTool(tool) end); task.wait(0.1)     -- v5.29: 0.15→0.1
+    tpTo(partPos(tp.Parent)); task.wait(0.15)                   -- v5.29: 0.2→0.15
+    pressPrompt(tp); task.wait(0.1)                             -- v5.29: 0.2→0.1
 end
 -- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
 local function cleanInventory(needed)
@@ -1057,13 +1057,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.28", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.29", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.28 " .. lastStatus end
+    if not deadLock then title.Text = "v5.29 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1345,7 +1345,7 @@ task.spawn(function()
                         WORKING = true
                         pcall(treatRoom, target)
                         WORKING = false
-                        task.wait(0.2)
+                        task.wait(0.1)   -- v5.29: เดิม 0.2 — Room8 จ่ายรัว 40 รอบ ประหยัดสะสม
                     end
                 else
                     -- v4.97: โชว์ว่าห้องไหนโดนข้ามเพราะอะไร (ไกล/ผี/จบ/ไม่มีปุ่ม) — ไม่มีคนไข้เลย = ว่างจริง
@@ -1699,7 +1699,7 @@ task.spawn(function()
                 for _ = 1, 8 do   -- ผู้ใช้บอก ~4 รอบ — เผื่อ 8 (prompt ดับเองเมื่อหลุด)
                     if not (hp.Parent and hp.Enabled) then break end
                     pressPrompt(hp)
-                    task.wait(0.25)
+                    task.wait(0.15)   -- v5.29: เดิม 0.25 — สแปม Help ถี่ขึ้น
                 end
             end
         end
@@ -1752,7 +1752,7 @@ task.spawn(function()
                             setStatus("อุ้ม " .. m.Name)
                             tpTo(partPos(m)); task.wait(0.15)
                             pressPrompt(carryPP)
-                            task.wait(0.3)
+                            task.wait(0.15)   -- v5.29: เดิม 0.3 — เช็คอุ้มติดมือจริงอยู่แล้ว
                         end
                         -- พาไปห้องที่เขาต้องไป
                         local roomName = m:GetAttribute("DesignatedRoom")
