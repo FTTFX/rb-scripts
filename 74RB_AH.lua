@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.41 spy จับของงอกในตัว Hider + ตัวกวาดขยะตารางจำทุก 60s กันแรมบวม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.42 Hider เห็นเราแล้ว (OriginalFace เปลี่ยน) = จบตัวนี้ ไปตัวถัดไปทันที)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -572,11 +572,12 @@ local function ghostToShoot(m)
     return not h or h.Health > 0   -- ยังไม่ตาย
 end
 local SHOT_AT = {}   -- v5.40: [ผี]=os.clock()/huge — แชร์ระหว่าง loop ยิงกับ gunPending
+local HIDER_DONE = {}   -- v5.42: [Hider]=true มันเห็นเราแล้ว (OriginalFace เปลี่ยน) — จบตัวนี้ ไปตัวถัดไป
 -- v5.41: ตัวกวาดขยะ — ตารางจำทั้งหมด key เป็น instance ที่ตาย/หายไปแล้ว = ลบทิ้ง (เล่นยาวๆ แรมไม่บวม)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         task.wait(60)
-        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL }) do
+        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE }) do
             for k in pairs(t) do
                 if typeof(k) == "Instance" and not k.Parent then t[k] = nil end
             end
@@ -605,7 +606,7 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
     local me = hrp() and hrp().Position
     if not (npcs and me) then return false end
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and m:GetAttribute("Anomaly") then
+        if m:IsA("Model") and m:GetAttribute("Anomaly") and not HIDER_DONE[m] then   -- v5.42: เห็นเราแล้ว=จบ
             local p = partPos(m)
             if p and (p - me).Magnitude < 200 then return true end
         end
@@ -1095,13 +1096,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.41", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.42", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.41 " .. lastStatus end
+    if not deadLock then title.Text = "v5.42 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1740,7 +1741,7 @@ task.spawn(function()
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs and me2 then
                 for _, m2 in ipairs(npcs:GetChildren()) do
-                    if m2:IsA("Model") and m2:GetAttribute("Anomaly") then
+                    if m2:IsA("Model") and m2:GetAttribute("Anomaly") and not HIDER_DONE[m2] then
                         local p2 = partPos(m2)
                         local d2 = p2 and (p2 - me2).Magnitude
                         if d2 and d2 < 200 and (not hd or d2 < hd) then hider, hd = m2, d2 end
@@ -1759,10 +1760,13 @@ task.spawn(function()
                 --        WORKING=true กันทุก loop (ไฟ/อุ้ม/รักษา) แทรกดึงตัวเราออกจากหน้ามัน
                 WORKING = true
                 -- v5.40: spy ฝังใน — ผู้ใช้จะเทส "ตอนมันเห็นเรา" attr ไหนเปลี่ยนจะ print+โชว์บนหัว GUI
+                -- v5.42: มันเห็นเราแล้ว (OriginalFace เปลี่ยน = เกมสลับหน้า "!!") → จบตัวนี้ ไปต่อ
+                local seen = false
                 local aconn = hider.AttributeChanged:Connect(function(a)
                     local v = tostring(hider:GetAttribute(a))
                     print("[AH74 HiderAttr] " .. a .. " = " .. v)
                     setStatus("HiderAttr " .. a .. "=" .. v)
+                    if a == "OriginalFace" then seen = true end
                 end)
                 -- v5.41: "!!" ที่โผล่หัวมันไม่ใช่ attr — จับ "ของงอกในตัวมัน" แทน (Billboard/Effect)
                 local dconn = hider.DescendantAdded:Connect(function(d)
@@ -1776,7 +1780,7 @@ task.spawn(function()
                 local lastPick, dirPick = 0, nil
                 local r = hrp()
                 while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
-                      and hider:GetAttribute("Anomaly") do
+                      and hider:GetAttribute("Anomaly") and not seen do
                     local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                     if not head then break end
                     if os.clock() - lastPick > 0.5 then   -- raycast แพง — เลือกมุมใหม่ทุก 0.5s พอ
@@ -1799,6 +1803,10 @@ task.spawn(function()
                     task.wait(); r = hrp()   -- v5.35: อัปเดตทุกเฟรม (เดิม 0.1s มีช่องให้ฟิสิกส์ดึง = กระตุก)
                 end
                 aconn:Disconnect(); dconn:Disconnect()
+                if seen then
+                    HIDER_DONE[hider] = true
+                    setStatus("Hider เห็นเราแล้ว — ไปต่อ")
+                end
                 WORKING = false
             end
         end
