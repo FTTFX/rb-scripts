@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.35 สลับ Hider มาก่อนเช็คอิน + ลอยไกล/สูงขึ้น 4.5/3.5 + ตามทุกเฟรมหายกระตุก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.36 ปุ่ม Hider แยกเอง + ESP/NOCLIP/วาป เปิดตลอดถอดปุ่มออก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -31,8 +31,10 @@ local function bind(s, f) CONNS[#CONNS+1] = s:Connect(f) end
 pcall(function() ((gethui and gethui()) or LP.PlayerGui):FindFirstChild("AH74GUI"):Destroy() end)
 
 -- ===== State =====
-local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, false, false, false
-local TP_ON = true       -- true=วาป, false=เดิน (pathfinding)
+local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, true, false, false
+-- v5.36: ESP+NOCLIP เปิดตลอด ไม่มีปุ่มแล้ว (ผู้ใช้สั่ง) | TP_ON=วาปตลอด (ปุ่มเดินถอดออก ไม่ได้ใช้)
+local TP_ON = true
+local HIDER_ON = false   -- v5.36: งาน Hider แยกปุ่มเอง (เดิมพ่วงเช็คอิน — ผู้ใช้บอกเป็นเรื่องเป็นตาย)
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
@@ -585,7 +587,7 @@ end
 -- v5.34: ตารางลำดับงาน "ที่เดียว" (ผู้ใช้สั่ง — เดิม gate เขียนมือกระจาย 6 loop ลำดับหลุดกันเอง)
 -- ลำดับ: 1 อุ้ม > 2 ไฟ/สไลม์ > 3 ยิงผี > 4 ช่วยคนโดนจับ > 5 รักษา > 6 Hider > 7 เช็คอิน (v5.35 ผู้ใช้สลับ)
 local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระยะ 200 ไหม
-    if not CHECKIN_ON then return false end
+    if not HIDER_ON then return false end   -- v5.36: ปุ่มแยกเอง
     local npcs = workspace:FindFirstChild("NPCs")
     local me = hrp() and hrp().Position
     if not (npcs and me) then return false end
@@ -1068,7 +1070,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 226   -- v4.43: ยุบเหลือ 5 แถว + CLOSE (รวมปุ่มแล้ว)
+local FULL_H = 194   -- v5.36: เหลือ 4 แถว + CLOSE (ถอด ESP/NOCLIP/ไปของ)
 local f = Instance.new("Frame", gui)
 f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
@@ -1080,13 +1082,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.35", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.36", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.35 " .. lastStatus end
+    if not deadLock then title.Text = "v5.36 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1139,17 +1141,8 @@ local function btn(txt, x, y, w, h, col)
     return b
 end
 
-local espB = btn("ESP: ON", 8, 66, 86, 30, Color3.fromRGB(40,150,70))
-espB.MouseButton1Click:Connect(function()
-    ESP_ON = not ESP_ON
-    espB.Text = "ESP: " .. (ESP_ON and "ON" or "OFF")
-    espB.BackgroundColor3 = ESP_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-    if not ESP_ON then
-        for m, e in pairs(ESP) do pcall(function() e:Destroy() end); ESP[m] = nil end
-    end
-end)
-
-local runB = btn("RUN: OFF", 98, 66, 86, 30)
+-- v5.36: ปุ่ม ESP/NOCLIP/ไปของ ถอดออก — ESP+NOCLIP+วาป เปิดตลอด (ผู้ใช้สั่ง)
+local runB = btn("RUN: OFF", 8, 66, 86, 30)
 runB.MouseButton1Click:Connect(function()
     RUN_ON = not RUN_ON
     runB.Text = "RUN: " .. (RUN_ON and "ON" or "OFF")
@@ -1157,25 +1150,12 @@ runB.MouseButton1Click:Connect(function()
     if not RUN_ON then local h = hum(); if h then h.WalkSpeed = 16 end end
 end)
 
-local spdL = btn(tostring(SPEED), 98, 162, 34, 30); spdL.Active = false
-btn("−", 134, 162, 24, 30).MouseButton1Click:Connect(function()
+local spdL = btn(tostring(SPEED), 98, 130, 34, 30); spdL.Active = false
+btn("−", 134, 130, 24, 30).MouseButton1Click:Connect(function()
     SPEED = math.max(16, SPEED - 10); spdL.Text = tostring(SPEED)
 end)
-btn("+", 160, 162, 24, 30).MouseButton1Click:Connect(function()
+btn("+", 160, 130, 24, 30).MouseButton1Click:Connect(function()
     SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
-end)
-
-local clipB = btn("NOCLIP: OFF", 8, 98, 86, 30)
-clipB.MouseButton1Click:Connect(function()
-    NOCLIP_ON = not NOCLIP_ON
-    clipB.Text = "NOCLIP: " .. (NOCLIP_ON and "ON" or "OFF")
-    clipB.BackgroundColor3 = NOCLIP_ON and Color3.fromRGB(150,40,150) or Color3.fromRGB(45,45,58)
-    if not NOCLIP_ON then
-        local c = LP.Character
-        if c then for _, p in ipairs(c:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = true end
-        end end
-    end
 end)
 
 -- v4.43: ปุ่มรักษา = รวม ทำเครื่อง+ตีตัว(whack)+สี R6 ในปุ่มเดียว (แถวบนสุด)
@@ -1741,7 +1721,7 @@ task.spawn(function()
         end
         -- v5.27: เกาะหัว Hider ย้ายมาหมวดเช็คอิน (ผู้ใช้สั่ง — คนเช็คอินวาปไปทำได้) + ระยะทั้งแมพ 200
         -- v5.35: Hider อันดับ 6 มาก่อนเช็คอิน (ผู้ใช้สลับ) — ไฟ/อุ้ม/รักษายังมาก่อน Hider
-        if CHECKIN_ON and fp and not WORKING and not busyBefore(6) then
+        if HIDER_ON and fp and not WORKING and not busyBefore(6) then
             local me2 = hrp() and hrp().Position
             local hider, hd
             local npcs = workspace:FindFirstChild("NPCs")
@@ -1764,7 +1744,7 @@ task.spawn(function()
                 local FRONT, UP = 4.5, 3.5   -- v5.35: ถอยห่าง+ลอยสูงขึ้น (ผู้ใช้เจอโดนตีเกือบตาย)
                 local t0, lastChk = os.clock(), 0
                 local r = hrp()
-                while r and hider.Parent and CHECKIN_ON and _G.AH74_GEN == MYGEN
+                while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
                       and os.clock() - t0 < 8 do
                     -- v5.34: มีงานจริงโผล่ = เด้งออก (เช็คทุก 0.25s พอ — busyBefore สแกนแมพ หนักเกินจะทำทุกเฟรม)
                     if os.clock() - lastChk > 0.25 then
@@ -1886,18 +1866,19 @@ task.spawn(function()
     end
 end)
 
-local killB = btn("ฆ่าผี: OFF", 98, 98, 86, 30)
+local killB = btn("ฆ่าผี: OFF", 98, 66, 86, 30)
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
     killB.Text = "ฆ่าผี: " .. (KILLGHOST_ON and "ON" or "OFF")
     killB.BackgroundColor3 = KILLGHOST_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(45,45,58)
 end)
 
-local moveB = btn("ไปของ: วาป", 8, 130, 86, 30, Color3.fromRGB(55,35,80))
-moveB.MouseButton1Click:Connect(function()
-    TP_ON = not TP_ON
-    moveB.Text = "ไปของ: " .. (TP_ON and "วาป" or "เดิน")
-    moveB.BackgroundColor3 = TP_ON and Color3.fromRGB(55,35,80) or Color3.fromRGB(35,70,55)
+-- v5.36: ปุ่ม Hider แทนที่ "ไปของ" — งานความเป็นความตาย แยกเปิด/ปิดเอง
+local hiderB = btn("Hider: OFF", 8, 98, 86, 30, Color3.fromRGB(120,50,160))
+hiderB.MouseButton1Click:Connect(function()
+    HIDER_ON = not HIDER_ON
+    hiderB.Text = "Hider: " .. (HIDER_ON and "ON" or "OFF")
+    hiderB.BackgroundColor3 = HIDER_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,50,160)
 end)
 
 -- (v4.43: ทำเครื่อง/ตีตัว/สี R6 รวมเข้าปุ่ม "รักษา" แล้ว — ไม่มีปุ่มแยก)
@@ -1910,14 +1891,14 @@ ciB.MouseButton1Click:Connect(function()
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local fireB = btn("ดับไฟ: OFF", 98, 130, 86, 30, Color3.fromRGB(120,60,30))
+local fireB = btn("ดับไฟ: OFF", 98, 98, 86, 30, Color3.fromRGB(120,60,30))
 fireB.MouseButton1Click:Connect(function()
     FIRE_ON = not FIRE_ON
     fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local npcfB = btn("ยิงผี: OFF", 8, 162, 86, 30, Color3.fromRGB(60,60,80))
+local npcfB = btn("ยิงผี: OFF", 8, 130, 86, 30, Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
     GUNKILL_ON = not GUNKILL_ON
     npcfB.Text = "ยิงผี: " .. (GUNKILL_ON and "ON" or "OFF")
@@ -1925,9 +1906,9 @@ npcfB.MouseButton1Click:Connect(function()
     if GUNKILL_ON and not fp then npcfB.Text = "ไม่มี fp!" end
 end)
 
-btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON =
-        false, false, false, false, false, false, false, false, false, false, false
+btn("CLOSE", 8, 162, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
