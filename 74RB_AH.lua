@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.26 Room8 อันดับ1 เกาะจนจบ + เกาะหัว Hider + สแปม E ตอนโดนจับ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.27 เกาะหัว Hider ย้ายไปหมวดเช็คอิน + สแกนทั้งแมพ 200)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1101,13 +1101,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.26", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.27", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.26 " .. lastStatus end
+    if not deadLock then title.Text = "v5.27 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1745,32 +1745,37 @@ task.spawn(function()
                     pressPrompt(hp, nil, true)
                     task.wait(0.25)
                 end
-            elseif not TREAT_BUSY then
-                -- v5.26: Hider (Anomaly) เข้าใกล้ + เราว่างงาน → เกาะบนหัวมัน +3 studs (มันจับเราไม่ได้)
-                local hider, hd
-                local npcs = workspace:FindFirstChild("NPCs")
-                if npcs and me then
-                    for _, m2 in ipairs(npcs:GetChildren()) do
-                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") then
-                            local p2 = partPos(m2)
-                            local d2 = p2 and (p2 - me).Magnitude
-                            if d2 and d2 < 30 and (not hd or d2 < hd) then hider, hd = m2, d2 end
-                        end
+            end
+        end
+        -- v5.27: เกาะหัว Hider ย้ายมาหมวดเช็คอิน (ผู้ใช้สั่ง — คนเช็คอินวาปไปทำได้) + ระยะทั้งแมพ 200
+        if CHECKIN_ON and fp and not WORKING and not CARRYING and not TREAT_BUSY then
+            local me2 = hrp() and hrp().Position
+            local hider, hd
+            local npcs = workspace:FindFirstChild("NPCs")
+            if npcs and me2 then
+                for _, m2 in ipairs(npcs:GetChildren()) do
+                    if m2:IsA("Model") and m2:GetAttribute("Anomaly") then
+                        local p2 = partPos(m2)
+                        local d2 = p2 and (p2 - me2).Magnitude
+                        if d2 and d2 < 200 and (not hd or d2 < hd) then hider, hd = m2, d2 end
                     end
                 end
-                if hider then
-                    setStatus("เกาะหัว Hider")
-                    local t0 = os.clock()
-                    local r = hrp()
-                    -- ตามหัวมันแบบก้าวสั้นๆ (ระยะประชิด — ไม่ใช่วาปไกล) สูงสุด 8s แล้วเช็คงานใหม่
-                    while r and hider.Parent and FIRE_ON and _G.AH74_GEN == MYGEN
-                          and not TREAT_BUSY and not CARRYING and os.clock() - t0 < 8 do
-                        local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
-                        if not head then break end
-                        r.CFrame = CFrame.new(head.Position + Vector3.new(0, 3, 0))
-                        r.AssemblyLinearVelocity = Vector3.zero
-                        task.wait(0.1); r = hrp()
-                    end
+            end
+            if hider then
+                setStatus("เกาะหัว Hider")
+                -- ไกล → สไลด์เข้าไปใกล้ก่อน (ระบบปกติ ปลอดภัย) แล้วค่อยขึ้นหัว
+                local hp0 = partPos(hider)
+                if hp0 and me2 and (hp0 - me2).Magnitude > 15 then tpTo(hp0 + Vector3.new(0, 0, 8)) end
+                local t0 = os.clock()
+                local r = hrp()
+                -- ตามหัวมันแบบก้าวสั้นๆ (ระยะประชิด — ไม่ใช่วาปไกล) สูงสุด 8s แล้วเช็คงานใหม่
+                while r and hider.Parent and CHECKIN_ON and _G.AH74_GEN == MYGEN
+                      and not TREAT_BUSY and not CARRYING and os.clock() - t0 < 8 do
+                    local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                    if not head then break end
+                    r.CFrame = CFrame.new(head.Position + Vector3.new(0, 3, 0))
+                    r.AssemblyLinearVelocity = Vector3.zero
+                    task.wait(0.1); r = hrp()
                 end
             end
         end
