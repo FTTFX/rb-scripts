@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.39 Hider: หน้ามัน 8 studs สูง 5)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.40 Hider เลี่ยงกำแพง 8 มุม + spy attr ฝังใน + ยิงผีเสร็จไปต่อทันที)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -571,13 +571,15 @@ local function ghostToShoot(m)
     local h = m:FindFirstChildOfClass("Humanoid")
     return not h or h.Health > 0   -- ยังไม่ตาย
 end
+local SHOT_AT = {}   -- v5.40: [ผี]=os.clock()/huge — แชร์ระหว่าง loop ยิงกับ gunPending
 local function gunPending()
     if not GUNKILL_ON then return false end
     local npcs = workspace:FindFirstChild("NPCs")
     local me = hrp() and hrp().Position
     if not (npcs and me) then return false end
     for _, m in ipairs(npcs:GetChildren()) do
-        if ghostToShoot(m) then
+        -- v5.40: ยิงไปแล้ว = ไม่นับเป็นงานค้าง (ragdoll ค้างหลายวิ เดิมบล็อคงานอื่นฟรี — ผู้ใช้สั่งยิงเสร็จไปต่อเลย)
+        if ghostToShoot(m) and not SHOT_AT[m] then
             local p = partPos(m)
             if p and (p - me).Magnitude < 200 then return true end
         end
@@ -1082,13 +1084,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.39", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.40", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.39 " .. lastStatus end
+    if not deadLock then title.Text = "v5.40 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1230,7 +1232,7 @@ local function clearShotSpot(m, head)
 end
 -- v5.18: วาร์ปไปยิงผี — ระบบสไลด์ปกติ (Y-lock) + equip + ยิง 1 นัด/ตัว + จำว่ายิงแล้ว (กระสุนจำกัด)
 task.spawn(function()
-    local shotAt = {}   -- ยิงแล้วพัก 3s/ตัว (เผื่อนัดหลุด) — เช็ค Humanoid ตายก่อนยิงซ้ำ
+    local shotAt = SHOT_AT   -- v5.40: แชร์กับ gunPending (ยิงแล้วไม่บล็อคงานอื่น)
     while _G.AH74_GEN == MYGEN do
         if GUNKILL_ON and not WORKING and not busyBefore(3) then
             local re = findShootRE()
@@ -1745,17 +1747,42 @@ task.spawn(function()
                 -- v5.37: "ล็อกการบิน" จนกว่า Hider หาย (ผู้ใช้สั่ง — เดิมหลุดไปทำงานอื่นกลางคัน = ร่วงพื้นโดนตี)
                 --        WORKING=true กันทุก loop (ไฟ/อุ้ม/รักษา) แทรกดึงตัวเราออกจากหน้ามัน
                 WORKING = true
+                -- v5.40: spy ฝังใน — ผู้ใช้จะเทส "ตอนมันเห็นเรา" attr ไหนเปลี่ยนจะ print+โชว์บนหัว GUI
+                local aconn = hider.AttributeChanged:Connect(function(a)
+                    local v = tostring(hider:GetAttribute(a))
+                    print("[AH74 HiderAttr] " .. a .. " = " .. v)
+                    setStatus("HiderAttr " .. a .. "=" .. v)
+                end)
+                -- v5.40: เลือกมุมที่ "ไม่มีกำแพงบัง" — หน้าตรงก่อน แล้วเบี่ยงทีละ 45° (ผู้ใช้เจอลอยหลังกำแพง)
+                local rayP = RaycastParams.new()
+                rayP.FilterType = Enum.RaycastFilterType.Exclude
+                rayP.FilterDescendantsInstances = { hider, LP.Character }
+                local lastPick, dirPick = 0, nil
                 local r = hrp()
                 while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
                       and hider:GetAttribute("Anomaly") do
                     local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                     if not head then break end
-                    -- ลอยหน้ามันตามทิศที่มันหัน + หันหน้าเข้าหามัน (ให้มันเห็นเราเต็มๆ)
-                    local spot = head.Position + head.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)
+                    if os.clock() - lastPick > 0.5 then   -- raycast แพง — เลือกมุมใหม่ทุก 0.5s พอ
+                        lastPick = os.clock(); dirPick = nil
+                        local lv = head.CFrame.LookVector
+                        for i = 0, 7 do
+                            local ang = (i % 2 == 0 and 1 or -1) * math.ceil(i / 2) * math.pi / 4  -- 0,+45,-45,+90,...
+                            local d = Vector3.new(lv.X * math.cos(ang) - lv.Z * math.sin(ang), 0,
+                                                  lv.X * math.sin(ang) + lv.Z * math.cos(ang))
+                            local spot = head.Position + d * FRONT + Vector3.new(0, UP, 0)
+                            if not workspace:Raycast(spot, head.Position - spot, rayP) then
+                                dirPick = d; break   -- มุมนี้มองเห็นหัวมันโล่ง
+                            end
+                        end
+                        dirPick = dirPick or head.CFrame.LookVector   -- บังหมดทุกมุม = ใช้หน้าตรงไปก่อน
+                    end
+                    local spot = head.Position + dirPick * FRONT + Vector3.new(0, UP, 0)
                     r.CFrame = CFrame.lookAt(spot, head.Position)
                     r.AssemblyLinearVelocity = Vector3.zero
                     task.wait(); r = hrp()   -- v5.35: อัปเดตทุกเฟรม (เดิม 0.1s มีช่องให้ฟิสิกส์ดึง = กระตุก)
                 end
+                aconn:Disconnect()
                 WORKING = false
             end
         end
