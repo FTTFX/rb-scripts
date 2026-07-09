@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.32 จ่ายยาผิดฆ่าผี = ประชิดเตียงผีได้ ไม่โดนดันถอย 12 studs)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.33 Hider: ย้ายจากบนหัว → ลอยหน้ามัน 3 studs สูง 2.5 ให้มันมองเห็น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1057,13 +1057,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.32", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.33", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.32 " .. lastStatus end
+    if not deadLock then title.Text = "v5.33 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1731,18 +1731,22 @@ task.spawn(function()
                 end
             end
             if hider then
-                setStatus("เกาะหัว Hider")
-                -- ไกล → สไลด์เข้าไปใกล้ก่อน (ระบบปกติ ปลอดภัย) แล้วค่อยขึ้นหัว
+                setStatus("ลอยหน้า Hider")
+                -- ไกล → สไลด์เข้าไปใกล้ก่อน (ระบบปกติ ปลอดภัย) แล้วค่อยเข้าประจำหน้ามัน
                 local hp0 = partPos(hider)
                 if hp0 and me2 and (hp0 - me2).Magnitude > 15 then tpTo(hp0 + Vector3.new(0, 0, 8)) end
+                -- v5.33: บนหัวมันมองไม่เห็นเรา (ผู้ใช้เทส) — ต้องอยู่ "ข้างหน้า" ให้มันเห็นค้าง 2-3s
+                -- ponytail: ค่าจูนจากสนาม — FRONT ระยะหน้ามัน / UP ความสูงกันมันตีถึง ปรับได้
+                local FRONT, UP = 3, 2.5
                 local t0 = os.clock()
                 local r = hrp()
-                -- ตามหัวมันแบบก้าวสั้นๆ (ระยะประชิด — ไม่ใช่วาปไกล) สูงสุด 8s แล้วเช็คงานใหม่
                 while r and hider.Parent and CHECKIN_ON and _G.AH74_GEN == MYGEN
                       and not TREAT_BUSY and not CARRYING and os.clock() - t0 < 8 do
                     local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                     if not head then break end
-                    r.CFrame = CFrame.new(head.Position + Vector3.new(0, 3, 0))
+                    -- ลอยหน้ามันตามทิศที่มันหัน + หันหน้าเข้าหามัน (ให้มันเห็นเราเต็มๆ)
+                    local spot = head.Position + head.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)
+                    r.CFrame = CFrame.lookAt(spot, head.Position)
                     r.AssemblyLinearVelocity = Vector3.zero
                     task.wait(0.1); r = hrp()
                 end
