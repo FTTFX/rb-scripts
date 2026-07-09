@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.30 ไฟ/สไลม์เอื้อมไม่ถึง → วนหามุม 8 ทิศ + ยืนใกล้ขึ้น 6 studs + พักสั้นลง 20s)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.31 ระยะยืนแยกชนิด: ไฟ 10 / สไลม์ 4 studs)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1057,13 +1057,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.30", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.31", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.30 " .. lastStatus end
+    if not deadLock then title.Text = "v5.31 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1628,16 +1628,17 @@ task.spawn(function()
                         local from = hrp() and hrp().Position
                         local ok = false
                         if pos then
-                            -- v5.30: ยืนใกล้ขึ้น 6 studs (เดิม 8 — ผู้ใช้ขอ +2 ใกล้ขึ้น) ฝั่งที่เรามา
+                            -- v5.31: ระยะยืนตามชนิด (ผู้ใช้จูน) — ไฟ 10 (ไม่เหยียบไฟ), สไลม์ 4 (ประชิด)
+                            local gap = d.ActionText == "Clean Slime" and 4 or 10
                             local dir = from and (from - pos).Magnitude > 1 and (from - pos).Unit or Vector3.new(1, 0, 0)
-                            tpTo(pos + dir * 6); task.wait(0.15)
+                            tpTo(pos + dir * gap); task.wait(0.15)
                             ok = pressPrompt(d)
                             -- v5.30: กดไม่ติด → วนหามุมรอบเป้า 8 ทิศ (ผู้ใช้ขอ — สไลม์หลังกำแพง/มุมอับ)
                             if not ok then
                                 for i = 0, 7 do
                                     if not (d.Parent and d.Enabled) then ok = true; break end
                                     local ang = i * math.pi / 4
-                                    tpTo(pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * 6)
+                                    tpTo(pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap)
                                     task.wait(0.15)
                                     if pressPrompt(d) then ok = true; break end
                                 end
