@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.56 กาแฟฉุกเฉิน: Sanity<50% กินทันที ชนะทุกงาน + ไม่มีก็บินไปหยิบด่วน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.57 จิบกาแฟมีจังหวะ: 3 จิบ/แก้ว รอคูลดาวน์ เช็คติดจริงจาก Sanity ขยับ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1123,13 +1123,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.56", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.57", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.56 " .. lastStatus end
+    if not deadLock then title.Text = "v5.57 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1970,15 +1970,25 @@ local function sanityPct()
     return (t and tonumber((t.Text:gsub("%%", "")))) or 100
 end
 -- v5.56: กาแฟฉุกเฉิน — Sanity < 50% = กินทันที "ชนะทุกงานรวม Room8" (ผู้ใช้สั่ง) ; กิน = Activate (คลิก)
+-- v5.57: แก้วละ 3 จิบ จิบละ ~5% + มีคูลดาวน์ระหว่างจิบ (ผู้ใช้บอก) — จิบแบบมีจังหวะ เช็คว่าติดจริงจาก Sanity ขยับ
 task.spawn(function()
+    local lastSip = 0
     while _G.AH74_GEN == MYGEN do
         if COFFEE_ON and sanityPct() < 50 then
             if heldCount("Coffee") > 0 then
-                setStatus("ฉุกเฉิน! กินกาแฟ (Sanity " .. sanityPct() .. "%)")
-                if selectTool("Coffee") then
-                    local tool = LP.Character and LP.Character:FindFirstChild("Coffee")
-                    if tool then pcall(function() tool:Activate() end) end
-                    task.wait(1)   -- รอเกมประมวลผลก่อนเช็ค/กินซ้ำ
+                if os.clock() - lastSip > 4 then   -- เว้นจังหวะรอคูลดาวน์จิบ
+                    setStatus("ฉุกเฉิน! จิบกาแฟ (Sanity " .. sanityPct() .. "%)")
+                    if selectTool("Coffee") then
+                        local before = sanityPct()
+                        local tool = LP.Character and LP.Character:FindFirstChild("Coffee")
+                        if tool then pcall(function() tool:Activate() end) end
+                        task.wait(1)
+                        if sanityPct() > before then
+                            lastSip = os.clock()          -- จิบติด → รอคูลดาวน์เต็ม
+                        else
+                            lastSip = os.clock() - 2      -- ยังคูลดาวน์อยู่ → ลองใหม่ใน ~2s
+                        end
+                    end
                 end
             else
                 local cpp = coffeeReadyPP()   -- ไม่มีติดตัว → บินไปหยิบด่วน (เครื่องต้องพร้อม)
