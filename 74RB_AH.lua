@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.48 ผีใต้เตียง: น้ำเชื่อมรอบเดียว ประชิด 2 studs หามุม 8 ทิศ น้ำเชื่อมหาย=จบ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.49 ปุ่มซื้อของ: auto กด Buy ทุกช่องร้านค้าตอนว่างงาน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -37,6 +37,7 @@ local TP_ON = true
 local HIDER_ON = false   -- v5.36: งาน Hider แยกปุ่มเอง (เดิมพ่วงเช็คอิน — ผู้ใช้บอกเป็นเรื่องเป็นตาย)
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอท — คนละโซนไม่แย่งจ่ายยาห้องเดียวกัน) ; เล่นเดี่ยวเปิดทั้งคู่
 local ROOMS_MED, ROOMS_EM = true, true   -- Medical 1-5 / Emergency 6-8
+local SHOP_ON = false    -- v5.49: auto ซื้อของอัปเกรดร้านค้า (prompt 'Buy' ใน ShopItems)
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
@@ -587,11 +588,12 @@ end
 local SHOT_AT = {}   -- v5.40: [ผี]=os.clock()/huge — แชร์ระหว่าง loop ยิงกับ gunPending
 local HIDER_DONE = {}   -- v5.42: [Hider]=true มันเห็นเราแล้ว (OriginalFace เปลี่ยน) — จบตัวนี้ ไปตัวถัดไป
 local SYRUP_DONE = {}   -- v5.48: [MonsterBed]=os.clock() เอาน้ำเชื่อมไปแล้ว "รอบเดียว" (พัก 60s ต่อเตียง)
+local BOUGHT = {}       -- v5.49: [Buy prompt]=os.clock() กดซื้อไปแล้ว (พัก 30s — เงินไม่พอค่อยลองใหม่)
 -- v5.41: ตัวกวาดขยะ — ตารางจำทั้งหมด key เป็น instance ที่ตาย/หายไปแล้ว = ลบทิ้ง (เล่นยาวๆ แรมไม่บวม)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         task.wait(60)
-        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE, SYRUP_DONE }) do
+        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE, SYRUP_DONE, BOUGHT }) do
             for k in pairs(t) do
                 if typeof(k) == "Instance" and not k.Parent then t[k] = nil end
             end
@@ -1101,7 +1103,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 226   -- v5.46: +แถวแบ่งโซนห้อง 1-5 / 6-8
+local FULL_H = 258   -- v5.49: +แถวซื้อของ
 local f = Instance.new("Frame", gui)
 f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
@@ -1113,13 +1115,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.48", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.49", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.48 " .. lastStatus end
+    if not deadLock then title.Text = "v5.49 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1927,6 +1929,30 @@ task.spawn(function()
     end
 end)
 
+-- ===== v5.49 auto ซื้อของร้านค้า: prompt 'Buy' ใน ShopItems (RoomDebug ยืนยัน 3 ช่อง) =====
+-- งานท้ายสุดจริงๆ — ทำเฉพาะตอนว่างหมด (รักษา/อุ้ม/ไฟ/เช็คอินไม่มีค้าง) ; เงินไม่พอ = server ไม่ขาย ลองใหม่ทุก 30s
+task.spawn(function()
+    while _G.AH74_GEN == MYGEN do
+        if SHOP_ON and fp and not WORKING and not CARRYING and not busyBefore(7) and not checkinPending() then
+            for _, p in ipairs(workspace:GetDescendants()) do
+                if p:IsA("ProximityPrompt") and p.ActionText == "Buy" and p.Enabled
+                   and (not BOUGHT[p] or os.clock() - BOUGHT[p] > 30) then
+                    if not (SHOP_ON and _G.AH74_GEN == MYGEN) or WORKING or CARRYING then break end
+                    local pos = partPos(p.Parent)
+                    if pos then
+                        BOUGHT[p] = os.clock()
+                        setStatus("ซื้อของร้านค้า")
+                        tpTo(pos); task.wait(0.15)
+                        pressPrompt(p)
+                        task.wait(0.2)
+                    end
+                end
+            end
+        end
+        task.wait(2)
+    end
+end)
+
 -- ===== v4.70 อุ้มคนเป็นลมส่งห้อง: NPC (คนไข้/คนเยี่ยม ไม่ใช่ผี) มี PP 'Carry' =====
 -- flow: บินไปหา → Carry → บินไปห้อง DesignatedRoom → กด prompt วาง (บนตัว NPC/เตียง)
 -- v4.72: อยู่ในปุ่ม "ดับไฟ" (กลุ่มงานฉุกเฉิน) — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
@@ -2082,9 +2108,17 @@ emB.MouseButton1Click:Connect(function()
     emB.BackgroundColor3 = ROOMS_EM and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON =
-        false, false, false, false, false, false, false, false, false, false, false, false
+-- v5.49: auto ซื้อของอัปเกรดร้านค้า
+local shopB = btn("ซื้อของ: OFF", 8, 194, 86, 30, Color3.fromRGB(45,45,58))
+shopB.MouseButton1Click:Connect(function()
+    SHOP_ON = not SHOP_ON
+    shopB.Text = "ซื้อของ: " .. (SHOP_ON and "ON" or "OFF")
+    shopB.BackgroundColor3 = SHOP_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
+
+btn("CLOSE", 8, 226, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
