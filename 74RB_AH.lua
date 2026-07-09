@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.50 ร้านค้า: whitelist SHOP_BUY + รายงานชื่อของทุกช่อง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.51 ร้านค้า: ซื้อเฉพาะ [ UPGRADE ] ข้าม [ CURRENCY ] — อ่านป้าย Type/Description จริง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -38,9 +38,9 @@ local HIDER_ON = false   -- v5.36: งาน Hider แยกปุ่มเอ�
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอท — คนละโซนไม่แย่งจ่ายยาห้องเดียวกัน) ; เล่นเดี่ยวเปิดทั้งคู่
 local ROOMS_MED, ROOMS_EM = true, true   -- Medical 1-5 / Emergency 6-8
 local SHOP_ON = false    -- v5.49: auto ซื้อของอัปเกรดร้านค้า (prompt 'Buy' ใน ShopItems)
--- v5.50: รายชื่อของที่ "อนุญาตให้ซื้อ" — ตารางว่าง = ซื้อทุกอย่าง (โหมดสำรวจ: บอทจะ print ชื่อของทุกช่องให้ดู)
--- ผู้ใช้เห็นชื่อจริงแล้วมาเติม เช่น: local SHOP_BUY = { ["Speed Upgrade"]=true, ["Extra Slot"]=true }
-local SHOP_BUY = {}
+-- v5.51: กฎซื้อ (จาก ShopSpy): ช่องร้านมีป้าย Type='[ UPGRADE ]'/'[ CURRENCY ]' + Description=ชื่อของ
+-- ซื้อเฉพาะ UPGRADE (CURRENCY = สุ่มเหรียญ เผาเงิน — ข้าม) ; SHOP_SKIP บล็อกชื่อที่ไม่เอาเพิ่มได้
+local SHOP_SKIP = {}   -- เช่น { ["+10% NPC Speed"]=true }
 local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(วินิจฉัย)เอง, false=เราเดินไปทำเอง
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
@@ -1118,13 +1118,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.50", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.51", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.50 " .. lastStatus end
+    if not deadLock then title.Text = "v5.51 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1942,32 +1942,25 @@ task.spawn(function()
                    and (not BOUGHT[p] or os.clock() - BOUGHT[p] > 30) then
                     if not (SHOP_ON and _G.AH74_GEN == MYGEN) or WORKING or CARRYING then break end
                     BOUGHT[p] = os.clock()
-                    -- v5.50: อ่านชื่อของจากป้าย (TextLabel ใกล้ๆ ช่อง — ข้ามป้ายราคา $ กับคำว่า Buy)
-                    local name
-                    local node = p.Parent
-                    for _ = 1, 3 do
-                        if not node or node == workspace then break end
-                        for _, d in ipairs(node:GetDescendants()) do
-                            if d:IsA("TextLabel") and d.Text ~= "" and d.Text:lower() ~= "buy"
-                               and not d.Text:find("%$") and not tonumber(d.Text) then
-                                name = d.Text; break
-                            end
+                    -- v5.51: อ่านป้ายจริงของช่อง (ShopSpy ยืนยัน): Type + Description
+                    local typ, desc
+                    for _, d in ipairs(p.Parent:GetDescendants()) do
+                        if d:IsA("TextLabel") then
+                            if d.Name == "Type" then typ = d.Text
+                            elseif d.Name == "Description" then desc = d.Text end
                         end
-                        if name then break end
-                        node = node.Parent
                     end
-                    print("[AH74 Shop] ช่องขาย: " .. tostring(name or "?"))
-                    -- whitelist ไม่ว่าง = ซื้อเฉพาะชื่อที่อนุญาต ; ว่าง = ซื้อหมด (โหมดสำรวจ)
-                    if next(SHOP_BUY) == nil or (name and SHOP_BUY[name]) then
+                    print("[AH74 Shop] " .. tostring(typ) .. " " .. tostring(desc))
+                    if typ and typ:find("UPGRADE") and not SHOP_SKIP[desc or ""] then
                         local pos = partPos(p.Parent)
                         if pos then
-                            setStatus("ซื้อ " .. tostring(name or "ของร้านค้า"))
+                            setStatus("ซื้อ " .. tostring(desc or "อัปเกรด"))
                             tpTo(pos); task.wait(0.15)
                             pressPrompt(p)
                             task.wait(0.2)
                         end
                     else
-                        setStatus("ข้าม (ไม่อยู่ในลิสต์): " .. tostring(name or "?"))
+                        setStatus("ข้ามร้าน: " .. tostring(desc or typ or "?"))
                     end
                 end
             end
