@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.55 Hider หลายตัว: ตัวละ 12s ไม่มอง=พัก 45s ไปตัวถัดไป วนครบทุกตัว)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.56 กาแฟฉุกเฉิน: Sanity<50% กินทันที ชนะทุกงาน + ไม่มีก็บินไปหยิบด่วน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1123,13 +1123,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.55", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.56", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.55 " .. lastStatus end
+    if not deadLock then title.Text = "v5.56 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1945,6 +1945,54 @@ end)
 
 -- ===== v5.49 auto ซื้อของร้านค้า: prompt 'Buy' ใน ShopItems (RoomDebug ยืนยัน 3 ช่อง) =====
 -- งานท้ายสุดจริงๆ — ทำเฉพาะตอนว่างหมด (รักษา/อุ้ม/ไฟ/เช็คอินไม่มีค้าง) ; เงินไม่พอ = server ไม่ขาย ลองใหม่ทุก 30s
+-- v5.56: หา prompt เครื่องกาแฟที่ "พร้อมจริง" (ป้ายขึ้น พร้อม/Ready — กันเด้งหน้าซื้อ Robux ตอนชง)
+local function coffeeReadyPP()
+    for _, p in ipairs(workspace:GetDescendants()) do
+        if p:IsA("ProximityPrompt") and p.ActionText == "Coffee" and p.Enabled then
+            local machine = p.Parent
+            while machine and machine.Parent and machine.Name ~= "CoffeeMachine" and machine.Parent ~= workspace do
+                machine = machine.Parent
+            end
+            for _, d in ipairs((machine or p.Parent):GetDescendants()) do
+                if d:IsA("TextLabel") and (d.Text:find("พร้อม") or d.Text:lower():find("ready")) then
+                    return p
+                end
+            end
+        end
+    end
+end
+-- v5.56: อ่าน Sanity % จากจอ (PlayerGui.Sanity.Frame.Frame.textbox.amount = '26%')
+local function sanityPct()
+    local t = LP:FindFirstChild("PlayerGui")
+    t = t and t:FindFirstChild("Sanity"); t = t and t:FindFirstChild("Frame")
+    t = t and t:FindFirstChild("Frame");  t = t and t:FindFirstChild("textbox")
+    t = t and t:FindFirstChild("amount")
+    return (t and tonumber((t.Text:gsub("%%", "")))) or 100
+end
+-- v5.56: กาแฟฉุกเฉิน — Sanity < 50% = กินทันที "ชนะทุกงานรวม Room8" (ผู้ใช้สั่ง) ; กิน = Activate (คลิก)
+task.spawn(function()
+    while _G.AH74_GEN == MYGEN do
+        if COFFEE_ON and sanityPct() < 50 then
+            if heldCount("Coffee") > 0 then
+                setStatus("ฉุกเฉิน! กินกาแฟ (Sanity " .. sanityPct() .. "%)")
+                if selectTool("Coffee") then
+                    local tool = LP.Character and LP.Character:FindFirstChild("Coffee")
+                    if tool then pcall(function() tool:Activate() end) end
+                    task.wait(1)   -- รอเกมประมวลผลก่อนเช็ค/กินซ้ำ
+                end
+            else
+                local cpp = coffeeReadyPP()   -- ไม่มีติดตัว → บินไปหยิบด่วน (เครื่องต้องพร้อม)
+                if cpp then
+                    setStatus("ฉุกเฉิน! ไปหยิบกาแฟ (Sanity " .. sanityPct() .. "%)")
+                    tpTo(partPos(cpp.Parent)); task.wait(0.15)
+                    pressPrompt(cpp, function() return heldCount("Coffee") > 0 end)
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
 task.spawn(function()
     local lastCoffee = 0   -- v5.54: กันสแปมกดเครื่องกาแฟ (กดตอนชงอยู่ = เด้งหน้าซื้อ Robux)
     while _G.AH74_GEN == MYGEN do
@@ -1982,30 +2030,12 @@ task.spawn(function()
         -- v5.52: auto หยิบกาแฟ (หยิบเก็บกระเป๋า ห้าม equip = ไม่มีทางกิน) — งานว่างเหมือนซื้อของ
         if COFFEE_ON and fp and not WORKING and not CARRYING and not TREAT_BUSY
            and heldCount("Coffee") == 0 and os.clock() - lastCoffee > 10 then
-            local cpp
-            for _, p in ipairs(workspace:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.ActionText == "Coffee" and p.Enabled then cpp = p; break end
-            end
+            local cpp = coffeeReadyPP()   -- v5.56: เช็คป้าย 'พร้อม' ในตัว (กัน Robux)
             if cpp then
-                -- v5.54: ⚠️ เครื่องกำลังชง prompt ยังเปิด แต่กด = เด้งหน้าซื้อ Robux "ชงทันที" (ผู้ใช้โดนสแปม)
-                --        กดเฉพาะตอนป้ายเครื่องขึ้น 'พร้อม'/'Ready' เท่านั้น
-                local machine = cpp.Parent
-                while machine and machine.Parent and machine.Name ~= "CoffeeMachine" and machine.Parent ~= workspace do
-                    machine = machine.Parent
-                end
-                machine = machine or cpp.Parent
-                local ready = false
-                for _, d in ipairs(machine:GetDescendants()) do
-                    if d:IsA("TextLabel") and (d.Text:find("พร้อม") or d.Text:lower():find("ready")) then
-                        ready = true; break
-                    end
-                end
-                if ready then
-                    lastCoffee = os.clock()
-                    setStatus("หยิบกาแฟ")
-                    tpTo(partPos(cpp.Parent)); task.wait(0.15)
-                    pressPrompt(cpp, function() return heldCount("Coffee") > 0 end)
-                end
+                lastCoffee = os.clock()
+                setStatus("หยิบกาแฟ")
+                tpTo(partPos(cpp.Parent)); task.wait(0.15)
+                pressPrompt(cpp, function() return heldCount("Coffee") > 0 end)
             end
         end
         task.wait(2)
