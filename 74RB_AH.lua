@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.25 ลดดีเลย์: สแกนถี่ขึ้นทุก loop + รอห้องโหลด 1.5s)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.26 Room8 อันดับ1 เกาะจนจบ + เกาะหัว Hider + สแปม E ตอนโดนจับ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1101,13 +1101,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.25", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.26", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.25 " .. lastStatus end
+    if not deadLock then title.Text = "v5.26 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1350,9 +1350,9 @@ task.spawn(function()
                         if pat and present and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
-                            -- v5.23: ห้องฉุกเฉิน 6/7/8 เร่งด่วนสุด (Room8 นำใน 3 ห้อง) — ห้องวิกฤตแซงทุกอย่าง
-                            if crit[room.Name] then d = -3
-                            elseif room.Name == "Room8" then d = -2
+                            -- v5.26: Room8 อันดับหนึ่งเด็ดขาด (ผู้ใช้สั่ง "ไม่มีทางอื่น") — แซงแม้ห้องวิกฤต
+                            if room.Name == "Room8" then d = -3
+                            elseif crit[room.Name] then d = -2
                             elseif grp == "Emergency" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
                         elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
@@ -1383,7 +1383,8 @@ task.spawn(function()
                     while AUTO_ON and _G.AH74_GEN == MYGEN
                           and not roomDone(target)
                           and roomPatient(target)   -- v4.60: คนไข้หาย (ตาย/ออก) = เลิกเกาะทันที
-                          and guard < 8 do
+                          -- v5.26: Room8 = เกาะยาวจนจบ (จ่ายยารัวๆ ห้ามหลุดไปห้อง 6/7 กลางคัน)
+                          and guard < (target.Name == "Room8" and 40 or 8) do
                         guard += 1
                         WORKING = true
                         pcall(treatRoom, target)
@@ -1692,9 +1693,38 @@ end)
 
 -- ===== v5.12 ผีคลาน =====
 -- v5.24: ตัดน้ำเชื่อมทิ้งทั้งหมด (ผู้ใช้สั่ง) — รออย่างเดียว มีคนโดนดึงค่อยไปสแปม Help
+local function spamE()   -- v5.26: สแปมปุ่ม E (ดิ้นหลุดตอนโดนจับ)
+    pcall(function()
+        VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game); task.wait(0.03)
+        VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+end
+-- v5.26: เช็คว่า "เราเอง" โดนผีจับ — ยังไม่มี dump ยืนยันกลไก เดาครอบคลุม 2 ทาง:
+--        attr บนตัวเรา (Grabbed/CarriedBy) หรือจอขึ้นข้อความ struggle/mash/escape
+local function selfGrabbed()
+    local c = LP.Character
+    if c and (c:GetAttribute("Grabbed") or c:GetAttribute("CarriedBy")) then return true end
+    local pg = LP:FindFirstChild("PlayerGui")
+    if pg then
+        for _, g in ipairs(pg:GetDescendants()) do
+            if g:IsA("TextLabel") and g.Visible and g.Text ~= "" then
+                local t = g.Text:lower()
+                if t:find("struggle") or t:find("mash") or t:find("break free") then return true end
+            end
+        end
+    end
+    return false
+end
 task.spawn(function()
     local lastHelp = 0
     while _G.AH74_GEN == MYGEN do
+        -- v5.26: เราโดนจับเอง = ด่วนสุด สแปม E จนหลุด (เช็คก่อนทุกงาน ไม่สน WORKING)
+        if FIRE_ON and selfGrabbed() then
+            setStatus("โดนผีจับ! สแปม E")
+            local t0 = os.clock()
+            repeat spamE(); task.wait(0.1)
+            until not selfGrabbed() or os.clock() - t0 > 10 or _G.AH74_GEN ~= MYGEN
+        end
         if FIRE_ON and fp and not WORKING and not CARRYING
            and os.clock() - lastHelp > 1 then   -- v5.25: เดิม 2
             local me = hrp() and hrp().Position
@@ -1714,6 +1744,33 @@ task.spawn(function()
                     if not (hp.Parent and hp.Enabled) then break end
                     pressPrompt(hp, nil, true)
                     task.wait(0.25)
+                end
+            elseif not TREAT_BUSY then
+                -- v5.26: Hider (Anomaly) เข้าใกล้ + เราว่างงาน → เกาะบนหัวมัน +3 studs (มันจับเราไม่ได้)
+                local hider, hd
+                local npcs = workspace:FindFirstChild("NPCs")
+                if npcs and me then
+                    for _, m2 in ipairs(npcs:GetChildren()) do
+                        if m2:IsA("Model") and m2:GetAttribute("Anomaly") then
+                            local p2 = partPos(m2)
+                            local d2 = p2 and (p2 - me).Magnitude
+                            if d2 and d2 < 30 and (not hd or d2 < hd) then hider, hd = m2, d2 end
+                        end
+                    end
+                end
+                if hider then
+                    setStatus("เกาะหัว Hider")
+                    local t0 = os.clock()
+                    local r = hrp()
+                    -- ตามหัวมันแบบก้าวสั้นๆ (ระยะประชิด — ไม่ใช่วาปไกล) สูงสุด 8s แล้วเช็คงานใหม่
+                    while r and hider.Parent and FIRE_ON and _G.AH74_GEN == MYGEN
+                          and not TREAT_BUSY and not CARRYING and os.clock() - t0 < 8 do
+                        local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                        if not head then break end
+                        r.CFrame = CFrame.new(head.Position + Vector3.new(0, 3, 0))
+                        r.AssemblyLinearVelocity = Vector3.zero
+                        task.wait(0.1); r = hrp()
+                    end
                 end
             end
         end
