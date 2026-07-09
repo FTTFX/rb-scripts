@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.40 Hider เลี่ยงกำแพง 8 มุม + spy attr ฝังใน + ยิงผีเสร็จไปต่อทันที)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.41 spy จับของงอกในตัว Hider + ตัวกวาดขยะตารางจำทุก 60s กันแรมบวม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -572,6 +572,17 @@ local function ghostToShoot(m)
     return not h or h.Health > 0   -- ยังไม่ตาย
 end
 local SHOT_AT = {}   -- v5.40: [ผี]=os.clock()/huge — แชร์ระหว่าง loop ยิงกับ gunPending
+-- v5.41: ตัวกวาดขยะ — ตารางจำทั้งหมด key เป็น instance ที่ตาย/หายไปแล้ว = ลบทิ้ง (เล่นยาวๆ แรมไม่บวม)
+task.spawn(function()
+    while _G.AH74_GEN == MYGEN do
+        task.wait(60)
+        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL }) do
+            for k in pairs(t) do
+                if typeof(k) == "Instance" and not k.Parent then t[k] = nil end
+            end
+        end
+    end
+end)
 local function gunPending()
     if not GUNKILL_ON then return false end
     local npcs = workspace:FindFirstChild("NPCs")
@@ -1084,13 +1095,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.40", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.41", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.40 " .. lastStatus end
+    if not deadLock then title.Text = "v5.41 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1753,6 +1764,11 @@ task.spawn(function()
                     print("[AH74 HiderAttr] " .. a .. " = " .. v)
                     setStatus("HiderAttr " .. a .. "=" .. v)
                 end)
+                -- v5.41: "!!" ที่โผล่หัวมันไม่ใช่ attr — จับ "ของงอกในตัวมัน" แทน (Billboard/Effect)
+                local dconn = hider.DescendantAdded:Connect(function(d)
+                    print("[AH74 HiderChild] +" .. d.ClassName .. " " .. d:GetFullName())
+                    setStatus("Hider+ " .. d.ClassName .. ":" .. d.Name)
+                end)
                 -- v5.40: เลือกมุมที่ "ไม่มีกำแพงบัง" — หน้าตรงก่อน แล้วเบี่ยงทีละ 45° (ผู้ใช้เจอลอยหลังกำแพง)
                 local rayP = RaycastParams.new()
                 rayP.FilterType = Enum.RaycastFilterType.Exclude
@@ -1782,7 +1798,7 @@ task.spawn(function()
                     r.AssemblyLinearVelocity = Vector3.zero
                     task.wait(); r = hrp()   -- v5.35: อัปเดตทุกเฟรม (เดิม 0.1s มีช่องให้ฟิสิกส์ดึง = กระตุก)
                 end
-                aconn:Disconnect()
+                aconn:Disconnect(); dconn:Disconnect()
                 WORKING = false
             end
         end
