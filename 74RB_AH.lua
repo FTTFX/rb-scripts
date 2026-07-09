@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.53 แก้ร้าน/กาแฟโดนบล็อกเงียบ — เช็คแค่งานตัวเองจริง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.54 กาแฟ: กดเฉพาะป้าย 'พร้อม' — กันเด้งหน้าซื้อ Robux ตอนเครื่องชง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1119,13 +1119,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.53", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.54", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.53 " .. lastStatus end
+    if not deadLock then title.Text = "v5.54 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1936,6 +1936,7 @@ end)
 -- ===== v5.49 auto ซื้อของร้านค้า: prompt 'Buy' ใน ShopItems (RoomDebug ยืนยัน 3 ช่อง) =====
 -- งานท้ายสุดจริงๆ — ทำเฉพาะตอนว่างหมด (รักษา/อุ้ม/ไฟ/เช็คอินไม่มีค้าง) ; เงินไม่พอ = server ไม่ขาย ลองใหม่ทุก 30s
 task.spawn(function()
+    local lastCoffee = 0   -- v5.54: กันสแปมกดเครื่องกาแฟ (กดตอนชงอยู่ = เด้งหน้าซื้อ Robux)
     while _G.AH74_GEN == MYGEN do
         -- v5.53: เกตเบาลง — เดิมเช็ค checkinPending/busyBefore ทั้งที่ปุ่มพวกนั้นปิดอยู่
         --        (คนยืนแถวเคาน์เตอร์เฉยๆ = ร้านโดนบล็อกเงียบ ผู้ใช้เจอ) เช็คแค่งานตัวเองจริงพอ
@@ -1970,15 +1971,31 @@ task.spawn(function()
         end
         -- v5.52: auto หยิบกาแฟ (หยิบเก็บกระเป๋า ห้าม equip = ไม่มีทางกิน) — งานว่างเหมือนซื้อของ
         if COFFEE_ON and fp and not WORKING and not CARRYING and not TREAT_BUSY
-           and heldCount("Coffee") == 0 then   -- v5.53: เกตเบาลงเหมือนร้าน ; เครื่องนับถอยหลัง = prompt ดับ รอเอง
+           and heldCount("Coffee") == 0 and os.clock() - lastCoffee > 10 then
             local cpp
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.ActionText == "Coffee" and p.Enabled then cpp = p; break end
             end
             if cpp then
-                setStatus("หยิบกาแฟ")
-                tpTo(partPos(cpp.Parent)); task.wait(0.15)
-                pressPrompt(cpp, function() return heldCount("Coffee") > 0 end)
+                -- v5.54: ⚠️ เครื่องกำลังชง prompt ยังเปิด แต่กด = เด้งหน้าซื้อ Robux "ชงทันที" (ผู้ใช้โดนสแปม)
+                --        กดเฉพาะตอนป้ายเครื่องขึ้น 'พร้อม'/'Ready' เท่านั้น
+                local machine = cpp.Parent
+                while machine and machine.Parent and machine.Name ~= "CoffeeMachine" and machine.Parent ~= workspace do
+                    machine = machine.Parent
+                end
+                machine = machine or cpp.Parent
+                local ready = false
+                for _, d in ipairs(machine:GetDescendants()) do
+                    if d:IsA("TextLabel") and (d.Text:find("พร้อม") or d.Text:lower():find("ready")) then
+                        ready = true; break
+                    end
+                end
+                if ready then
+                    lastCoffee = os.clock()
+                    setStatus("หยิบกาแฟ")
+                    tpTo(partPos(cpp.Parent)); task.wait(0.15)
+                    pressPrompt(cpp, function() return heldCount("Coffee") > 0 end)
+                end
             end
         end
         task.wait(2)
