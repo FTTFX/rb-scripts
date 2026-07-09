@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.29 ลดดีเลย์ชุดสุดท้าย: ทิ้งยา/prompt timeout/Room8 รอบจ่าย/อุ้ม/Help)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.30 ไฟ/สไลม์เอื้อมไม่ถึง → วนหามุม 8 ทิศ + ยืนใกล้ขึ้น 6 studs + พักสั้นลง 20s)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1057,13 +1057,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.29", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.30", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.29 " .. lastStatus end
+    if not deadLock then title.Text = "v5.30 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1626,16 +1626,28 @@ task.spawn(function()
                         setStatus(d.ActionText == "Clean Slime" and "ล้างสไลม์" or "ดับไฟพื้น")
                         local pos = partPos(d.Parent)
                         local from = hrp() and hrp().Position
+                        local ok = false
                         if pos then
-                            -- ยืนห่างกองไฟ 8 studs ฝั่งที่เรามา (ไม่เหยียบไฟ) ; fp ยิงถึงจากตรงนั้น
+                            -- v5.30: ยืนใกล้ขึ้น 6 studs (เดิม 8 — ผู้ใช้ขอ +2 ใกล้ขึ้น) ฝั่งที่เรามา
                             local dir = from and (from - pos).Magnitude > 1 and (from - pos).Unit or Vector3.new(1, 0, 0)
-                            tpTo(pos + dir * 8); task.wait(0.15)
+                            tpTo(pos + dir * 6); task.wait(0.15)
+                            ok = pressPrompt(d)
+                            -- v5.30: กดไม่ติด → วนหามุมรอบเป้า 8 ทิศ (ผู้ใช้ขอ — สไลม์หลังกำแพง/มุมอับ)
+                            if not ok then
+                                for i = 0, 7 do
+                                    if not (d.Parent and d.Enabled) then ok = true; break end
+                                    local ang = i * math.pi / 4
+                                    tpTo(pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * 6)
+                                    task.wait(0.15)
+                                    if pressPrompt(d) then ok = true; break end
+                                end
+                            end
                         end
-                        -- v4.90: พลาดสะสม 3 ครั้ง = จุดนี้เอื้อมไม่ถึงจริง (สไลม์หลังกำแพง/จุดหลอก) → พักยาว 1 นาที
-                        if not pressPrompt(d) then
+                        -- v5.30: ทุกมุมไม่เข้า = จุดหลอกจริง → พัก 20s (เดิม 55 — ผู้ใช้บอกนานไป)
+                        if not ok then
                             local n = (failN[d] or 0) + 1; failN[d] = n
-                            cooldown[d] = os.clock() + (n >= 3 and 55 or 0)
-                            if n >= 3 then setStatus((d.ActionText == "Clean Slime" and "สไลม์" or "ไฟ") .. "เอื้อมไม่ถึง — พัก 1 นาที") end
+                            cooldown[d] = os.clock() + (n >= 2 and 20 or 0)
+                            if n >= 2 then setStatus((d.ActionText == "Clean Slime" and "สไลม์" or "ไฟ") .. "เอื้อมไม่ถึงทุกมุม — พัก 20s") end
                         else
                             failN[d] = nil
                         end
