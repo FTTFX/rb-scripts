@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.33 Hider: ย้ายจากบนหัว → ลอยหน้ามัน 3 studs สูง 2.5 ให้มันมองเห็น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.34 ตารางลำดับงานกลาง busyBefore: อุ้ม>ไฟ>ยิงผี>ช่วย>รักษา>เช็คอิน>Hider ท้ายสุด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -582,6 +582,17 @@ local function gunPending()
     end
     return false
 end
+-- v5.34: ตารางลำดับงาน "ที่เดียว" (ผู้ใช้สั่ง — เดิม gate เขียนมือกระจาย 6 loop ลำดับหลุดกันเอง)
+-- ลำดับ: 1 อุ้ม > 2 ไฟ/สไลม์ > 3 ยิงผี > 4 ช่วยคนโดนจับ > 5 รักษา > 6 เช็คอิน > 7 Hider (ท้ายสุดแท้ๆ)
+-- busyBefore(rank) = มีงานสำคัญกว่าค้างอยู่ → loop ระดับ rank ต้องหลีกทาง
+local function busyBefore(rank)
+    if rank > 1 and (CARRYING or faintPending()) then return true end
+    if rank > 2 and (firePending() or slimePending()) then return true end
+    if rank > 3 and gunPending() then return true end
+    if rank > 5 and TREAT_BUSY then return true end
+    if rank > 6 and checkinPending() then return true end
+    return false
+end
 
 -- v4.23: เลือกของด้วย "กดปุ่ม slot จริง" เท่านั้น — *** ห้ามใช้ EquipTool เด็ดขาด ***
 -- เกมอ่านจากช่อง hotbar ที่เลือก ไม่ใช่ Tool ที่ถือ (EquipTool ถือถูกแต่เกมเห็นช่องเก่า
@@ -968,8 +979,7 @@ bind(RS.Heartbeat, function(dt)
             fireAcc = 0
             -- v4.27: เช็คอินวาปหาคนไข้ — v4.75: งานอันดับท้ายสุด ทำเฉพาะตอน "ว่างจริง"
             -- (ไม่มีคนเป็นลม/ไฟ/สไลม์ และ treat loop ไม่มีห้องให้ทำ)
-            if CHECKIN_ON and not TREAT_BUSY and not faintPending()
-               and not firePending() and not slimePending() and not gunPending() then   -- v5.18: ยิงผีก่อนเช็คอิน
+            if CHECKIN_ON and not busyBefore(6) then   -- v5.34: อ่านตารางลำดับกลาง
                 local cpos = checkinPending()
                 if cpos then
                     local misc = workspace:FindFirstChild("Misc")
@@ -1057,13 +1067,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.33", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.34", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.33 " .. lastStatus end
+    if not deadLock then title.Text = "v5.34 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1229,7 +1239,7 @@ end
 task.spawn(function()
     local shotAt = {}   -- ยิงแล้วพัก 3s/ตัว (เผื่อนัดหลุด) — เช็ค Humanoid ตายก่อนยิงซ้ำ
     while _G.AH74_GEN == MYGEN do
-        if GUNKILL_ON and not WORKING and not CARRYING and not faintPending() then
+        if GUNKILL_ON and not WORKING and not busyBefore(3) then
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
@@ -1554,7 +1564,7 @@ task.spawn(function()
     -- v4.95: ตารางพลาดย้ายไปแชร์เป็น BURN_FAIL — firePending จะได้ข้าม NPC ที่พักอยู่
     local fails = BURN_FAIL
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อนไฟ
+        if FIRE_ON and fp and not WORKING and not busyBefore(2) then   -- v4.75: คนเป็นลมมาก่อนไฟ
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
@@ -1587,7 +1597,7 @@ task.spawn(function()
     -- v4.95: cooldown/failN ย้ายไปแชร์เป็น FIRE_COOL/FIRE_FAILN — pending จะได้ข้ามจุดที่พัก
     local cooldown, failN = FIRE_COOL, FIRE_FAILN
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not CARRYING and not faintPending() then   -- v4.75: คนเป็นลมมาก่อน
+        if FIRE_ON and fp and not WORKING and not busyBefore(2) then   -- v4.75: คนเป็นลมมาก่อน
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1694,7 +1704,7 @@ task.spawn(function()
             repeat spamE(); task.wait(0.1)
             until not selfGrabbed() or os.clock() - t0 > 10 or _G.AH74_GEN ~= MYGEN
         end
-        if FIRE_ON and fp and not WORKING and not CARRYING
+        if FIRE_ON and fp and not WORKING and not busyBefore(4)
            and os.clock() - lastHelp > 1 then   -- v5.25: เดิม 2
             local me = hrp() and hrp().Position
             -- วิธี 1: มีคนโดนจับ — prompt 'Help' บนตัวเหยื่อ (NPC/ผู้เล่น) → สแปมช่วย
@@ -1717,7 +1727,8 @@ task.spawn(function()
             end
         end
         -- v5.27: เกาะหัว Hider ย้ายมาหมวดเช็คอิน (ผู้ใช้สั่ง — คนเช็คอินวาปไปทำได้) + ระยะทั้งแมพ 200
-        if CHECKIN_ON and fp and not WORKING and not CARRYING and not TREAT_BUSY then
+        -- v5.34: Hider = อันดับ 7 ท้ายสุดแท้ๆ — มีเช็คอิน/รักษา/ไฟ/อุ้มค้างอยู่ห้ามไป (ผู้ใช้สั่ง)
+        if CHECKIN_ON and fp and not WORKING and not busyBefore(7) then
             local me2 = hrp() and hrp().Position
             local hider, hd
             local npcs = workspace:FindFirstChild("NPCs")
@@ -1741,7 +1752,7 @@ task.spawn(function()
                 local t0 = os.clock()
                 local r = hrp()
                 while r and hider.Parent and CHECKIN_ON and _G.AH74_GEN == MYGEN
-                      and not TREAT_BUSY and not CARRYING and os.clock() - t0 < 8 do
+                      and not busyBefore(7) and os.clock() - t0 < 8 do   -- v5.34: มีงานจริงโผล่ = เด้งออกทันที
                     local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                     if not head then break end
                     -- ลอยหน้ามันตามทิศที่มันหัน + หันหน้าเข้าหามัน (ให้มันเห็นเราเต็มๆ)
