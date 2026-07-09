@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.27 เกาะหัว Hider ย้ายไปหมวดเช็คอิน + สแกนทั้งแมพ 200)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.28 ลบ dead code ~45 บรรทัด — พฤติกรรมเดิมทุกอย่าง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -39,8 +39,6 @@ local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequ
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
 local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี: Skinwalker ใกล้เคาน์เตอร์ → ปิดชัตเตอร์
 local FIRE_ON = false    -- ดับไฟที่ตัว NPC: ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
-local NPCFAST_ON = false -- (เลิกใช้ v5.18 — ปุ่มนี้กลายเป็น "ยิงผี")
-local NPC_SPEED = 28     -- ปรับได้
 local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
 local SPEED = 50
 local cam = workspace.CurrentCamera
@@ -272,49 +270,31 @@ local function tpTo(pos, speedOpt)   -- v5.05: speedOpt override ความเ
         -- v4.88: "สไลด์" ตาม waypoint — ดันด้วย velocity จริง (แบบ Climb Forsaken)
         --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
         local SLIDE_SPEED = speedOpt or 1000  -- studs/s แนวราบ (v5.23 ผู้ใช้ขอ 1000 — ถ้าตาย insanity ให้ลดกลับ)
-        local wps
-        -- v5.09: ไถลตรง "ทุกหมวด" (ผู้ใช้เน้นเร็วสุด) — เลิก pathfinding ทั้งหมด
-        --        เส้นตรง + noclip ชั่วคราว + ล็อค Y (v5.07) = ไม่อ้อม ไม่ติดกำแพง ไม่จมแมพ
-        local straight = true
-        wps = { { Position = pos } }
-        local clipOff = straight
-        if clipOff then
+        -- v5.09: ไถลตรงเส้นเดียวทุกหมวด (เลิก pathfinding) — noclip ชั่วคราว + ล็อค Y (v5.07)
+        do
             local c = LP.Character
             if c then for _, p in ipairs(c:GetDescendants()) do
                 if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
             end end
         end
-        local t0 = os.clock()
-        -- v5.07: โหมดไถลตรง (noclip อยู่) ห้ามมีแรงกดลง — ไม่มีพื้นรับ = จมทะลุแมพตาย
-        --        ล็อคความสูง Y เดิมทุกเฟรมแทน (ก้าวแนวดิ่งสั้นๆ แบบ roof recovery — ปลอดภัย)
+        -- v5.07: ไถล noclip ห้ามมีแรงกดลง — ไม่มีพื้นรับ = จมทะลุแมพตาย → ล็อคความสูง Y เดิมทุกเฟรมแทน
         local yLock = r.Position.Y
-        for _, wp in ipairs(wps) do
-            if _G.AH74_GEN ~= MYGEN or os.clock() - t0 > 10 then break end
-            local t1 = os.clock()
-            repeat
-                r = hrp(); if not r then break end
-                local dir = wp.Position - r.Position
-                dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
-                if dir.Magnitude < 3 then break end
-                -- v5.08: ตัวไม่มี collide (ไถลตรง หรือผู้ใช้เปิด NOCLIP) = ห้ามใส่แรงกดลง
-                --        ไม่มีพื้นรับจะจมทะลุแมพ (ตายตอนรักษา Room3 เพราะ NOCLIP ON + แรงกด -15)
-                -- v5.23: เบรกใกล้เป้า — ความเร็ว 1000 วิ่ง ~16 studs/เฟรม จะกระโดดข้ามเป้า (เกณฑ์หยุด 3 studs)
-                --        ลดความเร็วตามระยะที่เหลือ (dir*8 = ถึงใน ~0.125s) → จอดนิ่ม ไม่ไถลเลย/เด้งไปมา
-                local spd = math.min(SLIDE_SPEED, dir.Magnitude * 8)
-                if straight or NOCLIP_ON then
-                    r.AssemblyLinearVelocity = dir.Unit * spd
-                    r.CFrame = CFrame.new(Vector3.new(r.Position.X, yLock, r.Position.Z))
-                        * (r.CFrame - r.CFrame.Position)
-                else
-                    -- กดลงพื้นเบาๆ (-15) กันลอย/เด้งขึ้นขอบ — ห้ามมี velocity ขึ้น
-                    r.AssemblyLinearVelocity = dir.Unit * spd + Vector3.new(0, -15, 0)
-                end
-                task.wait()
-            until os.clock() - t1 > 3
-        end
+        local t1 = os.clock()
+        repeat
+            r = hrp(); if not r then break end
+            local dir = pos - r.Position
+            dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
+            if dir.Magnitude < 3 then break end
+            -- v5.23: เบรกใกล้เป้า — 1000 วิ่ง ~16 studs/เฟรม จะข้ามเกณฑ์หยุด 3 studs (dir*8 = จอดนิ่ม)
+            local spd = math.min(SLIDE_SPEED, dir.Magnitude * 8)
+            r.AssemblyLinearVelocity = dir.Unit * spd
+            r.CFrame = CFrame.new(Vector3.new(r.Position.X, yLock, r.Position.Z))
+                * (r.CFrame - r.CFrame.Position)
+            task.wait()
+        until os.clock() - t1 > 3 or _G.AH74_GEN ~= MYGEN
         -- ถึงแล้วหยุดไถล (ตัดความเร็วค้าง — ไม่งั้นตัวไถลเลยเป้า)
         r = hrp(); if r then r.AssemblyLinearVelocity = Vector3.zero end
-        if clipOff and not NOCLIP_ON then   -- v5.06: คืน collide (ยกเว้นผู้ใช้เปิด NOCLIP เอง)
+        if not NOCLIP_ON then   -- v5.06: คืน collide (ยกเว้นผู้ใช้เปิด NOCLIP เอง)
             local c = LP.Character
             if c then for _, p in ipairs(c:GetDescendants()) do
                 if p:IsA("BasePart") then p.CanCollide = true end
@@ -390,7 +370,7 @@ local function discardTool(tool)
     if not (h and tp and tp.Parent) then return end
     pcall(function() h:EquipTool(tool) end); task.wait(0.15)
     tpTo(partPos(tp.Parent)); task.wait(0.2)
-    pressPrompt(tp, nil, true); task.wait(0.2)   -- fp เท่านั้น
+    pressPrompt(tp); task.wait(0.2)
 end
 -- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
 local function cleanInventory(needed)
@@ -479,19 +459,6 @@ local function invFrames(room)
     end)
     return frs
 end
--- นับจำนวนยาที่ต้องการ/ให้แล้ว ต่อชนิด (รองรับของซ้ำ เช่น มีดผ่าตัด ×2)
--- คืน need[m]=ต้องการกี่ชิ้น, given[m]=ให้แล้วกี่ชิ้น(ใครก็ได้), order=รายชื่อชนิดเรียงลำดับจอ
-local function medCounts(room)
-    local need, given, order = {}, {}, {}
-    for _, fr in ipairs(invFrames(room)) do
-        local m = frameMed(fr)
-        if (need[m] or 0) == 0 then order[#order+1] = m end
-        need[m] = (need[m] or 0) + 1
-        if frameGiven(fr) then given[m] = (given[m] or 0) + 1 end
-    end
-    return need, given, order
-end
-local function givenOf(room, m) local _, g = medCounts(room); return g[m] or 0 end
 -- นับ Tool ชื่อ m ที่ถืออยู่ (รองรับถือซ้ำหลายชิ้น)
 local function heldCount(m)
     local c = 0
@@ -500,11 +467,8 @@ local function heldCount(m)
 end
 -- v4.14: ห้องนี้มี "งานทำได้จริง" ไหม — prompt สเต็ปงาน Enabled อยู่ (ในห้อง/บนตัวคนไข้) หรือมียาต้องเก็บ
 -- ใช้กรองตอนเลือกห้อง: กัน commit ห้องที่คนไข้ยังเดินไม่ถึง/ทุกอย่างปิดอยู่ (เสียเวลาห้องละ 1.6s ฟรี)
-local WORK_ACTS = {
-    ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
-    ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
-    ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true, ["Apply Treatment"]=true,
-}
+local WORK_ACTS = { ["Apply Treatment"]=true }   -- = TREATD_ACTS + Apply (สร้างจากตารางเดียว กันหลุด sync)
+for a in pairs(TREATD_ACTS) do WORK_ACTS[a] = true end
 local function hasWork(room, pat)
     for _, p in ipairs(room:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.Enabled and WORK_ACTS[p.ActionText] then return true end
@@ -769,7 +733,7 @@ local function killWithWrongMed(room)
     end
     if not findTool(wrongName) and wrongPP and wrongPP.Parent then
         tpTo(partPos(wrongPP.Parent)); task.wait(0.18)
-        pressPrompt(wrongPP, function() return findTool(wrongName) ~= nil end, true); task.wait(0.1)
+        pressPrompt(wrongPP, function() return findTool(wrongName) ~= nil end); task.wait(0.1)
     end
     if not findTool(wrongName) then setStatus("ผี" .. room.Name .. ": เก็บยาผิดไม่ขึ้น"); return false end
     if not selectTool(wrongName) then
@@ -891,7 +855,7 @@ local function treatRoom(room)
             local pp = findPickup(m)
             if not (pp and pp.Parent) then return false end
             tpTo(partPos(pp.Parent)); task.wait(0.15)
-            pressPrompt(pp, function() return heldCount(m) > 0 end, true)
+            pressPrompt(pp, function() return heldCount(m) > 0 end)
             task.wait(0.1)
             if heldCount(m) == 0 then return false end   -- หยิบไม่ขึ้น → หยุด
         end
@@ -1040,14 +1004,6 @@ bind(RS.Heartbeat, function(dt)
     acc += dt
     if acc < 0.4 then return end
     acc = 0
-    -- ลองเร่ง NPC (ทุก 0.4s) — ถ้า server คุมการเดินจะไม่มีผล (ทดสอบดู)
-    if NPCFAST_ON then
-        local npcs = workspace:FindFirstChild("NPCs")
-        if npcs then for _, m in ipairs(npcs:GetChildren()) do
-            local h = m:FindFirstChildOfClass("Humanoid")
-            if h then h.WalkSpeed = NPC_SPEED end
-        end end
-    end
     if not ESP_ON then return end
 
     local fromPos = hrp() and hrp().Position
@@ -1101,13 +1057,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.27", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.28", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.27 " .. lastStatus end
+    if not deadLock then title.Text = "v5.28 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1585,12 +1541,12 @@ local function doBurning(pp)
             local cream = findPickup("Ointment")
             if not (cream and cream.Parent) then return end
             tpTo(partPos(cream.Parent)); task.wait(0.18)
-            pressPrompt(cream, function() return heldCount("Ointment") >= 1 end, true); task.wait(0.1)
+            pressPrompt(cream, function() return heldCount("Ointment") >= 1 end); task.wait(0.1)
             if heldCount("Ointment") < 1 then return end
         end
         if not selectTool("Ointment") then return end      -- เลือกครีมตามชื่อ
         tpTo(partPos(pp.Parent)); task.wait(0.15)          -- กลับไปหาคนไข้ (เผื่อวาปไปเก็บครีมมา)
-        pressPrompt(pp, nil, true)                         -- ทาครีม (fp เท่านั้น — ถือของอยู่ กัน E มั่ว)
+        pressPrompt(pp)                                    -- ทาครีม
     end
 end
 task.spawn(function()
@@ -1742,7 +1698,7 @@ task.spawn(function()
                 tpTo(partPos(hp.Parent)); task.wait(0.1)
                 for _ = 1, 8 do   -- ผู้ใช้บอก ~4 รอบ — เผื่อ 8 (prompt ดับเองเมื่อหลุด)
                     if not (hp.Parent and hp.Enabled) then break end
-                    pressPrompt(hp, nil, true)
+                    pressPrompt(hp)
                     task.wait(0.25)
                 end
             end
@@ -1789,10 +1745,8 @@ end)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if FIRE_ON and fp and not WORKING then
-            do
-                local m, carryPP = faintPending()
-                do
-                    if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
+            local m, carryPP = faintPending()
+            if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
                         CARRYING = true   -- v4.91: ล็อคงานอุ้ม — ไฟ/สไลม์/ชัตเตอร์ห้ามแทรกจนวางเสร็จ
                         if carryPP then
                             setStatus("อุ้ม " .. m.Name)
@@ -1880,8 +1834,6 @@ task.spawn(function()
                             end
                         end
                         CARRYING = false   -- v4.91: ปลดล็อค — งานอุ้มรอบนี้จบ (สำเร็จ/พักก็ตาม)
-                    end
-                end
             end
         end
         task.wait(0.15)   -- v4.71: สแกนถี่เท่าดับไฟ — เจอปุ๊บอุ้มทันที
@@ -1928,8 +1880,8 @@ npcfB.MouseButton1Click:Connect(function()
 end)
 
 btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, NPCFAST_ON, FIRE_ON, GUNKILL_ON =
-        false, false, false, false, false, false, false, false, false, false, false, false
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON =
+        false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
@@ -1944,4 +1896,4 @@ btn("CLOSE", 8, 194, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Conne
     gui:Destroy()
 end)
 
-print("[74RB AnimalHospital v4.35] ทุกวาปถอยห่างผี ≥12 studs (กัน sanity หมดตาย) + ปุ่มเคาน์เตอร์ + ดับไฟนอกกอง พร้อม")
+print("[74RB AnimalHospital] โหลดแล้ว — เวอร์ชันดูที่หัว GUI")
