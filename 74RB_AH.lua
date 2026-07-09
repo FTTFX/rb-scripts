@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.34 ตารางลำดับงานกลาง busyBefore: อุ้ม>ไฟ>ยิงผี>ช่วย>รักษา>เช็คอิน>Hider ท้ายสุด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.35 สลับ Hider มาก่อนเช็คอิน + ลอยไกล/สูงขึ้น 4.5/3.5 + ตามทุกเฟรมหายกระตุก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -583,14 +583,27 @@ local function gunPending()
     return false
 end
 -- v5.34: ตารางลำดับงาน "ที่เดียว" (ผู้ใช้สั่ง — เดิม gate เขียนมือกระจาย 6 loop ลำดับหลุดกันเอง)
--- ลำดับ: 1 อุ้ม > 2 ไฟ/สไลม์ > 3 ยิงผี > 4 ช่วยคนโดนจับ > 5 รักษา > 6 เช็คอิน > 7 Hider (ท้ายสุดแท้ๆ)
+-- ลำดับ: 1 อุ้ม > 2 ไฟ/สไลม์ > 3 ยิงผี > 4 ช่วยคนโดนจับ > 5 รักษา > 6 Hider > 7 เช็คอิน (v5.35 ผู้ใช้สลับ)
+local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระยะ 200 ไหม
+    if not CHECKIN_ON then return false end
+    local npcs = workspace:FindFirstChild("NPCs")
+    local me = hrp() and hrp().Position
+    if not (npcs and me) then return false end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:IsA("Model") and m:GetAttribute("Anomaly") then
+            local p = partPos(m)
+            if p and (p - me).Magnitude < 200 then return true end
+        end
+    end
+    return false
+end
 -- busyBefore(rank) = มีงานสำคัญกว่าค้างอยู่ → loop ระดับ rank ต้องหลีกทาง
 local function busyBefore(rank)
     if rank > 1 and (CARRYING or faintPending()) then return true end
     if rank > 2 and (firePending() or slimePending()) then return true end
     if rank > 3 and gunPending() then return true end
     if rank > 5 and TREAT_BUSY then return true end
-    if rank > 6 and checkinPending() then return true end
+    if rank > 6 and hiderPending() then return true end
     return false
 end
 
@@ -979,7 +992,7 @@ bind(RS.Heartbeat, function(dt)
             fireAcc = 0
             -- v4.27: เช็คอินวาปหาคนไข้ — v4.75: งานอันดับท้ายสุด ทำเฉพาะตอน "ว่างจริง"
             -- (ไม่มีคนเป็นลม/ไฟ/สไลม์ และ treat loop ไม่มีห้องให้ทำ)
-            if CHECKIN_ON and not busyBefore(6) then   -- v5.34: อ่านตารางลำดับกลาง
+            if CHECKIN_ON and not busyBefore(7) then   -- v5.35: เช็คอินอันดับ 7 (Hider มาก่อน — ผู้ใช้สลับ)
                 local cpos = checkinPending()
                 if cpos then
                     local misc = workspace:FindFirstChild("Misc")
@@ -1067,13 +1080,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.34", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.35", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.34 " .. lastStatus end
+    if not deadLock then title.Text = "v5.35 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1727,8 +1740,8 @@ task.spawn(function()
             end
         end
         -- v5.27: เกาะหัว Hider ย้ายมาหมวดเช็คอิน (ผู้ใช้สั่ง — คนเช็คอินวาปไปทำได้) + ระยะทั้งแมพ 200
-        -- v5.34: Hider = อันดับ 7 ท้ายสุดแท้ๆ — มีเช็คอิน/รักษา/ไฟ/อุ้มค้างอยู่ห้ามไป (ผู้ใช้สั่ง)
-        if CHECKIN_ON and fp and not WORKING and not busyBefore(7) then
+        -- v5.35: Hider อันดับ 6 มาก่อนเช็คอิน (ผู้ใช้สลับ) — ไฟ/อุ้ม/รักษายังมาก่อน Hider
+        if CHECKIN_ON and fp and not WORKING and not busyBefore(6) then
             local me2 = hrp() and hrp().Position
             local hider, hd
             local npcs = workspace:FindFirstChild("NPCs")
@@ -1748,18 +1761,23 @@ task.spawn(function()
                 if hp0 and me2 and (hp0 - me2).Magnitude > 15 then tpTo(hp0 + Vector3.new(0, 0, 8)) end
                 -- v5.33: บนหัวมันมองไม่เห็นเรา (ผู้ใช้เทส) — ต้องอยู่ "ข้างหน้า" ให้มันเห็นค้าง 2-3s
                 -- ponytail: ค่าจูนจากสนาม — FRONT ระยะหน้ามัน / UP ความสูงกันมันตีถึง ปรับได้
-                local FRONT, UP = 3, 2.5
-                local t0 = os.clock()
+                local FRONT, UP = 4.5, 3.5   -- v5.35: ถอยห่าง+ลอยสูงขึ้น (ผู้ใช้เจอโดนตีเกือบตาย)
+                local t0, lastChk = os.clock(), 0
                 local r = hrp()
                 while r and hider.Parent and CHECKIN_ON and _G.AH74_GEN == MYGEN
-                      and not busyBefore(7) and os.clock() - t0 < 8 do   -- v5.34: มีงานจริงโผล่ = เด้งออกทันที
+                      and os.clock() - t0 < 8 do
+                    -- v5.34: มีงานจริงโผล่ = เด้งออก (เช็คทุก 0.25s พอ — busyBefore สแกนแมพ หนักเกินจะทำทุกเฟรม)
+                    if os.clock() - lastChk > 0.25 then
+                        lastChk = os.clock()
+                        if busyBefore(6) then break end
+                    end
                     local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                     if not head then break end
                     -- ลอยหน้ามันตามทิศที่มันหัน + หันหน้าเข้าหามัน (ให้มันเห็นเราเต็มๆ)
                     local spot = head.Position + head.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)
                     r.CFrame = CFrame.lookAt(spot, head.Position)
                     r.AssemblyLinearVelocity = Vector3.zero
-                    task.wait(0.1); r = hrp()
+                    task.wait(); r = hrp()   -- v5.35: อัปเดตทุกเฟรม (เดิม 0.1s มีช่องให้ฟิสิกส์ดึง = กระตุก)
                 end
             end
         end
