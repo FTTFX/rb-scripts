@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.58 แก้ R6/7/8 โดนตีตกเป็น 'ไกล' ทั้งที่คนไข้อยู่ในห้อง — Emergency ใช้รัศมี 60)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.59 Hider: บินหมุนวนรอบตัวมัน + เห็นแล้วถอยหนี +20 studs)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.58", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.59", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.58 " .. lastStatus end
+    if not deadLock then title.Text = "v5.59 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1880,11 +1880,12 @@ task.spawn(function()
                             print("[AH74 HiderAttr] " .. a .. " = " .. v)
                             if a == "OriginalFace" then seen = true end
                         end)
-                        -- เลือกมุมไม่มีกำแพงบัง: หน้าตรงก่อน เบี่ยงทีละ 45°
+                        -- v5.59: "หมุนวนรอบตัวมัน" (ผู้ใช้สั่ง — มันหันไม่ตรงเราก็เจอกันจนได้)
+                        --        หมุนทีละ 22.5° ทุก 0.25s (~ครบรอบ 4s) ข้ามมุมที่กำแพงบัง
                         local rayP = RaycastParams.new()
                         rayP.FilterType = Enum.RaycastFilterType.Exclude
                         rayP.FilterDescendantsInstances = { hider, LP.Character }
-                        local lastPick, dirPick = 0, nil
+                        local lastPick, dirPick, orbA = 0, nil, math.random() * math.pi * 2
                         local hoverT0 = os.clock()   -- v5.55: ตัวละไม่เกิน 12s — ไม่มองก็ไปตัวอื่นก่อน
                         local r = hrp()
                         while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
@@ -1892,13 +1893,11 @@ task.spawn(function()
                               and os.clock() - hoverT0 < 12 do
                             local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                             if not head then break end
-                            if os.clock() - lastPick > 0.5 then   -- raycast แพง — เลือกมุมใหม่ทุก 0.5s พอ
+                            if os.clock() - lastPick > 0.25 then
                                 lastPick = os.clock(); dirPick = nil
-                                local lv = head.CFrame.LookVector
-                                for i = 0, 7 do
-                                    local ang = (i % 2 == 0 and 1 or -1) * math.ceil(i / 2) * math.pi / 4
-                                    local d = Vector3.new(lv.X * math.cos(ang) - lv.Z * math.sin(ang), 0,
-                                                          lv.X * math.sin(ang) + lv.Z * math.cos(ang))
+                                for _ = 1, 8 do   -- เดินมุมถัดไป ข้ามมุมที่บัง
+                                    orbA = orbA + math.pi / 8
+                                    local d = Vector3.new(math.cos(orbA), 0, math.sin(orbA))
                                     local spot = head.Position + d * FRONT + Vector3.new(0, UP, 0)
                                     if not workspace:Raycast(spot, head.Position - spot, rayP) then
                                         dirPick = d; break
@@ -1914,7 +1913,15 @@ task.spawn(function()
                         aconn:Disconnect()
                         if seen then
                             HIDER_DONE[hider] = math.huge   -- เห็นแล้ว = จบถาวร
-                            setStatus("Hider เห็นเราแล้ว → ตัวถัดไป")
+                            setStatus("Hider เห็นเราแล้ว → ถอยห่าง")
+                            -- v5.59: ถอยหนีออกอีก +20 studs ก่อนไปตัวถัดไป (ผู้ใช้สั่ง — กันโดนตีตอนมันวิ่งใส่)
+                            local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                            local r2 = hrp()
+                            if head and r2 then
+                                local away = (r2.Position - head.Position)
+                                away = away.Magnitude > 0.5 and away.Unit or Vector3.new(1, 0, 0)
+                                flyTo(head.Position + away * (FRONT + 20) + Vector3.new(0, UP, 0))
+                            end
                         elseif hider.Parent and hider:GetAttribute("Anomaly") then
                             -- v5.55: 12s ไม่มอง — พักตัวนี้ 45s ไปตัวอื่นก่อน (เดิมแช่ค้างตัวเดียว ตัวอื่นไม่โดนจัดการ)
                             HIDER_DONE[hider] = os.clock()
