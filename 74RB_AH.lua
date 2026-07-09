@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.47 เช็คอิน 2 ช่องพร้อมกัน = สลับช่องทุก 2 วิ ไม่แช่ช่องเดียว)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.48 ผีใต้เตียง: น้ำเชื่อมรอบเดียว ประชิด 2 studs หามุม 8 ทิศ น้ำเชื่อมหาย=จบ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -586,11 +586,12 @@ local function ghostToShoot(m)
 end
 local SHOT_AT = {}   -- v5.40: [ผี]=os.clock()/huge — แชร์ระหว่าง loop ยิงกับ gunPending
 local HIDER_DONE = {}   -- v5.42: [Hider]=true มันเห็นเราแล้ว (OriginalFace เปลี่ยน) — จบตัวนี้ ไปตัวถัดไป
+local SYRUP_DONE = {}   -- v5.48: [MonsterBed]=os.clock() เอาน้ำเชื่อมไปแล้ว "รอบเดียว" (พัก 60s ต่อเตียง)
 -- v5.41: ตัวกวาดขยะ — ตารางจำทั้งหมด key เป็น instance ที่ตาย/หายไปแล้ว = ลบทิ้ง (เล่นยาวๆ แรมไม่บวม)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         task.wait(60)
-        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE }) do
+        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE, SYRUP_DONE }) do
             for k in pairs(t) do
                 if typeof(k) == "Instance" and not k.Parent then t[k] = nil end
             end
@@ -1112,13 +1113,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.47", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.48", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.47 " .. lastStatus end
+    if not deadLock then title.Text = "v5.48 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1746,6 +1747,54 @@ task.spawn(function()
                     if not (hp.Parent and hp.Enabled) then break end
                     pressPrompt(hp)
                     task.wait(0.15)   -- v5.29: เดิม 0.25 — สแปม Help ถี่ขึ้น
+                end
+            end
+        end
+        -- v5.48: ผีใต้เตียง (MonsterBed) = เอาน้ำเชื่อมไปจ่อ "รอบเดียว" (ผู้ใช้สั่ง — Help สแปมไม่ทันแล้ว)
+        if FIRE_ON and fp and not WORKING and not CARRYING and not busyBefore(5) then
+            local bed
+            local rooms = workspace:FindFirstChild("Rooms")
+            local me4 = hrp() and hrp().Position
+            if rooms and me4 then
+                for _, d in ipairs(rooms:GetDescendants()) do
+                    if d.Name == "MonsterBed" and d:IsA("Model")
+                       and (not SYRUP_DONE[d] or os.clock() - SYRUP_DONE[d] > 60) then
+                        local p = partPos(d)
+                        if p and (p - me4).Magnitude < 150 then bed = d; break end
+                    end
+                end
+            end
+            if bed then
+                SYRUP_DONE[bed] = os.clock()   -- รอบเดียว — สำเร็จ/พลาดก็ไม่วนซ้ำ (พัก 60s)
+                setStatus("ผีใต้เตียง: เอาน้ำเชื่อมไป")
+                if heldCount("Maple Syrup") == 0 then
+                    local pp = findPickup("Maple Syrup")
+                    if pp and pp.Parent then
+                        tpTo(partPos(pp.Parent)); task.wait(0.15)
+                        pressPrompt(pp, function() return heldCount("Maple Syrup") > 0 end)
+                    end
+                end
+                if heldCount("Maple Syrup") > 0 and selectTool("Maple Syrup") then
+                    local bpos = partPos(bed)
+                    if bpos then
+                        -- ประชิด 2 studs + หามุมโล่ง 8 ทิศ (ผู้ใช้จูน)
+                        local rayP = RaycastParams.new()
+                        rayP.FilterType = Enum.RaycastFilterType.Exclude
+                        rayP.FilterDescendantsInstances = { bed, LP.Character }
+                        local spot
+                        for i = 0, 7 do
+                            local ang = i * math.pi / 4
+                            local cand = bpos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * 2
+                            if not workspace:Raycast(cand, bpos - cand, rayP) then spot = cand; break end
+                        end
+                        tpTo(spot or bpos); task.wait(0.2)
+                        -- ถือค้างรอผล: น้ำเชื่อมหายจากมือ/เตียงหาย = จบ ไม่ทำอะไรต่อ (สูงสุด 5s)
+                        local t0 = os.clock()
+                        repeat task.wait(0.2)
+                        until heldCount("Maple Syrup") == 0 or not bed.Parent
+                              or _G.AH74_GEN ~= MYGEN or os.clock() - t0 > 5
+                        setStatus(heldCount("Maple Syrup") == 0 and "ผีใต้เตียงหาย ✓" or "น้ำเชื่อมครบรอบ — ไปต่อ")
+                    end
                 end
             end
         end
