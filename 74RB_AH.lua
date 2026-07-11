@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.70 คนไข้หลบหลังเคาน์เตอร์ไม่นับคิวเช็คอิน — side-of-line แนวเคาน์เตอร์ 2 ช่อง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.71 เช็คอินสลับ 2 ช่องถี่ขึ้น 2วิ→0.7วิ — server เช็คแค่ยืนถูกจุดตอนส่งเอกสาร)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -158,7 +158,9 @@ local function checkinPending()
     for name, pos in pairs(spots) do list[#list+1] = { name = name, pos = pos } end
     if #list == 0 then return nil end
     table.sort(list, function(a, b) return a.name < b.name end)   -- ลำดับคงที่
-    return list[math.floor(os.clock() / 2) % #list + 1].pos       -- สลับช่องทุก 2 วิ
+    -- v5.71: สลับช่องทุก 0.7 วิ (ผู้ใช้: 2 วิช้าไป — server เช็คแค่ว่ายืนอยู่ตรงนั้นตอนส่งเอกสาร
+    --        วาปไปมาถี่ๆ = ได้เอกสารทั้ง 2 ช่องเกือบพร้อมกัน)
+    return list[math.floor(os.clock() / 0.7) % #list + 1].pos
 end
 
 local COL = {
@@ -1132,13 +1134,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.70", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.71", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.70 " .. lastStatus end
+    if not deadLock then title.Text = "v5.71 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
