@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.86 ดับไฟพื้น: ลอยเหนือพื้น 10 studs ตัวไม่แตะพื้น — สไลม์ยังลงประชิดเหมือนเดิม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.87 รักษาแบบลอย — ทุกจังหวะกดปุ่ม/หยิบยา/จ่ายยา ยกตัวลอย 10 studs ไม่แตะพื้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -203,6 +203,20 @@ local function pressPrompt(pp, done)
     local t0 = os.clock()
     repeat task.wait(0.05) until done() or os.clock() - t0 > 0.35   -- v5.29: เดิม 0.5 — สเต็ปจริงตอบใน ~0.2s
     return done()
+end
+-- v5.87: กดแบบ "ยกตัวลอย 10 studs" ก่อนกด (ผู้ใช้สั่ง — ช่วงรักษาตัวห้ามแตะพื้น กันเหยียบไฟ/สไลม์ในห้อง)
+local function liftPress(pp, done)
+    local pos = pp and pp.Parent and partPos(pp.Parent)
+    if pos then
+        local t0 = os.clock()
+        while hrp() and os.clock() - t0 < 0.25 do
+            local r2 = hrp()
+            r2.CFrame = CFrame.lookAt(Vector3.new(r2.Position.X, pos.Y + 10, r2.Position.Z), pos)
+            r2.AssemblyLinearVelocity = Vector3.zero
+            task.wait()
+        end
+    end
+    return pressPrompt(pp, done)
 end
 
 -- ===== Auto รักษา (match ชื่อยา ไม่ฆ่าคนไข้) =====
@@ -908,7 +922,7 @@ local function treatRoom(room)
             for _, p in ipairs(patient:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
                     if MACHINE_ON then tpTo(partPos(patient)); task.wait(0.15) end
-                    pressPrompt(p); task.wait(0.1)
+                    liftPress(p); task.wait(0.1)   -- v5.87: กดแบบลอย 10
                 end
             end
         end
@@ -917,7 +931,7 @@ local function treatRoom(room)
         for _, p in ipairs(room:GetDescendants()) do
             if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
                 if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
-                pressPrompt(p); task.wait(0.1)
+                liftPress(p); task.wait(0.1)   -- v5.87: กดแบบลอย 10
             end
         end
         return false
@@ -958,7 +972,7 @@ local function treatRoom(room)
             local pp = findPickup(m)
             if not (pp and pp.Parent) then return false end
             tpTo(partPos(pp.Parent)); task.wait(0.15)
-            pressPrompt(pp, function() return heldCount(m) > 0 end)
+            liftPress(pp, function() return heldCount(m) > 0 end)   -- v5.87: หยิบแบบลอย 10
             task.wait(0.1)
             if heldCount(m) == 0 then return false end   -- หยิบไม่ขึ้น → หยุด
         end
@@ -969,7 +983,7 @@ local function treatRoom(room)
         local owner = npcOwner(bedPP)
         tpTo(owner and partPos(owner) or partPos(bedPP.Parent)); task.wait(0.15)
         local gBefore, hBefore = givenCount(m), heldCount(m)
-        pressPrompt(bedPP, function()
+        liftPress(bedPP, function()   -- v5.87: จ่ายยาแบบลอย 10
             return heldCount(m) < hBefore or givenCount(m) > gBefore or roomDone(room)
         end)
         if heldCount(m) < hBefore then                   -- ของเข้าแล้ว → รอยอดชนิดขยับ (ห้ามกดซ้ำ)
@@ -1161,13 +1175,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.86", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.87", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.86 " .. lastStatus end
+    if not deadLock then title.Text = "v5.87 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
