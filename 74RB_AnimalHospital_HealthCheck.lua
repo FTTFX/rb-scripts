@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital_HealthCheck v1.1
+-- 74RB_AnimalHospital_HealthCheck v1.2  (fix false-positive: remote เป็นลูกตรงๆ ของ Net + Items stream ช้า)
 -- เช็ค "เฉพาะ" path/attr/remote/keyword ที่สคริปต์หลัก 74RB พึ่งพา ว่าเกมอัปเดตแล้วยังใช้ได้ไหม
 -- ไม่ dump ทั้งเกม → ไล่เช็ครายการที่เรา hardcode ไว้เท่านั้น → ❌ = จุดที่ต้องแก้
 -- เปิดในเกม (อยู่ในโรงพยาบาล, มีคนไข้/งานสักตัวจะเช็คได้ครบ) → GUI ขึ้น → กด Copy ส่งมา
@@ -21,7 +21,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1, -180, 0, 28); titleLbl.Position = UDim2.new(0, 10, 0, 0)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120,200,255)
-titleLbl.Text = "AH HealthCheck v1.1 — checking..."; titleLbl.Font = Enum.Font.Code
+titleLbl.Text = "AH HealthCheck v1.2 — checking..."; titleLbl.Font = Enum.Font.Code
 titleLbl.TextSize = 13; titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 local function topBtn(w, x, col, txt)
     local b = Instance.new("TextButton")
@@ -83,11 +83,9 @@ local PATHS = {
     {"Workspace.Misc.CheckIn",                 "จุดเช็คอิน"},
     {"Workspace.Misc.ShopItems",               "ร้านค้า container"},
     {"Workspace.Misc.ShopItems.1",             "ช่องร้าน 1"},
-    {"Workspace.Model.Items",                  "ที่เก็บยา (Herbs/Eye Drops/...)"},
+    {"Workspace.Model",                        "parent ของ Items (Items เอง stream ช้า — เช็คใน [2b])"},
     {"Workspace.Trash",                         "ถังขยะทิ้งยาผิด"},
-    {"ReplicatedStorage.Util.Net",             "Net framework root"},
-    {"ReplicatedStorage.Util.Net.RE",          "RemoteEvent folder"},
-    {"ReplicatedStorage.Util.Net.RF",          "RemoteFunction folder"},
+    {"ReplicatedStorage.Util.Net",             "Net framework root (remote เป็นลูกตรงๆ ชื่อ 'RE/xxx')"},
     {"ReplicatedStorage.Data.UpgradeShopWares","config ร้านค้า"},
 }
 
@@ -137,13 +135,12 @@ local function run()
         mark(node ~= nil)
     end
 
-    addLine("", C.S); addLine("=== [2] REMOTES (ชื่อใต้ Net.RE/RF) ===", C.HEAD)
-    local netRE = select(1, resolve("ReplicatedStorage.Util.Net.RE"))
-    local netRF = select(1, resolve("ReplicatedStorage.Util.Net.RF"))
+    addLine("", C.S); addLine("=== [2] REMOTES (ลูกตรงๆ ของ Net, ชื่อ 'RE/xxx') ===", C.HEAD)
+    local net = select(1, resolve("ReplicatedStorage.Util.Net"))
     local remoteNames = {}
-    for _, folder in ipairs({netRE, netRF}) do
-        if folder then for _, d in ipairs(folder:GetChildren()) do remoteNames[d.Name] = true end end
-    end
+    if net then for _, d in ipairs(net:GetChildren()) do
+        if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then remoteNames[d.Name] = true end
+    end end
     for _, r in ipairs(REMOTES) do
         local hit = nil
         for name in pairs(remoteNames) do if name:find(r, 1, true) then hit = name; break end end
