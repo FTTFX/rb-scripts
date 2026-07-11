@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.71 เช็คอินสลับ 2 ช่องถี่ขึ้น 2วิ→0.7วิ — server เช็คแค่ยืนถูกจุดตอนส่งเอกสาร)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.72 ฉีดถังเป็นจังหวะ 0.3/0.3 + ตายแล้วหยุดทันที — เดิมฉีดค้างใส่ศพจน charge วูบ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1134,13 +1134,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.71", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.72", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.71 " .. lastStatus end
+    if not deadLock then title.Text = "v5.72 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1953,8 +1953,14 @@ task.spawn(function()
                             local oldCamType = cam.CameraType
                             local t0 = os.clock()
                             local r = hrp()
+                            -- v5.72: ตายแล้วหยุดฉีดทันที (attr Anomaly ค้างบนศพ — เดิมฉีดใส่ศพจนถังหมด)
+                            local function hiderDead()
+                                local h2 = hider:FindFirstChildOfClass("Humanoid")
+                                return h2 and h2.Health <= 0
+                            end
                             while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
-                                  and hider:GetAttribute("Anomaly") and os.clock() - t0 < 8 do
+                                  and hider:GetAttribute("Anomaly") and not hiderDead()
+                                  and os.clock() - t0 < 8 do
                                 local spot, head = spraySpot()   -- v5.68: มุมโล่งสด (มันขยับ/กำแพงบัง = ย้ายมุมเอง)
                                 if not head then break end
                                 if not spot then spot = head.Position + head.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0) end
@@ -1965,14 +1971,17 @@ task.spawn(function()
                                 -- v5.62: สเปรย์พุ่งตาม Mouse.Hit (เคอร์เซอร์จริง) — ขยับเมาส์มากลางจอ
                                 --        กล้องเล็งหัวอยู่แล้ว → กลางจอ = หัวผีพอดี (PROJECT.md: ถัง "ต้องเล็ง")
                                 pcall(function() VIM:SendMouseMoveEvent(vp.X/2, vp.Y/2, game) end)
-                                mouse(true)   -- กดค้าง = ฉีดต่อเนื่อง
+                                -- v5.72: ฉีดเป็นจังหวะ 0.3 ฉีด / 0.3 พัก (เดิมกดค้างยาว = charge วูบ)
+                                mouse(true)
                                 local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
                                 if held then pcall(function() held:Activate() end) end   -- เผื่อเกมอ่านทางนี้ด้วย
-                                task.wait(0.1); r = hrp()
+                                task.wait(0.3)
+                                mouse(false)
+                                task.wait(0.3); r = hrp()
                             end
                             mouse(false)
                             cam.CameraType = oldCamType
-                            if not (hider.Parent and hider:GetAttribute("Anomaly")) then
+                            if not (hider.Parent and hider:GetAttribute("Anomaly")) or hiderDead() then
                                 HIDER_DONE[hider] = math.huge
                                 setStatus("Hider โดนถังแล้ว ✓")
                             else
