@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.00 ความเร็ววาป 1000→200 — ผู้ใช้จูน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.01 Ghost Scanner: หันมอง+กล้องเล็ง+VIM คลิกจริง ก่อนยิง remote — สูตรถัง v5.62)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1177,13 +1177,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.00", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.01", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.00 " .. lastStatus end
+    if not deadLock then title.Text = "v6.01 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1414,14 +1414,27 @@ task.spawn(function()
                         setStatus("Scanner ยิง Ghost " .. g.Name)
                         selectTool(scan.Name)
                         -- v5.89 ผู้ใช้จูน: ยืน "ด้านหลังมัน 8 studs + ลอยเหนือหัว 5" เล็งหัว
+                        -- v6.01: หันมอง + คลิกจริงด้วย (ผู้ใช้: จำเป็น) — สูตรถังดับเพลิง v5.62:
+                        --        กล้อง Scriptable เล็งหัว + VIM MouseMove กลางจอ + VIM คลิก แล้วค่อยยิง remote
+                        local cam = workspace.CurrentCamera
+                        local vp = cam.ViewportSize
+                        local oldCamType = cam.CameraType
                         local t0 = os.clock()
                         while hrp() and os.clock() - t0 < 0.4 and _G.AH74_GEN == MYGEN do
                             local r2 = hrp()
                             local spot = ghead.Position - ghead.CFrame.LookVector * 8 + Vector3.new(0, 5, 0)
                             r2.CFrame = CFrame.lookAt(spot, ghead.Position)
                             r2.AssemblyLinearVelocity = Vector3.zero
+                            cam.CameraType = Enum.CameraType.Scriptable
+                            cam.CFrame = CFrame.lookAt(r2.Position, ghead.Position)
                             task.wait()
                         end
+                        pcall(function() VIM:SendMouseMoveEvent(vp.X/2, vp.Y/2, game) end)
+                        pcall(function() VIM:SendMouseButtonEvent(vp.X/2, vp.Y/2, 0, true, game, 1) end)
+                        pcall(function() scan:Activate() end)
+                        task.wait(0.15)
+                        pcall(function() VIM:SendMouseButtonEvent(vp.X/2, vp.Y/2, 0, false, game, 1) end)
+                        cam.CameraType = oldCamType
                         local r = hrp()
                         if r and ghead.Parent then
                             pcall(function() re:FireServer(r.Position, ghead) end)
