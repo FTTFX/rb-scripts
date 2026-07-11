@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.66 กาแฟเช็คป้ายใกล้เครื่องตัวเอง (2 เครื่อง กัน Robux) + ดับไฟยืนห่างไฟทุกกอง ≥9)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.67 กาแฟอ่านป้าย status ในตัวเครื่องเองตรงๆ (CoffeeSpy ยืนยัน path) — จบปัญหา 2 เครื่องหลอกกัน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.66", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.67", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.66 " .. lastStatus end
+    if not deadLock then title.Text = "v5.67 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2036,35 +2036,17 @@ end)
 -- ===== v5.49 auto ซื้อของร้านค้า: prompt 'Buy' ใน ShopItems (RoomDebug ยืนยัน 3 ช่อง) =====
 -- งานท้ายสุดจริงๆ — ทำเฉพาะตอนว่างหมด (รักษา/อุ้ม/ไฟ/เช็คอินไม่มีค้าง) ; เงินไม่พอ = server ไม่ขาย ลองใหม่ทุก 30s
 -- v5.56: หา prompt เครื่องกาแฟที่ "พร้อมจริง" (ป้ายขึ้น พร้อม/Ready — กันเด้งหน้าซื้อ Robux ตอนชง)
--- v5.66: มีเครื่องกาแฟ 2 เครื่อง — ป้าย ready ของอีกเครื่องเคยหลอกให้กดเครื่องที่กำลังชง (เด้ง Robux)
---        → เช็คป้ายเฉพาะที่อยู่ใกล้ prompt ตัวเอง (<25 studs) + เจอ "brewing" ใกล้ = ห้ามกด
-local function labelPos(d)
-    local part = d:FindFirstAncestorWhichIsA("BasePart")
-    if part then return part.Position end
-    local bb = d:FindFirstAncestorWhichIsA("BillboardGui")
-    local ad = bb and (bb.Adornee or bb.Parent)
-    if ad and ad:IsA("BasePart") then return ad.Position end
-end
+-- v5.67: ผูกป้ายกับเครื่องด้วย path ตรงๆ (CoffeeSpy ยืนยัน) — ป้ายสถานะอยู่ในตัวเครื่องเอง:
+--        Workspace.Misc.CoffeeMachine(.2).Attachment.UI.status  (rich text '<font ...>ready</font>')
+--        เดิมเช็คด้วยระยะ = พังเพราะป้ายแขวนบน Attachment (หาพิกัดไม่ได้) + 2 เครื่องติดกัน
 local function coffeeReadyPP()
     for _, p in ipairs(workspace:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.ActionText == "Coffee" and p.Enabled then
-            local ppos = partPos(p.Parent)
-            local ready, brewing = false, false
-            if ppos then
-                for _, d in ipairs(workspace:GetDescendants()) do
-                    if d:IsA("TextLabel") then
-                        local t = d.Text:lower()
-                        if t:find("ready") or d.Text:find("พร้อม") or t:find("brewing") or d.Text:find("ชง") then
-                            local lp2 = labelPos(d)
-                            if lp2 and (lp2 - ppos).Magnitude < 25 then
-                                if t:find("brewing") or d.Text:find("ชง") then brewing = true
-                                else ready = true end
-                            end
-                        end
-                    end
-                end
-            end
-            if ready and not brewing then return p end
+            local m = p.Parent   -- ขึ้นไปหา model เครื่องตัวเอง (CoffeeMachine / CoffeeMachine2)
+            while m and m ~= workspace and not m.Name:find("CoffeeMachine") do m = m.Parent end
+            local st = m and m ~= workspace and m:FindFirstChild("status", true)
+            local t = st and st.Text:lower():gsub("<[^>]*>", "") or ""
+            if t:find("ready") then return p end   -- เครื่องนี้ ready จริงเท่านั้นถึงกด
         end
     end
 end
