@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.95 โซนเบรกวาป 25 studs — ผู้ใช้จูน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.96 ถอดกด "ตรวจสอบ" อัตโนมัติ — หน้าตรวจรูปมีปุ่มตัวเลือก กดมั่ว=แพ้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1162,13 +1162,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.95", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.96", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.95 " .. lastStatus end
+    if not deadLock then title.Text = "v5.96 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2466,21 +2466,9 @@ task.spawn(function()
                     pressPrompt(uvpp, function()
                         return (uvc:GetAttribute("Charge") or 0) == 0 or ready:GetAttribute("HasPhotoEffect")
                     end)
-                    -- v5.80: ถ่ายเสร็จมีรูปโพลารอยด์โผล่บนกล้อง + prompt "ตรวจสอบ" — ต้องกดอีกทีถึงเฉลยผล
-                    --        (ผู้ใช้เจอหน้างาน) รอรูปเด้งแล้วกดทุก prompt ใหม่บนกล้อง สูงสุด 12s
-                    local t1 = os.clock()
-                    while os.clock() - t1 < 12 and _G.AH74_GEN == MYGEN do
-                        if ready:GetAttribute("HasPhotoEffect") then break end
-                        for _, p2 in ipairs(uvc:GetDescendants()) do
-                            if p2:IsA("ProximityPrompt") and p2.Enabled and p2 ~= uvpp then
-                                setStatus("กดตรวจรูป UV")
-                                pressPrompt(p2)
-                            end
-                        end
-                        task.wait(0.4)
-                    end
-                    setStatus(ready:GetAttribute("HasPhotoEffect") and "ถ่าย UV — แฉ " .. ready.Name .. " ✓"
-                        or "ถ่าย UV แล้ว (ผลไม่ขึ้น)")
+                    -- v5.96: ⚠️ ห้ามกด "ตรวจสอบ" อัตโนมัติ — หน้าตรวจรูปมีปุ่มตัวเลือกให้ตอบ
+                    --        (v5.80 กดมั่วทุก prompt = ตอบผิด แพ้เลย ผู้ใช้เจอ) ถ่ายเสร็จหยุด รอคนตรวจเอง
+                    setStatus("ถ่าย UV แล้ว — กด 'ตรวจสอบ' เลือกคำตอบเองนะ")
                     WORKING = false
                 end
             end
