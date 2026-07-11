@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.84 ถังฉีด Hider ช้าลง 0.2 ฉีด/0.8 พัก — 0.3/0.3 ยังเปลือง charge)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.85 Ghost: ลอยเหนือหัว 15 studs — ห้ามใกล้กว่านั้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1161,13 +1161,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.84", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.85", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.84 " .. lastStatus end
+    if not deadLock then title.Text = "v5.85 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1390,11 +1390,11 @@ task.spawn(function()
                         shotAt[g] = math.huge
                         setStatus("Scanner ยิง Ghost " .. g.Name)
                         selectTool(scan.Name)
-                        -- ลอยเหนือหัวมัน 10 studs ก้มยิงลง (กติกา mass of eyes: ก้มได้ ห้ามเงย)
+                        -- ลอยเหนือหัวมัน 15 studs ก้มยิงลง (v5.85 ผู้ใช้: Ghost ต้องห่าง 15 ห้ามใกล้กว่านั้น)
                         local t0 = os.clock()
                         while hrp() and os.clock() - t0 < 0.4 and _G.AH74_GEN == MYGEN do
                             local r2 = hrp()
-                            r2.CFrame = CFrame.lookAt(ghead.Position + Vector3.new(0, 10, 0), ghead.Position)
+                            r2.CFrame = CFrame.lookAt(ghead.Position + Vector3.new(0, 15, 0), ghead.Position)
                             r2.AssemblyLinearVelocity = Vector3.zero
                             task.wait()
                         end
