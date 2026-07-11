@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.68 ฉีด Hider หามุมโล่ง 8 ทิศ raycast — Hider ชิดกำแพงก็อ้อมไปฉีดได้)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.69 ดับไฟ: จัดอันดับ 9 มุมตามระยะห่างไฟกองอื่น เอามุมห่างไฟสุดเสมอ — จบเหยียบไฟ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.68", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.69", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.68 " .. lastStatus end
+    if not deadLock then title.Text = "v5.69 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1673,11 +1673,17 @@ task.spawn(function()
                         if fp2 then firePos[#firePos+1] = fp2 end
                     end
                 end
-                local function fireSafe(spot, target)
+                -- v5.69: ไฟลามหลายกองติดกัน → 8 ทิศ "ปลอดภัย" ไม่มีเลยแล้วถอยไปจุดเดิม = เหยียบไฟ (ผู้ใช้เจ็บ)
+                --        เปลี่ยนเป็นให้คะแนน: ระยะต่ำสุดถึงไฟกองอื่น — เลือกมุมที่ห่างไฟสุดเสมอ
+                local function fireClearance(spot, target)
+                    local worst = math.huge
                     for _, fp2 in ipairs(firePos) do
-                        if (fp2 - target).Magnitude > 1 and (spot - fp2).Magnitude < 9 then return false end
+                        if (fp2 - target).Magnitude > 1 then
+                            local d2 = (spot - fp2).Magnitude
+                            if d2 < worst then worst = d2 end
+                        end
                     end
-                    return true
+                    return worst
                 end
                 for _, d in ipairs(fires) do
                     -- v4.91: เช็คคนเป็นลม "ทุกกอง" ก่อนดับ — เดิมเช็คแค่ต้นรอบ พอไฟหลายกอง
@@ -1692,27 +1698,24 @@ task.spawn(function()
                             -- v5.31: ระยะยืนตามชนิด (ผู้ใช้จูน) — ไฟ 10 (ไม่เหยียบไฟ), สไลม์ 4 (ประชิด)
                             local gap = d.ActionText == "Clean Slime" and 4 or 10
                             local dir = from and (from - pos).Magnitude > 1 and (from - pos).Unit or Vector3.new(1, 0, 0)
-                            local spot = pos + dir * gap
-                            if not fireSafe(spot, pos) then   -- จุดตรงๆ เหยียบกองอื่น → หามุมปลอดไฟ
-                                for i = 0, 7 do
-                                    local ang = i * math.pi / 4
-                                    local cand = pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap
-                                    if fireSafe(cand, pos) then spot = cand; break end
-                                end
+                            -- v5.69: จัดอันดับ 9 จุด (ฝั่งเรา + 8 ทิศ) ตามระยะห่างไฟกองอื่น — เอามุมห่างไฟสุดก่อนเสมอ
+                            local cands = { pos + dir * gap }
+                            for i = 0, 7 do
+                                local ang = i * math.pi / 4
+                                cands[#cands+1] = pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap
                             end
-                            tpTo(spot); task.wait(0.15)
+                            table.sort(cands, function(a, b)
+                                return fireClearance(a, pos) > fireClearance(b, pos)
+                            end)
+                            tpTo(cands[1]); task.wait(0.15)
                             ok = pressPrompt(d)
-                            -- v5.30: กดไม่ติด → วนหามุมรอบเป้า 8 ทิศ (ผู้ใช้ขอ — สไลม์หลังกำแพง/มุมอับ)
+                            -- v5.30: กดไม่ติด → ไล่มุมถัดไป (เรียงจากห่างไฟสุดแล้ว — สไลม์หลังกำแพง/มุมอับ)
                             if not ok then
-                                for i = 0, 7 do
+                                for i = 2, #cands do
                                     if not (d.Parent and d.Enabled) then ok = true; break end
-                                    local ang = i * math.pi / 4
-                                    local cand = pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap
-                                    if fireSafe(cand, pos) then   -- v5.66: มุม retry ก็ห้ามเหยียบกองอื่น
-                                        tpTo(cand)
-                                        task.wait(0.15)
-                                        if pressPrompt(d) then ok = true; break end
-                                    end
+                                    tpTo(cands[i])
+                                    task.wait(0.15)
+                                    if pressPrompt(d) then ok = true; break end
                                 end
                             end
                         end
