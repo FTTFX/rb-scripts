@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.59 Hider: บินหมุนวนรอบตัวมัน + เห็นแล้วถอยหนี +20 studs)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.60 Hider: มีถังดับเพลิง=บินไปฉีดใส่เลย ไม่มีถังค่อยบินวนให้มันเห็น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.59", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.60", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.59 " .. lastStatus end
+    if not deadLock then title.Text = "v5.60 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1868,8 +1868,44 @@ task.spawn(function()
                     end
                     return false
                 end
+                -- v5.60: มีถังดับเพลิง = ฉีดใส่ Hider เลย (ผู้ใช้สั่ง — ถังจัดการ Hider ได้)
+                --        ไม่มีถังค่อยใช้ท่าเดิม (บินวนให้มันเห็น)
+                local function extTool()
+                    for _, t in ipairs(heldTools()) do
+                        if t.Name:lower():find("extinguisher", 1, true) then return t end
+                    end
+                end
                 while HIDER_ON and _G.AH74_GEN == MYGEN do
                     if hider and hider.Parent and hider:GetAttribute("Anomaly") then
+                        local ext = extTool()
+                        if ext then
+                            setStatus("ฉีดถังใส่ Hider")
+                            local h0 = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                            if h0 then flyTo(h0.Position + h0.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)) end
+                            selectTool(ext.Name)
+                            local t0 = os.clock()
+                            local r = hrp()
+                            while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
+                                  and hider:GetAttribute("Anomaly") and os.clock() - t0 < 8 do
+                                local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                                if not head then break end
+                                r.CFrame = CFrame.lookAt(head.Position + head.CFrame.LookVector * FRONT
+                                    + Vector3.new(0, UP, 0), head.Position)   -- ก้มเล็งหัว (ไม่มีเงย — กติกา mass of eyes)
+                                r.AssemblyLinearVelocity = Vector3.zero
+                                local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+                                if held then pcall(function() held:Activate() end) end
+                                task.wait(0.25); r = hrp()
+                            end
+                            if not (hider.Parent and hider:GetAttribute("Anomaly")) then
+                                HIDER_DONE[hider] = math.huge
+                                setStatus("Hider โดนถังแล้ว ✓")
+                            else
+                                HIDER_DONE[hider] = os.clock()   -- 8s ไม่หาย — พัก 45s (ถังอาจหมด charge)
+                                setStatus("ถังไม่เข้า — พัก ไปตัวถัดไป")
+                            end
+                            hider = nextHider()
+                            continue
+                        end
                         setStatus("ลอยหน้า Hider")
                         local h0 = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                         if h0 then flyTo(h0.Position + h0.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)) end
