@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.73 เพิ่ม scanner เข้า NO_DISCARD — item ใหม่ห้ามทิ้งถังขยะ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.74 ถังดับเพลิง: ไม่มีถัง=บินไปยืมจากแท่นผนัง / จัดการ Hider เสร็จ=เอาไปคืนแท่นชาร์จ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1134,13 +1134,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.73", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.74", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.73 " .. lastStatus end
+    if not deadLock then title.Text = "v5.74 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1913,9 +1913,31 @@ task.spawn(function()
                         if t.Name:lower():find("extinguisher", 1, true) then return t end
                     end
                 end
+                -- v5.74: แท่นถังบนผนัง (ยืม/คืน — prompt มีคำว่า Ext) — ผู้ใช้สั่ง:
+                --        ไม่มีถัง = บินไปหยิบก่อน / จัดการ Hider เสร็จ = เอาไปคืนแท่น (ชาร์จ % กลับ)
+                local function extStation()
+                    for _, p in ipairs(workspace:GetDescendants()) do
+                        if p:IsA("ProximityPrompt") and p.Enabled
+                           and (p.ActionText .. " " .. p.ObjectText):lower():find("ext", 1, true) then
+                            local a = p:FindFirstAncestorWhichIsA("BasePart")
+                            local pos = (a and a.Position) or partPos(p.Parent)
+                            if pos then return p, pos end
+                        end
+                    end
+                end
                 while HIDER_ON and _G.AH74_GEN == MYGEN do
                     if hider and hider.Parent and hider:GetAttribute("Anomaly") then
                         local ext = extTool()
+                        if not ext then
+                            -- v5.74: ไม่มีถังในมือ → บินไปยืมจากแท่นผนังก่อน (หยิบไม่ได้ค่อยใช้ท่าลอยจ้อง)
+                            local gp, gpos = extStation()
+                            if gp then
+                                setStatus("บินไปหยิบถัง Ext")
+                                flyTo(gpos + Vector3.new(0, 1, 0))
+                                pressPrompt(gp, function() return extTool() ~= nil end)
+                                ext = extTool()
+                            end
+                        end
                         if ext then
                             setStatus("ฉีดถังใส่ Hider")
                             -- v5.68: หามุมยืนที่ไม่ติดกำแพง 8 ทิศ (ผู้ใช้แจ้ง — Hider ชิดกำแพง จุดหน้ามันเข้าไม่ได้)
@@ -2065,6 +2087,18 @@ task.spawn(function()
                             task.wait()
                         end
                         hider = nextHider()   -- เผื่อตัวใหม่ spawn ระหว่างรอ
+                    end
+                end
+                -- v5.74: จบงาน Hider → เอาถังไปคืนแท่นผนัง (ชาร์จ % กลับ) แล้วค่อยทำงานอื่น
+                local ext3 = extTool()
+                if ext3 then
+                    local rp, rpos = extStation()
+                    if rp then
+                        setStatus("เอาถังไปคืน/ชาร์จ")
+                        selectTool(ext3.Name)
+                        flyTo(rpos + Vector3.new(0, 1, 0))
+                        pressPrompt(rp, function() return not extTool() end)
+                        setStatus(extTool() and "คืนถังไม่ได้ (เก็บไว้ก่อน)" or "คืนถังชาร์จแล้ว ✓")
                     end
                 end
                 WORKING = false
