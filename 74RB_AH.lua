@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.82 ปุ่มยิงผี: Ghost ฆ่าด้วย Scanner — ลอยเหนือหัว 10 ยิงลง + ห้ามมีคนไข้ <8)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.83 ปุ่ม "Ghost" แยก — Scanner ลอยเหนือหัว 10 ยิงลง + ห้ามมีคนไข้ <8)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -36,6 +36,7 @@ local ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON = true, false, true, fals
 local TP_ON = true
 local HIDER_ON = false   -- v5.36: งาน Hider แยกปุ่มเอง (เดิมพ่วงเช็คอิน — ผู้ใช้บอกเป็นเรื่องเป็นตาย)
 local CAMFIX_ON = false  -- v5.75: บินซ่อมกล้องวงจรปิดที่เสีย (prompt 'Fix Camera')
+local GHOSTKILL_ON = false   -- v5.83: ฆ่า Ghost ด้วย Scanner (ปุ่มแยก — ผู้ใช้สั่ง ตัวนี้ไม่ปกติ)
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอท — คนละโซนไม่แย่งจ่ายยาห้องเดียวกัน) ; เล่นเดี่ยวเปิดทั้งคู่
 local ROOMS_MED, ROOMS_EM = true, true   -- Medical 1-5 / Emergency 6-8
 local SHOP_ON = false    -- v5.49: auto ซื้อของอัปเกรดร้านค้า (prompt 'Buy' ใน ShopItems)
@@ -1160,13 +1161,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.82", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.83", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.82 " .. lastStatus end
+    if not deadLock then title.Text = "v5.83 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1345,58 +1346,68 @@ task.spawn(function()
                         setStatus("ผี " .. target.Name .. " ติดกำแพง — ข้าม")
                     end
                 end
-                -- v5.82: Ghost (Anomaly+Ghost) ฆ่าด้วย Scanner — ผู้ใช้พิสูจน์: remote เดียวกับปืน
-                --        เงื่อนไข: ยิงจาก "ด้านบน" + ห้ามมีคนไข้/คนเยี่ยมข้างๆ (ลูกหลง)
-                if not target then
-                    local scan
-                    for _, t in ipairs(heldTools()) do
-                        if t.Name:lower():find("scanner", 1, true) then scan = t break end
+            end
+        end
+        task.wait(0.15)   -- v5.25: เดิม 0.4 — สแกนผีถี่ขึ้น
+    end
+end)
+
+-- ===== v5.83 ปุ่มแยก "Ghost": ฆ่า Ghost (Anomaly+Ghost) ด้วย Scanner (ผู้ใช้สั่งแยก — ตัวนี้ไม่ปกติ) =====
+-- ผู้ใช้พิสูจน์: remote เดียวกับปืน PlayShootEffect ; เงื่อนไข: ยิงจาก "ด้านบน" + ห้ามมีคนไข้/คนเยี่ยมข้างๆ
+task.spawn(function()
+    local shotAt = SHOT_AT
+    while _G.AH74_GEN == MYGEN do
+        if GHOSTKILL_ON and not WORKING and not busyBefore(5) then
+            local re = findShootRE()
+            local npcs = workspace:FindFirstChild("NPCs")
+            local me = hrp() and hrp().Position
+            local scan
+            for _, t in ipairs(heldTools()) do
+                if t.Name:lower():find("scanner", 1, true) then scan = t break end
+            end
+            if re and npcs and me and scan then
+                local g, gd, ghead
+                for _, m in ipairs(npcs:GetChildren()) do
+                    if m:IsA("Model") and m:GetAttribute("Anomaly") and m:GetAttribute("Ghost")
+                       and (not shotAt[m] or os.clock() - shotAt[m] > 3) then
+                        local h2 = m:FindFirstChildOfClass("Humanoid")
+                        if not h2 or h2.Health > 0 then
+                            local head = m:FindFirstChild("Head") or m:FindFirstChildWhichIsA("BasePart")
+                            local d = head and (head.Position - me).Magnitude
+                            if d and d < 200 and (not g or d < gd) then g, gd, ghead = m, d, head end
+                        end
                     end
-                    if scan then
-                        local g, gd, ghead
-                        for _, m in ipairs(npcs:GetChildren()) do
-                            if m:IsA("Model") and m:GetAttribute("Anomaly") and m:GetAttribute("Ghost")
-                               and (not shotAt[m] or os.clock() - shotAt[m] > 3) then
-                                local h2 = m:FindFirstChildOfClass("Humanoid")
-                                if not h2 or h2.Health > 0 then
-                                    local head = m:FindFirstChild("Head") or m:FindFirstChildWhichIsA("BasePart")
-                                    local d = head and (head.Position - me).Magnitude
-                                    if d and d < 200 and (not g or d < gd) then g, gd, ghead = m, d, head end
-                                end
-                            end
+                end
+                if g then
+                    local clear = true   -- คนไข้/คนเยี่ยมใกล้ผี <8 = ห้ามยิง (ลูกหลง)
+                    for _, m in ipairs(npcs:GetChildren()) do
+                        if m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor") then
+                            local p2 = partPos(m)
+                            if p2 and (p2 - ghead.Position).Magnitude < 8 then clear = false break end
                         end
-                        if g then
-                            local clear = true   -- คนไข้/คนเยี่ยมใกล้ผี <8 = ห้ามยิง
-                            for _, m in ipairs(npcs:GetChildren()) do
-                                if m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor") then
-                                    local p2 = partPos(m)
-                                    if p2 and (p2 - ghead.Position).Magnitude < 8 then clear = false break end
-                                end
-                            end
-                            if clear then
-                                shotAt[g] = math.huge
-                                setStatus("Scanner ยิง Ghost " .. g.Name)
-                                selectTool(scan.Name)
-                                -- ลอยเหนือหัวมัน 10 studs ก้มยิงลง (กติกา mass of eyes: ก้มได้ ห้ามเงย)
-                                local t0 = os.clock()
-                                while hrp() and os.clock() - t0 < 0.4 and _G.AH74_GEN == MYGEN do
-                                    local r2 = hrp()
-                                    r2.CFrame = CFrame.lookAt(ghead.Position + Vector3.new(0, 10, 0), ghead.Position)
-                                    r2.AssemblyLinearVelocity = Vector3.zero
-                                    task.wait()
-                                end
-                                local r = hrp()
-                                if r and ghead.Parent then pcall(function() re:FireServer(r.Position, ghead) end) end
-                            else
-                                shotAt[g] = os.clock()   -- พัก 3s รอคนไข้เดินออก
-                                setStatus("Ghost มีคนไข้ข้างๆ — รอ")
-                            end
+                    end
+                    if clear then
+                        shotAt[g] = math.huge
+                        setStatus("Scanner ยิง Ghost " .. g.Name)
+                        selectTool(scan.Name)
+                        -- ลอยเหนือหัวมัน 10 studs ก้มยิงลง (กติกา mass of eyes: ก้มได้ ห้ามเงย)
+                        local t0 = os.clock()
+                        while hrp() and os.clock() - t0 < 0.4 and _G.AH74_GEN == MYGEN do
+                            local r2 = hrp()
+                            r2.CFrame = CFrame.lookAt(ghead.Position + Vector3.new(0, 10, 0), ghead.Position)
+                            r2.AssemblyLinearVelocity = Vector3.zero
+                            task.wait()
                         end
+                        local r = hrp()
+                        if r and ghead.Parent then pcall(function() re:FireServer(r.Position, ghead) end) end
+                    else
+                        shotAt[g] = os.clock()   -- พัก 3s รอคนไข้เดินออก
+                        setStatus("Ghost มีคนไข้ข้างๆ — รอ")
                     end
                 end
             end
         end
-        task.wait(0.15)   -- v5.25: เดิม 0.4 — สแกนผีถี่ขึ้น
+        task.wait(0.15)
     end
 end)
 
@@ -2567,10 +2578,17 @@ camB.MouseButton1Click:Connect(function()
     camB.Text = "ซ่อมกล้อง: " .. (CAMFIX_ON and "ON" or "OFF")
     camB.BackgroundColor3 = CAMFIX_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
+-- v5.83: ปุ่ม Ghost (Scanner) แยกจากยิงผี
+local ghB = btn("Ghost: OFF", 98, 226, 86, 30, Color3.fromRGB(60,60,80))
+ghB.MouseButton1Click:Connect(function()
+    GHOSTKILL_ON = not GHOSTKILL_ON
+    ghB.Text = "Ghost: " .. (GHOSTKILL_ON and "ON" or "OFF")
+    ghB.BackgroundColor3 = GHOSTKILL_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(60,60,80)
+end)
 
 btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON =
-        false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
