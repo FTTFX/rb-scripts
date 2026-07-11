@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.90 ถอดโหมดรักษาแบบบินออกทั้งหมด — กลับ tpTo พื้นแบบเดิม ; Ghost ยังหลัง 8+ลอย 5)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.91 วาปเร็วขึ้นจริง — เบรกเฉพาะ 20 studs สุดท้าย เดิมเบรกตั้งแต่ 125 ไม่เคยถึง 1000)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -319,8 +319,8 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
             local dir = pos - r.Position
             dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
             if dir.Magnitude < 3 then break end
-            -- v5.23: เบรกใกล้เป้า — 1000 วิ่ง ~16 studs/เฟรม จะข้ามเกณฑ์หยุด 3 studs (dir*8 = จอดนิ่ม)
-            local spd = math.min(SLIDE_SPEED, dir.Magnitude * 8)
+            -- v5.91: เบรกเฉพาะ 20 studs สุดท้าย (เดิม dir*8 = เบรกตั้งแต่ 125 → แมพกว้าง ~100 ไม่เคยได้วิ่ง 1000 จริง)
+            local spd = dir.Magnitude > 20 and SLIDE_SPEED or math.min(SLIDE_SPEED, dir.Magnitude * 8)
             r.AssemblyLinearVelocity = dir.Unit * spd
             r.CFrame = CFrame.new(Vector3.new(r.Position.X, yLock, r.Position.Z))
                 * (r.CFrame - r.CFrame.Position)
@@ -1162,13 +1162,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.90", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.91", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.90 " .. lastStatus end
+    if not deadLock then title.Text = "v5.91 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
