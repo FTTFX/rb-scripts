@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.92 เบรกเฟรมเดียว dir*60 — วิ่งเต็ม 1000 แล้วจอดทันที ไม่มีช่วงหน่วง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.93 ถังฉีด 0.2/พัก 1.2 + ตรึงตำแหน่งทุกเฟรมตอนฉีด — เดิมร่วงตกพื้นตอนรอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1163,13 +1163,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.92", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.93", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.92 " .. lastStatus end
+    if not deadLock then title.Text = "v5.93 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2090,7 +2090,7 @@ task.spawn(function()
                             end
                             while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
                                   and hider:GetAttribute("Anomaly") and not hiderDead()
-                                  and os.clock() - t0 < 12 do   -- v5.84: จังหวะช้าลง → เพิ่มเวลาให้ยิงครบจำนวนเท่าเดิม
+                                  and os.clock() - t0 < 16 do   -- v5.93: จังหวะ 1.4s/รอบ → 16s ≈ ฉีด 11 ครั้ง/ตัว
                                 local spot, head = spraySpot()   -- v5.68: มุมโล่งสด (มันขยับ/กำแพงบัง = ย้ายมุมเอง)
                                 if not head then break end
                                 if not spot then spot = head.Position + head.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0) end
@@ -2101,13 +2101,23 @@ task.spawn(function()
                                 -- v5.62: สเปรย์พุ่งตาม Mouse.Hit (เคอร์เซอร์จริง) — ขยับเมาส์มากลางจอ
                                 --        กล้องเล็งหัวอยู่แล้ว → กลางจอ = หัวผีพอดี (PROJECT.md: ถัง "ต้องเล็ง")
                                 pcall(function() VIM:SendMouseMoveEvent(vp.X/2, vp.Y/2, game) end)
-                                -- v5.84: ฉีดสั้นลง-พักนานขึ้น 0.2 ฉีด / 0.8 พัก (ผู้ใช้: 0.3/0.3 ยังเปลือง charge)
+                                -- v5.93: 0.2 ฉีด / 1.2 พัก (ผู้ใช้จูน) + ตรึงตำแหน่งทุกเฟรมตลอดช่วงรอ
+                                --        (เดิมตรึงครั้งเดียวแล้ว task.wait ยาว = แรงโน้มถ่วงดึงตกพื้น — ผู้ใช้เจอ)
+                                local function holdAt(dur)
+                                    local t1 = os.clock()
+                                    while os.clock() - t1 < dur and hrp() and _G.AH74_GEN == MYGEN do
+                                        local r3 = hrp()
+                                        r3.CFrame = CFrame.lookAt(spot, head.Position)
+                                        r3.AssemblyLinearVelocity = Vector3.zero
+                                        task.wait()
+                                    end
+                                end
                                 mouse(true)
                                 local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
                                 if held then pcall(function() held:Activate() end) end   -- เผื่อเกมอ่านทางนี้ด้วย
-                                task.wait(0.2)
+                                holdAt(0.2)
                                 mouse(false)
-                                task.wait(0.8); r = hrp()
+                                holdAt(1.2); r = hrp()
                             end
                             mouse(false)
                             cam.CameraType = oldCamType
