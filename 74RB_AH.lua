@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.77 ESP สีขาว "ติดเชื้อUV" — NPC ที่โดนกล้อง UV แฉ LizInfectedFace)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.78 ปุ่มปิด=งานกลุ่มนั้นไม่นับค้าง — ไฟ/อุ้ม/สไลม์ไม่บล็อกเคาน์เตอร์ตอนปิดดับไฟ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -522,6 +522,7 @@ local function faintEligible(m)
        and (not FAINT_DONE[m] or os.clock() - FAINT_DONE[m] > 10)
 end
 local function faintPending()
+    if not FIRE_ON then return nil, nil end   -- v5.78: ปุ่มดับไฟปิด = กลุ่มงานนี้ไม่นับค้าง (เดิมบล็อกเคาน์เตอร์เงียบ)
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return nil, nil end
     local kids = npcs:GetChildren()
@@ -565,6 +566,7 @@ local function burnResting(m)
     return f and f.n >= 3 and os.clock() - f.t <= 15
 end
 local function firePending()
+    if not FIRE_ON then return false end   -- v5.78: ปุ่มปิด = ไม่นับงานค้าง
     local npcs = workspace:FindFirstChild("NPCs")
     if npcs then for _, m in ipairs(npcs:GetChildren()) do
         local pp = m:FindFirstChild("FirePP")
@@ -582,6 +584,7 @@ local function firePending()
     return false
 end
 local function slimePending()
+    if not FIRE_ON then return false end   -- v5.78: ปุ่มปิด = ไม่นับงานค้าง
     local misc = workspace:FindFirstChild("Misc")
     local me = hrp() and hrp().Position
     if misc and me then for _, d in ipairs(misc:GetDescendants()) do
@@ -1157,13 +1160,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.77", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.78", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.77 " .. lastStatus end
+    if not deadLock then title.Text = "v5.78 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1353,6 +1356,7 @@ end)
 task.spawn(function()
     local lastStream = 0   -- v4.98: กันยิง RequestStream ถี่เกิน (yield ทีละ ~เฟรม)
     while _G.AH74_GEN == MYGEN do
+        if not AUTO_ON then TREAT_BUSY = false end   -- v5.78: ปิดปุ่มรักษากลางคัน = ปลดล็อคทันที (กันค้างบล็อกทุกงาน)
         if AUTO_ON and fp then   -- v5.43: รักษาอันดับ 1 — ไม่หลีกทางให้ใครแล้ว (เดิมหลบคนเป็นลม)
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
