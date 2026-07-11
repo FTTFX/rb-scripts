@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.61 Hider: ฉีดถังด้วย VIM เมาส์ค้าง + ล็อคกล้องเล็ง — Activate เฉยๆ ไม่ฉีด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.62 Hider: ขยับเมาส์จริงมากลางจอก่อนฉีด — สเปรย์พุ่งตาม Mouse.Hit ไม่ใช่กล้อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.61", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.62", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.61 " .. lastStatus end
+    if not deadLock then title.Text = "v5.62 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1905,6 +1905,9 @@ task.spawn(function()
                                 r.AssemblyLinearVelocity = Vector3.zero
                                 cam.CameraType = Enum.CameraType.Scriptable
                                 cam.CFrame = CFrame.lookAt(r.Position, head.Position)
+                                -- v5.62: สเปรย์พุ่งตาม Mouse.Hit (เคอร์เซอร์จริง) — ขยับเมาส์มากลางจอ
+                                --        กล้องเล็งหัวอยู่แล้ว → กลางจอ = หัวผีพอดี (PROJECT.md: ถัง "ต้องเล็ง")
+                                pcall(function() VIM:SendMouseMoveEvent(vp.X/2, vp.Y/2, game) end)
                                 mouse(true)   -- กดค้าง = ฉีดต่อเนื่อง
                                 local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
                                 if held then pcall(function() held:Activate() end) end   -- เผื่อเกมอ่านทางนี้ด้วย
