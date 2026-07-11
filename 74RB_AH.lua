@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.88 รักษาแบบบินตลอด — บินเหมือนโหมด Hider ค้างกลางอากาศทุกจังหวะ ไม่ตกพื้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.89 จูนความสูง: รักษาลอย 5 / Ghost ยืนหลังมัน 8 + ลอย 5)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -222,7 +222,7 @@ end
 local function liftPress(pp, done)
     local pos = pp and pp.Parent and partPos(pp.Parent)
     if not pos then return pressPrompt(pp, done) end
-    local hover = pos + Vector3.new(0, 10, 0)
+    local hover = pos + Vector3.new(0, 5, 0)   -- v5.89: ผู้ใช้จูน 10→5
     flyGo(hover)
     local holding = true
     task.spawn(function()
@@ -897,7 +897,7 @@ local function treatRoom(room)
     do
         local pPos, me = partPos(patient), hrp() and hrp().Position
         if pPos and me and (pPos - me).Magnitude > 10 then
-            flyGo(pPos + Vector3.new(0, 10, 0)); task.wait(0.05)   -- v5.88: บินเข้าห้อง ไม่ลงพื้น
+            flyGo(pPos + Vector3.new(0, 5, 0)); task.wait(0.05)   -- v5.89: บินเข้าห้อง ลอย 5
         end
     end
     local ghost = patient and patient:GetAttribute("Skinwalker")
@@ -1189,13 +1189,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.88", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.89", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.88 " .. lastStatus end
+    if not deadLock then title.Text = "v5.89 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1418,11 +1418,12 @@ task.spawn(function()
                         shotAt[g] = math.huge
                         setStatus("Scanner ยิง Ghost " .. g.Name)
                         selectTool(scan.Name)
-                        -- ลอยเหนือหัวมัน 15 studs ก้มยิงลง (v5.85 ผู้ใช้: Ghost ต้องห่าง 15 ห้ามใกล้กว่านั้น)
+                        -- v5.89 ผู้ใช้จูน: ยืน "ด้านหลังมัน 8 studs + ลอยเหนือหัว 5" เล็งหัว
                         local t0 = os.clock()
                         while hrp() and os.clock() - t0 < 0.4 and _G.AH74_GEN == MYGEN do
                             local r2 = hrp()
-                            r2.CFrame = CFrame.lookAt(ghead.Position + Vector3.new(0, 15, 0), ghead.Position)
+                            local spot = ghead.Position - ghead.CFrame.LookVector * 8 + Vector3.new(0, 5, 0)
+                            r2.CFrame = CFrame.lookAt(spot, ghead.Position)
                             r2.AssemblyLinearVelocity = Vector3.zero
                             task.wait()
                         end
@@ -1499,7 +1500,7 @@ task.spawn(function()
                         local pos = roomPos(target)
                         if pos then
                             pcall(function() LP:RequestStreamAroundAsync(pos, 1) end)
-                            flyGo(pos + Vector3.new(0, 10, 0))   -- v5.88: บินเข้าห้อง ไม่ลงพื้น
+                            flyGo(pos + Vector3.new(0, 5, 0))   -- v5.89: บินเข้าห้อง ลอย 5
                             local t0 = os.clock()
                             repeat task.wait(0.1) until getScreenUI(target) or os.clock() - t0 > 1.5   -- v5.25: เดิม 3 (ผู้ใช้ขอ)
                         end
