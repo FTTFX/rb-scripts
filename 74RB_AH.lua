@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.89 จูนความสูง: รักษาลอย 5 / Ghost ยืนหลังมัน 8 + ลอย 5)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.90 ถอดโหมดรักษาแบบบินออกทั้งหมด — กลับ tpTo พื้นแบบเดิม ; Ghost ยังหลัง 8+ลอย 5)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -204,39 +204,7 @@ local function pressPrompt(pp, done)
     repeat task.wait(0.05) until done() or os.clock() - t0 > 0.35   -- v5.29: เดิม 0.5 — สเต็ปจริงตอบใน ~0.2s
     return done()
 end
--- v5.88: โหมดรักษาแบบ "บินตลอด" เหมือนตอนล่อ Hider (ผู้ใช้สั่ง — v5.87 ยก-ตก-ยก กระโดดตุ๊บๆ)
--- flyGo = ก้าวกลางอากาศทุกเฟรม ~180 studs/s ไม่แตะพื้น (pattern เดียวกับ flyTo ของ Hider)
-local function flyGo(dest)
-    if not dest then return end
-    local r = hrp()
-    local t0 = os.clock()
-    while r and _G.AH74_GEN == MYGEN and os.clock() - t0 < 10 do
-        local d = dest - r.Position
-        if d.Magnitude < 1.5 then break end
-        r.CFrame = r.CFrame + d.Unit * math.min(3, d.Magnitude)
-        r.AssemblyLinearVelocity = Vector3.zero
-        task.wait(); r = hrp()
-    end
-end
--- liftPress = บินไปลอยเหนือเป้า 10 studs แล้ว "ค้างกลางอากาศตลอดที่กด" (ไม่ตกพื้นเลย)
-local function liftPress(pp, done)
-    local pos = pp and pp.Parent and partPos(pp.Parent)
-    if not pos then return pressPrompt(pp, done) end
-    local hover = pos + Vector3.new(0, 5, 0)   -- v5.89: ผู้ใช้จูน 10→5
-    flyGo(hover)
-    local holding = true
-    task.spawn(function()
-        while holding and hrp() and _G.AH74_GEN == MYGEN do
-            local r2 = hrp()
-            r2.CFrame = CFrame.lookAt(hover, pos)
-            r2.AssemblyLinearVelocity = Vector3.zero
-            task.wait()
-        end
-    end)
-    local ok = pressPrompt(pp, done)
-    holding = false
-    return ok
-end
+-- v5.90: โหมดรักษาแบบบิน (v5.87-5.89) ถอดออกทั้งหมด — พังจริง ผู้ใช้ยืนยัน กลับ tpTo พื้นแบบเดิม
 
 -- ===== Auto รักษา (match ชื่อยา ไม่ฆ่าคนไข้) =====
 -- เดินไปหา pos (pathfinding อ้อมกำแพง) — ใช้เมื่อปิดโหมดวาป
@@ -435,7 +403,8 @@ local function discardTool(tool)
     local tp = trashPrompt()
     if not (h and tp and tp.Parent) then return end
     pcall(function() h:EquipTool(tool) end); task.wait(0.1)     -- v5.29: 0.15→0.1
-    liftPress(tp); task.wait(0.1)                               -- v5.88: บินไปทิ้ง ไม่ลงพื้น
+    tpTo(partPos(tp.Parent)); task.wait(0.15)                   -- v5.90: กลับแบบเดิม
+    pressPrompt(tp); task.wait(0.1)
 end
 -- เคลียร์ยาที่ "ไม่ใช่" ของคนไข้นี้ออก (กัน slot เต็ม → เก็บยาถูกไม่ได้)
 local function cleanInventory(needed)
@@ -897,7 +866,7 @@ local function treatRoom(room)
     do
         local pPos, me = partPos(patient), hrp() and hrp().Position
         if pPos and me and (pPos - me).Magnitude > 10 then
-            flyGo(pPos + Vector3.new(0, 5, 0)); task.wait(0.05)   -- v5.89: บินเข้าห้อง ลอย 5
+            tpTo(pPos); task.wait(0.1)   -- v5.90: กลับแบบเดิม (โหมดบินพังจริง — ผู้ใช้ยืนยัน)
         end
     end
     local ghost = patient and patient:GetAttribute("Skinwalker")
@@ -939,7 +908,8 @@ local function treatRoom(room)
         if patInRoom then
             for _, p in ipairs(patient:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.Enabled and DIAG_NPC[p.ActionText] then
-                    liftPress(p); task.wait(0.1)   -- v5.88: liftPress บินไปเองแล้ว (ตัด tpTo ลงพื้น)
+                    if MACHINE_ON then tpTo(partPos(patient)); task.wait(0.15) end
+                    pressPrompt(p); task.wait(0.1)   -- v5.90: กลับแบบเดิม
                 end
             end
         end
@@ -947,7 +917,8 @@ local function treatRoom(room)
         -- (เดิม v3.3 gate ทั้งก้อน → Room8 'Sleep Patient' ไม่ยิง = ผ่าตัดไม่เริ่ม วาปมาแต่ไม่ทำ)
         for _, p in ipairs(room:GetDescendants()) do
             if p:IsA("ProximityPrompt") and p.Enabled and DIAG_ROOM[p.ActionText] then
-                liftPress(p); task.wait(0.1)   -- v5.88: liftPress บินไปเองแล้ว (ตัด tpTo ลงพื้น)
+                if MACHINE_ON then tpTo(partPos(p.Parent)); task.wait(0.15) end
+                pressPrompt(p); task.wait(0.1)   -- v5.90: กลับแบบเดิม
             end
         end
         return false
@@ -987,7 +958,8 @@ local function treatRoom(room)
         if heldCount(m) == 0 then
             local pp = findPickup(m)
             if not (pp and pp.Parent) then return false end
-            liftPress(pp, function() return heldCount(m) > 0 end)   -- v5.88: บินไปหยิบ ไม่ลงพื้น
+            tpTo(partPos(pp.Parent)); task.wait(0.15)
+            pressPrompt(pp, function() return heldCount(m) > 0 end)   -- v5.90: กลับแบบเดิม
             task.wait(0.1)
             if heldCount(m) == 0 then return false end   -- หยิบไม่ขึ้น → หยุด
         end
@@ -996,8 +968,9 @@ local function treatRoom(room)
         local bedPP = bedApplyPP(room)
         if not (bedPP and bedPP.Parent) then return false end
         local owner = npcOwner(bedPP)
-        local gBefore, hBefore = givenCount(m), heldCount(m)   -- v5.88: liftPress บินไปเตียงเอง
-        liftPress(bedPP, function()   -- v5.87: จ่ายยาแบบลอย 10
+        tpTo(owner and partPos(owner) or partPos(bedPP.Parent)); task.wait(0.15)   -- v5.90: กลับแบบเดิม
+        local gBefore, hBefore = givenCount(m), heldCount(m)
+        pressPrompt(bedPP, function()
             return heldCount(m) < hBefore or givenCount(m) > gBefore or roomDone(room)
         end)
         if heldCount(m) < hBefore then                   -- ของเข้าแล้ว → รอยอดชนิดขยับ (ห้ามกดซ้ำ)
@@ -1189,13 +1162,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.89", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.90", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.89 " .. lastStatus end
+    if not deadLock then title.Text = "v5.90 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1500,7 +1473,7 @@ task.spawn(function()
                         local pos = roomPos(target)
                         if pos then
                             pcall(function() LP:RequestStreamAroundAsync(pos, 1) end)
-                            flyGo(pos + Vector3.new(0, 5, 0))   -- v5.89: บินเข้าห้อง ลอย 5
+                            tpTo(pos)   -- v5.90: กลับแบบเดิม
                             local t0 = os.clock()
                             repeat task.wait(0.1) until getScreenUI(target) or os.clock() - t0 > 1.5   -- v5.25: เดิม 3 (ผู้ใช้ขอ)
                         end
