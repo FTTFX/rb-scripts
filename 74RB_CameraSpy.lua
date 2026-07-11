@@ -1,5 +1,6 @@
--- 74RB_CameraSpy v1.0 — หากล้องวงจรปิดทั้งหมด + ตัวไหนเสีย + prompt ซ่อม
--- เปิดในเกม (ตอนมีกล้องเสียยิ่งดี) → กด RESCAN → Copy ส่งมา
+-- 74RB_CameraSpy v1.1 — กล้องวงจรปิด + กล้องสามขา (item ใหม่ ต้องถ่ายรูปตามเป้า)
+-- v1.1: ดัมพ์กล้องสามขาเต็มตัว — attr/TextLabel/Value ทุกชิ้น หาว่า "อยากถ่ายอะไร"
+-- เปิดในเกม → เดินใกล้กล้อง → RESCAN → Copy ส่งมา
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -126,6 +127,42 @@ local function runScan()
             end
         end
         if n2 == 0 then addLine("  (ไม่เจอ)", C.M) end
+
+        -- 3) v1.1 กล้องสามขา: ทุก model ที่มี prompt เกี่ยวกับ photo/ถ่าย → ดัมพ์เต็มตัว
+        --    (attr ทุกชิ้น + TextLabel ทุกใบ + ValueBase ทุกตัว — หา "เป้าที่ต้องถ่าย")
+        addLine("", C.S); addLine("=== กล้องสามขา (photo prompts + เนื้อใน) ===", C.HEAD)
+        local dumped = {}
+        for _, p in ipairs(workspace:GetDescendants()) do
+            if p:IsA("ProximityPrompt") then
+                local t = (p.ActionText .. " " .. p.ObjectText):lower()
+                if t:find("photo") or t:find("picture") or t:find("snap") or t:find("ถ่าย") then
+                    local top = p.Parent
+                    while top and top.Parent and top.Parent ~= workspace
+                          and not top:IsA("Model") do top = top.Parent end
+                    if top and not dumped[top] then
+                        dumped[top] = true
+                        local pos = partPos(top)
+                        addLine(("[T] %s (%s) pos=%s"):format(top:GetFullName(), top.ClassName,
+                            pos and v3s(pos) or "?"), C.B)
+                        addLine(("    PP: Action='%s' Object='%s' Enabled=%s"):format(
+                            p.ActionText, p.ObjectText, tostring(p.Enabled)), C.M)
+                        addLine("    attr(ตัว): " .. attrs(top), C.OK)
+                        local n3 = 0
+                        for _, c in ipairs(top:GetDescendants()) do
+                            if n3 > 60 then addLine("    ...(ตัด)", C.S) break end
+                            local a2 = attrs(c)
+                            if c:IsA("TextLabel") or c:IsA("TextButton") then
+                                n3 += 1; addLine(("    TXT %s = '%s'"):format(c:GetFullName():sub(#top:GetFullName()+2), c.Text), C.M)
+                            elseif c:IsA("ValueBase") then
+                                n3 += 1; addLine(("    VAL %s = %s"):format(c.Name, tostring(c.Value)), C.M)
+                            elseif a2 ~= "-" then
+                                n3 += 1; addLine(("    ATTR %s (%s): %s"):format(c.Name, c.ClassName, a2), C.OK)
+                            end
+                        end
+                    end
+                end
+            end
+        end
         addLine("", C.S)
         addLine(">> เปิดตอนมีกล้องเสีย แล้ว RESCAN — จะได้เทียบ attr/FX ตัวดี vs ตัวเสีย แล้ว Copy ส่งมา", C.OK)
     end)
