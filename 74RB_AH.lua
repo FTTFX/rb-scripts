@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.75 ปุ่มซ่อมกล้อง — บินไปกด 'Fix Camera' ทุกตัวที่เสีย แล้ววาปกลับ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.76 จัดลำดับเร่งด่วนใหม่: รักษา>คนโดนจับ>อุ้ม>ไฟ>ยิงผี>Hider>เช็คอิน/กล้อง>กาแฟ/ร้าน + งานต่ำวางมือให้งานด่วน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -649,14 +649,33 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
     end
     return false
 end
+-- v5.76: งานมีเวลาจำกัด (prompt 'Help' บนคนโดนผีจับ) — เร่งด่วนอันดับ 2 (ผู้ใช้จัด: เดิมอยู่ใต้ไฟ = ช่วยไม่ทัน)
+-- cache 0.5s — สแกนทั้ง workspace แพง ห้ามสแกนทุกครั้งที่ busyBefore ถูกเรียก
+local grabCache, grabAt = false, 0
+local function grabPending()
+    if not FIRE_ON then return false end
+    if os.clock() - grabAt < 0.5 then return grabCache end
+    grabAt = os.clock(); grabCache = false
+    local me = hrp() and hrp().Position
+    if me then
+        for _, p in ipairs(workspace:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Help" then
+                local pos = partPos(p.Parent)
+                if pos and (pos - me).Magnitude < 150 then grabCache = true; break end
+            end
+        end
+    end
+    return grabCache
+end
 -- busyBefore(rank) = มีงานสำคัญกว่าค้างอยู่ → loop ระดับ rank ต้องหลีกทาง
--- v5.43: รักษาขึ้นอันดับ 1 (ผู้ใช้สั่ง — เดิมไฟ/สไลม์แทรกกลางคิวรักษา = ping-pong ไม่ได้อะไรเลย)
--- ลำดับ: 1 รักษา > 2 อุ้ม > 3 ไฟ/สไลม์ > 4 ยิงผี > 5 ช่วยคนโดนจับ > 6 Hider > 7 เช็คอิน
+-- v5.76 ลำดับใหม่ (ผู้ใช้จัดตามความเร่งด่วน — งานมีเวลาจำกัดขึ้นก่อน):
+-- 1 รักษา > 2 ช่วยคนโดนจับ > 3 อุ้ม > 4 ไฟ/สไลม์ > 5 ยิงผี > 6 Hider > 7 เช็คอิน/ซ่อมกล้อง > 8 กาแฟ/ซื้อของ/ชัตเตอร์
 local function busyBefore(rank)
     if rank > 1 and TREAT_BUSY then return true end
-    if rank > 2 and (CARRYING or faintPending()) then return true end
-    if rank > 3 and (firePending() or slimePending()) then return true end
-    if rank > 4 and gunPending() then return true end
+    if rank > 2 and grabPending() then return true end
+    if rank > 3 and (CARRYING or faintPending()) then return true end
+    if rank > 4 and (firePending() or slimePending()) then return true end
+    if rank > 5 and gunPending() then return true end
     if rank > 6 and hiderPending() then return true end
     return false
 end
@@ -1135,13 +1154,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.75", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.76", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.75 " .. lastStatus end
+    if not deadLock then title.Text = "v5.76 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1285,7 +1304,7 @@ end
 task.spawn(function()
     local shotAt = SHOT_AT   -- v5.40: แชร์กับ gunPending (ยิงแล้วไม่บล็อคงานอื่น)
     while _G.AH74_GEN == MYGEN do
-        if GUNKILL_ON and not WORKING and not busyBefore(4) then
+        if GUNKILL_ON and not WORKING and not busyBefore(5) then   -- v5.76: ยิงผีอันดับ 5
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
@@ -1564,7 +1583,7 @@ do
     -- ลำดับ: คนไข้จริงยังไม่เช็คอิน → เปิดไว้ก่อน (เช็คอินคนดีก่อน แม้มีผีปนอยู่) ; เช็คอินครบแล้ว+ผียังอยู่ → ปิด
     task.spawn(function()
         while _G.AH74_GEN == MYGEN do
-            if SHUTTER_ON and fp and not CARRYING then   -- v4.91: ห้ามแทรกตอนอุ้มคน
+            if SHUTTER_ON and fp and not WORKING and not busyBefore(7) then   -- v5.76: เข้าแถวอันดับ 7 (เดิมเช็คแค่อุ้ม = แทรกงานด่วน)
                 local pp = shutterPP()
                 if pp and pp.Parent then
                     local ghost, pending, leaving = counterScan()
@@ -1612,7 +1631,7 @@ task.spawn(function()
     -- v4.95: ตารางพลาดย้ายไปแชร์เป็น BURN_FAIL — firePending จะได้ข้าม NPC ที่พักอยู่
     local fails = BURN_FAIL
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not busyBefore(3) then   -- v4.75: คนเป็นลมมาก่อนไฟ
+        if FIRE_ON and fp and not WORKING and not busyBefore(4) then   -- v5.76: ไฟอันดับ 4 (คนโดนจับ/เป็นลมมาก่อน)
             local npcs = workspace:FindFirstChild("NPCs")
             if npcs then for _, m in ipairs(npcs:GetChildren()) do
                 local pp = m:FindFirstChild("FirePP")
@@ -1645,7 +1664,7 @@ task.spawn(function()
     -- v4.95: cooldown/failN ย้ายไปแชร์เป็น FIRE_COOL/FIRE_FAILN — pending จะได้ข้ามจุดที่พัก
     local cooldown, failN = FIRE_COOL, FIRE_FAILN
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not busyBefore(3) then   -- v4.75: คนเป็นลมมาก่อน
+        if FIRE_ON and fp and not WORKING and not busyBefore(4) then   -- v5.76: ไฟอันดับ 4
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1699,7 +1718,7 @@ task.spawn(function()
                 for _, d in ipairs(fires) do
                     -- v4.91: เช็คคนเป็นลม "ทุกกอง" ก่อนดับ — เดิมเช็คแค่ต้นรอบ พอไฟหลายกอง
                     --        มีคนเป็นลมกลางคันก็ยังดับต่อจนครบ (แย่งกับ loop อุ้ม = อุ้มคนไปดับไฟ)
-                    if not (FIRE_ON and _G.AH74_GEN == MYGEN) or CARRYING or faintPending() then break end
+                    if not (FIRE_ON and _G.AH74_GEN == MYGEN) or busyBefore(4) then break end   -- v5.76: งานด่วนกว่าโผล่ = ทิ้งไฟทันที
                     if d.Parent and d.Enabled then
                         setStatus(d.ActionText == "Clean Slime" and "ล้างสไลม์" or "ดับไฟพื้น")
                         local pos = partPos(d.Parent)
@@ -1780,8 +1799,8 @@ task.spawn(function()
             repeat spamE(); task.wait(0.1)
             until not selfGrabbed() or os.clock() - t0 > 10 or _G.AH74_GEN ~= MYGEN
         end
-        if FIRE_ON and fp and not WORKING and not busyBefore(5)
-           and os.clock() - lastHelp > 1 then   -- v5.25: เดิม 2
+        if FIRE_ON and fp and not WORKING and not busyBefore(2)
+           and os.clock() - lastHelp > 1 then   -- v5.76: ช่วยคนโดนจับอันดับ 2 (มีเวลาจำกัด — เดิม 5 ใต้ไฟ ช่วยไม่ทัน)
             local me = hrp() and hrp().Position
             -- วิธี 1: มีคนโดนจับ — prompt 'Help' บนตัวเหยื่อ (NPC/ผู้เล่น) → สแปมช่วย
             local hp
@@ -1803,7 +1822,7 @@ task.spawn(function()
             end
         end
         -- v5.48: ผีใต้เตียง (MonsterBed) = เอาน้ำเชื่อมไปจ่อ "รอบเดียว" (ผู้ใช้สั่ง — Help สแปมไม่ทันแล้ว)
-        if FIRE_ON and fp and not WORKING and not CARRYING and not busyBefore(5) then
+        if FIRE_ON and fp and not WORKING and not CARRYING and not busyBefore(2) then   -- v5.76: ผีใต้เตียงเร่งด่วนเท่าคนโดนจับ
             local bed
             local rooms = workspace:FindFirstChild("Rooms")
             local me4 = hrp() and hrp().Position
@@ -1927,6 +1946,7 @@ task.spawn(function()
                     end
                 end
                 while HIDER_ON and _G.AH74_GEN == MYGEN do
+                    if busyBefore(6) then break end   -- v5.76: งานด่วนกว่าโผล่ = วาง Hider ทันที (WORKING ปลดท้าย loop)
                     if hider and hider.Parent and hider:GetAttribute("Anomaly") then
                         local ext = extTool()
                         if not ext then
@@ -2173,11 +2193,11 @@ task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         -- v5.53: เกตเบาลง — เดิมเช็ค checkinPending/busyBefore ทั้งที่ปุ่มพวกนั้นปิดอยู่
         --        (คนยืนแถวเคาน์เตอร์เฉยๆ = ร้านโดนบล็อกเงียบ ผู้ใช้เจอ) เช็คแค่งานตัวเองจริงพอ
-        if SHOP_ON and fp and not WORKING and not CARRYING and not TREAT_BUSY then
+        if SHOP_ON and fp and not WORKING and not busyBefore(8) then   -- v5.76: เข้าแถวอันดับ 8 (pending ทุกตัว gate ด้วยปุ่มตัวเองแล้ว — ไม่ซ้ำปัญหา v5.53)
             for _, p in ipairs(workspace:GetDescendants()) do
                 if p:IsA("ProximityPrompt") and p.ActionText == "Buy" and p.Enabled
                    and (not BOUGHT[p] or os.clock() - BOUGHT[p] > 30) then
-                    if not (SHOP_ON and _G.AH74_GEN == MYGEN) or WORKING or CARRYING then break end
+                    if not (SHOP_ON and _G.AH74_GEN == MYGEN) or WORKING or busyBefore(8) then break end   -- v5.76: งานด่วนโผล่ = วางมือทันที
                     BOUGHT[p] = os.clock()
                     -- v5.51: อ่านป้ายจริงของช่อง (ShopSpy ยืนยัน): Type + Description
                     local typ, desc
@@ -2205,8 +2225,8 @@ task.spawn(function()
         -- v5.52: auto หยิบกาแฟ (หยิบเก็บกระเป๋า ห้าม equip = ไม่มีทางกิน) — งานว่างเหมือนซื้อของ
         -- v5.65: สต๊อกได้เรื่อยๆ ไม่มีเพดาน (ผู้ใช้: เก็บได้เป็น 10 แก้ว เครื่องชงใหม่ทุก ~3 นาที
         --        1 แก้ว = จิบได้ 3 คำ) — เครื่องขึ้น ready เมื่อไหร่ก็แวะหยิบ แล้วไปทำงานต่อ
-        if COFFEE_ON and fp and not WORKING and not CARRYING and not TREAT_BUSY
-           and os.clock() - lastCoffee > 10 then
+        if COFFEE_ON and fp and not WORKING and not busyBefore(8)
+           and os.clock() - lastCoffee > 10 then   -- v5.76: เข้าแถวอันดับ 8
             local cpp = coffeeReadyPP()   -- v5.56: เช็คป้าย 'พร้อม' ในตัว (กัน Robux)
             if cpp then
                 lastCoffee = os.clock()
@@ -2225,7 +2245,7 @@ end)
 -- v4.72: อยู่ในปุ่ม "ดับไฟ" (กลุ่มงานฉุกเฉิน) — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not busyBefore(2) then   -- v5.43: อุ้มรอรักษาเสร็จก่อน
+        if FIRE_ON and fp and not WORKING and not busyBefore(3) then   -- v5.76: อุ้มอันดับ 3 (รักษา+คนโดนจับมาก่อน)
             local m, carryPP = faintPending()
             if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
                         CARRYING = true   -- v4.91: ล็อคงานอุ้ม — ไฟ/สไลม์/ชัตเตอร์ห้ามแทรกจนวางเสร็จ
@@ -2343,7 +2363,7 @@ task.spawn(function()
             if #pps > 0 then
                 WORKING = true
                 for _, pp2 in ipairs(pps) do
-                    if _G.AH74_GEN ~= MYGEN or not CAMFIX_ON then break end
+                    if _G.AH74_GEN ~= MYGEN or not CAMFIX_ON or busyBefore(7) then break end   -- v5.76: งานด่วนกว่าโผล่ = พักซ่อมกล้อง
                     local pos = partPos(pp2.Parent)
                     if pos and hrp() and pp2.Enabled then
                         setStatus("บินซ่อมกล้อง")
