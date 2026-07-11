@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.65 กาแฟตุนไม่จำกัด — เครื่อง ready เมื่อไหร่แวะหยิบ (ชงใหม่ทุก ~3 นาที, 1 แก้ว=3 คำ))
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.66 กาแฟเช็คป้ายใกล้เครื่องตัวเอง (2 เครื่อง กัน Robux) + ดับไฟยืนห่างไฟทุกกอง ≥9)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.65", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.66", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.65 " .. lastStatus end
+    if not deadLock then title.Text = "v5.66 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1665,6 +1665,20 @@ task.spawn(function()
                         return ((pa or me) - me).Magnitude < ((pb or me) - me).Magnitude
                     end)
                 end
+                -- v5.66: จุดยืนต้องห่าง ≥9 จาก "ไฟทุกกอง" ไม่ใช่แค่กองเป้า (ผู้ใช้: เคยยืนเหยียบกองข้างๆ)
+                local firePos = {}
+                for _, f2 in ipairs(fires) do
+                    if f2.ActionText ~= "Clean Slime" then
+                        local fp2 = partPos(f2.Parent)
+                        if fp2 then firePos[#firePos+1] = fp2 end
+                    end
+                end
+                local function fireSafe(spot, target)
+                    for _, fp2 in ipairs(firePos) do
+                        if (fp2 - target).Magnitude > 1 and (spot - fp2).Magnitude < 9 then return false end
+                    end
+                    return true
+                end
                 for _, d in ipairs(fires) do
                     -- v4.91: เช็คคนเป็นลม "ทุกกอง" ก่อนดับ — เดิมเช็คแค่ต้นรอบ พอไฟหลายกอง
                     --        มีคนเป็นลมกลางคันก็ยังดับต่อจนครบ (แย่งกับ loop อุ้ม = อุ้มคนไปดับไฟ)
@@ -1678,16 +1692,27 @@ task.spawn(function()
                             -- v5.31: ระยะยืนตามชนิด (ผู้ใช้จูน) — ไฟ 10 (ไม่เหยียบไฟ), สไลม์ 4 (ประชิด)
                             local gap = d.ActionText == "Clean Slime" and 4 or 10
                             local dir = from and (from - pos).Magnitude > 1 and (from - pos).Unit or Vector3.new(1, 0, 0)
-                            tpTo(pos + dir * gap); task.wait(0.15)
+                            local spot = pos + dir * gap
+                            if not fireSafe(spot, pos) then   -- จุดตรงๆ เหยียบกองอื่น → หามุมปลอดไฟ
+                                for i = 0, 7 do
+                                    local ang = i * math.pi / 4
+                                    local cand = pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap
+                                    if fireSafe(cand, pos) then spot = cand; break end
+                                end
+                            end
+                            tpTo(spot); task.wait(0.15)
                             ok = pressPrompt(d)
                             -- v5.30: กดไม่ติด → วนหามุมรอบเป้า 8 ทิศ (ผู้ใช้ขอ — สไลม์หลังกำแพง/มุมอับ)
                             if not ok then
                                 for i = 0, 7 do
                                     if not (d.Parent and d.Enabled) then ok = true; break end
                                     local ang = i * math.pi / 4
-                                    tpTo(pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap)
-                                    task.wait(0.15)
-                                    if pressPrompt(d) then ok = true; break end
+                                    local cand = pos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * gap
+                                    if fireSafe(cand, pos) then   -- v5.66: มุม retry ก็ห้ามเหยียบกองอื่น
+                                        tpTo(cand)
+                                        task.wait(0.15)
+                                        if pressPrompt(d) then ok = true; break end
+                                    end
                                 end
                             end
                         end
@@ -2011,18 +2036,35 @@ end)
 -- ===== v5.49 auto ซื้อของร้านค้า: prompt 'Buy' ใน ShopItems (RoomDebug ยืนยัน 3 ช่อง) =====
 -- งานท้ายสุดจริงๆ — ทำเฉพาะตอนว่างหมด (รักษา/อุ้ม/ไฟ/เช็คอินไม่มีค้าง) ; เงินไม่พอ = server ไม่ขาย ลองใหม่ทุก 30s
 -- v5.56: หา prompt เครื่องกาแฟที่ "พร้อมจริง" (ป้ายขึ้น พร้อม/Ready — กันเด้งหน้าซื้อ Robux ตอนชง)
+-- v5.66: มีเครื่องกาแฟ 2 เครื่อง — ป้าย ready ของอีกเครื่องเคยหลอกให้กดเครื่องที่กำลังชง (เด้ง Robux)
+--        → เช็คป้ายเฉพาะที่อยู่ใกล้ prompt ตัวเอง (<25 studs) + เจอ "brewing" ใกล้ = ห้ามกด
+local function labelPos(d)
+    local part = d:FindFirstAncestorWhichIsA("BasePart")
+    if part then return part.Position end
+    local bb = d:FindFirstAncestorWhichIsA("BillboardGui")
+    local ad = bb and (bb.Adornee or bb.Parent)
+    if ad and ad:IsA("BasePart") then return ad.Position end
+end
 local function coffeeReadyPP()
     for _, p in ipairs(workspace:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.ActionText == "Coffee" and p.Enabled then
-            local machine = p.Parent
-            while machine and machine.Parent and machine.Name ~= "CoffeeMachine" and machine.Parent ~= workspace do
-                machine = machine.Parent
-            end
-            for _, d in ipairs((machine or p.Parent):GetDescendants()) do
-                if d:IsA("TextLabel") and (d.Text:find("พร้อม") or d.Text:lower():find("ready")) then
-                    return p
+            local ppos = partPos(p.Parent)
+            local ready, brewing = false, false
+            if ppos then
+                for _, d in ipairs(workspace:GetDescendants()) do
+                    if d:IsA("TextLabel") then
+                        local t = d.Text:lower()
+                        if t:find("ready") or d.Text:find("พร้อม") or t:find("brewing") or d.Text:find("ชง") then
+                            local lp2 = labelPos(d)
+                            if lp2 and (lp2 - ppos).Magnitude < 25 then
+                                if t:find("brewing") or d.Text:find("ชง") then brewing = true
+                                else ready = true end
+                            end
+                        end
+                    end
                 end
             end
+            if ready and not brewing then return p end
         end
     end
 end
