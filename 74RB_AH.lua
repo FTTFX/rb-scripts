@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.80 ถ่าย UV เสร็จ กด "ตรวจสอบ" รูปโพลารอยด์ต่อให้เอง — จบขั้นเฉลยผล)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.81 แท่นถังดับเพลิง: เอาเฉพาะ <150 studs + ใกล้สุด — มีแท่นนอกแมพ วาปหลุด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1160,13 +1160,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.80", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.81", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.80 " .. lastStatus end
+    if not deadLock then title.Text = "v5.81 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1943,14 +1943,20 @@ task.spawn(function()
                 -- v5.74: แท่นถังบนผนัง (ยืม/คืน — prompt มีคำว่า Ext) — ผู้ใช้สั่ง:
                 --        ไม่มีถัง = บินไปหยิบก่อน / จัดการ Hider เสร็จ = เอาไปคืนแท่น (ชาร์จ % กลับ)
                 local function extStation()
+                    -- v5.81: มีแท่นนอกแมพด้วย (ผู้ใช้เจอ — วาปหลุดออกไป) → เอาเฉพาะ <150 + ใกล้สุด
+                    local me0 = hrp() and hrp().Position
+                    if not me0 then return end
+                    local bp, bpos, bd
                     for _, p in ipairs(workspace:GetDescendants()) do
                         if p:IsA("ProximityPrompt") and p.Enabled
                            and (p.ActionText .. " " .. p.ObjectText):lower():find("ext", 1, true) then
                             local a = p:FindFirstAncestorWhichIsA("BasePart")
                             local pos = (a and a.Position) or partPos(p.Parent)
-                            if pos then return p, pos end
+                            local d = pos and (pos - me0).Magnitude
+                            if d and d < 150 and (not bd or d < bd) then bp, bpos, bd = p, pos, d end
                         end
                     end
+                    return bp, bpos
                 end
                 while HIDER_ON and _G.AH74_GEN == MYGEN do
                     if busyBefore(6) then break end   -- v5.76: งานด่วนกว่าโผล่ = วาง Hider ทันที (WORKING ปลดท้าย loop)
