@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.96 ถอดกด "ตรวจสอบ" อัตโนมัติ — หน้าตรวจรูปมีปุ่มตัวเลือก กดมั่ว=แพ้)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.97 Hider FRONT 8→10 — ผู้ใช้จูน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1162,13 +1162,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.96", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.97", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.96 " .. lastStatus end
+    if not deadLock then title.Text = "v5.97 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1968,7 +1968,7 @@ task.spawn(function()
             if hider then
                 -- v5.44: โหมดบินต่อเนื่อง (ผู้ใช้สั่ง — เดิมเห็นแล้วตกพื้นข้างตัวมัน = โดนตี)
                 --        เห็นแล้วบินกลางอากาศไปตัวถัดไปเลย และไม่เลิกบินจนกว่า Anomaly ออกจากแมพ
-                local FRONT, UP = 8, 5   -- ponytail: ค่าจูนสนาม — หน้ามัน / สูงกันตี
+                local FRONT, UP = 10, 5   -- ponytail: ค่าจูนสนาม — หน้ามัน / สูงกันตี (v5.97 ผู้ใช้จูน 8→10)
                 WORKING = true
                 local function flyTo(dest)   -- ก้าวกลางอากาศสั้นๆ ทุกเฟรม (ไม่ใช้ tpTo — tpTo รอลงพื้นก่อนถึงยอมวาป)
                     local r = hrp()
