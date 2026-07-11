@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.76 จัดลำดับเร่งด่วนใหม่: รักษา>คนโดนจับ>อุ้ม>ไฟ>ยิงผี>Hider>เช็คอิน/กล้อง>กาแฟ/ร้าน + งานต่ำวางมือให้งานด่วน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.77 ESP สีขาว "ติดเชื้อUV" — NPC ที่โดนกล้อง UV แฉ LizInfectedFace)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -172,8 +172,9 @@ local COL = {
     patient = Color3.fromRGB(60, 255, 90),    -- คนไข้จริง
     mate    = Color3.fromRGB(60, 160, 255),   -- เพื่อนผู้เล่น
     npc     = Color3.fromRGB(220, 210, 110),  -- NPC ทั่วไป/visitor (Fake=true ไม่ใช่ผี)
+    uv      = Color3.fromRGB(255, 255, 255),  -- v5.77 โดนกล้อง UV แฉ = ติดเชื้อ Liz ยืนยัน (ผู้ใช้เลือกขาว)
 }
-local LBL = { ghost="ผี", anomaly="ผีซ่อน", sus="น่าสงสัย!", patient="คนไข้", visitor="เยี่ยมไข้", mate="เพื่อน", npc="NPC" }
+local LBL = { ghost="ผี", anomaly="ผีซ่อน", sus="น่าสงสัย!", patient="คนไข้", visitor="เยี่ยมไข้", mate="เพื่อน", npc="NPC", uv="ติดเชื้อUV" }
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
@@ -1016,6 +1017,8 @@ end
 local function npcKind(m)
     if m:GetAttribute("Anomaly")    then return "anomaly" end   -- v4.37 Hider/ผีซ่อน (WaterEntity ฯลฯ)
     if m:GetAttribute("Skinwalker") then return "ghost" end     -- อันตรายจริง
+    -- v5.77: โดนกล้อง UV แฉแล้ว (Take UV Photo → LizFace โผล่) = ติดเชื้อ Liz ยืนยัน → ขาว (ผู้ใช้เลือกสี)
+    if m:GetAttribute("LizFace") or (m:GetAttribute("PhotoEffect") == "LizInfectedFace") then return "uv" end
     -- v4.41: attr กล้อง/รูปผี (TwistNeck/CursedPhoto/DifferentFace/...) เจอเฉพาะบน Skinwalker
     -- ตัวไหนมีแต่ยังไม่ขึ้น Skinwalker = ผีปลอมตัวที่เกมยังไม่เฉลย → ส้ม "น่าสงสัย!"
     if m:GetAttribute("CameraEffect") or m:GetAttribute("PhotoEffect")
@@ -1154,13 +1157,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.76", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.77", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.76 " .. lastStatus end
+    if not deadLock then title.Text = "v5.77 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
