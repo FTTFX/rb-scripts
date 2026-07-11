@@ -1,4 +1,4 @@
--- 74RB_LizSpy v1.0 — หาว่า quest กล้อง UV เก็บ "ชื่อเป้าที่ต้องถ่าย" ไว้ที่ไหน
+-- 74RB_LizSpy v1.1 — หาว่า quest กล้อง UV เก็บ "ชื่อเป้าที่ต้องถ่าย" ไว้ที่ไหน (v1.1 ไม่สแกน GUI ตัวเอง)
 -- เปิดตอน quest กำลังสั่งถ่ายรูป (รู้ชื่อเป้าอยู่ เช่น Maggie Fin) → RESCAN → Copy ส่งมา
 -- สแกน: attr ทุกตัวบน NPC/ผู้เล่น/UVCamera/Liz + StringValue + ป้ายข้อความบนจอ ที่มีชื่อ NPC ปนอยู่
 
@@ -101,7 +101,8 @@ local function runScan()
         addLine("", C.S); addLine("=== ป้ายบนจอ (PlayerGui) ที่มีชื่อ NPC/photo ===", C.HEAD)
         local n2 = 0
         for _, d in ipairs(pg:GetDescendants()) do
-            if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text ~= "" and d.Visible then
+            if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text ~= "" and d.Visible
+               and not d:IsDescendantOf(sg) then   -- v1.1: ห้ามสแกนหน้าต่างตัวเอง
                 local t = d.Text
                 local hit = t:lower():find("photo")
                 if not hit then
