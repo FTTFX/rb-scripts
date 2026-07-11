@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.97 Hider FRONT 8→10 — ผู้ใช้จูน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.98 ยิงผี/Ghost เช็คผลจริง — ไม่ตาย=วนลองใหม่ เดิมตีตราจบถาวรตั้งแต่ก่อนยิง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1162,13 +1162,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.97", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.98", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.97 " .. lastStatus end
+    if not deadLock then title.Text = "v5.98 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1340,6 +1340,13 @@ task.spawn(function()
                         local r = hrp()
                         if gun and r and thead.Parent then
                             pcall(function() re:FireServer(r.Position, thead) end)
+                            -- v5.98: เช็คผลจริง — ยิงแล้วไม่ตาย (ชาร์จหมด/server ไม่รับ) = ลองใหม่ ไม่ใช่จบถาวร
+                            task.wait(1.5)
+                            local h3 = target:FindFirstChildOfClass("Humanoid")
+                            if h3 and h3.Health > 0 and target.Parent then
+                                shotAt[target] = os.clock()
+                                setStatus("ผี " .. target.Name .. " ไม่ตาย — รอลองใหม่")
+                            end
                         end
                     else
                         -- รอบตัวผีมีกำแพงหมด (เอื้อมไม่ถึงมุมยิง) → พักตัวนี้ 3s ไปตัวอื่นก่อน
@@ -1401,7 +1408,16 @@ task.spawn(function()
                             task.wait()
                         end
                         local r = hrp()
-                        if r and ghead.Parent then pcall(function() re:FireServer(r.Position, ghead) end) end
+                        if r and ghead.Parent then
+                            pcall(function() re:FireServer(r.Position, ghead) end)
+                            -- v5.98: เช็คผลจริง — Ghost ไม่ตาย = ลองใหม่ (เดิมตีตราจบถาวรตั้งแต่ก่อนยิง)
+                            task.wait(1.5)
+                            local h3 = g:FindFirstChildOfClass("Humanoid")
+                            if h3 and h3.Health > 0 and g.Parent and g:GetAttribute("Anomaly") then
+                                shotAt[g] = os.clock()
+                                setStatus("Ghost ไม่ตาย — รอลองใหม่")
+                            end
+                        end
                     else
                         shotAt[g] = os.clock()   -- พัก 3s รอคนไข้เดินออก
                         setStatus("Ghost มีคนไข้ข้างๆ — รอ")
