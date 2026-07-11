@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.98 ยิงผี/Ghost เช็คผลจริง — ไม่ตาย=วนลองใหม่ เดิมตีตราจบถาวรตั้งแต่ก่อนยิง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.99 คนติดมือ=งานค้างเสมอ — ช่วงพักวางพลาดไม่ให้สไลม์/งานอื่นแทรกอีก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -673,13 +673,28 @@ local function grabPending()
     end
     return grabCache
 end
+-- v5.99: "มีคนติดมืออยู่จริง" (CarriedBy=เรา + ตัวอยู่ใกล้ <10) — นับเป็นงานค้างเสมอแม้ช่วงพัก 10s
+--        (เดิมช่วงพักหลังวางพลาด สัญญาณหาย → ล้างสไลม์แทรกทั้งที่คนอยู่บนหัว ผู้ใช้เจอ)
+local function carriedNow()
+    if not FIRE_ON then return false end
+    local npcs = workspace:FindFirstChild("NPCs")
+    local me = hrp() and hrp().Position
+    if not (npcs and me) then return false end
+    for _, m in ipairs(npcs:GetChildren()) do
+        if m:GetAttribute("CarriedBy") == LP.UserId and not m:GetAttribute("InBed") then
+            local p = partPos(m)
+            if p and (p - me).Magnitude < 10 then return true end
+        end
+    end
+    return false
+end
 -- busyBefore(rank) = มีงานสำคัญกว่าค้างอยู่ → loop ระดับ rank ต้องหลีกทาง
 -- v5.76 ลำดับใหม่ (ผู้ใช้จัดตามความเร่งด่วน — งานมีเวลาจำกัดขึ้นก่อน):
 -- 1 รักษา > 2 ช่วยคนโดนจับ > 3 อุ้ม > 4 ไฟ/สไลม์ > 5 ยิงผี > 6 Hider > 7 เช็คอิน/ซ่อมกล้อง > 8 กาแฟ/ซื้อของ/ชัตเตอร์
 local function busyBefore(rank)
     if rank > 1 and TREAT_BUSY then return true end
     if rank > 2 and grabPending() then return true end
-    if rank > 3 and (CARRYING or faintPending()) then return true end
+    if rank > 3 and (CARRYING or carriedNow() or faintPending()) then return true end   -- v5.99: คนติดมือ=บล็อกเสมอ
     if rank > 4 and (firePending() or slimePending()) then return true end
     if rank > 5 and gunPending() then return true end
     if rank > 6 and hiderPending() then return true end
@@ -1162,13 +1177,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.98", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.99", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.98 " .. lastStatus end
+    if not deadLock then title.Text = "v5.99 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
