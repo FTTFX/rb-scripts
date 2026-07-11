@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.67 กาแฟอ่านป้าย status ในตัวเครื่องเองตรงๆ (CoffeeSpy ยืนยัน path) — จบปัญหา 2 เครื่องหลอกกัน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.68 ฉีด Hider หามุมโล่ง 8 ทิศ raycast — Hider ชิดกำแพงก็อ้อมไปฉีดได้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1124,13 +1124,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.67", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.68", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.67 " .. lastStatus end
+    if not deadLock then title.Text = "v5.68 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1905,8 +1905,27 @@ task.spawn(function()
                         local ext = extTool()
                         if ext then
                             setStatus("ฉีดถังใส่ Hider")
-                            local h0 = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
-                            if h0 then flyTo(h0.Position + h0.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0)) end
+                            -- v5.68: หามุมยืนที่ไม่ติดกำแพง 8 ทิศ (ผู้ใช้แจ้ง — Hider ชิดกำแพง จุดหน้ามันเข้าไม่ได้)
+                            --        raycast จากจุดยืน→หัวมัน ต้องโล่ง (pattern เดียวกับ clearShotSpot ของปืน)
+                            local rayP2 = RaycastParams.new()
+                            rayP2.FilterType = Enum.RaycastFilterType.Exclude
+                            rayP2.FilterDescendantsInstances = { hider, LP.Character }
+                            local function spraySpot()
+                                local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                                if not head then return nil, nil end
+                                local base = math.atan2(head.CFrame.LookVector.Z, head.CFrame.LookVector.X)
+                                for i = 0, 7 do   -- เริ่มจากหน้ามัน แล้วไล่รอบตัว
+                                    local ang = base + i * math.pi / 4
+                                    local spot = head.Position + Vector3.new(math.cos(ang), 0, math.sin(ang)) * FRONT
+                                        + Vector3.new(0, UP, 0)
+                                    if not workspace:Raycast(spot, head.Position - spot, rayP2) then
+                                        return spot, head
+                                    end
+                                end
+                                return nil, head   -- ทุกทิศบัง
+                            end
+                            local s0 = spraySpot()
+                            if s0 then flyTo(s0) end
                             selectTool(ext.Name)
                             -- v5.61: Activate() เฉยๆ ไม่ฉีด (เกมอ่าน mouse จริง) → VIM กดเมาส์ค้าง
                             --        + ล็อคกล้องเล็งหัวมัน (สเปรย์พุ่งตามกล้อง)
@@ -1923,10 +1942,10 @@ task.spawn(function()
                             local r = hrp()
                             while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
                                   and hider:GetAttribute("Anomaly") and os.clock() - t0 < 8 do
-                                local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
+                                local spot, head = spraySpot()   -- v5.68: มุมโล่งสด (มันขยับ/กำแพงบัง = ย้ายมุมเอง)
                                 if not head then break end
-                                r.CFrame = CFrame.lookAt(head.Position + head.CFrame.LookVector * FRONT
-                                    + Vector3.new(0, UP, 0), head.Position)   -- ก้มเล็งหัว (ไม่มีเงย — กติกา mass of eyes)
+                                if not spot then spot = head.Position + head.CFrame.LookVector * FRONT + Vector3.new(0, UP, 0) end
+                                r.CFrame = CFrame.lookAt(spot, head.Position)   -- ก้มเล็งหัว (ไม่มีเงย — กติกา mass of eyes)
                                 r.AssemblyLinearVelocity = Vector3.zero
                                 cam.CameraType = Enum.CameraType.Scriptable
                                 cam.CFrame = CFrame.lookAt(r.Position, head.Position)
