@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.85 Ghost: ลอยเหนือหัว 15 studs — ห้ามใกล้กว่านั้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.86 ดับไฟพื้น: ลอยเหนือพื้น 10 studs ตัวไม่แตะพื้น — สไลม์ยังลงประชิดเหมือนเดิม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1161,13 +1161,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.85", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.86", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.85 " .. lastStatus end
+    if not deadLock then title.Text = "v5.86 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1804,14 +1804,25 @@ task.spawn(function()
                             table.sort(cands, function(a, b)
                                 return fireClearance(a, pos) > fireClearance(b, pos)
                             end)
-                            tpTo(cands[1]); task.wait(0.15)
+                            -- v5.86: ไฟ = "ลอยเหนือพื้น 10 studs" ที่จุดยืน (ผู้ใช้สั่ง — ตัวไม่แตะพื้น ไม่มีทางเหยียบไฟ)
+                            --        สไลม์ยังลงพื้นประชิดเหมือนเดิม (ต้องใกล้ 4)
+                            local function goSpot(p2)
+                                if d.ActionText == "Clean Slime" then tpTo(p2); task.wait(0.15); return end
+                                local t0 = os.clock()
+                                while hrp() and os.clock() - t0 < 0.35 and _G.AH74_GEN == MYGEN do
+                                    local r2 = hrp()
+                                    r2.CFrame = CFrame.lookAt(p2 + Vector3.new(0, 10, 0), pos)
+                                    r2.AssemblyLinearVelocity = Vector3.zero
+                                    task.wait()
+                                end
+                            end
+                            goSpot(cands[1])
                             ok = pressPrompt(d)
                             -- v5.30: กดไม่ติด → ไล่มุมถัดไป (เรียงจากห่างไฟสุดแล้ว — สไลม์หลังกำแพง/มุมอับ)
                             if not ok then
                                 for i = 2, #cands do
                                     if not (d.Parent and d.Enabled) then ok = true; break end
-                                    tpTo(cands[i])
-                                    task.wait(0.15)
+                                    goSpot(cands[i])
                                     if pressPrompt(d) then ok = true; break end
                                 end
                             end
