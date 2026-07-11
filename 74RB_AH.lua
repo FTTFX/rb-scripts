@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.69 ดับไฟ: จัดอันดับ 9 มุมตามระยะห่างไฟกองอื่น เอามุมห่างไฟสุดเสมอ — จบเหยียบไฟ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.70 คนไข้หลบหลังเคาน์เตอร์ไม่นับคิวเช็คอิน — side-of-line แนวเคาน์เตอร์ 2 ช่อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -93,6 +93,14 @@ local function npcOwner(inst)
 end
 
 -- v4.27: คนไข้จริง (ไม่ใช่ผี) ใกล้เคาน์เตอร์ที่ยังไม่เช็คอิน → คืน pos ตัวคนไข้ (ไว้วาปไปเช็คอิน)
+-- v5.70: คนไข้ที่ "หลบเข้าห้องหลังเคาน์เตอร์" ไม่นับเป็นคิว (ผู้ใช้แจ้ง — ระบบเคยนับแล้วรอเก้อ)
+--        เส้นแบ่ง = แนวเคาน์เตอร์ 2 ช่อง (CheckinSpy: ช่อง1 -108.7,-2.8 / ช่อง2 -96.9,12.5)
+--        ฝั่งโถงรอ = ฝั่งที่มีโต๊ะกาแฟ (-123.3,8.8) + taser (-117.1,20.3) — เช็คด้วย side-of-line
+local function inCheckinHall(p)
+    -- normal ของเส้นเคาน์เตอร์ หมุน 90° ชี้ฝั่งกาแฟ (คำนวณจากพิกัด spy แล้ว: ฝั่งบวก)
+    local s = (p.X + 108.7) * -15.3 + (p.Z + 2.8) * 11.8
+    return s > 0
+end
 -- v4.38: รวม NPC อื่นที่มี prompt เปิดอยู่ด้วย (NPC เนื้อเรื่อง/??? มาขอคุยที่เคาน์เตอร์ — ไม่มี IsPatient)
 local function checkinPending()
     local misc = workspace:FindFirstChild("Misc")
@@ -106,6 +114,7 @@ local function checkinPending()
     end
     if #counters == 0 then return nil end
     local function nearCounter(p)
+        if not inCheckinHall(p) then return nil end   -- v5.70: หลบหลังเคาน์เตอร์ = ไม่ใช่คิว
         for _, c in ipairs(counters) do
             if (p - c.pos).Magnitude < 15 then return c end
         end
@@ -1124,13 +1133,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.69", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.70", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.69 " .. lastStatus end
+    if not deadLock then title.Text = "v5.70 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1537,7 +1546,7 @@ do
                     elseif (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
                        and not m:GetAttribute("Anomaly") then
                         if m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn")
-                           and d < INCOMING_RANGE then
+                           and d < INCOMING_RANGE and inCheckinHall(r.Position) then   -- v5.70: หลบหลังห้อง = ไม่รอ
                             pending = true                                   -- คนจริงรอ/กำลังเดินมา
                         end
                         -- v4.82: เช็คอินเสร็จแล้วแต่ยังยืนหน้าเคาน์เตอร์ = ยังไม่เดินออก → ห้ามปิดขังเขา
