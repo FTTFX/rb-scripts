@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.01 Ghost Scanner: หันมอง+กล้องเล็ง+VIM คลิกจริง ก่อนยิง remote — สูตรถัง v5.62)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.02 จอค้างผลคนไข้เก่าไม่นับ "จบ" — คนไข้ใหม่ยังไม่ Treated + มีปุ่มงาน = รักษาต่อ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1177,13 +1177,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.01", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.02", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.01 " .. lastStatus end
+    if not deadLock then title.Text = "v6.02 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1490,9 +1490,11 @@ task.spawn(function()
                         -- v4.99: ห้องโดน stream out (ไม่มีจอ) → จอ/ปุ่มเชื่อไม่ได้ ใช้ attr คนไข้แทน
                         --        (attr ติดตัว NPC ตลอด อ่านได้ทันที): IsPatient + ยังไม่ Treated = มีงาน
                         local loaded = getScreenUI(room) ~= nil
-                        local work = loaded and (not roomDone(room) and hasWork(room, pat))
-                            or (not loaded and pat and pat:GetAttribute("IsPatient")
-                                and not pat:GetAttribute("Treated"))
+                        -- v6.02: จอค้างผล X/Y ของคนไข้คนก่อน → roomDone หลอกว่า "จบ" ทั้งที่คนไข้ใหม่
+                        --        (ยังไม่ Treated) นอนรออยู่ (ผู้ใช้เจอ R4:จบ) — คนไข้ใหม่+มีปุ่มงาน = ไม่เชื่อจอค้าง
+                        local fresh = pat and pat:GetAttribute("IsPatient") and not pat:GetAttribute("Treated")
+                        local work = loaded and hasWork(room, pat) and (not roomDone(room) or fresh)
+                            or (not loaded and fresh)
                         if pat and present and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
