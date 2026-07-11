@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.78 ปุ่มปิด=งานกลุ่มนั้นไม่นับค้าง — ไฟ/อุ้ม/สไลม์ไม่บล็อกเคาน์เตอร์ตอนปิดดับไฟ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.79 auto ถ่าย UV — เป้ามายืน LizCameraPoint + Charge>0 = วาปไปกดถ่าย, อยู่ในปุ่มซ่อมกล้อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1160,13 +1160,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.78", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v5.79", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.78 " .. lastStatus end
+    if not deadLock then title.Text = "v5.79 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2353,8 +2353,36 @@ end)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         if CAMFIX_ON and fp and not WORKING and not busyBefore(7) then
-            local pps = {}
             local misc = workspace:FindFirstChild("Misc")
+            -- v5.79: กล้อง UV (quest Liz "take a photo of <ชื่อ>") — เป้าหมายเดินมายืนที่
+            -- MovePoints.LizCameraPoint หน้ากล้องเอง → มีใครยืนถึง + กล้องมี Charge = วาปไปกดถ่ายให้
+            -- ponytail: ไม่อ่านชื่อเป้าจากป้าย quest — จุดนี้เกมใช้เฉพาะตัวเป้า ยืนตรงนี้=ตัวที่ต้องถ่าย
+            local uvc = misc and misc:FindFirstChild("UVCamera")
+            local uvpp = uvc and uvc:FindFirstChildWhichIsA("ProximityPrompt", true)
+            local mp = workspace:FindFirstChild("MovePoints")
+            local lcp = mp and mp:FindFirstChild("LizCameraPoint")
+            if uvpp and uvpp.Enabled and (uvc:GetAttribute("Charge") or 0) > 0 and lcp then
+                local npcs2 = workspace:FindFirstChild("NPCs")
+                local ready
+                if npcs2 then
+                    for _, m in ipairs(npcs2:GetChildren()) do
+                        local p2 = partPos(m)
+                        if p2 and (p2 - lcp.Position).Magnitude < 4 then ready = m break end
+                    end
+                end
+                if ready then
+                    WORKING = true
+                    setStatus("ถ่าย UV: " .. ready.Name)
+                    tpTo(partPos(uvc)); task.wait(0.2)
+                    pressPrompt(uvpp, function()
+                        return (uvc:GetAttribute("Charge") or 0) == 0 or ready:GetAttribute("HasPhotoEffect")
+                    end)
+                    setStatus(ready:GetAttribute("HasPhotoEffect") and "ถ่าย UV ติด — แฉ " .. ready.Name .. " ✓"
+                        or "ถ่าย UV แล้ว (รอผล)")
+                    WORKING = false
+                end
+            end
+            local pps = {}
             if misc then
                 for _, fname in ipairs({ "Cameras", "Cameras2" }) do
                     local fo = misc:FindFirstChild(fname)
