@@ -759,6 +759,12 @@ local function roomPatient(room)
     end
     return cand   -- เจ้าของตาม attr ที่ยังเดินไม่ถึงห้อง (treat loop เช็ค present เองอยู่แล้ว)
 end
+-- v6.02: จอห้องค้างผล X/Y ของคนไข้คนก่อน → roomDone หลอกว่า "จบ" ทั้งที่คนไข้ใหม่นอนรอ (ผู้ใช้เจอ R4)
+--        freshPatient = คนไข้ใหม่ยังไม่ Treated — ใช้หักล้างจอค้างทุกจุดที่เช็ค roomDone ตอนเลือก/เกาะห้อง
+local function freshPatient(room)
+    local p = roomPatient(room)
+    return p and p:GetAttribute("IsPatient") and not p:GetAttribute("Treated")
+end
 -- หา prompt "Apply Treatment" — ในห้อง (Room7/8 มีเตียง) หรือ บนตัวคนไข้ (Room6 คนไข้ยืน ไม่มีเตียง)
 local function bedApplyPP(room)
     -- v4.12: มี 'Apply Treatment' หลายตัว (InBed เก่า Enabled=false + Main ตัวจริง) → เอาตัว Enabled ก่อน
@@ -872,7 +878,7 @@ local function killWithWrongMed(room)
 end
 -- ทำหนึ่งห้องที่วินิจฉัยเสร็จ: เก็บยาที่ถูก → ไปเตียง → equip+apply ทีละชนิด
 local function treatRoom(room)
-    if roomDone(room) then return false end          -- เสร็จ/ฟื้นแล้ว → ไม่วาปซ้ำ
+    if roomDone(room) and not freshPatient(room) then return false end   -- v6.02: จอค้าง+คนไข้ใหม่ = ทำต่อ
     -- v4.54: ผีประจำห้อง (เปิดฆ่าผี) = รักษาตามขั้นตอนครบเหมือนคนไข้จริง (DNA/เครื่อง/วินิจฉัย)
     -- แล้ว "หักมุมตอนจ่ายยา" — Apply พร้อมเมื่อไหร่ค่อยยาผิด ; ห้ามไหลไปเก็บ/ให้ยาถูก (จะกลายเป็นรักษาผีหาย)
     local patient = roomPatient(room)
@@ -1529,7 +1535,7 @@ task.spawn(function()
                     -- ห้องที่เครื่องกำลังหมุน = ไม่มีปุ่มเปิด = โดนข้ามไปทำอีกห้องเอง ; ลำดับจ่ายยา
                     -- ทำจบใน treatRoom ครั้งเดียวอยู่แล้ว ไม่มีทางโดนขัดกลางคิว (เกาะ 60s เดิมไม่จำเป็น)
                     while AUTO_ON and _G.AH74_GEN == MYGEN
-                          and not roomDone(target)
+                          and not (roomDone(target) and not freshPatient(target))   -- v6.02: จอค้าง+คนไข้ใหม่ = เกาะต่อ
                           and roomPatient(target)   -- v4.60: คนไข้หาย (ตาย/ออก) = เลิกเกาะทันที
                           -- v5.26: Room8 = เกาะยาวจนจบ (จ่ายยารัวๆ ห้ามหลุดไปห้อง 6/7 กลางคัน)
                           and guard < (target.Name == "Room8" and 40 or 8) do
