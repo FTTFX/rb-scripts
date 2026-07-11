@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v5.99 คนติดมือ=งานค้างเสมอ — ช่วงพักวางพลาดไม่ให้สไลม์/งานอื่นแทรกอีก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.00 ความเร็ววาป 1000→200 — ผู้ใช้จูน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -303,7 +303,7 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         end
         -- v4.88: "สไลด์" ตาม waypoint — ดันด้วย velocity จริง (แบบ Climb Forsaken)
         --        เกมเห็นเป็นฟิสิกส์ต่อเนื่อง ไม่ใช่ teleport ; เร็วกว่า WalkSpeed เพราะไม่ติดแรงเสียดทาน
-        local SLIDE_SPEED = speedOpt or 1000  -- studs/s แนวราบ (v5.23 ผู้ใช้ขอ 1000 — ถ้าตาย insanity ให้ลดกลับ)
+        local SLIDE_SPEED = speedOpt or 200  -- studs/s แนวราบ (v6.00 ผู้ใช้ลด 1000→200)
         -- v5.09: ไถลตรงเส้นเดียวทุกหมวด (เลิก pathfinding) — noclip ชั่วคราว + ล็อค Y (v5.07)
         do
             local c = LP.Character
@@ -1177,13 +1177,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v5.99", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.00", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v5.99 " .. lastStatus end
+    if not deadLock then title.Text = "v6.00 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
