@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.05 ปริศนาสี R6 เล่นเฉพาะตอนเรายืนหน้าเครื่องเอง — เพื่อนกดไม่วาปไปช่วย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.06 แท่นถังล็อก path Misc.ExtinguisherStation — เลิกสแกนทั้งแมพ ตัดแท่นนอกแมพถาวร)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1183,13 +1183,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.05", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.06", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.05 " .. lastStatus end
+    if not deadLock then title.Text = "v6.06 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2079,17 +2079,21 @@ task.spawn(function()
                 -- v5.74: แท่นถังบนผนัง (ยืม/คืน — prompt มีคำว่า Ext) — ผู้ใช้สั่ง:
                 --        ไม่มีถัง = บินไปหยิบก่อน / จัดการ Hider เสร็จ = เอาไปคืนแท่น (ชาร์จ % กลับ)
                 local function extStation()
-                    -- v5.81: มีแท่นนอกแมพด้วย (ผู้ใช้เจอ — วาปหลุดออกไป) → เอาเฉพาะ <150 + ใกล้สุด
+                    -- v6.06: ล็อก path จริง Misc.ExtinguisherStation (ExtSpy ยืนยัน @-157,4.5,-24.4)
+                    --        เลิกสแกนทั้ง workspace — แท่นนอกแมพเคยหลอกให้วาปหลุด (v5.81 กรองระยะยังพลาด)
+                    local misc = workspace:FindFirstChild("Misc")
+                    if not misc then return end
                     local me0 = hrp() and hrp().Position
-                    if not me0 then return end
                     local bp, bpos, bd
-                    for _, p in ipairs(workspace:GetDescendants()) do
-                        if p:IsA("ProximityPrompt") and p.Enabled
-                           and (p.ActionText .. " " .. p.ObjectText):lower():find("ext", 1, true) then
-                            local a = p:FindFirstAncestorWhichIsA("BasePart")
-                            local pos = (a and a.Position) or partPos(p.Parent)
-                            local d = pos and (pos - me0).Magnitude
-                            if d and d < 150 and (not bd or d < bd) then bp, bpos, bd = p, pos, d end
+                    for _, st in ipairs(misc:GetChildren()) do
+                        if st.Name:find("ExtinguisherStation") then
+                            local p = st:FindFirstChildWhichIsA("ProximityPrompt", true)
+                            if p and p.Enabled then
+                                local a = p:FindFirstAncestorWhichIsA("BasePart")
+                                local pos = (a and a.Position) or partPos(st)
+                                local d = pos and me0 and (pos - me0).Magnitude or math.huge
+                                if pos and (not bd or d < bd) then bp, bpos, bd = p, pos, d end
+                            end
                         end
                     end
                     return bp, bpos
