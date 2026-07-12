@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.03 งานอุ้มคนเป็นลมย้ายไปปุ่มเคาน์เตอร์ — คนชอบเป็นลมตอนเช็คอิน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.04 Hider ใกล้เคาน์เตอร์ไม่นับเป็นผี — เดิมปิดชัตเตอร์ค้างทั้งกะ เช็คอินตาย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1183,13 +1183,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.03", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.04", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.03 " .. lastStatus end
+    if not deadLock then title.Text = "v6.04 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1683,7 +1683,9 @@ do
                 local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
                 local d = r and (r.Position - cpos).Magnitude
                 if d then
-                    if m:GetAttribute("Skinwalker") then
+                    if m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
+                        -- v6.04: Hider/Anomaly มี Skinwalker=true ด้วย — เดิมมายืนใกล้เคาน์เตอร์ = ปิดชัตเตอร์ค้าง
+                        --        ทั้งกะ (ปุ่ม Hider ปิด ไม่มีใครจัดการมัน) → นับเฉพาะผีจริงเท่านั้น (ผู้ใช้เจอ)
                         if d < COUNTER_RANGE then ghost = true end          -- ผี (มี IsPatient ด้วยก็นับเป็นผี)
                     elseif (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
                        and not m:GetAttribute("Anomaly") then
