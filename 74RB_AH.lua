@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.02 จอค้างผลคนไข้เก่าไม่นับ "จบ" — คนไข้ใหม่ยังไม่ Treated + มีปุ่มงาน = รักษาต่อ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.03 งานอุ้มคนเป็นลมย้ายไปปุ่มเคาน์เตอร์ — คนชอบเป็นลมตอนเช็คอิน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -524,7 +524,7 @@ local function faintEligible(m)
        and (not FAINT_DONE[m] or os.clock() - FAINT_DONE[m] > 10)
 end
 local function faintPending()
-    if not FIRE_ON then return nil, nil end   -- v5.78: ปุ่มดับไฟปิด = กลุ่มงานนี้ไม่นับค้าง (เดิมบล็อกเคาน์เตอร์เงียบ)
+    if not CHECKIN_ON then return nil, nil end   -- v6.03: งานอุ้มย้ายไปกลุ่มเคาน์เตอร์ (ผู้ใช้: คนชอบเป็นลมตอนเช็คอิน)
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return nil, nil end
     local kids = npcs:GetChildren()
@@ -676,7 +676,7 @@ end
 -- v5.99: "มีคนติดมืออยู่จริง" (CarriedBy=เรา + ตัวอยู่ใกล้ <10) — นับเป็นงานค้างเสมอแม้ช่วงพัก 10s
 --        (เดิมช่วงพักหลังวางพลาด สัญญาณหาย → ล้างสไลม์แทรกทั้งที่คนอยู่บนหัว ผู้ใช้เจอ)
 local function carriedNow()
-    if not FIRE_ON then return false end
+    if not CHECKIN_ON then return false end   -- v6.03: ตามกลุ่มอุ้ม (ย้ายไปเคาน์เตอร์)
     local npcs = workspace:FindFirstChild("NPCs")
     local me = hrp() and hrp().Position
     if not (npcs and me) then return false end
@@ -1183,13 +1183,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.02", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.03", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.02 " .. lastStatus end
+    if not deadLock then title.Text = "v6.03 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2393,7 +2393,7 @@ end)
 -- v4.72: อยู่ในปุ่ม "ดับไฟ" (กลุ่มงานฉุกเฉิน) — เจอปุ๊บทำทันที (treat loop หลีกทางให้เอง)
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if FIRE_ON and fp and not WORKING and not busyBefore(3) then   -- v5.76: อุ้มอันดับ 3 (รักษา+คนโดนจับมาก่อน)
+        if CHECKIN_ON and fp and not WORKING and not busyBefore(3) then   -- v6.03: อุ้มย้ายมาอยู่ปุ่มเคาน์เตอร์ (คนชอบเป็นลมตอนเช็คอิน) — อันดับ 3 เท่าเดิม
             local m, carryPP = faintPending()
             if m then   -- v4.75: carryPP=nil = อุ้มค้างอยู่ → ข้ามไปขั้นส่ง/วางต่อเลย
                         CARRYING = true   -- v4.91: ล็อคงานอุ้ม — ไฟ/สไลม์/ชัตเตอร์ห้ามแทรกจนวางเสร็จ
