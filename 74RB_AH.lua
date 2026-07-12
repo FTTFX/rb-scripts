@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.07 +ช็อกโกแลตเข้า NO_DISCARD — item ใหม่ห้ามทิ้ง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.08 แท่นถังล็อกพิกัดตายตัว -157,4.5,-24.4 — มีแท่นก๊อปปี้กลางแมพชื่อเดียวกันหลอก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1183,13 +1183,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.07", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.08", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.07 " .. lastStatus end
+    if not deadLock then title.Text = "v6.08 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2078,25 +2078,22 @@ task.spawn(function()
                 end
                 -- v5.74: แท่นถังบนผนัง (ยืม/คืน — prompt มีคำว่า Ext) — ผู้ใช้สั่ง:
                 --        ไม่มีถัง = บินไปหยิบก่อน / จัดการ Hider เสร็จ = เอาไปคืนแท่น (ชาร์จ % กลับ)
+                -- v6.08: ล็อกพิกัดตายตัว — มีแท่นก๊อปปี้จอดกลางแมพ (~0,3.5,0) ชื่อเดียวกัน หลอก "ใกล้สุด" ได้
+                --        แท่นจริงมีจุดเดียว @-157,4.5,-24.4 (ExtSpy ยืนยัน 2 รอบ) รับเฉพาะรัศมี 15 จากจุดนี้
+                local EXT_POS = Vector3.new(-157.0, 4.5, -24.4)
                 local function extStation()
-                    -- v6.06: ล็อก path จริง Misc.ExtinguisherStation (ExtSpy ยืนยัน @-157,4.5,-24.4)
-                    --        เลิกสแกนทั้ง workspace — แท่นนอกแมพเคยหลอกให้วาปหลุด (v5.81 กรองระยะยังพลาด)
                     local misc = workspace:FindFirstChild("Misc")
                     if not misc then return end
-                    local me0 = hrp() and hrp().Position
-                    local bp, bpos, bd
                     for _, st in ipairs(misc:GetChildren()) do
                         if st.Name:find("ExtinguisherStation") then
                             local p = st:FindFirstChildWhichIsA("ProximityPrompt", true)
                             if p and p.Enabled then
                                 local a = p:FindFirstAncestorWhichIsA("BasePart")
                                 local pos = (a and a.Position) or partPos(st)
-                                local d = pos and me0 and (pos - me0).Magnitude or math.huge
-                                if pos and (not bd or d < bd) then bp, bpos, bd = p, pos, d end
+                                if pos and (pos - EXT_POS).Magnitude < 15 then return p, pos end
                             end
                         end
                     end
-                    return bp, bpos
                 end
                 while HIDER_ON and _G.AH74_GEN == MYGEN do
                     if busyBefore(6) then break end   -- v5.76: งานด่วนกว่าโผล่ = วาง Hider ทันที (WORKING ปลดท้าย loop)
