@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.08 แท่นถังล็อกพิกัดตายตัว -157,4.5,-24.4 — มีแท่นก๊อปปี้กลางแมพชื่อเดียวกันหลอก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.09 +สเต็ปใหม่จากอัปเดตเกม: 'Interact' เปิดประตูห้อง + 'Print Badge' ในห้อง — แก้ R6:ไม่มีปุ่ม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -73,6 +73,9 @@ local TREATD_ACTS = {
     ["Talk"]=true, ["Take DNA Sample"]=true, ["Analyze Sample"]=true, ["Process Results"]=true,
     ["Prepare Patient"]=true, ["Sleep Patient"]=true, ["Set Up"]=true, ["Turn On"]=true,
     ["Begin"]=true, ["Begin X-Ray"]=true, ["Collect"]=true,
+    -- v6.09: อัปเดตเกมเพิ่มสเต็ปใหม่ในห้อง (RoomDebug ยืนยัน): 'Interact' obj=Open (เปิดประตู/ม่านห้อง)
+    --        + 'Print Badge' ในห้อง — ไม่อยู่ในลิสต์ = บอทรายงาน "ไม่มีปุ่ม" ข้ามห้อง 6 ตลอด
+    ["Interact"]=true, ["Print Badge"]=true,
     -- v4.21: เอา Inspect ออก — มันคือปุ่มซูมกล้องเข้าจอ ไม่ใช่สเต็ปรักษา (บอทกด = กล้องล็อคติดจอ)
 }
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
@@ -918,6 +921,7 @@ local function treatRoom(room)
             ["Prepare Patient"]=true, ["Sleep Patient"]=true,           -- Emergency เตรียมคนไข้ลงเตียง
             ["Begin X-Ray"]=true, ["Set Up"]=true, ["Turn On"]=true,    -- Emergency เครื่อง (Room6 X-Ray / Room7 Heart)
             ["Begin"]=true, ["Collect"]=true,                           -- เริ่มเครื่อง / เก็บผล
+            ["Interact"]=true, ["Print Badge"]=true,                    -- v6.09: สเต็ปใหม่จากอัปเดต (เปิดประตูห้อง + ปริ้นใบในห้อง)
         }                                                               -- (Inspect = ซูมจอ ไม่ใช่งาน — ห้ามใส่)
         -- prompt บน "ตัวคนไข้" (Talk/DNA): กดเฉพาะตอนคนไข้อยู่ในห้องจริง (InBed/ใกล้ห้อง <35)
         --   กันวาปไปกดคนไข้ที่ยังยืนอยู่เคาน์เตอร์ (roomPatient จับด้วย DesignatedRoom ตั้งแต่ก่อนเดินเข้าห้อง)
@@ -1183,13 +1187,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.08", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.09", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.08 " .. lastStatus end
+    if not deadLock then title.Text = "v6.09 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
