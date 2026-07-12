@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.04 Hider ใกล้เคาน์เตอร์ไม่นับเป็นผี — เดิมปิดชัตเตอร์ค้างทั้งกะ เช็คอินตาย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.05 ปริศนาสี R6 เล่นเฉพาะตอนเรายืนหน้าเครื่องเอง — เพื่อนกดไม่วาปไปช่วย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1183,13 +1183,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.04", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.05", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.04 " .. lastStatus end
+    if not deadLock then title.Text = "v6.05 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1637,9 +1637,18 @@ do
     end
     rearm6()
     bind(workspace.DescendantAdded, function(d) if d.Name=="Colors" then task.wait(0.2); rearm6() end end)
+    -- v6.05: เล่นสีเฉพาะตอน "เรา" อยู่หน้าเครื่องเอง (<25) + โซน 6-8 เปิด
+    --        (ผู้ใช้เจอ: เพื่อนกดสีห้อง 6 สีกะพริบ → บอทวาปไปตอบให้ทั้งที่ปิดห้อง 6-8)
+    local function myR6()
+        if not ROOMS_EM then return false end
+        local c = colors6()
+        local p = c and partPos(c)
+        local me = hrp() and hrp().Position
+        return p and me and (p - me).Magnitude < 25
+    end
     task.spawn(function()
         while _G.AH74_GEN == MYGEN do
-            if R6_ON and #seq>0 and not playing and (os.clock()-lastFlash)>3 then
+            if R6_ON and myR6() and #seq>0 and not playing and (os.clock()-lastFlash)>3 then
                 playing=true
                 for _,n in ipairs(seq) do
                     if not R6_ON then break end
