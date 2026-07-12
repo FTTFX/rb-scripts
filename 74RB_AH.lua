@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.11 ปุ่มห้องเปิดเฉพาะใกล้: คนไข้สด+เราไกล = บินเข้าไปดูก่อน ไม่ตี "ไม่มีปุ่ม" จากไกล)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.12 ปุ่ม "ห้อง7-8" แยก default ปิด — เกมอัปเดตให้ทำมือเท่านั้น ปิด=บอทห้ามแตะ 7/8 เด็ดขาด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -39,6 +39,7 @@ local CAMFIX_ON = false  -- v5.75: บินซ่อมกล้องวงจ
 local GHOSTKILL_ON = false   -- v5.83: ฆ่า Ghost ด้วย Scanner (ปุ่มแยก — ผู้ใช้สั่ง ตัวนี้ไม่ปกติ)
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอท — คนละโซนไม่แย่งจ่ายยาห้องเดียวกัน) ; เล่นเดี่ยวเปิดทั้งคู่
 local ROOMS_MED, ROOMS_EM = true, true   -- Medical 1-5 / Emergency 6-8
+local R78_ON = false   -- v6.12: ห้อง 7/8 แยกปุ่ม default ปิด — อัปเดตเกมต้องทำมือเท่านั้น (ทำผิด=พัง) ปิด=ห้ามแตะเด็ดขาด
 local SHOP_ON = false    -- v5.49: auto ซื้อของอัปเกรดร้านค้า (prompt 'Buy' ใน ShopItems)
 -- v5.51: กฎซื้อ (จาก ShopSpy): ช่องร้านมีป้าย Type='[ UPGRADE ]'/'[ CURRENCY ]' + Description=ชื่อของ
 -- ซื้อเฉพาะ UPGRADE (CURRENCY = สุ่มเหรียญ เผาเงิน — ข้าม) ; SHOP_SKIP บล็อกชื่อที่ไม่เอาเพิ่มได้
@@ -1175,7 +1176,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 290   -- v5.75: +แถวซ่อมกล้อง
+local FULL_H = 322   -- v6.12: +แถวห้อง7-8
 local f = Instance.new("Frame", gui)
 f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
@@ -1187,13 +1188,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.11", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.12", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.11 " .. lastStatus end
+    if not deadLock then title.Text = "v6.12 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1511,7 +1512,10 @@ task.spawn(function()
                         end)()
                         local work = loaded and hasWork(room, pat) and (not roomDone(room) or fresh)
                             or (not loaded and fresh) or farUnseen
-                        if pat and present and (not ghost or killable) and work then
+                        -- v6.12: ปุ่มห้อง7-8 ปิด = ห้ามแตะ Room7/8 เด็ดขาด (แซงแม้กฎ Room8 สำคัญสุด)
+                        --        อัปเดตเกมห้องนี้ต้องทำมือเท่านั้น — บอทเข้าไป=ทำผิด
+                        local blocked = not R78_ON and (room.Name == "Room7" or room.Name == "Room8")
+                        if pat and present and not blocked and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
                             -- v5.26: Room8 อันดับหนึ่งเด็ดขาด (ผู้ใช้สั่ง "ไม่มีทางอื่น") — แซงแม้ห้องวิกฤต
@@ -1520,7 +1524,7 @@ task.spawn(function()
                             elseif grp == "Emergency" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
                         elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
-                            local reason = not present and "ไกล" or (ghost and not killable) and "ผี"
+                            local reason = blocked and "ปิด(มือ)" or not present and "ไกล" or (ghost and not killable) and "ผี"
                                 or not loaded and "รักษาแล้ว" or roomDone(room) and "จบ" or "ไม่มีปุ่ม"
                             why[#why+1] = room.Name:gsub("Room", "R") .. ":" .. reason
                         end
@@ -2450,6 +2454,8 @@ task.spawn(function()
                                 if rr then room = rr end
                             end
                         end
+                        -- v6.12: ห้อง7-8 ปิด = ไม่บิน/ไม่วางห้องนั้น → พาไปเคาน์เตอร์แทน (เข้าไปไม่ได้เลย)
+                        if room and not R78_ON and (room.Name == "Room7" or room.Name == "Room8") then room = nil end
                         -- v4.72: ไม่รู้ห้อง (คนเยี่ยม/ไม่มี DesignatedRoom) → พาไปวางหน้าเคาน์เตอร์
                         local dest = room and roomPos(room)
                         if not dest then
@@ -2479,9 +2485,12 @@ task.spawn(function()
                                 for _, grp in ipairs({"Medical", "Emergency"}) do
                                     local g = rooms:FindFirstChild(grp)
                                     if g then for _, r2 in ipairs(g:GetChildren()) do
-                                        for _, p in ipairs(r2:GetDescendants()) do
-                                            if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
-                                                dropPP = p; break
+                                        -- v6.12: ห้อง7-8 ปิด = ห้ามวางคนไข้ในนั้นด้วย
+                                        if R78_ON or (r2.Name ~= "Room7" and r2.Name ~= "Room8") then
+                                            for _, p in ipairs(r2:GetDescendants()) do
+                                                if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
+                                                    dropPP = p; break
+                                                end
                                             end
                                         end
                                         if dropPP then break end
@@ -2685,9 +2694,17 @@ ghB.MouseButton1Click:Connect(function()
     ghB.BackgroundColor3 = GHOSTKILL_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(60,60,80)
 end)
 
-btn("CLOSE", 8, 258, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
-        false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
+-- v6.12: ห้อง 7/8 แยกปุ่ม default ปิด — เกมอัปเดตให้ทำมือเท่านั้น เปิดเฉพาะยืนยันว่าบอททำได้
+local r78B = btn("ห้อง7-8: OFF", 8, 258, 86, 30, Color3.fromRGB(45,45,58))
+r78B.MouseButton1Click:Connect(function()
+    R78_ON = not R78_ON
+    r78B.Text = "ห้อง7-8: " .. (R78_ON and "ON" or "OFF")
+    r78B.BackgroundColor3 = R78_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
+
+btn("CLOSE", 8, 290, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON, R78_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
