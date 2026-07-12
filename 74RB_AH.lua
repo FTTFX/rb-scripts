@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.12 ปุ่ม "ห้อง7-8" แยก default ปิด — เกมอัปเดตให้ทำมือเท่านั้น ปิด=บอทห้ามแตะ 7/8 เด็ดขาด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.13 ปุ่มห้องไม่ทับกัน: "ห้อง6" คุมแค่ 6, "ห้อง7-8" คุม 7/8 อย่างเดียว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1188,13 +1188,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.12", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.13", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.12 " .. lastStatus end
+    if not deadLock then title.Text = "v6.13 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -1483,7 +1483,8 @@ task.spawn(function()
                 local crit = criticalRooms()   -- v5.15: ห้องวิกฤต (มีเวลานับถอยหลัง) มาก่อนทุกห้อง
                 for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8
                     -- v5.46: โซนที่ปิดอยู่ = ไม่รับงานเลย (แบ่งงานหลายบอท)
-                    local f = ((grp == "Medical" and ROOMS_MED) or (grp == "Emergency" and ROOMS_EM))
+                    -- v6.13: Emergency แบ่ง 2 ปุ่ม — ROOMS_EM คุมแค่ Room6, R78_ON คุม Room7/8 (ไม่ทับกัน)
+                    local f = ((grp == "Medical" and ROOMS_MED) or (grp == "Emergency" and (ROOMS_EM or R78_ON)))
                               and rooms:FindFirstChild(grp) or nil
                     if f then for _, room in ipairs(f:GetChildren()) do
                         local pat = roomPatient(room)
@@ -1514,7 +1515,8 @@ task.spawn(function()
                             or (not loaded and fresh) or farUnseen
                         -- v6.12: ปุ่มห้อง7-8 ปิด = ห้ามแตะ Room7/8 เด็ดขาด (แซงแม้กฎ Room8 สำคัญสุด)
                         --        อัปเดตเกมห้องนี้ต้องทำมือเท่านั้น — บอทเข้าไป=ทำผิด
-                        local blocked = not R78_ON and (room.Name == "Room7" or room.Name == "Room8")
+                        local blocked = (room.Name == "Room7" or room.Name == "Room8") and not R78_ON
+                            or room.Name == "Room6" and not ROOMS_EM   -- v6.13: ห้อง6 ตามปุ่มเดิม
                         if pat and present and not blocked and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
@@ -2657,10 +2659,10 @@ medB.MouseButton1Click:Connect(function()
     medB.Text = "ห้อง1-5: " .. (ROOMS_MED and "ON" or "OFF")
     medB.BackgroundColor3 = ROOMS_MED and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
-local emB = btn("ห้อง6-8: ON", 98, 162, 86, 30, Color3.fromRGB(40,150,70))
+local emB = btn("ห้อง6: ON", 98, 162, 86, 30, Color3.fromRGB(40,150,70))   -- v6.13: เดิม 6-8 → เหลือคุมแค่ 6 (7/8 = ปุ่มแยก)
 emB.MouseButton1Click:Connect(function()
     ROOMS_EM = not ROOMS_EM
-    emB.Text = "ห้อง6-8: " .. (ROOMS_EM and "ON" or "OFF")
+    emB.Text = "ห้อง6: " .. (ROOMS_EM and "ON" or "OFF")
     emB.BackgroundColor3 = ROOMS_EM and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
