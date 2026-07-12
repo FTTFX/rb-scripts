@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.14 ปืนยิงนัดเดียวจบถาวร — ragdoll ค้างเช็คผลไม่ได้ ; เช็คผล+ลองใหม่เหลือเฉพาะ Scanner)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.15 Room6 จ่ายยา: วาปไปข้างหลังคนไข้ก่อนจ่าย — คนไข้ยืนไม่มีเตียง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -994,7 +994,13 @@ local function treatRoom(room)
         local bedPP = bedApplyPP(room)
         if not (bedPP and bedPP.Parent) then return false end
         local owner = npcOwner(bedPP)
-        tpTo(owner and partPos(owner) or partPos(bedPP.Parent)); task.wait(0.15)   -- v5.90: กลับแบบเดิม
+        local dest = owner and partPos(owner) or partPos(bedPP.Parent)
+        -- v6.15: Room6 คนไข้ยืน (ไม่มีเตียง) → วาปไป "ข้างหลัง" ตัวคนไข้ก่อนจ่าย (ผู้ใช้ขอ)
+        if room.Name == "Room6" and owner then
+            local rp6 = owner:FindFirstChild("HumanoidRootPart") or owner:FindFirstChildWhichIsA("BasePart")
+            if rp6 then dest = rp6.Position - rp6.CFrame.LookVector * 4 end
+        end
+        tpTo(dest); task.wait(0.15)   -- v5.90: กลับแบบเดิม
         local gBefore, hBefore = givenCount(m), heldCount(m)
         pressPrompt(bedPP, function()
             return heldCount(m) < hBefore or givenCount(m) > gBefore or roomDone(room)
@@ -1188,13 +1194,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.14", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.15", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.14 " .. lastStatus end
+    if not deadLock then title.Text = "v6.15 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
