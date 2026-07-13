@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.16 Ghost ปั่นหายตัว: ยิงเฉพาะตอน GhostVisible=true — หายตัวสแกนไม่เข้า)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.17 คนเป็นลม: แวะถังขยะก่อน ทิ้งได้=จบ ทิ้งไม่ได้=พาไปเตียงตามเดิม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1194,13 +1194,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.16", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.17", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.16 " .. lastStatus end
+    if not deadLock then title.Text = "v6.17 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
@@ -2453,6 +2453,39 @@ task.spawn(function()
                             tpTo(partPos(m)); task.wait(0.15)
                             pressPrompt(carryPP)
                             task.wait(0.15)   -- v5.29: เดิม 0.3 — เช็คอุ้มติดมือจริงอยู่แล้ว
+                        end
+                        -- v6.17: แวะถังขยะก่อน — บางตัวทิ้งได้ (ผู้ใช้พบ) เกมเป็นคนตัดสินเอง
+                        --        ถัง = Workspace.Trash หลายถัง ปุ่ม 'Trash Item' (TrashSpy ยืนยัน)
+                        --        ทิ้งหลุดมือ = จบงาน | ไม่หลุดใน ~1s = พาไปเตียงตามเดิม
+                        do
+                            local best, bd = nil, math.huge
+                            local me = hrp() and hrp().Position
+                            for _, o in ipairs(workspace:GetChildren()) do
+                                if o.Name == "Trash" then
+                                    local pp2 = o:FindFirstChildWhichIsA("ProximityPrompt", true)
+                                    local tp = partPos(o)
+                                    if pp2 and pp2.ActionText == "Trash Item" and tp and me then
+                                        local d = (tp - me).Magnitude
+                                        if d < bd then best, bd = pp2, d end
+                                    end
+                                end
+                            end
+                            if best then
+                                setStatus("ลองทิ้ง " .. m.Name .. " 🗑️")
+                                tpTo(partPos(best.Parent)); task.wait(0.2)
+                                pressPrompt(best, function()
+                                    return m:GetAttribute("CarriedBy") == nil or not m.Parent
+                                end)
+                                task.wait(0.5)
+                                if not m.Parent or m:GetAttribute("CarriedBy") == nil then
+                                    FAINT_DONE[m] = math.huge
+                                    setStatus("ทิ้ง " .. m.Name .. " สำเร็จ 🗑️")
+                                    CARRYING = false
+                                    task.wait(0.15)
+                                    continue
+                                end
+                                setStatus(m.Name .. " ทิ้งไม่ได้ → พาไปเตียง")
+                            end
                         end
                         -- พาไปห้องที่เขาต้องไป
                         local roomName = m:GetAttribute("DesignatedRoom")
