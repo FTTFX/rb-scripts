@@ -46,25 +46,51 @@ end
 -- ตัดเสียงรบกวน: remote ที่ยิงถี่ตลอดเวลา (movement/replication) ไม่ต้อง log
 local NOISE = { ["ReplicateMouse"] = 1, ["ClientReplication"] = 1, ["UpdateCamera"] = 1 }
 
-local hooked
-hooked = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    if (method == "FireServer" or method == "InvokeServer") and typeof(self) == "Instance"
-       and not NOISE[self.Name] then
-        local a = {...}
-        local s = {}
-        for i = 1, #a do s[i] = ser(a[i]) end
-        local label = ("%s(%s)"):format(self.Name, table.concat(s, ", "))
-        -- เก็บซ้ำชื่อ+args เดิมไม่ต้อง (กัน spam)
-        local dup = false
-        for _, c in ipairs(CAPTURED) do if c.label == label then dup = true; c.count = c.count + 1 break end end
-        if not dup then
-            CAPTURED[#CAPTURED + 1] = {remote = self, method = method, args = a, label = label, count = 1}
-            add(("#%d %s"):format(#CAPTURED, label))
+local function record(self, method, a)
+    if not (typeof(self) == "Instance" and not NOISE[self.Name]) then return end
+    local s = {}
+    for i = 1, #a do s[i] = ser(a[i]) end
+    local label = ("%s(%s)"):format(self.Name, table.concat(s, ", "))
+    for _, c in ipairs(CAPTURED) do if c.label == label then c.count = c.count + 1; return end end
+    CAPTURED[#CAPTURED + 1] = {remote = self, method = method, args = a, label = label, count = 1}
+    add(("#%d %s"):format(#CAPTURED, label))
+end
+
+-- วิธีที่ 1: hookmetamethod (executor ดีๆ) — ดักได้ทุก remote
+local ok1 = pcall(function()
+    local hooked
+    hooked = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if method == "FireServer" or method == "InvokeServer" then
+            record(self, method, {...})
+        end
+        return hooked(self, ...)
+    end))
+end)
+
+-- วิธีที่ 2 (fallback): hook FireServer/InvokeServer ทีละ remote ตรงๆ
+if not ok1 then
+    add("⚠️ hookmetamethod ไม่รองรับ → ใช้ hook ตรงแทน")
+    local function wrap(inst)
+        if inst:IsA("RemoteEvent") or inst:IsA("UnreliableRemoteEvent") then
+            pcall(function()
+                local old; old = hookfunction(inst.FireServer, function(self, ...)
+                    if self == inst then record(inst, "FireServer", {...}) end
+                    return old(self, ...)
+                end)
+            end)
+        elseif inst:IsA("RemoteFunction") then
+            pcall(function()
+                local old; old = hookfunction(inst.InvokeServer, function(self, ...)
+                    if self == inst then record(inst, "InvokeServer", {...}) end
+                    return old(self, ...)
+                end)
+            end)
         end
     end
-    return hooked(self, ...)
-end))
+    for _, o in ipairs(game:GetDescendants()) do wrap(o) end
+    table.insert(CONNS, game.DescendantAdded:Connect(wrap))
+end
 
 -- ปุ่ม replay: พิมพ์เลขในช่องแล้วกดยิง
 local tb = Instance.new("TextBox", gui)
