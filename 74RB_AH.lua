@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.17 คนเป็นลม: แวะถังขยะก่อน ทิ้งได้=จบ ทิ้งไม่ได้=พาไปเตียงตามเดิม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.18 ระบบเบื้องหลัง: กัน sanity (กลืน PlayerLostSanity) + หนีผีใต้เตียงอัตโนมัติ (สแปม E ตอน PlatformStand) เปิดตลอด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -183,6 +183,41 @@ local LBL = { ghost="ผี", anomaly="ผีซ่อน", sus="น่าสง
 
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
+
+-- ===== v6.18 ระบบเบื้องหลัง เปิดตลอด (พิสูจน์ด้วย BedMonSpy/SanityBlock) =====
+-- (1) กัน sanity: client ยิง RE/PlayerLostSanity บอก server เองว่าเสีย sanity → กลืนทิ้ง = ไม่ลด
+_G.AH74_SANITY_BLOCK = (_G.AH74_SANITY_BLOCK == nil) and true or _G.AH74_SANITY_BLOCK
+if not _G.AH74_SANITY_HOOKED then
+    local ok = pcall(function()
+        local hooked
+        hooked = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+            local m = getnamecallmethod()
+            if (m == "FireServer" or m == "InvokeServer") and _G.AH74_SANITY_BLOCK
+               and typeof(self) == "Instance" and self.Name:find("PlayerLostSanity") then
+                return   -- กลืน ไม่ถึง server
+            end
+            return hooked(self, ...)
+        end))
+    end)
+    _G.AH74_SANITY_HOOKED = ok   -- executor ไม่รองรับ hook = ปล่อยผ่าน (ไม่พัง)
+end
+
+-- (2) หนีผีใต้เตียง: PlatformStand=true = โดนจับ → สแปม E จนหลุด (E คือปุ่มดิ้น ยืนยันแล้ว)
+_G.AH74_BEDESCAPE = (_G.AH74_BEDESCAPE == nil) and true or _G.AH74_BEDESCAPE
+task.spawn(function()
+    while MYGEN == _G.AH74_GEN do
+        local c = LP.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if _G.AH74_BEDESCAPE and h and h.PlatformStand then
+            local t0 = os.clock()
+            while h.Parent and h.PlatformStand and os.clock() - t0 < 15 and MYGEN == _G.AH74_GEN do
+                VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game); task.wait()
+                VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game); task.wait(0.07)
+            end
+        end
+        task.wait(0.1)
+    end
+end)
 
 -- กด prompt: หันหน้าเข้าหาเป้า → fp พร้อม bypass กดค้าง (HoldDuration=0 ชั่วคราว) → รอ done()
 -- done() = เช็คสำเร็จจากผลจริง (ยาติ๊ก/ของเข้ามือ) — Apply ไม่ดับหลังสำเร็จ ห้ามใช้ Enabled เป็นเกณฑ์กดซ้ำ
@@ -1194,13 +1229,13 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.17", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.18", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.17 " .. lastStatus end
+    if not deadLock then title.Text = "v6.18 " .. lastStatus end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
