@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.20 แยกฟีเจอร์ย่อยเป็นปุ่มเอง: สไลม์/ช่วยคน/ผีเตียง (เดิมพ่วงดับไฟ) + อุ้มคน (เดิมพ่วงเคาน์เตอร์))
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.21 กัน sanity ชั้นที่ 2: hookfunction ตรงตัว remote เพิ่มจาก __namecall — จับ direct call ด้วย)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -208,6 +208,22 @@ if not _G.AH74_SANITY_HOOKED then
     end)
     _G.AH74_SANITY_HOOKED = ok   -- executor ไม่รองรับ hook = ปล่อยผ่าน (ไม่พัง)
     _G.AH74_SANITY_ERR = ok and nil or tostring(err)   -- เก็บสาเหตุถ้า hook พัง
+    -- ชั้นที่ 2 (v6.21): hookfunction ตรงตัว remote — จับการเรียกแบบ direct ref ที่ __namecall มองไม่เห็น
+    local ok2 = pcall(function()
+        local net = game:GetService("ReplicatedStorage"):WaitForChild("Util", 10):WaitForChild("Net", 5)
+        local re = net and net:FindFirstChild("RE/PlayerLostSanity")
+        if re and hookfunction then
+            local old
+            old = hookfunction(re.FireServer, newcclosure(function(s, ...)
+                if s == re and _G.AH74_SANITY_BLOCK then
+                    _G.AH74_SANITY_N = _G.AH74_SANITY_N + 1
+                    return
+                end
+                return old(s, ...)
+            end))
+        end
+    end)
+    if ok2 then _G.AH74_SANITY_HOOKED = true end   -- ชั้นไหนติดก็นับว่าใช้ได้
 end
 
 -- (2) หนีผีใต้เตียง: PlatformStand=true = โดนจับ → สแปม E จนหลุด (E คือปุ่มดิ้น ยืนยันแล้ว)
@@ -1237,7 +1253,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.20", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.21", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1246,7 +1262,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.20 " .. sb .. " " .. lastStatus
+        title.Text = "v6.21 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
