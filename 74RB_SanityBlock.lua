@@ -13,6 +13,12 @@ _G.SANITY_BLOCK_ON = _G.SANITY_BLOCK_ON or false   -- toggle เก็บใน 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local blocked = 0
+local reasons = {}   -- reason -> จำนวนครั้ง (ดูว่าโดนตีส่ง reason อะไร)
+local function reasonStr()
+    local t = {}
+    for r, n in pairs(reasons) do t[#t + 1] = ("%s x%d"):format(r, n) end
+    return #t > 0 and table.concat(t, " | ") or "-"
+end
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "SanityBlock"; gui.ResetOnSpawn = false
@@ -34,8 +40,8 @@ local function sanityPct()
 end
 
 local function refresh()
-    box.Text = ("[SanityBlock]  BLOCK = %s\nSanity: %s\nกลืนไปแล้ว: %d ครั้ง\n\nเปิด BLOCK แล้วรักษาคนไข้ → ดูว่า Sanity ค้างไหม")
-        :format(_G.SANITY_BLOCK_ON and "🟢 ON" or "🔴 OFF", sanityPct(), blocked)
+    box.Text = ("[SanityBlock]  BLOCK = %s\nSanity: %s\nกลืนไปแล้ว: %d ครั้ง\nreason ที่กลืน: %s")
+        :format(_G.SANITY_BLOCK_ON and "🟢 ON" or "🔴 OFF", sanityPct(), blocked, reasonStr())
 end
 refresh()
 
@@ -48,6 +54,9 @@ local ok = pcall(function()
            and typeof(self) == "Instance" and self.Name:find("PlayerLostSanity")
            and _G.SANITY_BLOCK_ON then
             blocked = blocked + 1
+            local a = {...}
+            local r = tostring(a[2] or "?")
+            reasons[r] = (reasons[r] or 0) + 1
             refresh()
             return   -- กลืนทิ้ง — ไม่เรียก original = ไม่ถึง server
         end
