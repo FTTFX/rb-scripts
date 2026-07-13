@@ -187,19 +187,22 @@ local function hrp() local c = LP.Character; return c and c:FindFirstChild("Huma
 -- ===== v6.18 ระบบเบื้องหลัง เปิดตลอด (พิสูจน์ด้วย BedMonSpy/SanityBlock) =====
 -- (1) กัน sanity: client ยิง RE/PlayerLostSanity บอก server เองว่าเสีย sanity → กลืนทิ้ง = ไม่ลด
 _G.AH74_SANITY_BLOCK = (_G.AH74_SANITY_BLOCK == nil) and true or _G.AH74_SANITY_BLOCK
+_G.AH74_SANITY_N = _G.AH74_SANITY_N or 0   -- ตัวนับกลืน (debug: ดูว่า hook ทำงานจริง)
 if not _G.AH74_SANITY_HOOKED then
-    local ok = pcall(function()
+    local ok, err = pcall(function()
         local hooked
         hooked = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
             local m = getnamecallmethod()
             if (m == "FireServer" or m == "InvokeServer") and _G.AH74_SANITY_BLOCK
                and typeof(self) == "Instance" and self.Name:find("PlayerLostSanity") then
+                _G.AH74_SANITY_N = _G.AH74_SANITY_N + 1
                 return   -- กลืน ไม่ถึง server
             end
             return hooked(self, ...)
         end))
     end)
     _G.AH74_SANITY_HOOKED = ok   -- executor ไม่รองรับ hook = ปล่อยผ่าน (ไม่พัง)
+    _G.AH74_SANITY_ERR = ok and nil or tostring(err)   -- เก็บสาเหตุถ้า hook พัง
 end
 
 -- (2) หนีผีใต้เตียง: PlatformStand=true = โดนจับ → สแปม E จนหลุด (E คือปุ่มดิ้น ยืนยันแล้ว)
@@ -1235,7 +1238,11 @@ title.TextScaled = true
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
-    if not deadLock then title.Text = "v6.18 " .. lastStatus end
+    if not deadLock then
+        -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
+        local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
+        title.Text = "v6.18 " .. sb .. " " .. lastStatus
+    end
 end
 local function armDeathLog(char)
     local h = char:WaitForChild("Humanoid", 5)
