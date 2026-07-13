@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.18 ระบบเบื้องหลัง: กัน sanity (กลืน PlayerLostSanity) + หนีผีใต้เตียงอัตโนมัติ (สแปม E ตอน PlatformStand) เปิดตลอด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.19 GUI แท็บหมวด: หลัก/ฉุกเฉิน/ห้อง/อื่นๆ + ปุ่ม toggle กัน Sanity + หนีเตียง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1220,7 +1220,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 322   -- v6.12: +แถวห้อง7-8
+local FULL_H = 198   -- v6.19: แท็บหมวด — title(34)+แถบแท็บ(26)+หน้า 3 แถว(96)+CLOSE(24)
 local f = Instance.new("Frame", gui)
 f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
@@ -1232,7 +1232,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.18", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.19", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1241,7 +1241,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.18 " .. sb .. " " .. lastStatus
+        title.Text = "v6.19 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1284,8 +1284,8 @@ minB.MouseButton1Click:Connect(function()
     minB.Text = minimized and "+" or "—"
 end)
 
-local function btn(txt, x, y, w, h, col)
-    local b = Instance.new("TextButton", f)
+local function btn(txt, x, y, w, h, col, parent)
+    local b = Instance.new("TextButton", parent or f)
     b.Size, b.Position = UDim2.new(0,w,0,h), UDim2.new(0,x,0,y)
     b.Text, b.TextScaled = txt, true
     b.BackgroundColor3 = col or Color3.fromRGB(45,45,58)
@@ -1295,8 +1295,34 @@ local function btn(txt, x, y, w, h, col)
     return b
 end
 
+-- ===== v6.19 แท็บหมวด (ผู้ใช้ขอ — ปุ่มเยอะจนล้น จัดเป็นหมวดเลือกด้านบน) =====
+local TAB_NAMES = {"หลัก", "ฉุกเฉิน", "ห้อง", "อื่นๆ"}
+local pages, tabBtns, slotN = {}, {}, {}
+for _, name in ipairs(TAB_NAMES) do
+    local p = Instance.new("Frame", f)
+    p.Position, p.Size = UDim2.new(0,0,0,66), UDim2.new(1,0,0,96)
+    p.BackgroundTransparency, p.Visible = 1, false
+    pages[name], slotN[name] = p, 0
+end
+local function showTab(name)
+    for n, p in pairs(pages) do
+        p.Visible = (n == name)
+        tabBtns[n].BackgroundColor3 = (n == name) and Color3.fromRGB(70,70,110) or Color3.fromRGB(35,35,46)
+    end
+end
+for i, name in ipairs(TAB_NAMES) do
+    local tb = btn(name, 8 + (i-1)*45, 34, 42, 26, Color3.fromRGB(35,35,46))
+    tabBtns[name] = tb
+    tb.MouseButton1Click:Connect(function() showTab(name) end)
+end
+-- ปุ่มในแท็บ: วางกริด 2 คอลัมน์อัตโนมัติ (ไม่ต้องระบุพิกัด)
+local function tbtn(tab, txt, col)
+    local i = slotN[tab]; slotN[tab] = i + 1
+    return btn(txt, 8 + (i % 2) * 90, (math.floor(i / 2)) * 32, 86, 30, col, pages[tab])
+end
+
 -- v5.36: ปุ่ม ESP/NOCLIP/ไปของ ถอดออก — ESP+NOCLIP+วาป เปิดตลอด (ผู้ใช้สั่ง)
-local runB = btn("RUN: OFF", 8, 66, 86, 30)
+local runB = tbtn("หลัก", "RUN: OFF")
 runB.MouseButton1Click:Connect(function()
     RUN_ON = not RUN_ON
     runB.Text = "RUN: " .. (RUN_ON and "ON" or "OFF")
@@ -1304,16 +1330,21 @@ runB.MouseButton1Click:Connect(function()
     if not RUN_ON then local h = hum(); if h then h.WalkSpeed = 16 end end
 end)
 
-local spdL = btn(tostring(SPEED), 98, 130, 34, 30); spdL.Active = false
-btn("−", 134, 130, 24, 30).MouseButton1Click:Connect(function()
-    SPEED = math.max(16, SPEED - 10); spdL.Text = tostring(SPEED)
-end)
-btn("+", 160, 130, 24, 30).MouseButton1Click:Connect(function()
-    SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
-end)
+-- แถวความเร็ว: กินช่องกริดถัดไปในแท็บหลัก (label + − / +)
+do
+    local i = slotN["หลัก"]; slotN["หลัก"] = i + 1
+    local x, y = 8 + (i % 2) * 90, (math.floor(i / 2)) * 32
+    local spdL = btn(tostring(SPEED), x, y, 34, 30, nil, pages["หลัก"]); spdL.Active = false
+    btn("−", x + 36, y, 24, 30, nil, pages["หลัก"]).MouseButton1Click:Connect(function()
+        SPEED = math.max(16, SPEED - 10); spdL.Text = tostring(SPEED)
+    end)
+    btn("+", x + 62, y, 24, 30, nil, pages["หลัก"]).MouseButton1Click:Connect(function()
+        SPEED = SPEED + 10; spdL.Text = tostring(SPEED)
+    end)
+end
 
 -- v4.43: ปุ่มรักษา = รวม ทำเครื่อง+ตีตัว(whack)+สี R6 ในปุ่มเดียว (แถวบนสุด)
-local autoB = btn("รักษา: OFF", 8, 34, 86, 30)
+local autoB = tbtn("หลัก", "รักษา: OFF")
 autoB.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
     MACHINE_ON, WHACK_ON, R6_ON = AUTO_ON, AUTO_ON, AUTO_ON
@@ -2696,7 +2727,7 @@ task.spawn(function()
     end
 end)
 
-local killB = btn("ฆ่าผี: OFF", 98, 66, 86, 30)
+local killB = tbtn("ฉุกเฉิน", "ฆ่าผี: OFF")
 killB.MouseButton1Click:Connect(function()
     KILLGHOST_ON = not KILLGHOST_ON
     killB.Text = "ฆ่าผี: " .. (KILLGHOST_ON and "ON" or "OFF")
@@ -2704,7 +2735,7 @@ killB.MouseButton1Click:Connect(function()
 end)
 
 -- v5.36: ปุ่ม Hider แทนที่ "ไปของ" — งานความเป็นความตาย แยกเปิด/ปิดเอง
-local hiderB = btn("Hider: OFF", 8, 98, 86, 30, Color3.fromRGB(120,50,160))
+local hiderB = tbtn("ฉุกเฉิน", "Hider: OFF", Color3.fromRGB(120,50,160))
 hiderB.MouseButton1Click:Connect(function()
     HIDER_ON = not HIDER_ON
     hiderB.Text = "Hider: " .. (HIDER_ON and "ON" or "OFF")
@@ -2713,7 +2744,7 @@ end)
 
 -- (v4.43: ทำเครื่อง/ตีตัว/สี R6 รวมเข้าปุ่ม "รักษา" แล้ว — ไม่มีปุ่มแยก)
 -- v4.34: รวม เช็คอิน+ชัตเตอร์ เป็นปุ่มเดียว (งานหน้าเคาน์เตอร์เหมือนกัน) — แถวบนสุดคู่กับรักษา
-local ciB = btn("เคาน์เตอร์: OFF", 98, 34, 86, 30, Color3.fromRGB(45,45,58))
+local ciB = tbtn("หลัก", "เคาน์เตอร์: OFF")
 ciB.MouseButton1Click:Connect(function()
     CHECKIN_ON = not CHECKIN_ON
     SHUTTER_ON = CHECKIN_ON
@@ -2721,14 +2752,14 @@ ciB.MouseButton1Click:Connect(function()
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local fireB = btn("ดับไฟ: OFF", 98, 98, 86, 30, Color3.fromRGB(120,60,30))
+local fireB = tbtn("ฉุกเฉิน", "ดับไฟ: OFF", Color3.fromRGB(120,60,30))
 fireB.MouseButton1Click:Connect(function()
     FIRE_ON = not FIRE_ON
     fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
-local npcfB = btn("ยิงผี: OFF", 8, 130, 86, 30, Color3.fromRGB(60,60,80))
+local npcfB = tbtn("ฉุกเฉิน", "ยิงผี: OFF", Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
     GUNKILL_ON = not GUNKILL_ON
     npcfB.Text = "ยิงผี: " .. (GUNKILL_ON and "ON" or "OFF")
@@ -2737,13 +2768,13 @@ npcfB.MouseButton1Click:Connect(function()
 end)
 
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอทกดคนละปุ่ม / เล่นเดี่ยวเปิดทั้งคู่)
-local medB = btn("ห้อง1-5: ON", 8, 162, 86, 30, Color3.fromRGB(40,150,70))
+local medB = tbtn("ห้อง", "ห้อง1-5: ON", Color3.fromRGB(40,150,70))
 medB.MouseButton1Click:Connect(function()
     ROOMS_MED = not ROOMS_MED
     medB.Text = "ห้อง1-5: " .. (ROOMS_MED and "ON" or "OFF")
     medB.BackgroundColor3 = ROOMS_MED and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
-local emB = btn("ห้อง6: ON", 98, 162, 86, 30, Color3.fromRGB(40,150,70))   -- v6.13: เดิม 6-8 → เหลือคุมแค่ 6 (7/8 = ปุ่มแยก)
+local emB = tbtn("ห้อง", "ห้อง6: ON", Color3.fromRGB(40,150,70))   -- v6.13: เดิม 6-8 → เหลือคุมแค่ 6 (7/8 = ปุ่มแยก)
 emB.MouseButton1Click:Connect(function()
     ROOMS_EM = not ROOMS_EM
     emB.Text = "ห้อง6: " .. (ROOMS_EM and "ON" or "OFF")
@@ -2751,14 +2782,14 @@ emB.MouseButton1Click:Connect(function()
 end)
 
 -- v5.49: auto ซื้อของอัปเกรดร้านค้า
-local shopB = btn("ซื้อของ: OFF", 8, 194, 86, 30, Color3.fromRGB(45,45,58))
+local shopB = tbtn("อื่นๆ", "ซื้อของ: OFF")
 shopB.MouseButton1Click:Connect(function()
     SHOP_ON = not SHOP_ON
     shopB.Text = "ซื้อของ: " .. (SHOP_ON and "ON" or "OFF")
     shopB.BackgroundColor3 = SHOP_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 -- v5.52: auto หยิบกาแฟ (ไม่กิน)
-local cofB = btn("กาแฟ: OFF", 98, 194, 86, 30, Color3.fromRGB(45,45,58))
+local cofB = tbtn("อื่นๆ", "กาแฟ: OFF")
 cofB.MouseButton1Click:Connect(function()
     COFFEE_ON = not COFFEE_ON
     cofB.Text = "กาแฟ: " .. (COFFEE_ON and "ON" or "OFF")
@@ -2766,14 +2797,14 @@ cofB.MouseButton1Click:Connect(function()
 end)
 
 -- v5.75: ปุ่มบินซ่อมกล้องวงจรปิด
-local camB = btn("ซ่อมกล้อง: OFF", 8, 226, 86, 30, Color3.fromRGB(45,45,58))
+local camB = tbtn("อื่นๆ", "ซ่อมกล้อง: OFF")
 camB.MouseButton1Click:Connect(function()
     CAMFIX_ON = not CAMFIX_ON
     camB.Text = "ซ่อมกล้อง: " .. (CAMFIX_ON and "ON" or "OFF")
     camB.BackgroundColor3 = CAMFIX_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 -- v5.83: ปุ่ม Ghost (Scanner) แยกจากยิงผี
-local ghB = btn("Ghost: OFF", 98, 226, 86, 30, Color3.fromRGB(60,60,80))
+local ghB = tbtn("ฉุกเฉิน", "Ghost: OFF", Color3.fromRGB(60,60,80))
 ghB.MouseButton1Click:Connect(function()
     GHOSTKILL_ON = not GHOSTKILL_ON
     ghB.Text = "Ghost: " .. (GHOSTKILL_ON and "ON" or "OFF")
@@ -2781,14 +2812,31 @@ ghB.MouseButton1Click:Connect(function()
 end)
 
 -- v6.12: ห้อง 7/8 แยกปุ่ม default ปิด — เกมอัปเดตให้ทำมือเท่านั้น เปิดเฉพาะยืนยันว่าบอททำได้
-local r78B = btn("ห้อง7-8: OFF", 8, 258, 86, 30, Color3.fromRGB(45,45,58))
+local r78B = tbtn("ห้อง", "ห้อง7-8: OFF")
 r78B.MouseButton1Click:Connect(function()
     R78_ON = not R78_ON
     r78B.Text = "ห้อง7-8: " .. (R78_ON and "ON" or "OFF")
     r78B.BackgroundColor3 = R78_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-btn("CLOSE", 8, 290, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+-- v6.19: toggle ระบบเบื้องหลัง (default ON — ปิดได้จากแท็บอื่นๆ)
+local snB = tbtn("อื่นๆ", "Sanity: ON", Color3.fromRGB(40,150,70))
+if not _G.AH74_SANITY_HOOKED then snB.Text = "Sanity: ❌hook" end
+snB.MouseButton1Click:Connect(function()
+    _G.AH74_SANITY_BLOCK = not _G.AH74_SANITY_BLOCK
+    snB.Text = "Sanity: " .. (_G.AH74_SANITY_BLOCK and "ON" or "OFF")
+    snB.BackgroundColor3 = _G.AH74_SANITY_BLOCK and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
+local beB = tbtn("อื่นๆ", "หนีเตียง: ON", Color3.fromRGB(40,150,70))
+beB.MouseButton1Click:Connect(function()
+    _G.AH74_BEDESCAPE = not _G.AH74_BEDESCAPE
+    beB.Text = "หนีเตียง: " .. (_G.AH74_BEDESCAPE and "ON" or "OFF")
+    beB.BackgroundColor3 = _G.AH74_BEDESCAPE and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+end)
+
+showTab("หลัก")   -- เปิดมาที่แท็บหลัก (ทุกปุ่มสร้างครบแล้ว)
+
+btn("CLOSE", 8, 166, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON, R78_ON =
         false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
     local h = hum()
