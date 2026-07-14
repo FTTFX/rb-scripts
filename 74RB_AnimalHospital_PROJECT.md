@@ -169,7 +169,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - `TREATD_ACTS` (ปุ่ม "AUTO รักษา"): Talk, Take DNA Sample, Analyze Sample, Process Results, Prepare Patient, Sleep Patient, Set Up, Turn On, Begin, Begin X-Ray, Collect
 - blind-fire ยิงเฉพาะ prompt ที่ `.Enabled` (เกม gate ลำดับเอง) — **ไม่รวมเก็บยา/Apply Treatment** (อันตราย ทำแยกใน treatRoom)
 - ตอนเช็คอิน ยังยิง prompt บนตัว NPC ด้วย (มอบใบ = "พูดคุย"/Talk) ผ่าน `npcOwner(p)`
-- **ห้ามยุ่งกับผี:** blind-fire ข้าม prompt **ทุกตัว**บน NPC ที่ `Skinwalker=true` (กันที่ระดับ owner) — เพราะ `Talk` อยู่ใน `TREATD_ACTS` ด้วย ถ้ากันแค่ npcStep จะยังกด Talk ใส่ผีตอน AUTO เปิด → จัดการผีด้วยชัตเตอร์/ยาผิดแทน
+- **v6.22 (ผู้ใช้ขอ) เช็คอินให้ผีด้วย:** `checkinPending()` ไม่กรอง `Skinwalker`/`Anomaly` ออกแล้ว (นับผีเป็นคิวเหมือน NPC อื่น) ; blind-fire อนุญาตเฉพาะ `CHECKIN_ACTS`/`Talk` บนผี — **ยังกัน `TREATD_ACTS` (DNA/วินิจฉัย/ฯลฯ) บนผีเด็ดขาด** (เช็ค `ghostOwner` แยกจาก CHECKIN_ACTS/npcStep) กันไม่ให้หลุดเข้า flow รักษาจริงที่จบด้วยจ่ายยา
 
 ### ดับไฟ (คนติดไฟ) — toggle "ดับไฟ"
 - คนติดไฟ = NPC attr `CustomPatientIntro=BurningPatient`, `CustomRoomAssigned=BurningRoom`, `FireCharges=N` (จำนวนเปลวที่ต้องดับ)
@@ -179,13 +179,11 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - **ไฟกองพื้น** = มี PP `'Put out fire'` (attr `Charges=N`) ที่ `Workspace.Rooms.Emergency.RoomN...Fire.Part` (หลายจุด) → `fp` ทุกจุดที่ `.Enabled` ใต้ `Workspace.Rooms` (ทุก 0.35s) — กด E ที่ไฟ **ไม่ใช้ถัง** (ถังเป็นทางเลือก method 2 ที่ทิ้งไป)
 - ถัง `FireExtinguisher` (tank) = method 2 ไม่ใช้ (เปลือง charge + ต้องเล็ง)
 
-### ชัตเตอร์ (กันผี) — toggle "ปิดชัตเตอร์ผี"
+### ชัตเตอร์ (v6.22 เปิดรอเข้าเท่านั้น — เลิกปิดใส่ผี) — toggle "เคาน์เตอร์"
 - `Workspace.Misc.ShutterButton.PP` = ProximityPrompt, ActionText สลับ `'Open'`/`'Close'`
 - **อ่านสถานะประตูจาก ActionText:** `'Close'`=เปิดอยู่(กด→ปิด) | `'Open'`=ปิดอยู่(กด→เปิด)
-- logic (สแกนใกล้ `Workspace.Misc.CheckIn` <20 studs) — **ลำดับ: เช็คอินคนดีก่อน แล้วค่อยปิดผี**:
-  - คนไข้จริงยังไม่เช็คอิน (`IsPatient` + `CheckedIn~=true` + ไม่มี `CompletedCheckIn`) + ActionText=='Open' → **เปิด** (แม้มีผีปนอยู่ — ให้คนดีเช็คอินก่อน)
-  - ผี(Skinwalker) + **ไม่มีคนดีค้างเช็คอิน** + ActionText=='Close' → **ปิด**
-- ผีมี IsPatient=true ด้วย → counterScan เช็ค Skinwalker ก่อน (นับเป็นผี ไม่ใช่คนไข้) ; ปรับ `COUNTER_RANGE` ถ้าจับไกล/ใกล้ไป
+- logic (สแกนใกล้ `Workspace.Misc.CheckIn` <60 studs): คนไข้จริง/ผู้เยี่ยมยังไม่เช็คอิน + ActionText=='Open' → **เปิด**
+- **v6.22 (ผู้ใช้ขอ): ไม่ปิดชัตเตอร์ใส่ผีอีกต่อไป** — เดิม `counterScan` เคยเช็ค Skinwalker แล้วสั่งปิดตอนหน้าเคาน์เตอร์เหลือแต่ผี ; ตอนนี้ตัดสาขานั้นออก ยิงเฉพาะตอนเปิดรอคนไข้เท่านั้น (ผีไม่โดนกันไว้อีกที่ชัตเตอร์)
 
 ---
 
