@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.22 เช็คอินให้ผีด้วย (Talk/CHECKIN_ACTS เท่านั้น) + ชัตเตอร์ไม่ปิดใส่ผีอีกต่อไป — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.23 เพิ่มปุ่ม "รับผี" แยกจาก "เคาน์เตอร์" — ON: เช็คอินให้ผี+ไม่ปิดชัตเตอร์ | OFF: โหมดปกติเดิมกันผีทุกจุด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -49,7 +49,8 @@ local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(ว�
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
-local SHUTTER_ON = false -- v6.22: auto เปิดชัตเตอร์รอคนไข้/ผู้เยี่ยมจริงเท่านั้น — เลิกปิดใส่ผีแล้ว (ผู้ใช้ขอ)
+local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี (โหมดปกติ) / เปิดรออย่างเดียว (โหมดรับผี — ดู GHOSTCI_ON ด้านล่าง)
+local GHOSTCI_ON = false -- v6.23: ปุ่มแยก "รับผี" — ON: เช็คอินให้ผีด้วย + ชัตเตอร์ไม่ปิดใส่ผี | OFF (ปกติ, ค่าเริ่มต้น): กันผีทุกจุดเหมือนเดิม
 local FIRE_ON = false    -- ดับไฟที่ตัว NPC: ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
 -- v6.20: แยกฟีเจอร์ย่อยเป็นปุ่มของตัวเอง (ผู้ใช้ขอ — เดิม ดับไฟ=ไฟ+สไลม์+ช่วยคน+ผีเตียง, เคาน์เตอร์=เช็คอิน+อุ้ม)
 local SLIME_ON = false   -- ล้างสไลม์ (เดิมพ่วงดับไฟ)
@@ -144,8 +145,8 @@ local function checkinPending()
     -- (เดิมคืนคนแรกที่เจอ = แช่ช่องเดียว อีกช่องโดนดองไม่ได้เช็คอินสักที — ผู้ใช้เจอ)
     local spots = {}   -- [ชื่อช่อง] = จุดยืน
     for _, m in ipairs(npcs:GetChildren()) do
-        -- v6.22: เช็คอินให้ผีด้วย (ผู้ใช้ขอ) — เอาเงื่อนไขกันผี/Anomaly ออก นับทุก Model เหมือนกัน
-        if m:IsA("Model") then
+        -- v6.23: ปุ่ม "รับผี" (GHOSTCI_ON) เปิด → นับผี/Anomaly เป็นคิวเช็คอินด้วย ; ปิด (ปกติ) → กรองออกเหมือนเดิม
+        if m:IsA("Model") and (GHOSTCI_ON or not (m:GetAttribute("Skinwalker") or m:GetAttribute("Anomaly"))) then
             local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
             -- v4.53: รัศมี 15 ต่อช่อง (ผู้ใช้จูน) — v4.58 เช็คใกล้ช่องไหนก็ได้
             local c = r and nearCounter(r.Position)
@@ -1184,12 +1185,15 @@ bind(RS.Heartbeat, function(dt)
                     local a = p.ActionText
                     local owner = npcOwner(p)
                     local ghostOwner = owner and owner:GetAttribute("Skinwalker")
-                    -- v6.22: เช็คอินให้ผีด้วย (ผู้ใช้ขอ) — อนุญาตเฉพาะสเต็ปเช็คอิน (CHECKIN_ACTS/Talk) บนผี
+                    -- v6.23: โหมด "รับผี" (GHOSTCI_ON) — อนุญาตเฉพาะสเต็ปเช็คอิน (CHECKIN_ACTS/Talk) บนผี
                     -- *** ห้ามสเต็ปรักษา (TREATD_ACTS: DNA/วินิจฉัย/ฯลฯ) บนผีเด็ดขาด ไม่ว่า toggle ไหนเปิด ***
-                    -- ('Ask to Leave' = กับดักผีปลอมตัว attr สะอาด ไม่อยู่ใน CHECKIN_ACTS/Talk อยู่แล้ว ไม่โดนยิง)
-                    local npcStep = CHECKIN_ON and owner ~= nil and a == "Talk"
-                    if (CHECKIN_ON and CHECKIN_ACTS[a]) or npcStep or (AUTO_ON and TREATD_ACTS[a] and not ghostOwner) then
-                        pcall(fp, p, 0)   -- เกม gate ลำดับเอง
+                    -- โหมดปกติ (GHOSTCI_ON=false) = เดิม: ไม่กด prompt ใดๆ บนผีทั้งหมด (ใช้ชัตเตอร์/ยาผิดจัดการผีแทน)
+                    if GHOSTCI_ON or not ghostOwner then
+                        -- ('Ask to Leave' = กับดักผีปลอมตัว attr สะอาด ไม่อยู่ใน CHECKIN_ACTS/Talk อยู่แล้ว ไม่โดนยิง)
+                        local npcStep = CHECKIN_ON and owner ~= nil and a == "Talk"
+                        if (CHECKIN_ON and CHECKIN_ACTS[a]) or npcStep or (AUTO_ON and TREATD_ACTS[a] and not ghostOwner) then
+                            pcall(fp, p, 0)   -- เกม gate ลำดับเอง
+                        end
                     end
                 end
             end
@@ -1252,7 +1256,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.22", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.23", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1261,7 +1265,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.22 " .. sb .. " " .. lastStatus
+        title.Text = "v6.23 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1850,9 +1854,11 @@ do
             if SHUTTER_ON and fp and not WORKING and not busyBefore(7) then   -- v5.76: เข้าแถวอันดับ 7 (เดิมเช็คแค่อุ้ม = แทรกงานด่วน)
                 local pp = shutterPP()
                 if pp and pp.Parent then
-                    local _, pending, _ = counterScan()
-                    -- v6.22: ไม่ปิดชัตเตอร์ใส่ผีอีกต่อไป (ผู้ใช้ขอ) — เปิดอย่างเดียวให้คนไข้/ผู้เยี่ยมจริงที่รอ
+                    local ghost, pending, leaving = counterScan()
+                    -- v6.23: โหมด "รับผี" (GHOSTCI_ON) ไม่ปิดชัตเตอร์ใส่ผี — เปิดอย่างเดียวให้คนไข้/ผู้เยี่ยมจริงที่รอ
+                    -- โหมดปกติ (GHOSTCI_ON=false) = เดิม: ปิดใส่ผีตอนหน้าเคาน์เตอร์เหลือแต่ผี (คนจริงเดินออกหมดแล้ว)
                     local want = (pending and pp.ActionText == "Open")
+                              or (not GHOSTCI_ON and ghost and not pending and not leaving and pp.ActionText == "Close")
                     if want then
                         tpTo(Vector3.new(-113.5, 3.4, -0.6)); task.wait(0.15)   -- v5.04: จุดยืนปุ่มชัตเตอร์ (spy)
                         pressPrompt(pp)
@@ -2792,6 +2798,8 @@ mkToggle("ฉุกเฉิน", "สไลม์", function() return SLIME_ON 
 mkToggle("ฉุกเฉิน", "ช่วยคน", function() return HELP_ON end, function(v) HELP_ON = v end, Color3.fromRGB(110,80,30))
 mkToggle("ฉุกเฉิน", "ผีเตียง", function() return SYRUP_ON end, function(v) SYRUP_ON = v end, Color3.fromRGB(90,50,120))
 mkToggle("หลัก", "อุ้มคน", function() return CARRY_ON end, function(v) CARRY_ON = v end)
+-- v6.23: ปุ่มแยก "รับผี" (ผู้ใช้ขอ 2 ปุ่ม) — ON: เช็คอินให้ผี+ไม่ปิดชัตเตอร์ใส่ผี | OFF (ปกติ): กันผีทุกจุดเหมือนเดิม
+mkToggle("หลัก", "รับผี", function() return GHOSTCI_ON end, function(v) GHOSTCI_ON = v end, Color3.fromRGB(120,40,40))
 
 local npcfB = tbtn("ฉุกเฉิน", "ยิงผี: OFF", Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
