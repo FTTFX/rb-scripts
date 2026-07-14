@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.21 กัน sanity ชั้นที่ 2: hookfunction ตรงตัว remote เพิ่มจาก __namecall — จับ direct call ด้วย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.22 เช็คอินให้ผีด้วย (Talk/CHECKIN_ACTS เท่านั้น) + ชัตเตอร์ไม่ปิดใส่ผีอีกต่อไป — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -49,7 +49,7 @@ local MACHINE_ON = true  -- true=วาปไปทำเครื่อง(ว�
 local WHACK_ON = false   -- auto-click มินิเกม whack (กดเป้าดี เลี่ยงหัวกระโลก Danger)
 local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequence)
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
-local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี: Skinwalker ใกล้เคาน์เตอร์ → ปิดชัตเตอร์
+local SHUTTER_ON = false -- v6.22: auto เปิดชัตเตอร์รอคนไข้/ผู้เยี่ยมจริงเท่านั้น — เลิกปิดใส่ผีแล้ว (ผู้ใช้ขอ)
 local FIRE_ON = false    -- ดับไฟที่ตัว NPC: ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
 -- v6.20: แยกฟีเจอร์ย่อยเป็นปุ่มของตัวเอง (ผู้ใช้ขอ — เดิม ดับไฟ=ไฟ+สไลม์+ช่วยคน+ผีเตียง, เคาน์เตอร์=เช็คอิน+อุ้ม)
 local SLIME_ON = false   -- ล้างสไลม์ (เดิมพ่วงดับไฟ)
@@ -144,12 +144,13 @@ local function checkinPending()
     -- (เดิมคืนคนแรกที่เจอ = แช่ช่องเดียว อีกช่องโดนดองไม่ได้เช็คอินสักที — ผู้ใช้เจอ)
     local spots = {}   -- [ชื่อช่อง] = จุดยืน
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:IsA("Model") and not m:GetAttribute("Skinwalker") and not m:GetAttribute("Anomaly") then
+        -- v6.22: เช็คอินให้ผีด้วย (ผู้ใช้ขอ) — เอาเงื่อนไขกันผี/Anomaly ออก นับทุก Model เหมือนกัน
+        if m:IsA("Model") then
             local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
             -- v4.53: รัศมี 15 ต่อช่อง (ผู้ใช้จูน) — v4.58 เช็คใกล้ช่องไหนก็ได้
             local c = r and nearCounter(r.Position)
             if c then
-                -- v4.52: คนไข้ *หรือ* คนเยี่ยม (IsVisitor) ที่ยังไม่เช็คอิน = วาปไปหาเหมือนกัน
+                -- v4.52: คนไข้ *หรือ* คนเยี่ยม (IsVisitor) ที่ยังไม่เช็คอิน = วาปไปหาเหมือนกัน (ผีก็นับถ้ามี attr พวกนี้)
                 if (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
                    and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
                     spots[c.inst.Name] = standPos(c)
@@ -1182,15 +1183,13 @@ bind(RS.Heartbeat, function(dt)
                 if p:IsA("ProximityPrompt") and p.Enabled then
                     local a = p.ActionText
                     local owner = npcOwner(p)
-                    -- *** ห้ามยุ่งกับผี: ไม่กด prompt ใดๆ บนตัว Skinwalker (Talk/DNA/มอบใบ) ไม่ว่า toggle ไหนเปิด ***
-                    -- (Talk อยู่ใน TREATD_ACTS ด้วย → ต้องกันที่ระดับ owner ไม่ใช่แค่ npcStep) — ใช้ชัตเตอร์/ยาผิดจัดการผีแทน
-                    if not (owner and owner:GetAttribute("Skinwalker")) then
-                        -- มอบใบรับหมาย = กด E ที่ NPC — v4.49: ยิงเฉพาะ 'Talk' เท่านั้น
-                        -- ห้ามยิง prompt อื่นบน NPC ('Ask to Leave' = กับดักผีปลอมตัว attr สะอาด กดแล้วซวย)
-                        local npcStep = CHECKIN_ON and owner ~= nil and a == "Talk"
-                        if (CHECKIN_ON and CHECKIN_ACTS[a]) or (AUTO_ON and TREATD_ACTS[a]) or npcStep then
-                            pcall(fp, p, 0)   -- เกม gate ลำดับเอง
-                        end
+                    local ghostOwner = owner and owner:GetAttribute("Skinwalker")
+                    -- v6.22: เช็คอินให้ผีด้วย (ผู้ใช้ขอ) — อนุญาตเฉพาะสเต็ปเช็คอิน (CHECKIN_ACTS/Talk) บนผี
+                    -- *** ห้ามสเต็ปรักษา (TREATD_ACTS: DNA/วินิจฉัย/ฯลฯ) บนผีเด็ดขาด ไม่ว่า toggle ไหนเปิด ***
+                    -- ('Ask to Leave' = กับดักผีปลอมตัว attr สะอาด ไม่อยู่ใน CHECKIN_ACTS/Talk อยู่แล้ว ไม่โดนยิง)
+                    local npcStep = CHECKIN_ON and owner ~= nil and a == "Talk"
+                    if (CHECKIN_ON and CHECKIN_ACTS[a]) or npcStep or (AUTO_ON and TREATD_ACTS[a] and not ghostOwner) then
+                        pcall(fp, p, 0)   -- เกม gate ลำดับเอง
                     end
                 end
             end
@@ -1253,7 +1252,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.21", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.22", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1262,7 +1261,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.21 " .. sb .. " " .. lastStatus
+        title.Text = "v6.22 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1795,9 +1794,9 @@ do
     end)
 end
 
--- ===== Auto ปิดชัตเตอร์ใส่ผี: Skinwalker ยืนใกล้เคาน์เตอร์เช็คอิน → ปิดชัตเตอร์ =====
--- ชัตเตอร์ = Workspace.Misc.ShutterButton.PP (ActionText สลับ 'Open'/'Close') → ยิงตอน 'Close' เท่านั้น
---   พอปิดแล้ว ActionText เป็น 'Open' → ไม่ยิงซ้ำ/ไม่เผลอเปิดเอง (self-limiting)
+-- ===== Auto เปิดชัตเตอร์รอคนไข้/ผู้เยี่ยม (v6.22 เลิกปิดใส่ผีแล้ว — ผู้ใช้ขอเช็คอินให้ผีด้วย) =====
+-- ชัตเตอร์ = Workspace.Misc.ShutterButton.PP (ActionText สลับ 'Open'/'Close') → ยิงตอน 'Open' เท่านั้น
+--   พอเปิดแล้ว ActionText เป็น 'Close' → ไม่ยิงซ้ำ (self-limiting)
 -- ponytail: ระยะ 20 studs จากจุดเช็คอิน ; ปรับ COUNTER_RANGE ถ้าจับไกล/ใกล้ไป
 do
     local COUNTER_RANGE = 20
@@ -1851,10 +1850,9 @@ do
             if SHUTTER_ON and fp and not WORKING and not busyBefore(7) then   -- v5.76: เข้าแถวอันดับ 7 (เดิมเช็คแค่อุ้ม = แทรกงานด่วน)
                 local pp = shutterPP()
                 if pp and pp.Parent then
-                    local ghost, pending, leaving = counterScan()
-                    local want = (pending and pp.ActionText == "Open")                   -- คนไข้จริงรอ → เปิด
-                              -- v4.82: ปิดใส่ผีเฉพาะตอนหน้าเคาน์เตอร์เหลือแต่ผี (คนจริงเดินออกหมดแล้ว)
-                              or (ghost and not pending and not leaving and pp.ActionText == "Close")
+                    local _, pending, _ = counterScan()
+                    -- v6.22: ไม่ปิดชัตเตอร์ใส่ผีอีกต่อไป (ผู้ใช้ขอ) — เปิดอย่างเดียวให้คนไข้/ผู้เยี่ยมจริงที่รอ
+                    local want = (pending and pp.ActionText == "Open")
                     if want then
                         tpTo(Vector3.new(-113.5, 3.4, -0.6)); task.wait(0.15)   -- v5.04: จุดยืนปุ่มชัตเตอร์ (spy)
                         pressPrompt(pp)
