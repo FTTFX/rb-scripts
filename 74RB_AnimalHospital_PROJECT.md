@@ -172,7 +172,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - **v6.23: ปุ่ม "รับผี" แยกจากปุ่ม "เคาน์เตอร์"** (`GHOSTCI_ON`, ผู้ใช้ขอ 2 ปุ่ม):
   - **ปิด (ปกติ, ค่าเริ่มต้น)** = พฤติกรรมเดิมทุกจุด: `checkinPending()` กรอง `Skinwalker`/`Anomaly` ออก + blind-fire ข้าม prompt **ทุกตัว**บนผี
   - **เปิด (รับผี)** = `checkinPending()` นับผีเป็นคิวเช็คอินด้วย + blind-fire อนุญาตเฉพาะ `CHECKIN_ACTS`/`Talk` บนผี — **ยังกัน `TREATD_ACTS` (DNA/วินิจฉัย/ฯลฯ) บนผีเด็ดขาดทั้ง 2 โหมด** (เช็ค `ghostOwner` แยกจาก CHECKIN_ACTS/npcStep) กันไม่ให้หลุดเข้า flow รักษาจริงที่จบด้วยจ่ายยา
-- **v6.24: โหมดรับผี — ยิงปืนรอเช็คอินเสร็จก่อน** (ผู้ใช้ขอ: เอาแต้มเช็คอินจากผีด้วย): `ghostWaitCheckin(m)` — ผีที่อยู่ในโซนเคาน์เตอร์ (`GHOSTCI_WAIT_RANGE=60` จาก CheckIn/CheckIn2) และยังไม่มี `CheckedIn`/`CompletedCheckIn` → `ghostToShoot` คืน false (ทั้ง gunPending และ loop ยิงหยุดรอ) ; พอเช็คอินเสร็จ attr ขึ้น → ยิงตามปกติ ; ผีนอกโซนเคาน์เตอร์ (เช่น force-spawn นอนเตียง) ยิงได้ทันทีเหมือนเดิม ; โหมดปกติ (GHOSTCI_ON=false) ไม่รอเลย
+- **v6.24/v6.27: โหมดรับผี — ยิงปืนรอเช็คอินเสร็จก่อน** (ผู้ใช้ขอ: เอาแต้มเช็คอินจากผีด้วย): `ghostWaitCheckin(m)` — ผีที่ยังไม่มี `CheckedIn`/`CompletedCheckIn` → `ghostToShoot` คืน false **ทุกระยะ** (ทั้ง gunPending และ loop ยิงหยุดรอ) ; พอเช็คอินเสร็จ attr ขึ้น → ยิงตามปกติ ; ยกเว้นผีที่ไม่มีวันเช็คอิน (`SkippedCheckIn`/`WasForceSpawnedByEvent`/`InBed`) ยิงได้ทันที ไม่รอเก้อ ; โหมดปกติ (GHOSTCI_ON=false) ไม่รอเลย (v6.24 เคยจำกัดโซนเคาน์เตอร์ 60 studs — ผีเดินมาจากไกลโดนยิงก่อนถึง เลิกใช้)
 
 ### ดับไฟ (คนติดไฟ) — toggle "ดับไฟ"
 - คนติดไฟ = NPC attr `CustomPatientIntro=BurningPatient`, `CustomRoomAssigned=BurningRoom`, `FireCharges=N` (จำนวนเปลวที่ต้องดับ)
