@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.27 โหมดรับผี: รอผีเช็คอินเสร็จทุกระยะ ไม่ใช่แค่ในโซนเคาน์เตอร์ — เดิมผีเดินมาจากไกลโดนยิงก่อนถึง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.28 กันยิงนอกแมพ: เป้ายิงต้องผ่าน validShootPos (Y>-50, ไม่สูงกว่าเรา 30, <200) — spy ยืนยันผีได้ CompletedCheckIn เหมือนคนไข้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -674,14 +674,20 @@ local function slimePending()
     return false
 end
 -- v6.24: โหมด "รับผี" (GHOSTCI_ON) — ผีที่ยังเช็คอินไม่เสร็จ = รอก่อน ห้ามยิง (เอาแต้มเช็คอิน)
--- v6.27: เดิมรอเฉพาะผี "ในโซนเคาน์เตอร์ 60" — ผีเดินมาจากไกลโดนยิงก่อนถึง (ผู้ใช้เจอ)
---        → รอทุกตัวที่ยังไม่เช็คอิน ยกเว้นพวกเกมให้ข้ามเช็คอิน (SkippedCheckIn/force-spawn/นอนเตียงแล้ว)
+-- v6.27: รอทุกระยะ ยกเว้นพวกเกมให้ข้ามเช็คอิน (SkippedCheckIn/force-spawn/นอนเตียงแล้ว)
+-- v6.28: GhostCiSpy พิสูจน์แล้ว — ผีเช็คอินเสร็จได้ attr `CompletedCheckIn=<ชื่อผู้เล่น>` เหมือนคนไข้เป๊ะ
 local function ghostWaitCheckin(m)
     if not GHOSTCI_ON then return false end
     if m:GetAttribute("CheckedIn") == true or m:GetAttribute("CompletedCheckIn") then return false end
     if m:GetAttribute("SkippedCheckIn") or m:GetAttribute("WasForceSpawnedByEvent")
        or m:GetAttribute("InBed") then return false end   -- พวกนี้ไม่มีวันเช็คอิน — ยิงได้เลย ไม่รอเก้อ
     return true
+end
+-- v6.28: การ์ดตำแหน่งเป้ายิง — ผี event ที่ "ยังไม่ถูกวางลงแมพ" เกมจอดไว้นอกแมพ (ฟ้า/ทะเล/ใต้พื้น)
+--        แต่ attr ครบ (SkippedCheckIn ฯลฯ) เลยผ่านข้อยกเว้นข้างบน → บอทบินออกนอกแผนที่ไปยิง (ผู้ใช้เจอ)
+--        กฎเดียวกับ tpTo/findPickup: Y ต่ำกว่า -50 / สูงกว่าเรา >30 / ไกลเกิน 200 = เป้าเพี้ยน ไม่ยิง
+local function validShootPos(p, me)
+    return p and me and p.Y > -50 and (p.Y - me.Y) < 30 and (p - me).Magnitude < 200
 end
 -- v5.21: ยิงเฉพาะคนไข้ปลอม (Skinwalker ที่ไม่ใช่ Anomaly) — ตัด Hider (Anomaly=true) เปลืองกระสุน + ตัด Ghost
 local function ghostToShoot(m)
@@ -720,7 +726,7 @@ local function gunPending()
         -- v5.40: ยิงไปแล้ว = ไม่นับเป็นงานค้าง (ragdoll ค้างหลายวิ เดิมบล็อคงานอื่นฟรี — ผู้ใช้สั่งยิงเสร็จไปต่อเลย)
         if ghostToShoot(m) and not SHOT_AT[m] then
             local p = partPos(m)
-            if p and (p - me).Magnitude < 200 then return true end
+            if validShootPos(p, me) then return true end   -- v6.28: กันเป้านอกแมพ
         end
     end
     return false
@@ -1277,7 +1283,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.27", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.28", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1286,7 +1292,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.27 " .. sb .. " " .. lastStatus
+        title.Text = "v6.28 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1474,7 +1480,8 @@ task.spawn(function()
                         local head = m:FindFirstChild("Head") or m:FindFirstChildWhichIsA("BasePart")
                         local hpos = head and head.Position
                         local d = hpos and (hpos - me).Magnitude
-                        if head and d and d < 200 and (not target or d < td) then
+                        -- v6.28: validShootPos กันผีที่เกมจอดไว้นอกแมพ (บอทเคยบินออกนอกแผนที่ตามไปยิง)
+                        if head and d and validShootPos(hpos, me) and (not target or d < td) then
                             target, td, thead = m, d, head
                         end
                     end
