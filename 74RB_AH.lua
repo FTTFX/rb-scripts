@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.25 ดิ้นหลุดผีเตียง: กด E ค้าง 0.08s/ครั้ง — เดิมกดปล่อยใน 1 เฟรมสั้นไปเกมนับไม่ทัน ดิ้นไม่หลุดตาย)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.26 ดิ้นหลุดผีเตียง 2 เฟส: กดค้างยาว 5s ก่อน (เผื่อเกมเช็คกำลังกด) ไม่หลุดค่อยสลับสแปมกดสั้น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -228,9 +228,10 @@ if not _G.AH74_SANITY_HOOKED then
     if ok2 then _G.AH74_SANITY_HOOKED = true end   -- ชั้นไหนติดก็นับว่าใช้ได้
 end
 
--- (2) หนีผีใต้เตียง: PlatformStand=true = โดนจับ → สแปม E จนหลุด (E คือปุ่มดิ้น ยืนยันแล้ว)
--- v6.25: เดิมกด-ปล่อยใน 1 เฟรม (~0.016s) สั้นเกิน เกมนับไม่ทัน = ดิ้นไม่หลุดตาย (ผู้ใช้เจอ)
---        → กดค้าง 0.08s ให้เกมเห็นแน่ๆ ค่อยปล่อย แล้วเว้น 0.04s ก่อนกดใหม่
+-- (2) หนีผีใต้เตียง: PlatformStand=true = โดนจับ → กด E จนหลุด (E คือปุ่มดิ้น ยืนยันแล้ว)
+-- v6.26: ไม่รู้ว่าเกมเช็ค "กดค้างอยู่" หรือ "นับจำนวนกด" (ผู้ใช้: กดสั้นๆ แล้วดิ้นไม่หลุดตาย)
+--        → 2 เฟส: เฟสแรก "กดค้างยาว" ไปเลย 5s (ถ้าเกมเช็คแค่กำลังกด = หลุดแน่ ไม่ต้องเดาเวลา)
+--          ยังไม่หลุด → เฟสสอง สแปมกดค้าง 0.08s/ปล่อย 0.04s (เผื่อเกมนับจำนวนกด) จนครบ 15s รวม
 _G.AH74_BEDESCAPE = (_G.AH74_BEDESCAPE == nil) and true or _G.AH74_BEDESCAPE
 task.spawn(function()
     while MYGEN == _G.AH74_GEN do
@@ -238,6 +239,13 @@ task.spawn(function()
         local h = c and c:FindFirstChildOfClass("Humanoid")
         if _G.AH74_BEDESCAPE and h and h.PlatformStand then
             local t0 = os.clock()
+            -- เฟส 1: กดค้างยาว — กดลงทีเดียว ถือไว้จนหลุดหรือครบ 5s
+            VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            while h.Parent and h.PlatformStand and os.clock() - t0 < 5 and MYGEN == _G.AH74_GEN do
+                task.wait(0.05)
+            end
+            VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+            -- เฟส 2: ยังไม่หลุด → สแปมกดค้างสั้น (เกมอาจนับจำนวนกด)
             while h.Parent and h.PlatformStand and os.clock() - t0 < 15 and MYGEN == _G.AH74_GEN do
                 VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game); task.wait(0.08)
                 VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game); task.wait(0.04)
@@ -1275,7 +1283,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.25", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.26", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1284,7 +1292,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.25 " .. sb .. " " .. lastStatus
+        title.Text = "v6.26 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
