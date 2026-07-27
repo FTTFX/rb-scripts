@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.26 ดิ้นหลุดผีเตียง 2 เฟส: กดค้างยาว 5s ก่อน (เผื่อเกมเช็คกำลังกด) ไม่หลุดค่อยสลับสแปมกดสั้น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.27 โหมดรับผี: รอผีเช็คอินเสร็จทุกระยะ ไม่ใช่แค่ในโซนเคาน์เตอร์ — เดิมผีเดินมาจากไกลโดนยิงก่อนถึง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -673,21 +673,15 @@ local function slimePending()
     end end
     return false
 end
--- v6.24: โหมด "รับผี" (GHOSTCI_ON) — ผีที่อยู่โซนเคาน์เตอร์แต่ยังเช็คอินไม่เสร็จ = รอก่อน ห้ามยิง
---        (ผู้ใช้ขอ: ให้ผีเดินเข้ามาเช็คอินจนได้แต้มเช็คอินก่อน ค่อยยิง) ; ผีนอกโซนเคาน์เตอร์ยิงได้ปกติ
-local GHOSTCI_WAIT_RANGE = 60   -- รัศมีโซนเคาน์เตอร์ (เท่า INCOMING_RANGE ของชัตเตอร์)
+-- v6.24: โหมด "รับผี" (GHOSTCI_ON) — ผีที่ยังเช็คอินไม่เสร็จ = รอก่อน ห้ามยิง (เอาแต้มเช็คอิน)
+-- v6.27: เดิมรอเฉพาะผี "ในโซนเคาน์เตอร์ 60" — ผีเดินมาจากไกลโดนยิงก่อนถึง (ผู้ใช้เจอ)
+--        → รอทุกตัวที่ยังไม่เช็คอิน ยกเว้นพวกเกมให้ข้ามเช็คอิน (SkippedCheckIn/force-spawn/นอนเตียงแล้ว)
 local function ghostWaitCheckin(m)
     if not GHOSTCI_ON then return false end
     if m:GetAttribute("CheckedIn") == true or m:GetAttribute("CompletedCheckIn") then return false end
-    local misc = workspace:FindFirstChild("Misc")
-    if not misc then return false end
-    local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
-    if not r then return false end
-    for _, n in ipairs({"CheckIn", "CheckIn2", "Check-In"}) do
-        local p = partPos(misc:FindFirstChild(n))
-        if p and (r.Position - p).Magnitude < GHOSTCI_WAIT_RANGE then return true end
-    end
-    return false
+    if m:GetAttribute("SkippedCheckIn") or m:GetAttribute("WasForceSpawnedByEvent")
+       or m:GetAttribute("InBed") then return false end   -- พวกนี้ไม่มีวันเช็คอิน — ยิงได้เลย ไม่รอเก้อ
+    return true
 end
 -- v5.21: ยิงเฉพาะคนไข้ปลอม (Skinwalker ที่ไม่ใช่ Anomaly) — ตัด Hider (Anomaly=true) เปลืองกระสุน + ตัด Ghost
 local function ghostToShoot(m)
@@ -1283,7 +1277,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.26", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.27", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1292,7 +1286,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.26 " .. sb .. " " .. lastStatus
+        title.Text = "v6.27 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
