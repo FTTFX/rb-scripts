@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.23 เพิ่มปุ่ม "รับผี" แยกจาก "เคาน์เตอร์" — ON: เช็คอินให้ผี+ไม่ปิดชัตเตอร์ | OFF: โหมดปกติเดิมกันผีทุกจุด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.24 โหมดรับผี: รอผีเช็คอินเสร็จก่อนค่อยยิงปืน — ผีโซนเคาน์เตอร์ที่ยัง CheckedIn ไม่ขึ้น = ไม่ยิง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -663,11 +663,28 @@ local function slimePending()
     end end
     return false
 end
+-- v6.24: โหมด "รับผี" (GHOSTCI_ON) — ผีที่อยู่โซนเคาน์เตอร์แต่ยังเช็คอินไม่เสร็จ = รอก่อน ห้ามยิง
+--        (ผู้ใช้ขอ: ให้ผีเดินเข้ามาเช็คอินจนได้แต้มเช็คอินก่อน ค่อยยิง) ; ผีนอกโซนเคาน์เตอร์ยิงได้ปกติ
+local GHOSTCI_WAIT_RANGE = 60   -- รัศมีโซนเคาน์เตอร์ (เท่า INCOMING_RANGE ของชัตเตอร์)
+local function ghostWaitCheckin(m)
+    if not GHOSTCI_ON then return false end
+    if m:GetAttribute("CheckedIn") == true or m:GetAttribute("CompletedCheckIn") then return false end
+    local misc = workspace:FindFirstChild("Misc")
+    if not misc then return false end
+    local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
+    if not r then return false end
+    for _, n in ipairs({"CheckIn", "CheckIn2", "Check-In"}) do
+        local p = partPos(misc:FindFirstChild(n))
+        if p and (r.Position - p).Magnitude < GHOSTCI_WAIT_RANGE then return true end
+    end
+    return false
+end
 -- v5.21: ยิงเฉพาะคนไข้ปลอม (Skinwalker ที่ไม่ใช่ Anomaly) — ตัด Hider (Anomaly=true) เปลืองกระสุน + ตัด Ghost
 local function ghostToShoot(m)
     if not (m:IsA("Model") and m:GetAttribute("Skinwalker")
             and not m:GetAttribute("Anomaly")
             and not m:GetAttribute("MedicineImmune")) then return false end
+    if ghostWaitCheckin(m) then return false end   -- v6.24: รอเช็คอินเสร็จก่อนค่อยยิง (โหมดรับผี)
     local h = m:FindFirstChildOfClass("Humanoid")
     return not h or h.Health > 0   -- ยังไม่ตาย
 end
@@ -1256,7 +1273,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.23", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.24", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1265,7 +1282,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.23 " .. sb .. " " .. lastStatus
+        title.Text = "v6.24 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
