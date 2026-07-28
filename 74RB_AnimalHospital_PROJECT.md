@@ -53,6 +53,9 @@ ESP จับ: `Skinwalker`→🔴, `IsPatient`→🟢, อื่นๆ→🟡 ;
 
 ### 2.3 Remotes — Net framework (`ReplicatedStorage.Util.Net.RE/` , `RF/`)
 ตัวที่เจอ: `RE/Quests`, `RE/Stats`, `RF/RequestData`, `RE/HeartbeatMinigameComplete`, `RE/ReviveOther`, `RE/Touch`, `RE/TaserFired` ฯลฯ
+
+**★ `RF/RequestData:InvokeServer()` (arg อะไรก็ได้/ไม่ใส่ก็ได้) = คืนโปรไฟล์ผู้เล่นทั้งก้อน** (StatView v1.0 พิสูจน์):
+`{Stats={Cash=เงินสะสม, LocalCash=เงินกะนี้, PatientsTreated, PatientsCheckedIn, HighestShift, Class, ClassXP={ต่อคลาส}, Book={ภารกิจ}, UnlockedClasses, UnlockedSkins}, Historic={Kills,Wins,...}, Quests, Gamepasses}` — ใช้ทำปุ่ม "สถิติ" (v6.32) ป้ายเงิน/คะแนนสดในเกม ; HUD ใน PlayerGui ก็มี label `cash`/`localcash`/`coins` (บางตัวซ่อน)
 > **สำคัญ: การรักษา/quest ไม่ได้ใช้ remote** — เป็น **ProximityPrompt** ล้วน (จึงใช้ `fireproximityprompt`)
 
 ### 2.4 Flow การรักษา (Medical Room1-5) — ProximityPrompt chain
