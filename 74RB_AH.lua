@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.31 ปืนคุมด้วยปุ่ม "ยิงผี" เอง: รับผี OFF = ยิงปกติ | รับผี ON = รอ CompletedCheckIn ก่อนยิง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.32 ปุ่ม "สถิติ": ป้ายเงิน/รักษา/เช็คอิน/XP สดจาก RF/RequestData ทุก 5s — ไม่ต้องออกเกมถึงเห็น)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1283,7 +1283,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.31", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.32", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1292,7 +1292,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.31 " .. sb .. " " .. lastStatus
+        title.Text = "v6.32 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -2828,6 +2828,50 @@ mkToggle("ฉุกเฉิน", "ผีเตียง", function() return SYR
 mkToggle("หลัก", "อุ้มคน", function() return CARRY_ON end, function(v) CARRY_ON = v end)
 -- v6.23: ปุ่มแยก "รับผี" (ผู้ใช้ขอ 2 ปุ่ม) — ON: เช็คอินให้ผี+ไม่ปิดชัตเตอร์ใส่ผี | OFF (ปกติ): กันผีทุกจุดเหมือนเดิม
 mkToggle("หลัก", "รับผี", function() return GHOSTCI_ON end, function(v) GHOSTCI_ON = v end, Color3.fromRGB(120,40,40))
+
+-- v6.32: ป้ายสถิติสด (ผู้ใช้ขอ — เดิมต้องออกเกมถึงเห็นเงิน/คะแนน)
+-- StatView พิสูจน์: RF/RequestData:InvokeServer() คืน {Stats={Cash, LocalCash, PatientsTreated,
+-- PatientsCheckedIn, HighestShift, Class, ClassXP={...}}} — ดึงทุก 5s เฉพาะตอนเปิด
+local STATS_ON = false
+local statFrame = Instance.new("Frame", gui)
+statFrame.Size, statFrame.Position = UDim2.new(0, 200, 0, 78), UDim2.new(0, 20, 0.5, 96)
+statFrame.BackgroundColor3, statFrame.BackgroundTransparency = Color3.fromRGB(18, 18, 24), 0.15
+statFrame.BorderSizePixel, statFrame.Active, statFrame.Draggable, statFrame.Visible = 0, true, true, false
+Instance.new("UICorner", statFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", statFrame).Color = Color3.fromRGB(90, 200, 120)
+local statLbl = Instance.new("TextLabel", statFrame)
+statLbl.Size, statLbl.Position, statLbl.BackgroundTransparency = UDim2.new(1, -12, 1, -8), UDim2.new(0, 6, 0, 4), 1
+statLbl.Font, statLbl.TextSize = Enum.Font.Code, 12
+statLbl.TextColor3 = Color3.fromRGB(180, 255, 180)
+statLbl.TextXAlignment, statLbl.TextYAlignment = Enum.TextXAlignment.Left, Enum.TextYAlignment.Top
+statLbl.Text = "สถิติ: กำลังโหลด..."
+task.spawn(function()
+    local rf
+    while _G.AH74_GEN == MYGEN do
+        if STATS_ON then
+            if not rf then
+                pcall(function()
+                    local net = game:GetService("ReplicatedStorage"):FindFirstChild("Util")
+                    net = net and net:FindFirstChild("Net")
+                    rf = net and net:FindFirstChild("RF/RequestData")
+                end)
+            end
+            if rf then
+                local ok, res = pcall(function() return rf:InvokeServer() end)
+                local s = ok and type(res) == "table" and type(res.Stats) == "table" and res.Stats
+                if s then
+                    local xp = type(s.ClassXP) == "table" and s.ClassXP[s.Class] or "?"
+                    statLbl.Text = ("💰สะสม %s | กะนี้ %s\nรักษา %s | เช็คอิน %s\nกะสูงสุด %s | %s XP %s"):format(
+                        tostring(s.Cash), tostring(s.LocalCash), tostring(s.PatientsTreated),
+                        tostring(s.PatientsCheckedIn), tostring(s.HighestShift), tostring(s.Class), tostring(xp))
+                end
+            end
+        end
+        task.wait(5)
+    end
+end)
+mkToggle("หลัก", "สถิติ", function() return STATS_ON end,
+    function(v) STATS_ON = v; statFrame.Visible = v end, Color3.fromRGB(40, 100, 60))
 
 local npcfB = tbtn("ฉุกเฉิน", "ยิงผี: OFF", Color3.fromRGB(60,60,80))
 npcfB.MouseButton1Click:Connect(function()
