@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.29 โหมดรับผี กฎเข้มสุด: ยิงเฉพาะผีที่ CompletedCheckIn=<ชื่อใครก็ได้> แล้วเท่านั้น — ไม่มีข้อยกเว้น ไม่บินยิงนอกแมพแน่นอน)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.30 ปืนทำงานเฉพาะโหมดรับผี: รับผี OFF = ไม่ยิงเลย | ON = ยิงเฉพาะผีที่ CompletedCheckIn แล้ว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -678,7 +678,7 @@ end
 --        ตัดข้อยกเว้น SkippedCheckIn/InBed ทิ้งหมด (v6.27-6.28 บอทยังหลุดบินไปยิงผีนอกแมพ)
 --        GhostCiSpy พิสูจน์: ผีเช็คอินเสร็จได้ CompletedCheckIn=InwFLAME02 เหมือนคนไข้เป๊ะ
 local function ghostWaitCheckin(m)
-    if not GHOSTCI_ON then return false end
+    if not GHOSTCI_ON then return true end   -- v6.30 (ผู้ใช้ขอ): รับผี OFF = ไม่ยิงอะไรเลย (ปืนทำงานเฉพาะโหมดรับผี)
     local ci = m:GetAttribute("CompletedCheckIn")
     return not (typeof(ci) == "string" and ci ~= "")   -- มีชื่อคนเช็คอินให้แล้ว = ยิงได้ ; นอกนั้นรอหมด
 end
@@ -1282,7 +1282,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.29", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.30", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1291,7 +1291,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.29 " .. sb .. " " .. lastStatus
+        title.Text = "v6.30 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
