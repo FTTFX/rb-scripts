@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.44 ยิงผีไวขึ้น: ไม่รอ TREAT_BUSY (แทรกได้ทุกจังหวะยกเว้นจ่ายยา/อุ้ม) + ผีออกจากเคาน์เตอร์ = ยิงทันทีไม่รอครบ 5s)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.45 บัคปืนเงียบ: Hider ถือ WORKING ค้างทั้งช่วงบิน/ฉีด — ตอนนี้มีผีให้ยิง Hider พักปล่อยปืนก่อนทุกจุด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1292,14 +1292,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.44", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.45", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.44 " .. lastStatus
+        title.Text = "v6.45 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -2164,7 +2164,9 @@ task.spawn(function()
                 local function flyTo(dest)   -- ก้าวกลางอากาศสั้นๆ ทุกเฟรม (ไม่ใช้ tpTo — tpTo รอลงพื้นก่อนถึงยอมวาป)
                     local r = hrp()
                     local t0 = os.clock()
-                    while r and dest and HIDER_ON and _G.AH74_GEN == MYGEN and os.clock() - t0 < 10 do
+                    -- v6.45: มีผีให้ยิง = หยุดบินทันที (เดิม WORKING ค้างทั้งช่วงบิน — ปืนเงียบเป็นนาที ผู้ใช้เจอ)
+                    while r and dest and HIDER_ON and _G.AH74_GEN == MYGEN and os.clock() - t0 < 10
+                          and not gunPending() do
                         local d = dest - r.Position
                         if d.Magnitude < 2 then break end
                         r.CFrame = r.CFrame + d.Unit * math.min(3, d.Magnitude)   -- ~180 studs/s
@@ -2281,6 +2283,7 @@ task.spawn(function()
                             end
                             while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
                                   and hider:GetAttribute("Anomaly") and not hiderDead()
+                                  and not gunPending()   -- v6.45: มีผีให้ยิง = พักฉีดทันที
                                   and os.clock() - t0 < 16 do   -- v5.93: จังหวะ 1.4s/รอบ → 16s ≈ ฉีด 11 ครั้ง/ตัว
                                 local spot, head = spraySpot()   -- v5.68: มุมโล่งสด (มันขยับ/กำแพงบัง = ย้ายมุมเอง)
                                 if not head then break end
@@ -2312,6 +2315,10 @@ task.spawn(function()
                             end
                             mouse(false)
                             cam.CameraType = oldCamType
+                            -- v6.45: พักเพราะมีผีให้ยิง = ออกไปยิงก่อน (ไม่นับเป็น "ถังไม่เข้า" — กลับมาทำต่อ)
+                            if gunPending() and hider.Parent and hider:GetAttribute("Anomaly") and not hiderDead() then
+                                break
+                            end
                             if not (hider.Parent and hider:GetAttribute("Anomaly")) or hiderDead() then
                                 HIDER_DONE[hider] = math.huge
                                 setStatus("Hider โดนถังแล้ว ✓")
@@ -2342,6 +2349,7 @@ task.spawn(function()
                         local r = hrp()
                         while r and hider.Parent and HIDER_ON and _G.AH74_GEN == MYGEN
                               and hider:GetAttribute("Anomaly") and not seen
+                              and not gunPending()   -- v6.45: มีผีให้ยิง = พักลอยวนทันที
                               and os.clock() - hoverT0 < 12 do
                             local head = hider:FindFirstChild("Head") or hider:FindFirstChild("HumanoidRootPart")
                             if not head then break end
@@ -2374,6 +2382,8 @@ task.spawn(function()
                                 away = away.Magnitude > 0.5 and away.Unit or Vector3.new(1, 0, 0)
                                 flyTo(head.Position + away * (FRONT + 20) + Vector3.new(0, UP, 0))
                             end
+                        elseif gunPending() then
+                            break   -- v6.45: พักเพราะมีผีให้ยิง — ไม่นับเป็น "ไม่มอง" (กลับมาทำต่อทันทีหลังยิง)
                         elseif hider.Parent and hider:GetAttribute("Anomaly") then
                             -- v5.55: 12s ไม่มอง — พักตัวนี้ 45s ไปตัวอื่นก่อน (เดิมแช่ค้างตัวเดียว ตัวอื่นไม่โดนจัดการ)
                             HIDER_DONE[hider] = os.clock()
