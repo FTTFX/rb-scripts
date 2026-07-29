@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.43 ชัตเตอร์: INCOMING_RANGE 60→20 — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.44 ยิงผีไวขึ้น: ไม่รอ TREAT_BUSY (แทรกได้ทุกจังหวะยกเว้นจ่ายยา/อุ้ม) + ผีออกจากเคาน์เตอร์ = ยิงทันทีไม่รอครบ 5s)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -690,10 +690,21 @@ local function ghostWaitCheckin(m)
         end
     end
     if not valid then CI_SEEN[m] = nil; return true end   -- ยังไม่เช็คอินจริง = รอ
-    -- v6.34 (ผู้ใช้: attr ขึ้นแล้วแต่ขั้นตอนหน้าเคาน์เตอร์ยังไม่จบ = แต้มยังไม่เข้า แต่บอทยิงเลย)
-    --        → ช่วงผ่อน 5s หลังเห็น attr ครั้งแรก ให้ผีรับใบ/เดินออกจากเคาน์เตอร์ก่อนค่อยยิง
+    -- v6.34: ช่วงผ่อน 5s หลังเห็น attr ครั้งแรก ให้ผีรับใบ/จบขั้นตอนหน้าเคาน์เตอร์ก่อนค่อยยิง
     if not CI_SEEN[m] then CI_SEEN[m] = os.clock() end
-    return os.clock() - CI_SEEN[m] < 5
+    if os.clock() - CI_SEEN[m] >= 5 then return false end
+    -- v6.44: ผีเดินออกจากโซนเคาน์เตอร์แล้ว (>12 จากทุกช่อง) = จบขั้นตอนแน่นอน → ยิงทันที ไม่รอครบ 5s
+    --        (ผู้ใช้เจอ: ผีเช็คอินเสร็จวิ่งไปทำร้ายคนไข้ระหว่างบอทนั่งรอช่วงผ่อน)
+    local misc = workspace:FindFirstChild("Misc")
+    local r = m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart")
+    if misc and r then
+        for _, n in ipairs({"CheckIn", "CheckIn2", "Check-In"}) do
+            local p = partPos(misc:FindFirstChild(n))
+            if p and (r.Position - p).Magnitude < 12 then return true end   -- ยังอยู่หน้าเคาน์เตอร์ = รอต่อ
+        end
+        return false   -- ออกจากโซนแล้ว = ยิงได้เลย
+    end
+    return true
 end
 -- v6.28: การ์ดตำแหน่งเป้ายิง — ผี event ที่ "ยังไม่ถูกวางลงแมพ" เกมจอดไว้นอกแมพ (ฟ้า/ทะเล/ใต้พื้น)
 --        แต่ attr ครบ (SkippedCheckIn ฯลฯ) เลยผ่านข้อยกเว้นข้างบน → บอทบินออกนอกแผนที่ไปยิง (ผู้ใช้เจอ)
@@ -1281,14 +1292,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.43", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.44", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.43 " .. lastStatus
+        title.Text = "v6.44 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1464,7 +1475,10 @@ end
 task.spawn(function()
     local shotAt = SHOT_AT   -- v5.40: แชร์กับ gunPending (ยิงแล้วไม่บล็อคงานอื่น)
     while _G.AH74_GEN == MYGEN do
-        if GUNKILL_ON and not WORKING and not busyBefore(2) then   -- v6.37: ยิงผีขึ้นอันดับ 2 (ผู้ใช้จัด)
+        -- v6.44: ปืนไม่รอ TREAT_BUSY อีกแล้ว (ผู้ใช้เจอ: รักษาเปิดค้างเกือบตลอด — ผีเช็คอินเสร็จ
+        --        วิ่งไปทำร้ายคนไข้ระหว่างปืนรอคิว) — ยิงแทรกได้ทุกจังหวะ ยกเว้น "กำลังจ่ายยา" (WORKING
+        --        ห้ามแทรกเด็ดขาด — บทเรียน v4.74) และกำลังอุ้มคน (CARRYING) ; ยิงจบ ~1s แล้วรักษาต่อเอง
+        if GUNKILL_ON and not WORKING and not CARRYING then
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
