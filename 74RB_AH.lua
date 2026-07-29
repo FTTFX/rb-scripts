@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.34 รับผี: +ช่วงผ่อน 5s หลัง CompletedCheckIn ขึ้น (ให้จบขั้นตอนเคาน์เตอร์ก่อนยิง) + โชว์ ci= ตอนยิงไว้ไล่บัค)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.35 ผีเตียง 2 เรื่อง: ดิ้นหลุด = fp prompt 'Struggle' บนตัวเรา (เลิก VIM แตะสั้น) + วาปยืนบน HitLocation พื้นแดงส่งน้ำเชื่อม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -228,10 +228,10 @@ if not _G.AH74_SANITY_HOOKED then
     if ok2 then _G.AH74_SANITY_HOOKED = true end   -- ชั้นไหนติดก็นับว่าใช้ได้
 end
 
--- (2) หนีผีใต้เตียง: PlatformStand=true = โดนจับ → กด E จนหลุด (E คือปุ่มดิ้น ยืนยันแล้ว)
--- v6.26: ไม่รู้ว่าเกมเช็ค "กดค้างอยู่" หรือ "นับจำนวนกด" (ผู้ใช้: กดสั้นๆ แล้วดิ้นไม่หลุดตาย)
---        → 2 เฟส: เฟสแรก "กดค้างยาว" ไปเลย 5s (ถ้าเกมเช็คแค่กำลังกด = หลุดแน่ ไม่ต้องเดาเวลา)
---          ยังไม่หลุด → เฟสสอง สแปมกดค้าง 0.08s/ปล่อย 0.04s (เผื่อเกมนับจำนวนกด) จนครบ 15s รวม
+-- (2) หนีผีใต้เตียง/โดนจับ: PlatformStand=true = โดนจับ
+-- v6.35: BedMonSpy v2.7 พิสูจน์ — การดิ้น = ProximityPrompt 'Struggle' (Hold=0.2) โผล่บน "ตัวละครเรา"
+--        สาเหตุกด E แล้วตาย: VIM แตะสั้น ~0.1s = HoldBegan→HoldEnded ไม่ครบ 0.2 ไม่เกิด Trigger สักครั้ง
+--        → ใช้วิธีเดียวกับดับไฟ: HoldDuration=0 + fireproximityprompt รัวจนหลุด (VIM เป็น fallback)
 _G.AH74_BEDESCAPE = (_G.AH74_BEDESCAPE == nil) and true or _G.AH74_BEDESCAPE
 task.spawn(function()
     while MYGEN == _G.AH74_GEN do
@@ -239,16 +239,22 @@ task.spawn(function()
         local h = c and c:FindFirstChildOfClass("Humanoid")
         if _G.AH74_BEDESCAPE and h and h.PlatformStand then
             local t0 = os.clock()
-            -- เฟส 1: กดค้างยาว — กดลงทีเดียว ถือไว้จนหลุดหรือครบ 5s
-            VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-            while h.Parent and h.PlatformStand and os.clock() - t0 < 5 and MYGEN == _G.AH74_GEN do
-                task.wait(0.05)
-            end
-            VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-            -- เฟส 2: ยังไม่หลุด → สแปมกดค้างสั้น (เกมอาจนับจำนวนกด)
             while h.Parent and h.PlatformStand and os.clock() - t0 < 15 and MYGEN == _G.AH74_GEN do
-                VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game); task.wait(0.08)
-                VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game); task.wait(0.04)
+                local sp   -- prompt 'Struggle' แขวนบน model ตัวเราตรงๆ (spy: path=Workspace.<ชื่อเรา>)
+                for _, d in ipairs(c:GetDescendants()) do
+                    if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Struggle" then sp = d; break end
+                end
+                if sp and fp then
+                    local oldHold = sp.HoldDuration
+                    pcall(function() sp.HoldDuration = 0 end)
+                    pcall(fp, sp, 0)
+                    pcall(function() if sp.Parent then sp.HoldDuration = oldHold end end)
+                    task.wait(0.2)
+                else
+                    -- ไม่เจอ prompt (เกมเปลี่ยน/executor ไม่มี fp) → กดค้าง 0.3s ให้เกิน Hold 0.2 แน่ๆ
+                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game); task.wait(0.3)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game); task.wait(0.05)
+                end
             end
         end
         task.wait(0.1)
@@ -1295,7 +1301,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.34", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.35", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1304,7 +1310,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.34 " .. sb .. " " .. lastStatus
+        title.Text = "v6.35 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -2169,15 +2175,20 @@ task.spawn(function()
                 if heldCount("Maple Syrup") > 0 and selectTool("Maple Syrup") then
                     local bpos = partPos(bed)
                     if bpos then
-                        -- ประชิด 2 studs + หามุมโล่ง 8 ทิศ (ผู้ใช้จูน)
-                        local rayP = RaycastParams.new()
-                        rayP.FilterType = Enum.RaycastFilterType.Exclude
-                        rayP.FilterDescendantsInstances = { bed, LP.Character }
-                        local spot
-                        for i = 0, 7 do
-                            local ang = i * math.pi / 4
-                            local cand = bpos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * 2
-                            if not workspace:Raycast(cand, bpos - cand, rayP) then spot = cand; break end
+                        -- v6.35: BedMonSpy พิสูจน์ — เตียงมี part 'HitLocation' (พื้นแดงโปร่ง RGB196,40,28
+                        --        ห่างเตียง ~9) = จุดยืนส่งน้ำเชื่อมที่เกมกำหนด → วาปไปยืนบนนั้นตรงๆ
+                        local hit = bed:FindFirstChild("HitLocation")
+                        local spot = hit and hit:IsA("BasePart") and hit.Position
+                        if not spot then
+                            -- fallback เดิม: ประชิด 2 studs + หามุมโล่ง 8 ทิศ (เผื่อเกมถอด HitLocation)
+                            local rayP = RaycastParams.new()
+                            rayP.FilterType = Enum.RaycastFilterType.Exclude
+                            rayP.FilterDescendantsInstances = { bed, LP.Character }
+                            for i = 0, 7 do
+                                local ang = i * math.pi / 4
+                                local cand = bpos + Vector3.new(math.cos(ang), 0, math.sin(ang)) * 2
+                                if not workspace:Raycast(cand, bpos - cand, rayP) then spot = cand; break end
+                            end
                         end
                         tpTo(spot or bpos); task.wait(0.2)
                         -- ถือค้างรอผล: น้ำเชื่อมหายจากมือ/เตียงหาย = จบ ไม่ทำอะไรต่อ (สูงสุด 5s)
