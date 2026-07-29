@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.37 ลำดับงานใหม่: ยิงผี→2, ตัดช่วยคน(Help)ทั้งระบบ, แยกไฟ(4)/สไลม์(7) — ผู้ใช้จัด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.38 เช็คอิน: จับคิวเข้าช่อง "ใกล้สุด" — เดิมนับเข้าช่อง 1 หมดตอนยืนใกล้ทั้งคู่ = ไม่สลับช่อง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -126,9 +126,14 @@ local function checkinPending()
     if #counters == 0 then return nil end
     local function nearCounter(p)
         if not inCheckinHall(p) then return nil end   -- v5.70: หลบหลังเคาน์เตอร์ = ไม่ใช่คิว
+        -- v6.38: เลือกช่อง "ใกล้สุด" ไม่ใช่ช่องแรกที่เข้าระยะ — เดิม NPC ยืนกลางใกล้ทั้ง 2 ช่อง
+        --        ถูกนับเข้าช่อง 1 หมด เหลือจุดยืนเดียว = ไม่สลับช่อง (ผู้ใช้เจอตอนมีผีปน)
+        local best, bd
         for _, c in ipairs(counters) do
-            if (p - c.pos).Magnitude < 15 then return c end
+            local d = (p - c.pos).Magnitude
+            if d < 15 and (not best or d < bd) then best, bd = c, d end
         end
+        return best
     end
     -- v5.04: จุดยืน hardcode จากผู้ใช้ไปยืน spy พิกัดจริง (แม่นกว่าคำนวณจากตำแหน่งเครื่อง)
     --        โต๊ะกาแฟ = -120.1, 3.4, 10.3 (จดไว้เผื่อทำ auto กาแฟ)
@@ -1252,14 +1257,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.37", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.38", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.37 " .. lastStatus
+        title.Text = "v6.38 " .. lastStatus
     end
 end
 local function armDeathLog(char)
