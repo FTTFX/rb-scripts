@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.39 เช็คอิน: นับผี attr สะอาด (ไม่มี IsPatient) เป็นคิวในโหมดรับผี + โชว์ "เช็คอินรอ" ตอนโดนงานด่วนบล็อก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.40 เช็คอิน: สลับ 2 ช่องได้จริง — ciGo ก้าวแม่นระยะสั้น (การ์ด ≤6 ของ tpTo เคยทำจอดค้างกลาง 2 ช่อง))
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -414,7 +414,25 @@ local function findPickup(medName)
 end
 -- v5.05: เดินหมวดเช็คอิน = ระบบสไลด์เดียวกับงานอื่น (pathfinding + กันตกหลังคา/เป้าบนฟ้า)
 --        แค่ลดความเร็วเหลือ 80 — เดิมใช้ MoveTo แยกระบบ พอชนกับ loop ดับไฟแล้วตัวกระตุก
-local function ciGo(pos) return tpTo(pos, 80) end
+-- v6.40: จุดยืน 2 ช่องเช็คอินห่างกันแค่ ~7 studs — การ์ดของ tpTo (ใกล้เป้า ≤6 ไม่ขยับ + สไลด์จอดที่ 3)
+--        ทำบอทจอด "กลางระหว่าง 2 ช่อง" แล้วทั้งคู่เข้าการ์ดหมด = ไม่สลับช่องเลย (ผู้ใช้เจอ)
+--        → ระยะสั้น <14 ใช้ก้าวแม่นของตัวเอง: ไถลตรงเข้าเป้าจนเหลือ <0.8 studs
+local function ciGo(pos)
+    local r = hrp()
+    if not (r and pos) then return end
+    local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
+    if flat.Magnitude > 14 then return tpTo(pos, 80) end   -- ไกล = ระบบเดิม (มีการ์ดครบ)
+    local t0 = os.clock()
+    while os.clock() - t0 < 1.2 and _G.AH74_GEN == MYGEN do
+        r = hrp(); if not r then break end
+        local dir = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
+        if dir.Magnitude < 0.8 then break end
+        r.AssemblyLinearVelocity = dir.Unit * math.min(60, dir.Magnitude * 30) + Vector3.new(0, -10, 0)
+        task.wait()
+    end
+    r = hrp()
+    if r then r.AssemblyLinearVelocity = Vector3.zero end
+end
 -- หา Tool ชื่อตรงยา (ที่ถืออยู่ใน Backpack/ตัว)
 local function findTool(medName)
     local bp = LP:FindFirstChild("Backpack")
@@ -1263,14 +1281,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.39", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.40", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.39 " .. lastStatus
+        title.Text = "v6.40 " .. lastStatus
     end
 end
 local function armDeathLog(char)
