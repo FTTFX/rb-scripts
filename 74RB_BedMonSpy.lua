@@ -29,12 +29,15 @@ local gui = Instance.new("ScreenGui")
 gui.Name = "BedMonSpy"; gui.ResetOnSpawn = false
 pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
-local box = Instance.new("TextLabel", gui)
+-- v2.7: เปลี่ยนเป็น TextBox (เลือกข้อความ copy มือได้ เผื่อ setclipboard ใช้ไม่ได้บน executor นี้)
+local box = Instance.new("TextBox", gui)
 box.Size = UDim2.new(0, 560, 0, 340); box.Position = UDim2.new(0, 8, 0.28, 0)
 box.BackgroundColor3 = Color3.new(0, 0, 0); box.BackgroundTransparency = 0.2
 box.TextColor3 = Color3.fromRGB(255, 200, 120); box.TextSize = 12; box.Font = Enum.Font.Code
 box.TextXAlignment = Enum.TextXAlignment.Left; box.TextYAlignment = Enum.TextYAlignment.Top
-box.TextWrapped = true; box.Text = "[BedMonSpy v2.0] พร้อม — ปิดหนีอัตโนมัติใน main แล้วไปโดนจับ"
+box.TextWrapped = true; box.MultiLine = true
+box.ClearTextOnFocus = false; box.TextEditable = false
+box.Text = "[BedMonSpy v2.7] พร้อม — ปิดหนีอัตโนมัติใน main แล้วไปโดนจับ"
 
 -- v2.1: แถวปุ่ม COPY | RESCAN | พับ (อยู่เหนือกล่อง log — พับแล้วปุ่มยังอยู่ให้กดกลับ)
 local function hbtn(txt, x, w, col)
@@ -46,9 +49,22 @@ local function hbtn(txt, x, w, col)
 end
 local copyB = hbtn("COPY", 8, 90)
 table.insert(CONNS, copyB.MouseButton1Click:Connect(function()
-    pcall(setclipboard, table.concat(OUT, "\n"))
-    copyB.Text = "คัดลอกแล้ว!"
-    task.delay(1.2, function() copyB.Text = "COPY" end)
+    local text = table.concat(OUT, "\n")
+    -- v2.7: ลองทุกฟังก์ชัน clipboard ที่ executor อาจมี (เดิมใช้ setclipboard ตัวเดียว — บางตัวไม่มี = เงียบ)
+    local clip = (typeof(setclipboard) == "function" and setclipboard)
+        or (typeof(toclipboard) == "function" and toclipboard)
+        or (typeof(set_clipboard) == "function" and set_clipboard)
+        or (syn and typeof(syn.write_clipboard) == "function" and syn.write_clipboard)
+    local ok = clip and pcall(clip, text)
+    -- สำรอง: เขียนไฟล์ log ไว้ในโฟลเดอร์ workspace ของ executor เสมอ
+    local saved = typeof(writefile) == "function" and pcall(writefile, "74RB_bedmon_log.txt", text)
+    copyB.Text = ok and "คัดลอกแล้ว!" or (saved and "เซฟไฟล์แล้ว!" or "copy ไม่ได้!")
+    if not ok then
+        -- เปิดให้จิ้มเลือกข้อความในกล่องเองได้ (ลากคลุม → Ctrl+C)
+        box.TextEditable = false
+        box:CaptureFocus()
+    end
+    task.delay(1.6, function() copyB.Text = "COPY" end)
 end))
 local rescanB = hbtn("RESCAN", 104, 90, Color3.fromRGB(40, 130, 70))
 local foldB = hbtn("พับ", 200, 60, Color3.fromRGB(90, 70, 40))
@@ -331,4 +347,4 @@ table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
     end
 end))
 
-add("v2.6 เริ่มดัก — 🍁จุดยืนน้ำเชื่อม + 🟥ของแดงโผล่ใกล้เตียง (ชื่อ+พิกัด) | โดนจับจอกางเอง")
+add("v2.7 เริ่มดัก — 🍁จุดยืนน้ำเชื่อม + 🟥ของแดงใกล้เตียง | COPY เสีย = เซฟไฟล์ 74RB_bedmon_log.txt ให้")
