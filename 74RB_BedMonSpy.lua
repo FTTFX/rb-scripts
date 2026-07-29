@@ -85,17 +85,26 @@ pcall(function()
 end)
 
 -- 2) ปุ่มที่กดจริง (ดู mapping กด → remote/prompt)
+local MOVE_KEY = { W = true, A = true, S = true, D = true, Space = true, LeftShift = true,
+    One = true, Two = true, Three = true, Four = true, Five = true }   -- v2.3: กรองปุ่มเดิน/slot ตอนยังไม่โดนจับ
 table.insert(CONNS, UIS.InputBegan:Connect(function(inp, gpe)
     if inp.UserInputType == Enum.UserInputType.Keyboard then
+        if not GRABBED and MOVE_KEY[inp.KeyCode.Name] then return end
         add("⌨️ กด " .. inp.KeyCode.Name .. (gpe and " (GUI ดูด)" or ""))
     elseif inp.UserInputType == Enum.UserInputType.MouseButton1 then
         add("🖱️ คลิก" .. (gpe and " (GUI ดูด)" or ""))
     end
 end))
 
+-- v2.3: prompt ประจำเกมที่รู้จักแล้ว (เช็คอิน/ประตู/ของ) — สแปม log ตอนยังไม่โดนจับ
+--       ช่วงโดนจับ (🆘) log ทุกตัวเหมือนเดิม เพราะ prompt ดิ้นอาจชื่ออะไรก็ได้
+local KNOWN_PROMPT = {
+    ["Stamp Forms"] = true, Inspect = true, Take = true, Talk = true, Open = true,
+    ["Clean Slime"] = true, ["Apply Treatment"] = true, ["Buy Gun"] = true, Coffee = true,
+}
 -- 3) ★ใหม่ v2.0: ProximityPrompt โผล่ที่ไหนก็ตาม (ตัวเรา/เตียง/workspace) — รุ่นเก่าไม่ได้ดักเลย
 table.insert(CONNS, workspace.DescendantAdded:Connect(function(d)
-    if d:IsA("ProximityPrompt") then
+    if d:IsA("ProximityPrompt") and (GRABBED or not KNOWN_PROMPT[d.ActionText]) then
         local path = d.Parent and d.Parent:GetFullName() or "?"
         add(("➕ prompt ใหม่ '%s' Key=%s Hold=%.1f @ %s"):format(
             d.ActionText, tostring(d.KeyboardKeyCode), d.HoldDuration, path))
@@ -107,6 +116,7 @@ end))
 
 -- 4) ★ใหม่ v2.0: ระบบ prompt กลางของ Roblox — เห็นแม้ prompt สร้างก่อนเรารัน spy
 table.insert(CONNS, PPS.PromptShown:Connect(function(pp)
+    if not GRABBED and KNOWN_PROMPT[pp.ActionText] then return end   -- v2.3: กรองสแปมตอนยังไม่โดนจับ
     add(("👁️ PromptShown '%s' Key=%s Hold=%.1f @ %s"):format(
         pp.ActionText, tostring(pp.KeyboardKeyCode), pp.HoldDuration,
         pp.Parent and pp.Parent:GetFullName() or "?"))
@@ -124,9 +134,16 @@ table.insert(CONNS, PPS.PromptButtonHoldEnded:Connect(function(pp)
 end))
 
 -- 5) GUI โผล่ใน PlayerGui (แถบดิ้น/ข้อความ press)
+-- v2.3: กรองป้าย prompt มาตรฐาน Roblox + จอปืน (สแปมท่วม log จนอ่านไม่ได้ — ผู้ใช้เจอ)
+local GUI_NOISE = {
+    PromptFrame = true, InputFrame = true, Frame = true, ProgressBar = true,
+    LeftGradient = true, RightGradient = true, ProgressBarImage = true,
+    ButtonFrame = true, ButtonImage = true, ButtonTextImage = true,
+    charges = true, black = true,
+}
 local pg = LP:WaitForChild("PlayerGui")
 table.insert(CONNS, pg.DescendantAdded:Connect(function(o)
-    if o:IsA("Frame") or o:IsA("ScreenGui") or o:IsA("ImageLabel") then
+    if (o:IsA("Frame") or o:IsA("ScreenGui") or o:IsA("ImageLabel")) and not GUI_NOISE[o.Name] then
         add("🖼️ GUI โผล่: " .. o.Name .. " (" .. o.ClassName .. ")")
         task.delay(0.2, function()
             for _, d in ipairs(o:GetDescendants()) do
@@ -222,4 +239,4 @@ table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
     end
 end))
 
-add("v2.2 เริ่มดัก — กด 'พับ' ซ่อนไปเลยระหว่างหาผีเตียง (โดนจับแล้วจอกางเอง) → หลุดแล้ว COPY")
+add("v2.3 เริ่มดัก (กรองสแปม: prompt ประจำ/ปุ่มเดิน/ป้าย Roblox) — พับไว้ได้ โดนจับจอกางเอง → COPY")
