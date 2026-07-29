@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.47 กันเข้าห้องไฟ: Hider/สไลม์ที่อยู่ใกล้ไฟกองพื้น <15 = ข้าม ไม่เข้าใกล้ — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.48 เปิดรักษา = บินตลอดแบบ Hider (CFrame ก้าวกลางอากาศ +5 เหนือเป้า) + กันตกพื้นทุกเฟรม — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -336,6 +336,22 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         return
     end
     if not noGap then pos = ghostSafe(pos) end   -- v5.32: จ่ายยาผิดต้องถึงเตียงผีจริง (12m กดไม่ถึง)
+    -- v6.48: เปิดปุ่ม "รักษา" = เคลื่อนที่ด้วยท่าบินแบบ Hider (ผู้ใช้ขอ — ห้ามตกพื้น):
+    --        ก้าว CFrame กลางอากาศ 3 studs/frame (~180 studs/s) สูง +5 เหนือเป้า + ตรึง velocity ทุกเฟรม
+    --        (ท่าเดียวกับ flyTo ของ Hider ที่พิสูจน์แล้วว่าเกมไม่จับ insanity)
+    if AUTO_ON then
+        local dest = pos + Vector3.new(0, 5, 0)
+        local r2 = hrp()
+        local t0 = os.clock()
+        while r2 and os.clock() - t0 < 10 and _G.AH74_GEN == MYGEN do
+            local d = dest - r2.Position
+            if d.Magnitude < 2 then break end
+            r2.CFrame = r2.CFrame + d.Unit * math.min(3, d.Magnitude)
+            r2.AssemblyLinearVelocity = Vector3.zero
+            task.wait(); r2 = hrp()
+        end
+        return
+    end
     if TP_ON then
         -- v4.85: เลิกบิน CFrame ทั้งหมด — เกมยังจับได้ (ตายบ้าคลั่งซ้ำ Shift19)
         -- v4.87: เดินเร็วตาม "เส้นทางจริง" (pathfinding) ไม่ใช้ noclip —
@@ -1222,6 +1238,15 @@ bind(RS.Heartbeat, function(dt)
             if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
         end end
     end
+    -- v6.48: เปิด "รักษา" = ห้ามตกพื้น (ผู้ใช้ขอ) — ตัดความเร็วขาลงทุกเฟรม (แรงโน้มถ่วงไม่สะสม = ลอยค้าง)
+    --        คงความเร็วแนวราบไว้ ระบบอื่น (ciGo/สไลด์) ยังเคลื่อนที่ได้ปกติ
+    if AUTO_ON then
+        local r = hrp()
+        if r then
+            local v = r.AssemblyLinearVelocity
+            if v.Y < 0 then r.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z) end
+        end
+    end
 
     -- Auto: ยิงสเต็ป เช็คอิน (CHECKIN_ON) + วินิจฉัย/เตรียม (AUTO_ON) — หยุดตอนกำลังจ่ายยา (WORKING)
     if (AUTO_ON or CHECKIN_ON) and fp and not WORKING then
@@ -1322,14 +1347,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.47", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.48", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.47 " .. lastStatus
+        title.Text = "v6.48 " .. lastStatus
     end
 end
 local function armDeathLog(char)
