@@ -1,4 +1,5 @@
--- 74RB_BedMonSpy.lua v2.0 — สปายผีใต้เตียง (MonsterBed): โดนจับแล้ว "การกด" ทำงานผ่านอะไรกันแน่?
+-- 74RB_BedMonSpy.lua v2.1 — สปายผีใต้เตียง (MonsterBed): โดนจับแล้ว "การกด" ทำงานผ่านอะไรกันแน่?
+-- v2.1: ปุ่ม "พับ" (ย่อ/กางกล่อง log) + "RESCAN" (ล้างจอ + dump สถานะปัจจุบันใหม่) — ผู้ใช้ขอ
 -- v1.0 พิสูจน์แล้ว: สัญญาณจับ = Humanoid.PlatformStand=true — แต่ไม่ได้ดัก prompt/remote ต่อการกด
 -- v2.0 อุดช่อง: + ProximityPrompt โผล่ใหม่ทุกที่ (บนตัวเรา/เตียง/workspace)
 --              + ProximityPromptService.PromptShown/Triggered (จับ prompt ดิ้นที่อาจซ่อนอยู่)
@@ -32,15 +33,22 @@ box.TextColor3 = Color3.fromRGB(255, 200, 120); box.TextSize = 12; box.Font = En
 box.TextXAlignment = Enum.TextXAlignment.Left; box.TextYAlignment = Enum.TextYAlignment.Top
 box.TextWrapped = true; box.Text = "[BedMonSpy v2.0] พร้อม — ปิดหนีอัตโนมัติใน main แล้วไปโดนจับ"
 
-local copyB = Instance.new("TextButton", gui)
-copyB.Size = UDim2.new(0, 90, 0, 30); copyB.Position = UDim2.new(0, 8, 0.28, -34)
-copyB.Text = "COPY"; copyB.Font = Enum.Font.GothamBold; copyB.TextSize = 14
-copyB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); copyB.TextColor3 = Color3.new(1, 1, 1)
+-- v2.1: แถวปุ่ม COPY | RESCAN | พับ (อยู่เหนือกล่อง log — พับแล้วปุ่มยังอยู่ให้กดกลับ)
+local function hbtn(txt, x, w, col)
+    local b = Instance.new("TextButton", gui)
+    b.Size = UDim2.new(0, w, 0, 30); b.Position = UDim2.new(0, x, 0.28, -34)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 14
+    b.BackgroundColor3 = col or Color3.fromRGB(40, 90, 150); b.TextColor3 = Color3.new(1, 1, 1)
+    return b
+end
+local copyB = hbtn("COPY", 8, 90)
 table.insert(CONNS, copyB.MouseButton1Click:Connect(function()
     pcall(setclipboard, table.concat(OUT, "\n"))
     copyB.Text = "คัดลอกแล้ว!"
     task.delay(1.2, function() copyB.Text = "COPY" end)
 end))
+local rescanB = hbtn("RESCAN", 104, 90, Color3.fromRGB(40, 130, 70))
+local foldB = hbtn("พับ", 200, 60, Color3.fromRGB(90, 70, 40))
 
 local function add(s)
     s = ("[%.1fs]%s %s"):format(os.clock() - T0, GRABBED and "🆘" or "", s)
@@ -163,4 +171,37 @@ table.insert(CONNS, workspace.DescendantAdded:Connect(function(o)
     if o.Name == "MonsterBed" then task.defer(watchBed, o) end
 end))
 
-add("v2.0 เริ่มดัก — ปิดหนีอัตโนมัติใน main → โดนจับ → กด E มือ → COPY")
+-- v2.1: พับ/กาง + RESCAN
+table.insert(CONNS, foldB.MouseButton1Click:Connect(function()
+    box.Visible = not box.Visible
+    foldB.Text = box.Visible and "พับ" or "กาง"
+end))
+table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
+    LINES = {}   -- ล้างจอ (OUT เก็บประวัติเต็มไว้ให้ COPY เหมือนเดิม)
+    add("===== RESCAN =====")
+    local h = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+    add("🧍 PlatformStand=" .. tostring(h and h.PlatformStand) .. " GRABBED=" .. tostring(GRABBED))
+    local n = 0
+    for _, m in ipairs(workspace:GetDescendants()) do
+        if m.Name == "MonsterBed" then
+            n += 1
+            add("🛏️ " .. m:GetFullName() .. " attr:" .. ser(m:GetAttributes()))
+        end
+    end
+    if n == 0 then add("🛏️ ไม่พบ MonsterBed ตอนนี้") end
+    -- prompt ที่เปิดอยู่รอบตัว 40 studs (ดูว่ามีปุ่มดิ้น/ปุ่มแปลกใกล้เราไหม)
+    local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if r then
+        for _, p in ipairs(workspace:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and p.Enabled and p.Parent then
+                local pp = p.Parent:FindFirstChildWhichIsA("BasePart", true) or (p.Parent:IsA("BasePart") and p.Parent)
+                local pos = pp and pp.Position
+                if pos and (pos - r.Position).Magnitude < 40 then
+                    add(("🔘 '%s' Hold=%.1f @ %s"):format(p.ActionText, p.HoldDuration, p.Parent:GetFullName()))
+                end
+            end
+        end
+    end
+end))
+
+add("v2.1 เริ่มดัก — ปิดหนีอัตโนมัติใน main → โดนจับ → กด E มือ → COPY (พับ=ย่อจอ, RESCAN=ดูสถานะตอนนี้)")
