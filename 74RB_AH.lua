@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.33 รับผี: CompletedCheckIn ต้องตรงชื่อผู้เล่นในเซิฟจริง (Name/DisplayName) ถึงยิง — ค่าขยะ/null ไม่นับ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.34 รับผี: +ช่วงผ่อน 5s หลัง CompletedCheckIn ขึ้น (ให้จบขั้นตอนเคาน์เตอร์ก่อนยิง) + โชว์ ci= ตอนยิงไว้ไล่บัค)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -677,18 +677,23 @@ end
 -- v6.29 (ผู้ใช้เลือกกฎเข้มสุด): ยิงเฉพาะผีที่ `CompletedCheckIn=<ชื่อผู้เล่นใครก็ได้>` แล้วเท่านั้น
 --        ตัดข้อยกเว้น SkippedCheckIn/InBed ทิ้งหมด (v6.27-6.28 บอทยังหลุดบินไปยิงผีนอกแมพ)
 --        GhostCiSpy พิสูจน์: ผีเช็คอินเสร็จได้ CompletedCheckIn=InwFLAME02 เหมือนคนไข้เป๊ะ
+local CI_SEEN = {}   -- v6.34: [ผี]=os.clock() ตอนเห็น CompletedCheckIn ถูกต้องครั้งแรก
 local function ghostWaitCheckin(m)
     -- v6.31: ปืนคุมด้วยปุ่ม "ยิงผี" (GUNKILL_ON) ของมันเอง — "รับผี" แค่เพิ่มเงื่อนไขรอเช็คอิน ไม่ได้เปิด/ปิดปืน
     if not GHOSTCI_ON then return false end   -- รับผี OFF = ยิงปกติแบบเดิม ไม่รอ
-    -- v6.33 (ผู้ใช้เจอ): ค่า CompletedCheckIn อาจเป็นขยะ/ไม่ใช่ชื่อคนจริงแต่ยัง truthy → ยิงพลาด
-    --        เช็คเข้ม: ต้องตรงกับชื่อผู้เล่น "ที่อยู่ในเซิฟตอนนี้" (Name หรือ DisplayName) เท่านั้นถึงยิง
+    -- v6.33: CompletedCheckIn ต้องตรงชื่อผู้เล่น "ที่อยู่ในเซิฟตอนนี้" (Name/DisplayName) เท่านั้น
     local ci = m:GetAttribute("CompletedCheckIn")
+    local valid = false
     if typeof(ci) == "string" and ci ~= "" then
         for _, pl in ipairs(game:GetService("Players"):GetPlayers()) do
-            if pl.Name == ci or pl.DisplayName == ci then return false end   -- เช็คอินโดยคนจริง = ยิงได้
+            if pl.Name == ci or pl.DisplayName == ci then valid = true; break end
         end
     end
-    return true   -- นอกนั้นรอหมด (ค่า null/ขยะ/ชื่อไม่อยู่ในเซิฟ = ยังไม่นับว่าเช็คอิน)
+    if not valid then CI_SEEN[m] = nil; return true end   -- ยังไม่เช็คอินจริง = รอ
+    -- v6.34 (ผู้ใช้: attr ขึ้นแล้วแต่ขั้นตอนหน้าเคาน์เตอร์ยังไม่จบ = แต้มยังไม่เข้า แต่บอทยิงเลย)
+    --        → ช่วงผ่อน 5s หลังเห็น attr ครั้งแรก ให้ผีรับใบ/เดินออกจากเคาน์เตอร์ก่อนค่อยยิง
+    if not CI_SEEN[m] then CI_SEEN[m] = os.clock() end
+    return os.clock() - CI_SEEN[m] < 5
 end
 -- v6.28: การ์ดตำแหน่งเป้ายิง — ผี event ที่ "ยังไม่ถูกวางลงแมพ" เกมจอดไว้นอกแมพ (ฟ้า/ทะเล/ใต้พื้น)
 --        แต่ attr ครบ (SkippedCheckIn ฯลฯ) เลยผ่านข้อยกเว้นข้างบน → บอทบินออกนอกแผนที่ไปยิง (ผู้ใช้เจอ)
@@ -717,7 +722,7 @@ local BOUGHT = {}       -- v5.49: [Buy prompt]=os.clock() กดซื้อไ�
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
         task.wait(60)
-        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE, SYRUP_DONE, BOUGHT }) do
+        for _, t in ipairs({ SHOT_AT, FAINT_DONE, FIRE_COOL, FIRE_FAILN, BURN_FAIL, HIDER_DONE, SYRUP_DONE, BOUGHT, CI_SEEN }) do
             for k in pairs(t) do
                 if typeof(k) == "Instance" and not k.Parent then t[k] = nil end
             end
@@ -1290,7 +1295,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.33", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.34", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1299,7 +1304,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.33 " .. sb .. " " .. lastStatus
+        title.Text = "v6.34 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1498,7 +1503,8 @@ task.spawn(function()
                     local spot = clearShotSpot(target, thead)
                     if spot then
                         shotAt[target] = math.huge   -- v5.20: ยิงแล้ว = ไม่ยิงตัวนี้ซ้ำอีก (ragdoll ค้างทำให้เข้าใจผิดว่ายังไม่ตาย)
-                        setStatus("วาร์ปยิงผี " .. target.Name)
+                        -- v6.34: โชว์ ci= บนหัว GUI — ถ้ายิงพลาดอีก ภาพหน้าจอบอกเลยว่า attr ตอนนั้นเป็นอะไร
+                        setStatus("วาร์ปยิงผี " .. target.Name .. " ci=" .. tostring(target:GetAttribute("CompletedCheckIn")))
                         tpTo(spot); task.wait(0.1)   -- วาร์ปไปจุดยิงโล่ง (สไลด์+Y-lock)
                         local gun = equipGun()
                         local r = hrp()
