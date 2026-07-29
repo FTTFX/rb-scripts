@@ -50,6 +50,13 @@ table.insert(CONNS, copyB.MouseButton1Click:Connect(function()
 end))
 local rescanB = hbtn("RESCAN", 104, 90, Color3.fromRGB(40, 130, 70))
 local foldB = hbtn("พับ", 200, 60, Color3.fromRGB(90, 70, 40))
+-- v2.4: ปุ่มปิดจริง (ผู้ใช้: รกจอ) — disconnect ทุกตัวดัก + ลบ GUI ทิ้งทั้งหมด
+local closeB = hbtn("✕", 266, 34, Color3.fromRGB(150, 40, 40))
+table.insert(CONNS, closeB.MouseButton1Click:Connect(function()
+    for _, c in pairs(CONNS) do pcall(function() c:Disconnect() end) end
+    _G.BEDMONSPY_CONNS = {}
+    gui:Destroy()
+end))
 
 local function add(s)
     s = ("[%.1fs]%s %s"):format(os.clock() - T0, GRABBED and "🆘" or "", s)
