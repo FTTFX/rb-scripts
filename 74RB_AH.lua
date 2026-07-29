@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.48 เปิดรักษา = บินตลอดแบบ Hider (CFrame ก้าวกลางอากาศ +5 เหนือเป้า) + กันตกพื้นทุกเฟรม — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.49 ผีเตียงในห้องไฟ = ข้าม ไม่เข้าใกล้ (กฎเดียวกับ Hider/สไลม์) — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1347,14 +1347,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.48", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.49", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.48 " .. lastStatus
+        title.Text = "v6.49 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -2155,7 +2155,8 @@ task.spawn(function()
                     if d.Name == "MonsterBed" and d:IsA("Model")
                        and (not SYRUP_DONE[d] or os.clock() - SYRUP_DONE[d] > 60) then
                         local p = partPos(d)
-                        if p and (p - me4).Magnitude < 150 then bed = d; break end
+                        -- v6.49: เตียงผีอยู่ในห้องไฟ = ข้าม ไม่เข้าใกล้ (ผู้ใช้ขอ — กฎเดียวกับ Hider/สไลม์)
+                        if p and (p - me4).Magnitude < 150 and not nearFire(p) then bed = d; break end
                     end
                 end
             end
