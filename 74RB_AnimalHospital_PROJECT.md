@@ -116,6 +116,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 
 ### 3.2 State (toggles)
 `ESP_ON, RUN_ON, NOCLIP_ON, AUTO_ON, KILLGHOST_ON, TP_ON, MACHINE_ON, WHACK_ON, R6_ON, CHECKIN_ON`, `SPEED`
+- **v6.36:** เลือกห้องรายห้องด้วย `ROOM_ON = {Room1..Room8}` (แท็บ "ห้อง" ปุ่มละห้อง ; 7/8 default ปิด) — แทน `ROOMS_MED/ROOMS_EM/R78_ON` เดิม ; **ระบบกัน Sanity (hook `RE/PlayerLostSanity`) ถอดออกแล้ว** (ผู้ใช้ขอ — เหลือ `_G.AH74_SANITY_BLOCK=false` ไว้ดับ hook เก่าที่ค้างใน session)
 
 ### 3.3 Loops
 | Loop | ที่อยู่ | ทำอะไร |
