@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.38 เช็คอิน: จับคิวเข้าช่อง "ใกล้สุด" — เดิมนับเข้าช่อง 1 หมดตอนยืนใกล้ทั้งคู่ = ไม่สลับช่อง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.39 เช็คอิน: นับผี attr สะอาด (ไม่มี IsPatient) เป็นคิวในโหมดรับผี + โชว์ "เช็คอินรอ" ตอนโดนงานด่วนบล็อก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -156,8 +156,11 @@ local function checkinPending()
             -- v4.53: รัศมี 15 ต่อช่อง (ผู้ใช้จูน) — v4.58 เช็คใกล้ช่องไหนก็ได้
             local c = r and nearCounter(r.Position)
             if c then
-                -- v4.52: คนไข้ *หรือ* คนเยี่ยม (IsVisitor) ที่ยังไม่เช็คอิน = วาปไปหาเหมือนกัน (ผีก็นับถ้ามี attr พวกนี้)
-                if (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor"))
+                -- v4.52: คนไข้ *หรือ* คนเยี่ยม (IsVisitor) ที่ยังไม่เช็คอิน = วาปไปหาเหมือนกัน
+                -- v6.39: โหมดรับผี — ผี (Skinwalker) นับคิวแม้ "ไม่มี IsPatient" (ผีบางตัว attr สะอาด
+                --        ยืนรอเคาน์เตอร์เฉยๆ บอทไม่ขยับ — ผู้ใช้เจอ)
+                if (m:GetAttribute("IsPatient") or m:GetAttribute("IsVisitor")
+                    or (GHOSTCI_ON and m:GetAttribute("Skinwalker")))
                    and m:GetAttribute("CheckedIn") ~= true and not m:GetAttribute("CompletedCheckIn") then
                     spots[c.inst.Name] = standPos(c)
                 else
@@ -1168,9 +1171,12 @@ bind(RS.Heartbeat, function(dt)
             fireAcc = 0
             -- v4.27: เช็คอินวาปหาคนไข้ — v4.75: งานอันดับท้ายสุด ทำเฉพาะตอน "ว่างจริง"
             -- (ไม่มีคนเป็นลม/ไฟ/สไลม์ และ treat loop ไม่มีห้องให้ทำ)
-            if CHECKIN_ON and not busyBefore(6) then   -- v6.37: เช็คอินอันดับ 6 (Hider มาก่อน, สไลม์มาทีหลัง)
+            if CHECKIN_ON then   -- v6.37: เช็คอินอันดับ 6 (Hider มาก่อน, สไลม์มาทีหลัง)
                 local cpos = checkinPending()
-                if cpos then
+                -- v6.39: มีคิวแต่โดนงานด่วนกว่าบล็อก = บอกบนหัว GUI (เดิมเงียบ ผู้ใช้ไม่รู้ว่าติดอะไร)
+                if cpos and busyBefore(6) then
+                    setStatus("เช็คอินรอ (งานด่วนกว่าค้าง)")
+                elseif cpos then
                     local misc = workspace:FindFirstChild("Misc")
                     local sb = misc and misc:FindFirstChild("ShutterButton")
                     local spp = sb and sb:FindFirstChild("PP")
@@ -1257,14 +1263,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.38", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.39", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.38 " .. lastStatus
+        title.Text = "v6.39 " .. lastStatus
     end
 end
 local function armDeathLog(char)
