@@ -1,6 +1,8 @@
 -- 74RB_BedMonSpy.lua v2.1 — สปายผีใต้เตียง (MonsterBed): โดนจับแล้ว "การกด" ทำงานผ่านอะไรกันแน่?
 -- v2.1: ปุ่ม "พับ" (ย่อ/กางกล่อง log) + "RESCAN" (ล้างจอ + dump สถานะปัจจุบันใหม่) — ผู้ใช้ขอ
 -- v2.2: พับ = ซ่อนหมดเหลือปุ่มจิ๋ว "สปาย" + โดนจับแล้วกางเอง (ผู้ใช้: รกจอตอนตามหาผีเตียง)
+-- v2.5: ดัก "จุดยืนส่งน้ำเชื่อม" — ถือ Maple Syrup ใกล้ MonsterBed = log ตำแหน่ง/ระยะ/พิกัดแกนเตียง
+--       ทุก 0.7s + วินาทีน้ำเชื่อมหายจากมือ (ส่งสำเร็จ) จับพิกัดเป๊ะ (ผู้ใช้: ต้องยืนถูกจุดถึงส่งได้)
 -- v1.0 พิสูจน์แล้ว: สัญญาณจับ = Humanoid.PlatformStand=true — แต่ไม่ได้ดัก prompt/remote ต่อการกด
 -- v2.0 อุดช่อง: + ProximityPrompt โผล่ใหม่ทุกที่ (บนตัวเรา/เตียง/workspace)
 --              + ProximityPromptService.PromptShown/Triggered (จับ prompt ดิ้นที่อาจซ่อนอยู่)
@@ -196,6 +198,62 @@ table.insert(CONNS, workspace.DescendantAdded:Connect(function(o)
     if o.Name == "MonsterBed" then task.defer(watchBed, o) end
 end))
 
+-- ===== v2.5: ดักจุดยืนส่งน้ำเชื่อม (ผู้ใช้: ต้องยืนถูกจุดถึงส่งได้ — หาว่าจุดไหน) =====
+local function heldSyrup()
+    local bp = LP:FindFirstChild("Backpack")
+    if LP.Character and LP.Character:FindFirstChild("Maple Syrup") then return true, true end   -- ถือในมือ
+    if bp and bp:FindFirstChild("Maple Syrup") then return true, false end                       -- ในกระเป๋า
+    return false, false
+end
+local function bedRef(b) return b.PrimaryPart or b:FindFirstChildWhichIsA("BasePart") end
+local function nearestBed(pos)
+    local best, bd, bpart
+    for _, m in ipairs(workspace:GetDescendants()) do
+        if m.Name == "MonsterBed" and m:IsA("Model") then
+            local p = bedRef(m)
+            if p then
+                local d = (p.Position - pos).Magnitude
+                if not best or d < bd then best, bd, bpart = m, d, p end
+            end
+        end
+    end
+    return best, bd, bpart
+end
+task.spawn(function()
+    local hadSyrup, lastLog = false, 0
+    while gui.Parent do
+        local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if r then
+            local has, equipped = heldSyrup()
+            local bed, d, bpart = nearestBed(r.Position)
+            if has and bed and d and d < 40 then
+                if os.clock() - lastLog > 0.7 then
+                    lastLog = os.clock()
+                    -- แกนเตียง = พิกัดเราใน object space ของเตียง (บอกฝั่ง/หัวท้ายชัดกว่าพิกัดโลก)
+                    local rel = bpart.CFrame:PointToObjectSpace(r.Position)
+                    add(("🍁 syrup%s ห่างเตียง %.1f | โลก(%.1f,%.1f,%.1f) | แกนเตียง(%.1f,%.1f,%.1f)"):format(
+                        equipped and "(ถือ)" or "(กระเป๋า)", d,
+                        r.Position.X, r.Position.Y, r.Position.Z, rel.X, rel.Y, rel.Z))
+                end
+                hadSyrup = true
+            elseif hadSyrup and not has then
+                -- น้ำเชื่อมเพิ่งหายจากมือ = ส่งสำเร็จ → จับพิกัดวินาทีนั้นเป๊ะๆ
+                hadSyrup = false
+                if bed and d then
+                    local rel = bpart.CFrame:PointToObjectSpace(r.Position)
+                    add(("✅🍁 น้ำเชื่อมหาย! ห่างเตียง %.1f | โลก(%.1f,%.1f,%.1f) | แกนเตียง(%.1f,%.1f,%.1f) ← จุดยืนที่ใช้ได้"):format(
+                        d, r.Position.X, r.Position.Y, r.Position.Z, rel.X, rel.Y, rel.Z))
+                else
+                    add("✅🍁 น้ำเชื่อมหายจากมือ (ไม่มีเตียงใกล้ — โดนทิ้ง/ใช้ที่อื่น)")
+                end
+            elseif not has then
+                hadSyrup = false
+            end
+        end
+        task.wait(0.15)
+    end
+end)
+
 -- v2.2: พับ = ซ่อนทั้งหมด (กล่อง+ปุ่ม COPY/RESCAN) เหลือปุ่มจิ๋วปุ่มเดียว (ผู้ใช้: รกจอ ระหว่างตามหาผีเตียง)
 --       โดนจับเมื่อไหร่ = กางเองอัตโนมัติ (จะได้ไม่พลาดช่วงสำคัญ)
 local function setFold(hide)
@@ -246,4 +304,4 @@ table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
     end
 end))
 
-add("v2.3 เริ่มดัก (กรองสแปม: prompt ประจำ/ปุ่มเดิน/ป้าย Roblox) — พับไว้ได้ โดนจับจอกางเอง → COPY")
+add("v2.5 เริ่มดัก — ถือน้ำเชื่อมใกล้เตียง = log จุดยืนทุก 0.7s, ส่งติด = ✅🍁 พิกัดเป๊ะ | โดนจับจอกางเอง")
