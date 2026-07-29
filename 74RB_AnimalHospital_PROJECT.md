@@ -283,7 +283,9 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 |---|---|---|
 | **Hider** | `Anomaly=true + Skinwalker=true + WaterEntity=true` | ESP ม่วง "ผีซ่อน" ; วิธีกำจัดยังไม่ยืนยัน (คาด: ถังดับเพลิง — remote `RE/ExtinguisherBubbleHit*`) |
 | **Ghost** | `Anomaly=true + Ghost=true + GhostVisible + Fake=true` (ไม่มี Skinwalker!) | ESP ม่วง — **เช็ค `Anomaly` ก่อน Skinwalker เสมอ** |
-| **Slime** | `Workspace.Misc.Slime` attr `SpeedMod=0.5` (หน่วงขา+ดาเมจ บังเตียง) | PP `'Clean Slime'` กดทีเดียวหาย — auto ใน toggle ดับไฟ |
+| **Slime** | `Workspace.Misc.Slime` attr `SpeedMod=0.5` (หน่วงขา+ดาเมจ บังเตียง) | PP `'Clean Slime'` (Hold=5.0) กดทีเดียวหาย — auto ใน toggle ดับไฟ |
+| **ผีใต้เตียง (MonsterBed)** — BedMonSpy v2.7 พิสูจน์ครบ (2026-07-29) | โผล่ที่ `Rooms.<หมวด>.RoomN.Minigame.MonsterBed` (attr ว่าง) ; ลูกสำคัญ: **`HitLocation`** = พื้นแดงโปร่ง RGB(196,40,28) ห่างเตียง ~9 = **จุดยืนส่งน้ำเชื่อมที่เกมกำหนด** (v6.35 วาปไปยืนบนนี้ตรงๆ) ; โดนจับ = `Humanoid.PlatformStand=true` + **PP `'Struggle'` (Hold=0.2) โผล่บน model ตัวละครเรา** | ดิ้นหลุด (v6.35): `HoldDuration=0` + `fireproximityprompt` รัว — **ห้าม VIM แตะสั้น** (<0.2s = HoldEnded ก่อนครบ ไม่ Trigger เลย — เหตุกดแล้วตายมาแล้ว) |
+| **attr `Zone` บนตัวเรา** | เกม set โซนสดบน player character: `MainHall`/`Medical`/`Security`/`RoomN` | ยังไม่ใช้ — เผื่อทำ logic ตามโซน |
 | **ผีปลอมไม่เฉลย** | มี `CameraEffect/PhotoEffect/Has*Effect` แต่ยังไม่มี Skinwalker | ESP ส้ม "น่าสงสัย!" — attr กลุ่มนี้เจอเฉพาะผี ไม่เคยอยู่บนคนไข้จริง |
 | **NPC เนื้อเรื่อง** | `StoryForced=true` (Barney `CoffeeArcDay=N`, "???", 'Let him hide with you', 'Accept Suitcase') | ยังไม่ auto — ชื่อ NPC ทั่วไปสุ่ม ใช้ชื่อจับผีไม่ได้ |
 | **คนเยี่ยมไข้ (Visitor)** | `IsVisitor=N + VisitingName + DesignatedRoom=ห้องที่มาเยี่ยม` (ไม่มี IsPatient) | **ต้องเช็คอินเหมือนคนไข้** (v4.52 ✅ ยืนยันทำงาน): checkinPending นับ IsVisitor เท่า IsPatient → วาปไปหา + blind-fire CHECKIN_ACTS ; ESP ฟ้า "เยี่ยมไข้" ; โต๊ะต้อนรับอยู่คนละช่องกับเช็คอิน → รัศมีเคาน์เตอร์ 60 studs ; ⚠️ roomPatient ต้องกรอง IsVisitor ทิ้ง (DesignatedRoom ชนกับคนไข้) |
