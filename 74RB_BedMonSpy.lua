@@ -254,6 +254,33 @@ task.spawn(function()
     end
 end)
 
+-- ===== v2.6: ดัก "พื้นสีแดง" ที่โผล่ตอนผีเตียงมา (ผู้ใช้: มีโซนแดงบอกจุดยืน — จะวาปไปตรงนั้นเลย) =====
+-- จับของใหม่ทุกชิ้นที่โผล่ในรัศมี 60 จากเตียง: BasePart (สี/วัสดุ), Decal/Texture, Highlight, ParticleEmitter
+local function fmtColor(c) return ("RGB(%d,%d,%d)"):format(c.R * 255, c.G * 255, c.B * 255) end
+table.insert(CONNS, workspace.DescendantAdded:Connect(function(o)
+    task.defer(function()   -- รอ 1 เฟรมให้ property เซ็ตครบก่อนอ่าน
+        local pos
+        if o:IsA("BasePart") then pos = o.Position
+        elseif o:IsA("Decal") or o:IsA("Texture") or o:IsA("ParticleEmitter") or o:IsA("Highlight") then
+            local p = o.Parent
+            pos = p and p:IsA("BasePart") and p.Position
+                or (p and p:IsA("Model") and p.PrimaryPart and p.PrimaryPart.Position)
+        end
+        if not pos then return end
+        local _, d = nearestBed(pos)
+        if not (d and d < 60) then return end
+        if o:IsA("BasePart") then
+            add(("🟥 part ใหม่ใกล้เตียง(%.0f): '%s' %s %s โปร่ง=%.1f @ (%.1f,%.1f,%.1f) path=%s"):format(
+                d, o.Name, fmtColor(o.Color), o.Material.Name, o.Transparency,
+                pos.X, pos.Y, pos.Z, o:GetFullName()))
+        elseif o:IsA("Highlight") then
+            add(("🟥 Highlight ใหม่ใกล้เตียง(%.0f): fill=%s @ %s"):format(d, fmtColor(o.FillColor), o:GetFullName()))
+        else
+            add(("🟥 %s ใหม่ใกล้เตียง(%.0f): '%s' @ %s"):format(o.ClassName, d, o.Name, o:GetFullName()))
+        end
+    end)
+end))
+
 -- v2.2: พับ = ซ่อนทั้งหมด (กล่อง+ปุ่ม COPY/RESCAN) เหลือปุ่มจิ๋วปุ่มเดียว (ผู้ใช้: รกจอ ระหว่างตามหาผีเตียง)
 --       โดนจับเมื่อไหร่ = กางเองอัตโนมัติ (จะได้ไม่พลาดช่วงสำคัญ)
 local function setFold(hide)
@@ -304,4 +331,4 @@ table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
     end
 end))
 
-add("v2.5 เริ่มดัก — ถือน้ำเชื่อมใกล้เตียง = log จุดยืนทุก 0.7s, ส่งติด = ✅🍁 พิกัดเป๊ะ | โดนจับจอกางเอง")
+add("v2.6 เริ่มดัก — 🍁จุดยืนน้ำเชื่อม + 🟥ของแดงโผล่ใกล้เตียง (ชื่อ+พิกัด) | โดนจับจอกางเอง")
