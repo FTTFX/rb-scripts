@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.40 เช็คอิน: สลับ 2 ช่องได้จริง — ciGo ก้าวแม่นระยะสั้น (การ์ด ≤6 ของ tpTo เคยทำจอดค้างกลาง 2 ช่อง))
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.41 เช็คอิน: ขยายระยะจับคิวต่อช่อง 15→30 studs — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -131,7 +131,7 @@ local function checkinPending()
         local best, bd
         for _, c in ipairs(counters) do
             local d = (p - c.pos).Magnitude
-            if d < 15 and (not best or d < bd) then best, bd = c, d end
+            if d < 30 and (not best or d < bd) then best, bd = c, d end   -- v6.41: 15→30 (ผู้ใช้ขอ)
         end
         return best
     end
@@ -1281,14 +1281,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.40", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.41", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.40 " .. lastStatus
+        title.Text = "v6.41 " .. lastStatus
     end
 end
 local function armDeathLog(char)
