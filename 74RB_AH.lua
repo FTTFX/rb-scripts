@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.42 เช็คอิน: ระยะจับคิวต่อช่องเหลือ 10 studs — ผู้ใช้ขอ (30 กว้างไป))
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.43 ชัตเตอร์: INCOMING_RANGE 60→20 — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1281,14 +1281,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.42", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.43", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.42 " .. lastStatus
+        title.Text = "v6.43 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1839,7 +1839,7 @@ do
     -- v4.80: pending นับ IsVisitor ด้วย (เดิมปิดใส่กลางคันตอนเช็คอินให้ผู้เยี่ยม) + ขยายรัศมีเป็น
     --        INCOMING_RANGE 60 — คนไข้จริง "กำลังเดินมา" ก็ถือว่ารอ → เปิดประตูรอ ไม่ปิดใส่
     --        (เคาน์เตอร์มี 2 ช่อง คนจริงใช้อีกช่องได้ ผีบอทไม่เช็คอินให้อยู่แล้ว)
-    local INCOMING_RANGE = 60
+    local INCOMING_RANGE = 20   -- v6.43: 60→20 (ผู้ใช้ขอ — นับเฉพาะคนใกล้เคาน์เตอร์จริง)
     local function counterScan()
         local cpos = counterPos(); if not cpos then return false, false, false end
         local npcs = workspace:FindFirstChild("NPCs"); if not npcs then return false, false, false end
