@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.35 ผีเตียง 2 เรื่อง: ดิ้นหลุด = fp prompt 'Struggle' บนตัวเรา (เลิก VIM แตะสั้น) + วาปยืนบน HitLocation พื้นแดงส่งน้ำเชื่อม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.36 ปุ่มห้องรายห้อง 1-8 (แทน 1-5/6/7-8) + ถอดระบบกัน Sanity ออกทั้งหมด — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -38,8 +38,8 @@ local HIDER_ON = false   -- v5.36: งาน Hider แยกปุ่มเอ�
 local CAMFIX_ON = false  -- v5.75: บินซ่อมกล้องวงจรปิดที่เสีย (prompt 'Fix Camera')
 local GHOSTKILL_ON = false   -- v5.83: ฆ่า Ghost ด้วย Scanner (ปุ่มแยก — ผู้ใช้สั่ง ตัวนี้ไม่ปกติ)
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอท — คนละโซนไม่แย่งจ่ายยาห้องเดียวกัน) ; เล่นเดี่ยวเปิดทั้งคู่
-local ROOMS_MED, ROOMS_EM = true, true   -- Medical 1-5 / Emergency 6-8
-local R78_ON = false   -- v6.12: ห้อง 7/8 แยกปุ่ม default ปิด — อัปเดตเกมต้องทำมือเท่านั้น (ทำผิด=พัง) ปิด=ห้ามแตะเด็ดขาด
+-- v6.36: เลือกห้องรายห้อง 1-8 (ผู้ใช้ขอ — แทนปุ่มรวม 1-5/6/7-8 เดิม) ; 7/8 default ปิด (เกมอัปเดตต้องทำมือ ทำผิด=พัง)
+local ROOM_ON = { Room1=true, Room2=true, Room3=true, Room4=true, Room5=true, Room6=true, Room7=false, Room8=false }
 local SHOP_ON = false    -- v5.49: auto ซื้อของอัปเกรดร้านค้า (prompt 'Buy' ใน ShopItems)
 -- v5.51: กฎซื้อ (จาก ShopSpy): ช่องร้านมีป้าย Type='[ UPGRADE ]'/'[ CURRENCY ]' + Description=ชื่อของ
 -- ซื้อเฉพาะ UPGRADE (CURRENCY = สุ่มเหรียญ เผาเงิน — ข้าม) ; SHOP_SKIP บล็อกชื่อที่ไม่เอาเพิ่มได้
@@ -191,44 +191,12 @@ local LBL = { ghost="ผี", anomaly="ผีซ่อน", sus="น่าสง
 local function hum() local c = LP.Character; return c and c:FindFirstChildOfClass("Humanoid") end
 local function hrp() local c = LP.Character; return c and c:FindFirstChild("HumanoidRootPart") end
 
--- ===== v6.18 ระบบเบื้องหลัง เปิดตลอด (พิสูจน์ด้วย BedMonSpy/SanityBlock) =====
--- (1) กัน sanity: client ยิง RE/PlayerLostSanity บอก server เองว่าเสีย sanity → กลืนทิ้ง = ไม่ลด
-_G.AH74_SANITY_BLOCK = (_G.AH74_SANITY_BLOCK == nil) and true or _G.AH74_SANITY_BLOCK
-_G.AH74_SANITY_N = _G.AH74_SANITY_N or 0   -- ตัวนับกลืน (debug: ดูว่า hook ทำงานจริง)
-if not _G.AH74_SANITY_HOOKED then
-    local ok, err = pcall(function()
-        local hooked
-        hooked = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-            local m = getnamecallmethod()
-            if (m == "FireServer" or m == "InvokeServer") and _G.AH74_SANITY_BLOCK
-               and typeof(self) == "Instance" and self.Name:find("PlayerLostSanity") then
-                _G.AH74_SANITY_N = _G.AH74_SANITY_N + 1
-                return   -- กลืน ไม่ถึง server
-            end
-            return hooked(self, ...)
-        end))
-    end)
-    _G.AH74_SANITY_HOOKED = ok   -- executor ไม่รองรับ hook = ปล่อยผ่าน (ไม่พัง)
-    _G.AH74_SANITY_ERR = ok and nil or tostring(err)   -- เก็บสาเหตุถ้า hook พัง
-    -- ชั้นที่ 2 (v6.21): hookfunction ตรงตัว remote — จับการเรียกแบบ direct ref ที่ __namecall มองไม่เห็น
-    local ok2 = pcall(function()
-        local net = game:GetService("ReplicatedStorage"):WaitForChild("Util", 10):WaitForChild("Net", 5)
-        local re = net and net:FindFirstChild("RE/PlayerLostSanity")
-        if re and hookfunction then
-            local old
-            old = hookfunction(re.FireServer, newcclosure(function(s, ...)
-                if s == re and _G.AH74_SANITY_BLOCK then
-                    _G.AH74_SANITY_N = _G.AH74_SANITY_N + 1
-                    return
-                end
-                return old(s, ...)
-            end))
-        end
-    end)
-    if ok2 then _G.AH74_SANITY_HOOKED = true end   -- ชั้นไหนติดก็นับว่าใช้ได้
-end
+-- ===== ระบบเบื้องหลัง เปิดตลอด =====
+-- (v6.36: ถอดระบบกัน sanity (hook RE/PlayerLostSanity) ออกทั้งหมด — ผู้ใช้ขอ ;
+--  _G.AH74_SANITY_BLOCK เก่าจากรุ่นก่อนอาจค้างใน session — ตั้ง false ให้ hook เก่าหยุดกลืน)
+_G.AH74_SANITY_BLOCK = false
 
--- (2) หนีผีใต้เตียง/โดนจับ: PlatformStand=true = โดนจับ
+-- หนีผีใต้เตียง/โดนจับ: PlatformStand=true = โดนจับ
 -- v6.35: BedMonSpy v2.7 พิสูจน์ — การดิ้น = ProximityPrompt 'Struggle' (Hold=0.2) โผล่บน "ตัวละครเรา"
 --        สาเหตุกด E แล้วตาย: VIM แตะสั้น ~0.1s = HoldBegan→HoldEnded ไม่ครบ 0.2 ไม่เกิด Trigger สักครั้ง
 --        → ใช้วิธีเดียวกับดับไฟ: HoldDuration=0 + fireproximityprompt รัวจนหลุด (VIM เป็น fallback)
@@ -1301,16 +1269,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.35", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.36", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
-        local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.35 " .. sb .. " " .. lastStatus
+        title.Text = "v6.36 " .. lastStatus   -- v6.36: ตัด 🧠 (ระบบกัน sanity ถอดแล้ว)
     end
 end
 local function armDeathLog(char)
@@ -1635,10 +1601,8 @@ task.spawn(function()
                 local why = {}   -- v4.97: เหตุผลที่ข้ามห้องที่มีคนไข้ — โชว์ตอน "ว่าง" ไล่บั๊กจากหน้าจอได้เลย
                 local crit = criticalRooms()   -- v5.15: ห้องวิกฤต (มีเวลานับถอยหลัง) มาก่อนทุกห้อง
                 for _, grp in ipairs({"Medical", "Emergency"}) do   -- 1-5 + 6/7/8
-                    -- v5.46: โซนที่ปิดอยู่ = ไม่รับงานเลย (แบ่งงานหลายบอท)
-                    -- v6.13: Emergency แบ่ง 2 ปุ่ม — ROOMS_EM คุมแค่ Room6, R78_ON คุม Room7/8 (ไม่ทับกัน)
-                    local f = ((grp == "Medical" and ROOMS_MED) or (grp == "Emergency" and (ROOMS_EM or R78_ON)))
-                              and rooms:FindFirstChild(grp) or nil
+                    -- v6.36: เลือกห้องรายห้อง — เช็ค blocked ต่อห้องด้านล่างแทนการปิดทั้งโซน
+                    local f = rooms:FindFirstChild(grp)
                     if f then for _, room in ipairs(f:GetChildren()) do
                         local pat = roomPatient(room)
                         local ghost = pat and pat:GetAttribute("Skinwalker")
@@ -1666,10 +1630,8 @@ task.spawn(function()
                         end)()
                         local work = loaded and hasWork(room, pat) and (not roomDone(room) or fresh)
                             or (not loaded and fresh) or farUnseen
-                        -- v6.12: ปุ่มห้อง7-8 ปิด = ห้ามแตะ Room7/8 เด็ดขาด (แซงแม้กฎ Room8 สำคัญสุด)
-                        --        อัปเดตเกมห้องนี้ต้องทำมือเท่านั้น — บอทเข้าไป=ทำผิด
-                        local blocked = (room.Name == "Room7" or room.Name == "Room8") and not R78_ON
-                            or room.Name == "Room6" and not ROOMS_EM   -- v6.13: ห้อง6 ตามปุ่มเดิม
+                        -- v6.36: ปุ่มห้องนั้นปิด = ห้ามแตะห้องนั้นเด็ดขาด (ห้องที่ไม่รู้จัก = เปิดไว้ก่อน)
+                        local blocked = ROOM_ON[room.Name] == false
                         if pat and present and not blocked and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
@@ -1823,7 +1785,7 @@ do
     -- v6.05: เล่นสีเฉพาะตอน "เรา" อยู่หน้าเครื่องเอง (<25) + โซน 6-8 เปิด
     --        (ผู้ใช้เจอ: เพื่อนกดสีห้อง 6 สีกะพริบ → บอทวาปไปตอบให้ทั้งที่ปิดห้อง 6-8)
     local function myR6()
-        if not ROOMS_EM then return false end
+        if not ROOM_ON.Room6 then return false end   -- v6.36: ตามปุ่มห้อง6
         local c = colors6()
         local p = c and partPos(c)
         local me = hrp() and hrp().Position
@@ -2649,7 +2611,7 @@ task.spawn(function()
                             end
                         end
                         -- v6.12: ห้อง7-8 ปิด = ไม่บิน/ไม่วางห้องนั้น → พาไปเคาน์เตอร์แทน (เข้าไปไม่ได้เลย)
-                        if room and not R78_ON and (room.Name == "Room7" or room.Name == "Room8") then room = nil end
+                        if room and ROOM_ON[room.Name] == false then room = nil end   -- v6.36: ห้องปิด = ไม่พาไปวาง
                         -- v4.72: ไม่รู้ห้อง (คนเยี่ยม/ไม่มี DesignatedRoom) → พาไปวางหน้าเคาน์เตอร์
                         local dest = room and roomPos(room)
                         if not dest then
@@ -2679,8 +2641,8 @@ task.spawn(function()
                                 for _, grp in ipairs({"Medical", "Emergency"}) do
                                     local g = rooms:FindFirstChild(grp)
                                     if g then for _, r2 in ipairs(g:GetChildren()) do
-                                        -- v6.12: ห้อง7-8 ปิด = ห้ามวางคนไข้ในนั้นด้วย
-                                        if R78_ON or (r2.Name ~= "Room7" and r2.Name ~= "Room8") then
+                                        -- v6.36: ห้องที่ปิด = ห้ามวางคนไข้ในนั้นด้วย
+                                        if ROOM_ON[r2.Name] ~= false then
                                             for _, p in ipairs(r2:GetDescendants()) do
                                                 if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
                                                     dropPP = p; break
@@ -2906,18 +2868,17 @@ npcfB.MouseButton1Click:Connect(function()
 end)
 
 -- v5.46: แบ่งโซนรักษา (เล่นหลายบอทกดคนละปุ่ม / เล่นเดี่ยวเปิดทั้งคู่)
-local medB = tbtn("ห้อง", "ห้อง1-5: ON", Color3.fromRGB(40,150,70))
-medB.MouseButton1Click:Connect(function()
-    ROOMS_MED = not ROOMS_MED
-    medB.Text = "ห้อง1-5: " .. (ROOMS_MED and "ON" or "OFF")
-    medB.BackgroundColor3 = ROOMS_MED and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-end)
-local emB = tbtn("ห้อง", "ห้อง6: ON", Color3.fromRGB(40,150,70))   -- v6.13: เดิม 6-8 → เหลือคุมแค่ 6 (7/8 = ปุ่มแยก)
-emB.MouseButton1Click:Connect(function()
-    ROOMS_EM = not ROOMS_EM
-    emB.Text = "ห้อง6: " .. (ROOMS_EM and "ON" or "OFF")
-    emB.BackgroundColor3 = ROOMS_EM and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-end)
+-- v6.36: ปุ่มห้องรายห้อง 1-8 (ผู้ใช้ขอ — แทนปุ่มรวม 1-5/6/7-8) ; 7/8 default ปิด
+for i = 1, 8 do
+    local name = "Room" .. i
+    local b = tbtn("ห้อง", "ห้อง" .. i .. ": " .. (ROOM_ON[name] and "ON" or "OFF"),
+        ROOM_ON[name] and Color3.fromRGB(40,150,70) or nil)
+    b.MouseButton1Click:Connect(function()
+        ROOM_ON[name] = not ROOM_ON[name]
+        b.Text = "ห้อง" .. i .. ": " .. (ROOM_ON[name] and "ON" or "OFF")
+        b.BackgroundColor3 = ROOM_ON[name] and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
+    end)
+end
 
 -- v5.49: auto ซื้อของอัปเกรดร้านค้า
 local shopB = tbtn("อื่นๆ", "ซื้อของ: OFF")
@@ -2949,22 +2910,7 @@ ghB.MouseButton1Click:Connect(function()
     ghB.BackgroundColor3 = GHOSTKILL_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(60,60,80)
 end)
 
--- v6.12: ห้อง 7/8 แยกปุ่ม default ปิด — เกมอัปเดตให้ทำมือเท่านั้น เปิดเฉพาะยืนยันว่าบอททำได้
-local r78B = tbtn("ห้อง", "ห้อง7-8: OFF")
-r78B.MouseButton1Click:Connect(function()
-    R78_ON = not R78_ON
-    r78B.Text = "ห้อง7-8: " .. (R78_ON and "ON" or "OFF")
-    r78B.BackgroundColor3 = R78_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-end)
-
--- v6.19: toggle ระบบเบื้องหลัง (default ON — ปิดได้จากแท็บอื่นๆ)
-local snB = tbtn("อื่นๆ", "Sanity: ON", Color3.fromRGB(40,150,70))
-if not _G.AH74_SANITY_HOOKED then snB.Text = "Sanity: ❌hook" end
-snB.MouseButton1Click:Connect(function()
-    _G.AH74_SANITY_BLOCK = not _G.AH74_SANITY_BLOCK
-    snB.Text = "Sanity: " .. (_G.AH74_SANITY_BLOCK and "ON" or "OFF")
-    snB.BackgroundColor3 = _G.AH74_SANITY_BLOCK and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
-end)
+-- v6.36: ถอดปุ่ม+ระบบกัน Sanity ออกทั้งหมด (ผู้ใช้ขอ)
 local beB = tbtn("อื่นๆ", "หนีเตียง: ON", Color3.fromRGB(40,150,70))
 beB.MouseButton1Click:Connect(function()
     _G.AH74_BEDESCAPE = not _G.AH74_BEDESCAPE
@@ -2975,8 +2921,8 @@ end)
 showTab("หลัก")   -- เปิดมาที่แท็บหลัก (ทุกปุ่มสร้างครบแล้ว)
 
 btn("CLOSE", 8, 198, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
-    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON, R78_ON =
-        false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
+    RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
+        false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
     SLIME_ON, HELP_ON, SYRUP_ON, CARRY_ON = false, false, false, false
     local h = hum()
     if h then
