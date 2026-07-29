@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.32 ปุ่ม "สถิติ": ป้ายเงิน/รักษา/เช็คอิน/XP สดจาก RF/RequestData ทุก 5s — ไม่ต้องออกเกมถึงเห็น)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.33 รับผี: CompletedCheckIn ต้องตรงชื่อผู้เล่นในเซิฟจริง (Name/DisplayName) ถึงยิง — ค่าขยะ/null ไม่นับ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -680,8 +680,15 @@ end
 local function ghostWaitCheckin(m)
     -- v6.31: ปืนคุมด้วยปุ่ม "ยิงผี" (GUNKILL_ON) ของมันเอง — "รับผี" แค่เพิ่มเงื่อนไขรอเช็คอิน ไม่ได้เปิด/ปิดปืน
     if not GHOSTCI_ON then return false end   -- รับผี OFF = ยิงปกติแบบเดิม ไม่รอ
+    -- v6.33 (ผู้ใช้เจอ): ค่า CompletedCheckIn อาจเป็นขยะ/ไม่ใช่ชื่อคนจริงแต่ยัง truthy → ยิงพลาด
+    --        เช็คเข้ม: ต้องตรงกับชื่อผู้เล่น "ที่อยู่ในเซิฟตอนนี้" (Name หรือ DisplayName) เท่านั้นถึงยิง
     local ci = m:GetAttribute("CompletedCheckIn")
-    return not (typeof(ci) == "string" and ci ~= "")   -- มีชื่อคนเช็คอินให้แล้ว = ยิงได้ ; นอกนั้นรอหมด
+    if typeof(ci) == "string" and ci ~= "" then
+        for _, pl in ipairs(game:GetService("Players"):GetPlayers()) do
+            if pl.Name == ci or pl.DisplayName == ci then return false end   -- เช็คอินโดยคนจริง = ยิงได้
+        end
+    end
+    return true   -- นอกนั้นรอหมด (ค่า null/ขยะ/ชื่อไม่อยู่ในเซิฟ = ยังไม่นับว่าเช็คอิน)
 end
 -- v6.28: การ์ดตำแหน่งเป้ายิง — ผี event ที่ "ยังไม่ถูกวางลงแมพ" เกมจอดไว้นอกแมพ (ฟ้า/ทะเล/ใต้พื้น)
 --        แต่ attr ครบ (SkippedCheckIn ฯลฯ) เลยผ่านข้อยกเว้นข้างบน → บอทบินออกนอกแผนที่ไปยิง (ผู้ใช้เจอ)
@@ -1283,7 +1290,7 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.32", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.33", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
@@ -1292,7 +1299,7 @@ setStatus = function(s)
     if not deadLock then
         -- 🧠N = จำนวน PlayerLostSanity ที่กลืน (N ขยับ = กัน sanity ทำงานจริง), ❌ = hook พัง
         local sb = _G.AH74_SANITY_HOOKED and ("🧠" .. _G.AH74_SANITY_N) or "🧠❌"
-        title.Text = "v6.32 " .. sb .. " " .. lastStatus
+        title.Text = "v6.33 " .. sb .. " " .. lastStatus
     end
 end
 local function armDeathLog(char)
