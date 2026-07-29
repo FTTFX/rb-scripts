@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.46 แยกปุ่ม "ดับไฟคน" (FirePP บน NPC) / "ดับไฟห้อง" (Put out fire กองพื้น) — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.47 กันเข้าห้องไฟ: Hider/สไลม์ที่อยู่ใกล้ไฟกองพื้น <15 = ข้าม ไม่เข้าใกล้ — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -665,6 +665,29 @@ local function firePending()
     end
     return false
 end
+-- v6.47: เป้าที่อยู่ใกล้ไฟกองพื้น (<15) = ห้องกำลังไหม้ ห้ามเข้าใกล้ (ผู้ใช้ขอ — Hider/สไลม์ในห้องไฟ ไม่แตะ)
+--        cache ตำแหน่งไฟ 0.5s (สแกน Rooms ทั้งก้อนแพง ห้ามสแกนทุกครั้งที่เช็ค)
+local fireposAt, fireposList = 0, {}
+local function firePositions()
+    if os.clock() - fireposAt > 0.5 then
+        fireposAt = os.clock(); fireposList = {}
+        local rooms = workspace:FindFirstChild("Rooms")
+        if rooms then for _, d in ipairs(rooms:GetDescendants()) do
+            if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire" then
+                local p = partPos(d.Parent)
+                if p then fireposList[#fireposList + 1] = p end
+            end
+        end end
+    end
+    return fireposList
+end
+local function nearFire(pos, rad)
+    if not pos then return false end
+    for _, p in ipairs(firePositions()) do
+        if (p - pos).Magnitude < (rad or 15) then return true end
+    end
+    return false
+end
 local function slimePending()
     if not SLIME_ON then return false end   -- v6.20: ปุ่มสไลม์แยกเอง
     local misc = workspace:FindFirstChild("Misc")
@@ -673,7 +696,8 @@ local function slimePending()
         if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Clean Slime"
            and not fireResting(d) then
             local pos = partPos(d.Parent)
-            if pos and (pos - me).Magnitude < 120 then return true end
+            -- v6.47: สไลม์อยู่ใกล้ไฟ = ไม่นับเป็นงาน (ห้ามเข้าห้องไฟ)
+            if pos and (pos - me).Magnitude < 120 and not nearFire(pos) then return true end
         end
     end end
     return false
@@ -770,7 +794,8 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
         -- v5.45: เฉพาะ Hider — Ghost (Anomaly+Ghost=true) ไม่เกี่ยวกับระบบนี้ (ผู้ใช้สั่ง)
         if m:IsA("Model") and m:GetAttribute("Anomaly") and not m:GetAttribute("Ghost") and not hiderSkip(m) then
             local p = partPos(m)
-            if p and (p - me).Magnitude < 200 then return true end
+            -- v6.47: Hider อยู่ใกล้ไฟ = ไม่นับเป็นงาน (ห้ามเข้าห้องไฟ)
+            if p and (p - me).Magnitude < 200 and not nearFire(p) then return true end
         end
     end
     return false
@@ -1297,14 +1322,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.46", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.47", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.46 " .. lastStatus
+        title.Text = "v6.47 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1988,7 +2013,9 @@ task.spawn(function()
                            and (not cooldown[d] or os.clock() - cooldown[d] > 5) then
                             -- v4.40: เอาเฉพาะเป้าใกล้ตัว <120 studs (กันของหลอกนอกแมพ)
                             local pos = partPos(d.Parent)
-                            if pos and mypos and (pos - mypos).Magnitude < 120 then
+                            -- v6.47: สไลม์ที่อยู่ใกล้ไฟ = ข้าม (ห้ามเข้าห้องไฟ — ไฟเป็นงานของปุ่มดับไฟห้อง)
+                            if pos and mypos and (pos - mypos).Magnitude < 120
+                               and not (act == "Clean Slime" and nearFire(pos)) then
                                 fires[#fires+1] = d
                             end
                         end
@@ -2158,7 +2185,8 @@ task.spawn(function()
                        and not hiderSkip(m2) then   -- v5.45: ไม่ยุ่งกับ Ghost
                         local p2 = partPos(m2)
                         local d2 = p2 and (p2 - me2).Magnitude
-                        if d2 and d2 < 200 and (not hd or d2 < hd) then hider, hd = m2, d2 end
+                        -- v6.47: Hider ในห้องไฟ = ไม่เข้าใกล้
+                        if d2 and d2 < 200 and not nearFire(p2) and (not hd or d2 < hd) then hider, hd = m2, d2 end
                     end
                 end
             end
@@ -2189,7 +2217,8 @@ task.spawn(function()
                            and not hiderSkip(m2) then   -- v5.45: ไม่ยุ่งกับ Ghost
                             local p2 = partPos(m2)
                             local d2 = p2 and (p2 - me3).Magnitude
-                            if d2 and d2 < 200 and (not bd or d2 < bd) then best, bd = m2, d2 end
+                            -- v6.47: Hider ในห้องไฟ = ไม่เข้าใกล้
+                            if d2 and d2 < 200 and not nearFire(p2) and (not bd or d2 < bd) then best, bd = m2, d2 end
                         end
                     end
                     return best
