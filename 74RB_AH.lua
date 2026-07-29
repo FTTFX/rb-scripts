@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.36 ปุ่มห้องรายห้อง 1-8 (แทน 1-5/6/7-8) + ถอดระบบกัน Sanity ออกทั้งหมด — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.37 ลำดับงานใหม่: ยิงผี→2, ตัดช่วยคน(Help)ทั้งระบบ, แยกไฟ(4)/สไลม์(7) — ผู้ใช้จัด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -54,7 +54,7 @@ local GHOSTCI_ON = false -- v6.23: ปุ่มแยก "รับผี" — O
 local FIRE_ON = false    -- ดับไฟที่ตัว NPC: ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
 -- v6.20: แยกฟีเจอร์ย่อยเป็นปุ่มของตัวเอง (ผู้ใช้ขอ — เดิม ดับไฟ=ไฟ+สไลม์+ช่วยคน+ผีเตียง, เคาน์เตอร์=เช็คอิน+อุ้ม)
 local SLIME_ON = false   -- ล้างสไลม์ (เดิมพ่วงดับไฟ)
-local HELP_ON  = false   -- ช่วยคนโดนผีจับ + ตัวเองโดนจับสแปม E (เดิมพ่วงดับไฟ)
+-- v6.37: HELP_ON (ช่วยคนโดนผีจับ) ถอดออก — ระบบดิ้นเอง (Struggle prompt) ทำงาน 100%
 local SYRUP_ON = false   -- ผีใต้เตียง: น้ำเชื่อมจ่อ MonsterBed (เดิมพ่วงดับไฟ)
 local CARRY_ON = false   -- อุ้มคนเป็นลมไปทิ้งขยะ/เตียง (เดิมพ่วงเคาน์เตอร์)
 local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
@@ -733,24 +733,7 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
     end
     return false
 end
--- v5.76: งานมีเวลาจำกัด (prompt 'Help' บนคนโดนผีจับ) — เร่งด่วนอันดับ 2 (ผู้ใช้จัด: เดิมอยู่ใต้ไฟ = ช่วยไม่ทัน)
--- cache 0.5s — สแกนทั้ง workspace แพง ห้ามสแกนทุกครั้งที่ busyBefore ถูกเรียก
-local grabCache, grabAt = false, 0
-local function grabPending()
-    if not HELP_ON then return false end   -- v6.20: ปุ่มช่วยคนแยกเอง
-    if os.clock() - grabAt < 0.5 then return grabCache end
-    grabAt = os.clock(); grabCache = false
-    local me = hrp() and hrp().Position
-    if me then
-        for _, p in ipairs(workspace:GetDescendants()) do
-            if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Help" then
-                local pos = partPos(p.Parent)
-                if pos and (pos - me).Magnitude < 150 then grabCache = true; break end
-            end
-        end
-    end
-    return grabCache
-end
+-- v6.37: ระบบ "ช่วยคนโดนผีจับ" (prompt 'Help') ถอดออกทั้งหมด — ผู้ใช้ยืนยันระบบดิ้นเอง (Struggle) ทำงาน 100%
 -- v5.99: "มีคนติดมืออยู่จริง" (CarriedBy=เรา + ตัวอยู่ใกล้ <10) — นับเป็นงานค้างเสมอแม้ช่วงพัก 10s
 --        (เดิมช่วงพักหลังวางพลาด สัญญาณหาย → ล้างสไลม์แทรกทั้งที่คนอยู่บนหัว ผู้ใช้เจอ)
 local function carriedNow()
@@ -767,15 +750,15 @@ local function carriedNow()
     return false
 end
 -- busyBefore(rank) = มีงานสำคัญกว่าค้างอยู่ → loop ระดับ rank ต้องหลีกทาง
--- v5.76 ลำดับใหม่ (ผู้ใช้จัดตามความเร่งด่วน — งานมีเวลาจำกัดขึ้นก่อน):
--- 1 รักษา > 2 ช่วยคนโดนจับ > 3 อุ้ม > 4 ไฟ/สไลม์ > 5 ยิงผี > 6 Hider > 7 เช็คอิน/ซ่อมกล้อง > 8 กาแฟ/ซื้อของ/ชัตเตอร์
+-- v6.37 ลำดับใหม่ (ผู้ใช้จัด): ยิงผีขึ้น 2, ตัดช่วยคน (ระบบดิ้นเองทำงาน 100%), แยกไฟ(4)/สไลม์(7)
+-- 1 รักษา > 2 ยิงผี > 3 อุ้ม > 4 ดับไฟ > 5 Hider > 6 เช็คอิน/ซ่อมกล้อง > 7 สไลม์ > 8 กาแฟ/ซื้อของ/ชัตเตอร์
 local function busyBefore(rank)
     if rank > 1 and TREAT_BUSY then return true end
-    if rank > 2 and grabPending() then return true end
+    if rank > 2 and gunPending() then return true end
     if rank > 3 and (CARRYING or carriedNow() or faintPending()) then return true end   -- v5.99: คนติดมือ=บล็อกเสมอ
-    if rank > 4 and (firePending() or slimePending()) then return true end
-    if rank > 5 and gunPending() then return true end
-    if rank > 6 and hiderPending() then return true end
+    if rank > 4 and firePending() then return true end
+    if rank > 5 and hiderPending() then return true end
+    if rank > 7 and slimePending() then return true end
     return false
 end
 
@@ -1152,7 +1135,7 @@ bind(RS.Heartbeat, function(dt)
     do
         local h = hum()
         if h then
-            local block = TP_ON and (AUTO_ON or FIRE_ON or CHECKIN_ON or SLIME_ON or HELP_ON or SYRUP_ON or CARRY_ON)
+            local block = TP_ON and (AUTO_ON or FIRE_ON or CHECKIN_ON or SLIME_ON or SYRUP_ON or CARRY_ON)
             h:SetStateEnabled(Enum.HumanoidStateType.Jumping, not block)
         end
     end
@@ -1180,7 +1163,7 @@ bind(RS.Heartbeat, function(dt)
             fireAcc = 0
             -- v4.27: เช็คอินวาปหาคนไข้ — v4.75: งานอันดับท้ายสุด ทำเฉพาะตอน "ว่างจริง"
             -- (ไม่มีคนเป็นลม/ไฟ/สไลม์ และ treat loop ไม่มีห้องให้ทำ)
-            if CHECKIN_ON and not busyBefore(7) then   -- v5.35: เช็คอินอันดับ 7 (Hider มาก่อน — ผู้ใช้สลับ)
+            if CHECKIN_ON and not busyBefore(6) then   -- v6.37: เช็คอินอันดับ 6 (Hider มาก่อน, สไลม์มาทีหลัง)
                 local cpos = checkinPending()
                 if cpos then
                     local misc = workspace:FindFirstChild("Misc")
@@ -1269,14 +1252,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.36", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.37", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.36 " .. lastStatus   -- v6.36: ตัด 🧠 (ระบบกัน sanity ถอดแล้ว)
+        title.Text = "v6.37 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1452,7 +1435,7 @@ end
 task.spawn(function()
     local shotAt = SHOT_AT   -- v5.40: แชร์กับ gunPending (ยิงแล้วไม่บล็อคงานอื่น)
     while _G.AH74_GEN == MYGEN do
-        if GUNKILL_ON and not WORKING and not busyBefore(5) then   -- v5.76: ยิงผีอันดับ 5
+        if GUNKILL_ON and not WORKING and not busyBefore(2) then   -- v6.37: ยิงผีขึ้นอันดับ 2 (ผู้ใช้จัด)
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
@@ -1503,7 +1486,7 @@ end)
 task.spawn(function()
     local shotAt = SHOT_AT
     while _G.AH74_GEN == MYGEN do
-        if GHOSTKILL_ON and not WORKING and not busyBefore(5) then
+        if GHOSTKILL_ON and not WORKING and not busyBefore(2) then   -- v6.37: ตามยิงผีขึ้นอันดับ 2
             local re = findShootRE()
             local npcs = workspace:FindFirstChild("NPCs")
             local me = hrp() and hrp().Position
@@ -1860,7 +1843,7 @@ do
     -- ลำดับ: คนไข้จริงยังไม่เช็คอิน → เปิดไว้ก่อน (เช็คอินคนดีก่อน แม้มีผีปนอยู่) ; เช็คอินครบแล้ว+ผียังอยู่ → ปิด
     task.spawn(function()
         while _G.AH74_GEN == MYGEN do
-            if SHUTTER_ON and fp and not WORKING and not busyBefore(7) then   -- v5.76: เข้าแถวอันดับ 7 (เดิมเช็คแค่อุ้ม = แทรกงานด่วน)
+            if SHUTTER_ON and fp and not WORKING and not busyBefore(8) then   -- v6.37: ชัตเตอร์อันดับ 8 (งานเบาสุด)
                 local pp = shutterPP()
                 if pp and pp.Parent then
                     local ghost, pending, leaving = counterScan()
@@ -1942,7 +1925,8 @@ task.spawn(function()
     -- v4.95: cooldown/failN ย้ายไปแชร์เป็น FIRE_COOL/FIRE_FAILN — pending จะได้ข้ามจุดที่พัก
     local cooldown, failN = FIRE_COOL, FIRE_FAILN
     while _G.AH74_GEN == MYGEN do
-        if (FIRE_ON or SLIME_ON) and fp and not WORKING and not busyBefore(4) then   -- v6.20: ไฟ/สไลม์แยกปุ่ม แต่ใช้ loop เดียวกัน
+        -- v6.37: แยกลำดับ ไฟ=4 (ด่วน) / สไลม์=7 (ผู้ใช้จัด) — loop เดียวกันแต่ gate คนละ rank
+        if ((FIRE_ON and not busyBefore(4)) or (SLIME_ON and not busyBefore(7))) and fp and not WORKING then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1961,8 +1945,8 @@ task.spawn(function()
                         end
                     end
                 end
-                if FIRE_ON then collect(rooms, "Put out fire") end
-                if SLIME_ON and #fires == 0 then
+                if FIRE_ON and not busyBefore(4) then collect(rooms, "Put out fire") end
+                if SLIME_ON and #fires == 0 and not busyBefore(7) then   -- v6.37: สไลม์ rank 7 (Hider/เช็คอินมาก่อน)
                     local misc = workspace:FindFirstChild("Misc")
                     if misc then collect(misc, "Clean Slime") end
                 end
@@ -1996,7 +1980,9 @@ task.spawn(function()
                 for _, d in ipairs(fires) do
                     -- v4.91: เช็คคนเป็นลม "ทุกกอง" ก่อนดับ — เดิมเช็คแค่ต้นรอบ พอไฟหลายกอง
                     --        มีคนเป็นลมกลางคันก็ยังดับต่อจนครบ (แย่งกับ loop อุ้ม = อุ้มคนไปดับไฟ)
-                    if not ((FIRE_ON or SLIME_ON) and _G.AH74_GEN == MYGEN) or busyBefore(4) then break end   -- v5.76: งานด่วนกว่าโผล่ = ทิ้งไฟทันที
+                    -- v6.37: เช็คตาม rank ของเป้า — ไฟ=4 สไลม์=7 (งานด่วนกว่าโผล่ = ทิ้งทันที)
+                    local trank = d.ActionText == "Clean Slime" and 7 or 4
+                    if not ((FIRE_ON or SLIME_ON) and _G.AH74_GEN == MYGEN) or busyBefore(trank) then break end
                     if d.Parent and d.Enabled then
                         setStatus(d.ActionText == "Clean Slime" and "ล้างสไลม์" or "ดับไฟพื้น")
                         local pos = partPos(d.Parent)
@@ -2055,62 +2041,10 @@ task.spawn(function()
 end)
 
 -- ===== v5.12 ผีคลาน =====
--- v5.24: ตัดน้ำเชื่อมทิ้งทั้งหมด (ผู้ใช้สั่ง) — รออย่างเดียว มีคนโดนดึงค่อยไปสแปม Help
-local function spamE()   -- v5.26: สแปมปุ่ม E (ดิ้นหลุดตอนโดนจับ)
-    pcall(function()
-        VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game); task.wait(0.03)
-        VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-    end)
-end
--- v5.26: เช็คว่า "เราเอง" โดนผีจับ — ยังไม่มี dump ยืนยันกลไก เดาครอบคลุม 2 ทาง:
---        attr บนตัวเรา (Grabbed/CarriedBy) หรือจอขึ้นข้อความ struggle/mash/escape
-local function selfGrabbed()
-    local c = LP.Character
-    if c and (c:GetAttribute("Grabbed") or c:GetAttribute("CarriedBy")) then return true end
-    local pg = LP:FindFirstChild("PlayerGui")
-    if pg then
-        for _, g in ipairs(pg:GetDescendants()) do
-            if g:IsA("TextLabel") and g.Visible and g.Text ~= "" then
-                local t = g.Text:lower()
-                if t:find("struggle") or t:find("mash") or t:find("break free") then return true end
-            end
-        end
-    end
-    return false
-end
+-- v6.37: ถอด spamE/selfGrabbed/ช่วยคน (Help) ทั้งหมด — ระบบดิ้นเอง (Struggle prompt) ทำงาน 100% แล้ว
 task.spawn(function()
-    local lastHelp = 0
     while _G.AH74_GEN == MYGEN do
-        -- v5.26: เราโดนจับเอง = ด่วนสุด สแปม E จนหลุด (เช็คก่อนทุกงาน ไม่สน WORKING)
-        if HELP_ON and selfGrabbed() then
-            setStatus("โดนผีจับ! สแปม E")
-            local t0 = os.clock()
-            repeat spamE(); task.wait(0.1)
-            until not selfGrabbed() or os.clock() - t0 > 10 or _G.AH74_GEN ~= MYGEN
-        end
-        if HELP_ON and fp and not WORKING and not busyBefore(2)
-           and os.clock() - lastHelp > 1 then   -- v5.76: ช่วยคนโดนจับอันดับ 2 (มีเวลาจำกัด — เดิม 5 ใต้ไฟ ช่วยไม่ทัน)
-            local me = hrp() and hrp().Position
-            -- วิธี 1: มีคนโดนจับ — prompt 'Help' บนตัวเหยื่อ (NPC/ผู้เล่น) → สแปมช่วย
-            local hp
-            for _, p in ipairs(workspace:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Help" then
-                    local pos = partPos(p.Parent)
-                    if pos and me and (pos - me).Magnitude < 150 then hp = p; break end
-                end
-            end
-            if hp then
-                lastHelp = os.clock()
-                setStatus("ช่วยคนโดนผีจับ! (สแปม Help)")
-                tpTo(partPos(hp.Parent)); task.wait(0.1)
-                for _ = 1, 8 do   -- ผู้ใช้บอก ~4 รอบ — เผื่อ 8 (prompt ดับเองเมื่อหลุด)
-                    if not (hp.Parent and hp.Enabled) then break end
-                    pressPrompt(hp)
-                    task.wait(0.15)   -- v5.29: เดิม 0.25 — สแปม Help ถี่ขึ้น
-                end
-            end
-        end
-        -- v5.48: ผีใต้เตียง (MonsterBed) = เอาน้ำเชื่อมไปจ่อ "รอบเดียว" (ผู้ใช้สั่ง — Help สแปมไม่ทันแล้ว)
+        -- v5.48: ผีใต้เตียง (MonsterBed) = เอาน้ำเชื่อมไปจ่อ "รอบเดียว" (ผู้ใช้สั่ง)
         if SYRUP_ON and fp and not WORKING and not CARRYING and not busyBefore(2) then   -- v6.20: ปุ่มผีเตียงแยกเอง
             local bed
             local rooms = workspace:FindFirstChild("Rooms")
@@ -2165,7 +2099,7 @@ task.spawn(function()
         end
         -- v5.27: เกาะหัว Hider ย้ายมาหมวดเช็คอิน (ผู้ใช้สั่ง — คนเช็คอินวาปไปทำได้) + ระยะทั้งแมพ 200
         -- v5.35: Hider อันดับ 6 มาก่อนเช็คอิน (ผู้ใช้สลับ) — ไฟ/อุ้ม/รักษายังมาก่อน Hider
-        if HIDER_ON and fp and not WORKING and not busyBefore(6) then
+        if HIDER_ON and fp and not WORKING and not busyBefore(5) then   -- v6.37: Hider อันดับ 5
             local me2 = hrp() and hrp().Position
             local hider, hd
             local npcs = workspace:FindFirstChild("NPCs")
@@ -2247,7 +2181,7 @@ task.spawn(function()
                     end
                 end
                 while HIDER_ON and _G.AH74_GEN == MYGEN do
-                    if busyBefore(6) then break end   -- v5.76: งานด่วนกว่าโผล่ = วาง Hider ทันที (WORKING ปลดท้าย loop)
+                    if busyBefore(5) then break end   -- v6.37: งานด่วนกว่า (ไฟ/อุ้ม/ยิงผี/รักษา) โผล่ = วาง Hider ทันที
                     if hider and hider.Parent and hider:GetAttribute("Anomaly") then
                         local ext = extTool()
                         if not ext then
@@ -2694,7 +2628,7 @@ end)
 -- กล้องอยู่เพดาน (~สูง 12) → วาปลอยไปกดกลางอากาศ กดเสร็จวาปกลับจุดเดิม
 task.spawn(function()
     while _G.AH74_GEN == MYGEN do
-        if CAMFIX_ON and fp and not WORKING and not busyBefore(7) then
+        if CAMFIX_ON and fp and not WORKING and not busyBefore(6) then   -- v6.37: ซ่อมกล้องอันดับ 6 (คู่เช็คอิน)
             local misc = workspace:FindFirstChild("Misc")
             -- v5.79: กล้อง UV (quest Liz "take a photo of <ชื่อ>") — เป้าหมายเดินมายืนที่
             -- MovePoints.LizCameraPoint หน้ากล้องเอง → มีใครยืนถึง + กล้องมี Charge = วาปไปกดถ่ายให้
@@ -2741,7 +2675,7 @@ task.spawn(function()
             if #pps > 0 then
                 WORKING = true
                 for _, pp2 in ipairs(pps) do
-                    if _G.AH74_GEN ~= MYGEN or not CAMFIX_ON or busyBefore(7) then break end   -- v5.76: งานด่วนกว่าโผล่ = พักซ่อมกล้อง
+                    if _G.AH74_GEN ~= MYGEN or not CAMFIX_ON or busyBefore(6) then break end   -- v6.37: งานด่วนกว่าโผล่ = พักซ่อมกล้อง
                     local pos = partPos(pp2.Parent)
                     if pos and hrp() and pp2.Enabled then
                         setStatus("บินซ่อมกล้อง")
@@ -2809,7 +2743,6 @@ local function mkToggle(tab, label, get, set, col)
     return b
 end
 mkToggle("ฉุกเฉิน", "สไลม์", function() return SLIME_ON end, function(v) SLIME_ON = v end, Color3.fromRGB(60,110,60))
-mkToggle("ฉุกเฉิน", "ช่วยคน", function() return HELP_ON end, function(v) HELP_ON = v end, Color3.fromRGB(110,80,30))
 mkToggle("ฉุกเฉิน", "ผีเตียง", function() return SYRUP_ON end, function(v) SYRUP_ON = v end, Color3.fromRGB(90,50,120))
 mkToggle("หลัก", "อุ้มคน", function() return CARRY_ON end, function(v) CARRY_ON = v end)
 -- v6.23: ปุ่มแยก "รับผี" (ผู้ใช้ขอ 2 ปุ่ม) — ON: เช็คอินให้ผี+ไม่ปิดชัตเตอร์ใส่ผี | OFF (ปกติ): กันผีทุกจุดเหมือนเดิม
@@ -2923,7 +2856,7 @@ showTab("หลัก")   -- เปิดมาที่แท็บหลัก
 btn("CLOSE", 8, 198, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
         false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
-    SLIME_ON, HELP_ON, SYRUP_ON, CARRY_ON = false, false, false, false
+    SLIME_ON, SYRUP_ON, CARRY_ON = false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
