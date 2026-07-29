@@ -718,7 +718,7 @@ local function gunPending()
     return false
 end
 -- v5.34: ตารางลำดับงาน "ที่เดียว" (ผู้ใช้สั่ง — เดิม gate เขียนมือกระจาย 6 loop ลำดับหลุดกันเอง)
--- ลำดับ: 1 อุ้ม > 2 ไฟ/สไลม์ > 3 ยิงผี > 4 ช่วยคนโดนจับ > 5 รักษา > 6 Hider > 7 เช็คอิน (v5.35 ผู้ใช้สลับ)
+-- ลำดับ (v6.37): 1 รักษา > 2 ยิงผี > 3 อุ้ม > 4 ดับไฟ > 5 Hider > 6 เช็คอิน/ซ่อมกล้อง > 7 สไลม์ > 8 กาแฟ/ซื้อของ/ชัตเตอร์
 local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระยะ 200 ไหม
     if not HIDER_ON then return false end   -- v5.36: ปุ่มแยกเอง
     local npcs = workspace:FindFirstChild("NPCs")
