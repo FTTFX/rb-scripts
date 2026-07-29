@@ -1,5 +1,6 @@
 -- 74RB_BedMonSpy.lua v2.1 — สปายผีใต้เตียง (MonsterBed): โดนจับแล้ว "การกด" ทำงานผ่านอะไรกันแน่?
 -- v2.1: ปุ่ม "พับ" (ย่อ/กางกล่อง log) + "RESCAN" (ล้างจอ + dump สถานะปัจจุบันใหม่) — ผู้ใช้ขอ
+-- v2.2: พับ = ซ่อนหมดเหลือปุ่มจิ๋ว "สปาย" + โดนจับแล้วกางเอง (ผู้ใช้: รกจอตอนตามหาผีเตียง)
 -- v1.0 พิสูจน์แล้ว: สัญญาณจับ = Humanoid.PlatformStand=true — แต่ไม่ได้ดัก prompt/remote ต่อการกด
 -- v2.0 อุดช่อง: + ProximityPrompt โผล่ใหม่ทุกที่ (บนตัวเรา/เตียง/workspace)
 --              + ProximityPromptService.PromptShown/Triggered (จับ prompt ดิ้นที่อาจซ่อนอยู่)
@@ -171,11 +172,28 @@ table.insert(CONNS, workspace.DescendantAdded:Connect(function(o)
     if o.Name == "MonsterBed" then task.defer(watchBed, o) end
 end))
 
--- v2.1: พับ/กาง + RESCAN
+-- v2.2: พับ = ซ่อนทั้งหมด (กล่อง+ปุ่ม COPY/RESCAN) เหลือปุ่มจิ๋วปุ่มเดียว (ผู้ใช้: รกจอ ระหว่างตามหาผีเตียง)
+--       โดนจับเมื่อไหร่ = กางเองอัตโนมัติ (จะได้ไม่พลาดช่วงสำคัญ)
+local function setFold(hide)
+    box.Visible = not hide
+    copyB.Visible = not hide
+    rescanB.Visible = not hide
+    foldB.Size = hide and UDim2.new(0, 60, 0, 24) or UDim2.new(0, 60, 0, 30)
+    foldB.BackgroundTransparency = hide and 0.4 or 0
+    foldB.Text = hide and "สปาย" or "พับ"
+end
 table.insert(CONNS, foldB.MouseButton1Click:Connect(function()
-    box.Visible = not box.Visible
-    foldB.Text = box.Visible and "พับ" or "กาง"
+    setFold(box.Visible)
 end))
+-- โดนจับ → กางอัตโนมัติ (จับจาก GRABBED ใน watchChar ไม่ได้ตรงๆ — poll เบาๆ แทน)
+task.spawn(function()
+    local wasGrabbed = false
+    while gui.Parent do
+        if GRABBED and not wasGrabbed and not box.Visible then setFold(false) end
+        wasGrabbed = GRABBED
+        task.wait(0.2)
+    end
+end)
 table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
     LINES = {}   -- ล้างจอ (OUT เก็บประวัติเต็มไว้ให้ COPY เหมือนเดิม)
     add("===== RESCAN =====")
@@ -204,4 +222,4 @@ table.insert(CONNS, rescanB.MouseButton1Click:Connect(function()
     end
 end))
 
-add("v2.1 เริ่มดัก — ปิดหนีอัตโนมัติใน main → โดนจับ → กด E มือ → COPY (พับ=ย่อจอ, RESCAN=ดูสถานะตอนนี้)")
+add("v2.2 เริ่มดัก — กด 'พับ' ซ่อนไปเลยระหว่างหาผีเตียง (โดนจับแล้วจอกางเอง) → หลุดแล้ว COPY")
