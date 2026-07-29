@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.45 บัคปืนเงียบ: Hider ถือ WORKING ค้างทั้งช่วงบิน/ฉีด — ตอนนี้มีผีให้ยิง Hider พักปล่อยปืนก่อนทุกจุด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.46 แยกปุ่ม "ดับไฟคน" (FirePP บน NPC) / "ดับไฟห้อง" (Put out fire กองพื้น) — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -51,7 +51,8 @@ local R6_ON = false      -- auto ปริศนาสี Room6 (Simon copy-sequ
 local CHECKIN_ON = false -- auto เช็คอินหน้าเคาน์เตอร์ (แยกจากรักษา)
 local SHUTTER_ON = false -- auto ปิดชัตเตอร์ใส่ผี (โหมดปกติ) / เปิดรออย่างเดียว (โหมดรับผี — ดู GHOSTCI_ON ด้านล่าง)
 local GHOSTCI_ON = false -- v6.23: ปุ่มแยก "รับผี" — ON: เช็คอินให้ผีด้วย + ชัตเตอร์ไม่ปิดใส่ผี | OFF (ปกติ, ค่าเริ่มต้น): กันผีทุกจุดเหมือนเดิม
-local FIRE_ON = false    -- ดับไฟที่ตัว NPC: ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
+local FIRE_ON = false    -- ดับไฟ "คน" (NPC ติดไฟ): ยิง FirePP (ActionText 'Fire'→'Treat Burns') — ไม่ใช้ถัง
+local FIREFLOOR_ON = false   -- v6.46: ดับไฟ "ห้อง/กองพื้น" (PP 'Put out fire') — แยกปุ่มจากดับไฟคน (ผู้ใช้ขอ)
 -- v6.20: แยกฟีเจอร์ย่อยเป็นปุ่มของตัวเอง (ผู้ใช้ขอ — เดิม ดับไฟ=ไฟ+สไลม์+ช่วยคน+ผีเตียง, เคาน์เตอร์=เช็คอิน+อุ้ม)
 local SLIME_ON = false   -- ล้างสไลม์ (เดิมพ่วงดับไฟ)
 -- v6.37: HELP_ON (ช่วยคนโดนผีจับ) ถอดออก — ระบบดิ้นเอง (Struggle prompt) ทำงาน 100%
@@ -643,21 +644,25 @@ local function burnResting(m)
     return f and f.n >= 3 and os.clock() - f.t <= 15
 end
 local function firePending()
-    if not FIRE_ON then return false end   -- v5.78: ปุ่มปิด = ไม่นับงานค้าง
-    local npcs = workspace:FindFirstChild("NPCs")
-    if npcs then for _, m in ipairs(npcs:GetChildren()) do
-        local pp = m:FindFirstChild("FirePP")
-        if pp and pp:IsA("ProximityPrompt") and pp.Enabled and not burnResting(m) then return true end
-    end end
-    local rooms = workspace:FindFirstChild("Rooms")
-    local me = hrp() and hrp().Position
-    if rooms and me then for _, d in ipairs(rooms:GetDescendants()) do
-        if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
-           and not fireResting(d) then
-            local pos = partPos(d.Parent)
-            if pos and (pos - me).Magnitude < 120 then return true end
-        end
-    end end
+    -- v6.46: แยกปุ่ม — FIRE_ON คุมไฟบนตัวคน, FIREFLOOR_ON คุมไฟกองพื้น (นับงานค้างตามปุ่มที่เปิด)
+    if FIRE_ON then
+        local npcs = workspace:FindFirstChild("NPCs")
+        if npcs then for _, m in ipairs(npcs:GetChildren()) do
+            local pp = m:FindFirstChild("FirePP")
+            if pp and pp:IsA("ProximityPrompt") and pp.Enabled and not burnResting(m) then return true end
+        end end
+    end
+    if FIREFLOOR_ON then
+        local rooms = workspace:FindFirstChild("Rooms")
+        local me = hrp() and hrp().Position
+        if rooms and me then for _, d in ipairs(rooms:GetDescendants()) do
+            if d:IsA("ProximityPrompt") and d.Enabled and d.ActionText == "Put out fire"
+               and not fireResting(d) then
+                local pos = partPos(d.Parent)
+                if pos and (pos - me).Magnitude < 120 then return true end
+            end
+        end end
+    end
     return false
 end
 local function slimePending()
@@ -1172,7 +1177,7 @@ bind(RS.Heartbeat, function(dt)
     do
         local h = hum()
         if h then
-            local block = TP_ON and (AUTO_ON or FIRE_ON or CHECKIN_ON or SLIME_ON or SYRUP_ON or CARRY_ON)
+            local block = TP_ON and (AUTO_ON or FIRE_ON or FIREFLOOR_ON or CHECKIN_ON or SLIME_ON or SYRUP_ON or CARRY_ON)
             h:SetStateEnabled(Enum.HumanoidStateType.Jumping, not block)
         end
     end
@@ -1292,14 +1297,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.45", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.46", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.45 " .. lastStatus
+        title.Text = "v6.46 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1969,7 +1974,8 @@ task.spawn(function()
     local cooldown, failN = FIRE_COOL, FIRE_FAILN
     while _G.AH74_GEN == MYGEN do
         -- v6.37: แยกลำดับ ไฟ=4 (ด่วน) / สไลม์=7 (ผู้ใช้จัด) — loop เดียวกันแต่ gate คนละ rank
-        if ((FIRE_ON and not busyBefore(4)) or (SLIME_ON and not busyBefore(7))) and fp and not WORKING then
+        -- v6.46: ไฟกองพื้นใช้ปุ่ม FIREFLOOR_ON (แยกจากดับไฟคน)
+        if ((FIREFLOOR_ON and not busyBefore(4)) or (SLIME_ON and not busyBefore(7))) and fp and not WORKING then
             local rooms = workspace:FindFirstChild("Rooms")
             if rooms then
                 -- v4.34: รวมกองไฟทั้งหมด → เรียง "ใกล้เราสุดก่อน" = ดับจากขอบนอกเข้าใน ไม่เดินทะลุไฟ
@@ -1988,7 +1994,7 @@ task.spawn(function()
                         end
                     end
                 end
-                if FIRE_ON and not busyBefore(4) then collect(rooms, "Put out fire") end
+                if FIREFLOOR_ON and not busyBefore(4) then collect(rooms, "Put out fire") end
                 if SLIME_ON and #fires == 0 and not busyBefore(7) then   -- v6.37: สไลม์ rank 7 (Hider/เช็คอินมาก่อน)
                     local misc = workspace:FindFirstChild("Misc")
                     if misc then collect(misc, "Clean Slime") end
@@ -2025,7 +2031,7 @@ task.spawn(function()
                     --        มีคนเป็นลมกลางคันก็ยังดับต่อจนครบ (แย่งกับ loop อุ้ม = อุ้มคนไปดับไฟ)
                     -- v6.37: เช็คตาม rank ของเป้า — ไฟ=4 สไลม์=7 (งานด่วนกว่าโผล่ = ทิ้งทันที)
                     local trank = d.ActionText == "Clean Slime" and 7 or 4
-                    if not ((FIRE_ON or SLIME_ON) and _G.AH74_GEN == MYGEN) or busyBefore(trank) then break end
+                    if not ((FIREFLOOR_ON or SLIME_ON) and _G.AH74_GEN == MYGEN) or busyBefore(trank) then break end
                     if d.Parent and d.Enabled then
                         setStatus(d.ActionText == "Clean Slime" and "ล้างสไลม์" or "ดับไฟพื้น")
                         local pos = partPos(d.Parent)
@@ -2778,11 +2784,18 @@ ciB.MouseButton1Click:Connect(function()
     ciB.BackgroundColor3 = CHECKIN_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(45,45,58)
 end)
 
-local fireB = tbtn("ฉุกเฉิน", "ดับไฟ: OFF", Color3.fromRGB(120,60,30))
+-- v6.46: แยกปุ่ม ดับไฟคน (NPC ติดไฟ) / ดับไฟห้อง (กองพื้น) — ผู้ใช้ขอ
+local fireB = tbtn("ฉุกเฉิน", "ดับไฟคน: OFF", Color3.fromRGB(120,60,30))
 fireB.MouseButton1Click:Connect(function()
     FIRE_ON = not FIRE_ON
-    fireB.Text = "ดับไฟ: " .. (FIRE_ON and "ON" or "OFF")
+    fireB.Text = "ดับไฟคน: " .. (FIRE_ON and "ON" or "OFF")
     fireB.BackgroundColor3 = FIRE_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
+end)
+local firefB = tbtn("ฉุกเฉิน", "ดับไฟห้อง: OFF", Color3.fromRGB(120,60,30))
+firefB.MouseButton1Click:Connect(function()
+    FIREFLOOR_ON = not FIREFLOOR_ON
+    firefB.Text = "ดับไฟห้อง: " .. (FIREFLOOR_ON and "ON" or "OFF")
+    firefB.BackgroundColor3 = FIREFLOOR_ON and Color3.fromRGB(40,150,70) or Color3.fromRGB(120,60,30)
 end)
 
 -- v6.20: ฟีเจอร์ย่อยที่เคยพ่วงปุ่มอื่น แยกเป็นปุ่มของตัวเอง (ผู้ใช้ขอ)
@@ -2909,7 +2922,7 @@ showTab("หลัก")   -- เปิดมาที่แท็บหลัก
 btn("CLOSE", 8, 198, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
         false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
-    SLIME_ON, SYRUP_ON, CARRY_ON = false, false, false
+    SLIME_ON, SYRUP_ON, CARRY_ON, FIREFLOOR_ON = false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
