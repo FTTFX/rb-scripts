@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.55 บิน: ล็อคความสูงจากพื้นหลัก Y=3.4 ตายตัว (เลิก raycast — เคยจับหลังคาแล้วพาขึ้นค้าง) — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.56 แก้บินกระตุกหน้าเคาน์เตอร์: ถึงเป้าแล้วไม่แตะ FLY_POS/BOTDRIVE + ตัดร่วงระหว่างบอทคุม)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -351,6 +351,8 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         -- v6.55: บินที่ระดับ พื้นหลัก+FLY_H ตายตัว (ไม่อิงความสูงเป้า — เป้าบนหลังคา/ใต้พื้นก็ไม่หลุดระดับ)
         local dest = Vector3.new(pos.X, FLY_BASE + FLY_H, pos.Z)
         local r2 = hrp()
+        -- v6.56: ถึงอยู่แล้ว = ไม่แตะอะไรเลย (เดิมยัง nil FLY_POS + ตั้ง BOTDRIVE → ร่วง-เด้งกระตุก)
+        if r2 and (dest - r2.Position).Magnitude < 2 then return end
         local t0 = os.clock()
         while r2 and os.clock() - t0 < 10 and _G.AH74_GEN == MYGEN do
             BOTDRIVE = os.clock() + 0.15
@@ -360,7 +362,8 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
             r2.AssemblyLinearVelocity = Vector3.zero
             task.wait(); r2 = hrp()
         end
-        FLY_POS = nil   -- ให้โหมดบินล็อคใหม่ที่จุดที่มาถึง
+        BOTDRIVE = 0        -- v6.56: ถึงแล้วคืนมือให้ตัวตรึงทันที (เดิมค้าง 0.15s = ช่วงร่วงฟรี)
+        FLY_POS = dest      -- v6.56: ล็อคต่อที่จุดถึงเลย ไม่ต้องรอ resync
         return
     end
     if TP_ON then
@@ -1257,6 +1260,12 @@ bind(RS.Heartbeat, function(dt)
     --        ถ้าระบบบอท (วาป/สไลด์/Hider) ขยับตัวเราไปไกล >2 = ยอมรับตำแหน่งใหม่เป็นจุดล็อค (ไม่สู้กัน)
     if FLY_ON and os.clock() < BOTDRIVE then
         FLY_POS = nil   -- v6.52: บอทกำลังพาตัวไป (สไลด์/เช็คอิน) — ปล่อยให้บอทคุม แล้วค่อยล็อคใหม่ที่จุดถึง
+        -- v6.56: ระหว่างบอทคุม ตัดความเร็วขาลงด้วย (โหมดบินทุกการขยับเป็น CFrame อยู่แล้ว) — กันร่วง-เด้งกระตุก
+        local r = hrp()
+        if r then
+            local v = r.AssemblyLinearVelocity
+            if v.Y < 0 then r.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z) end
+        end
     elseif FLY_ON then
         local r = hrp()
         local h = hum()
@@ -1383,14 +1392,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.55", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.56", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.55 " .. lastStatus
+        title.Text = "v6.56 " .. lastStatus
     end
 end
 local function armDeathLog(char)
