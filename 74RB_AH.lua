@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.51 บิน: ล็อคความสูง "จากพื้นใต้ตัว" ปรับได้ (แถวปุ่ม สูง −/+ 2-50) — raycast หาพื้นทุกเฟรม เดินข้ามต่างระดับได้)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.52 บัคบินบล็อกบอท: บอทขยับ ~1 stud/เฟรม < เกณฑ์ resync — เพิ่ม BOTDRIVE ให้บินหลบตอนบอทพาตัวไป)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -61,6 +61,8 @@ local CARRY_ON = false   -- อุ้มคนเป็นลมไปทิ้�
 local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
 local FLY_ON, FLY_POS = false, nil   -- v6.50: ปุ่ม "บิน" ล็อคความสูงแบบ DW02 (WASD แนวราบ ไม่ตก)
 local FLY_H = 5   -- v6.51: ความสูงบินจาก "พื้นใต้ตัว" (raycast ลงหาพื้นทุกเฟรม) — ปรับได้จาก GUI
+local BOTDRIVE = 0   -- v6.52: ระบบบอทกำลังพาตัวไป (tpTo/ciGo ต่ออายุทุกเฟรม) — โหมดบินห้ามตรึงสู้
+                     -- (เดิมบอทขยับ ~1 stud/เฟรม < เกณฑ์ resync 2 → บินดึงกลับทุกเฟรม บอทเดินไม่ได้ ผู้ใช้เจอ)
 local SPEED = 50
 local cam = workspace.CurrentCamera
 local setStatus = function() end   -- v4.32: โชว์ว่ากำลังทำอะไรบนหัว GUI (ตัวจริงผูกหลังสร้าง GUI)
@@ -376,6 +378,7 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         local yLock = r.Position.Y
         local t1 = os.clock()
         repeat
+            BOTDRIVE = os.clock() + 0.15   -- v6.52: บอกโหมดบินว่าบอทกำลังพาไป — ห้ามตรึงสู้
             r = hrp(); if not r then break end
             local dir = pos - r.Position
             dir = Vector3.new(dir.X, 0, dir.Z)   -- ไถลแนวราบเท่านั้น
@@ -428,6 +431,7 @@ local function ciGo(pos)
     if flat.Magnitude > 14 then return tpTo(pos, 80) end   -- ไกล = ระบบเดิม (มีการ์ดครบ)
     local t0 = os.clock()
     while os.clock() - t0 < 1.2 and _G.AH74_GEN == MYGEN do
+        BOTDRIVE = os.clock() + 0.15   -- v6.52: บอกโหมดบินว่าบอทกำลังพาไป — ห้ามตรึงสู้
         r = hrp(); if not r then break end
         local dir = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
         if dir.Magnitude < 0.8 then break end
@@ -1228,7 +1232,9 @@ bind(RS.Heartbeat, function(dt)
     -- v6.50: ปุ่ม "บิน" (ล็อคบินแบบ DW02 Twisted Troller): noclip + จำ CFrame ล็อค แล้วเลื่อน
     --        เฉพาะแนวราบตาม WASD (Humanoid.MoveDirection) — ความสูงคงที่ ไม่มีทางตก
     --        ถ้าระบบบอท (วาป/สไลด์/Hider) ขยับตัวเราไปไกล >2 = ยอมรับตำแหน่งใหม่เป็นจุดล็อค (ไม่สู้กัน)
-    if FLY_ON then
+    if FLY_ON and os.clock() < BOTDRIVE then
+        FLY_POS = nil   -- v6.52: บอทกำลังพาตัวไป (สไลด์/เช็คอิน) — ปล่อยให้บอทคุม แล้วค่อยล็อคใหม่ที่จุดถึง
+    elseif FLY_ON then
         local r = hrp()
         local h = hum()
         if r then
@@ -1359,14 +1365,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.51", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.52", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.51 " .. lastStatus
+        title.Text = "v6.52 " .. lastStatus
     end
 end
 local function armDeathLog(char)
