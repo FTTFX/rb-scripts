@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.52 บัคบินบล็อกบอท: บอทขยับ ~1 stud/เฟรม < เกณฑ์ resync — เพิ่ม BOTDRIVE ให้บินหลบตอนบอทพาตัวไป)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.53 เปิดบิน = เดินทางแบบบินทั้งหมดทุกงาน (ก้าว CFrame แบบ Hider สูง FLY_H เหนือเป้า) — ผี/ไฟแตะไม่ถึง)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -340,7 +340,24 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         return
     end
     if not noGap then pos = ghostSafe(pos) end   -- v5.32: จ่ายยาผิดต้องถึงเตียงผีจริง (12m กดไม่ถึง)
-    -- (v6.50: ถอดบินอัตโนมัติตอนรักษาของ v6.48 ออก — ผู้ใช้เปลี่ยนเป็นปุ่ม "บิน" แบบ DW02 แทน)
+    -- v6.53: เปิดปุ่ม "บิน" = เดินทางแบบบินทั้งหมดทุกงาน (ผู้ใช้ขอ — ลอยตลอด ผี/ไฟแตะไม่ถึง)
+    --        ก้าว CFrame กลางอากาศแบบ Hider (3 studs/เฟรม ~180/s) ไปจุดสูง FLY_H เหนือเป้า
+    --        ก้าวละ 3 > เกณฑ์ resync 2 ของโหมดบิน = ไม่โดนดึงกลับ ; ถึงแล้วโหมดบินล็อคจุดใหม่เอง
+    if FLY_ON then
+        local dest = pos + Vector3.new(0, FLY_H, 0)
+        local r2 = hrp()
+        local t0 = os.clock()
+        while r2 and os.clock() - t0 < 10 and _G.AH74_GEN == MYGEN do
+            BOTDRIVE = os.clock() + 0.15
+            local d = dest - r2.Position
+            if d.Magnitude < 2 then break end
+            r2.CFrame = r2.CFrame + d.Unit * math.min(3, d.Magnitude)
+            r2.AssemblyLinearVelocity = Vector3.zero
+            task.wait(); r2 = hrp()
+        end
+        FLY_POS = nil   -- ให้โหมดบินล็อคใหม่ที่จุดที่มาถึง
+        return
+    end
     if TP_ON then
         -- v4.85: เลิกบิน CFrame ทั้งหมด — เกมยังจับได้ (ตายบ้าคลั่งซ้ำ Shift19)
         -- v4.87: เดินเร็วตาม "เส้นทางจริง" (pathfinding) ไม่ใช้ noclip —
@@ -427,6 +444,7 @@ end
 local function ciGo(pos)
     local r = hrp()
     if not (r and pos) then return end
+    if FLY_ON then return tpTo(pos) end   -- v6.53: โหมดบิน = บินเข้าจุดเช็คอิน (แม่นถึง 2 studs อยู่แล้ว)
     local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
     if flat.Magnitude > 14 then return tpTo(pos, 80) end   -- ไกล = ระบบเดิม (มีการ์ดครบ)
     local t0 = os.clock()
@@ -1365,14 +1383,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.52", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.53", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.52 " .. lastStatus
+        title.Text = "v6.53 " .. lastStatus
     end
 end
 local function armDeathLog(char)
