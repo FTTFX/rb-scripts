@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.53 เปิดบิน = เดินทางแบบบินทั้งหมดทุกงาน (ก้าว CFrame แบบ Hider สูง FLY_H เหนือเป้า) — ผี/ไฟแตะไม่ถึง)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.54 บัคบินค้างหลังคา: การ์ด "ห้ามวาปตอนตัวลอย" (v4.45) ทำ tpTo ยกเลิกทุกครั้งตอนบิน — ยกเว้นให้ FLY_ON แล้ว)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -322,8 +322,10 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         if r0 and (pos - r0.Position).Magnitude <= 6 then return end
     end
     -- v4.45: ห้ามวาปตอนตัวลอย (กระโดด/ตกอยู่) — วาปกลางอากาศ = ตาย ; รอลงพื้นก่อน สูงสุด 1s
+    -- v6.54: ยกเว้นโหมดบิน (FLY_ON) — ตัวลอยตลอดโดยตั้งใจ การ์ดนี้เคยทำ tpTo ยกเลิกทุกครั้ง
+    --        = บอทไม่เดินทางเลย ค้างบนหลังคา (ผู้ใช้เจอ)
     local h = hum()
-    if h and h.FloorMaterial == Enum.Material.Air then
+    if h and h.FloorMaterial == Enum.Material.Air and not FLY_ON then
         local t0 = os.clock()
         repeat task.wait(0.05); h = hum()
         until not h or h.FloorMaterial ~= Enum.Material.Air or os.clock() - t0 > 1
@@ -1383,14 +1385,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.53", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.54", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.53 " .. lastStatus
+        title.Text = "v6.54 " .. lastStatus
     end
 end
 local function armDeathLog(char)
