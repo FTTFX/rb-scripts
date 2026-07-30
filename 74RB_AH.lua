@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.54 บัคบินค้างหลังคา: การ์ด "ห้ามวาปตอนตัวลอย" (v4.45) ทำ tpTo ยกเลิกทุกครั้งตอนบิน — ยกเว้นให้ FLY_ON แล้ว)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.55 บิน: ล็อคความสูงจากพื้นหลัก Y=3.4 ตายตัว (เลิก raycast — เคยจับหลังคาแล้วพาขึ้นค้าง) — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -60,7 +60,9 @@ local SYRUP_ON = false   -- ผีใต้เตียง: น้ำเชื�
 local CARRY_ON = false   -- อุ้มคนเป็นลมไปทิ้งขยะ/เตียง (เดิมพ่วงเคาน์เตอร์)
 local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
 local FLY_ON, FLY_POS = false, nil   -- v6.50: ปุ่ม "บิน" ล็อคความสูงแบบ DW02 (WASD แนวราบ ไม่ตก)
-local FLY_H = 5   -- v6.51: ความสูงบินจาก "พื้นใต้ตัว" (raycast ลงหาพื้นทุกเฟรม) — ปรับได้จาก GUI
+local FLY_H = 5   -- v6.51: ความสูงบิน — ปรับได้จาก GUI
+local FLY_BASE = 3.4   -- v6.55: พื้นหลักของแมพ Y≈3.4 (จุดยืนเช็คอิน/แท่นถังยืนยัน) — ล็อคความสูงจากตรงนี้
+                       -- ตายตัว ไม่ raycast แล้ว (เดิม raycast เจอหลังคา = พาขึ้นไปค้างบนหลังคา ผู้ใช้เจอ)
 local BOTDRIVE = 0   -- v6.52: ระบบบอทกำลังพาตัวไป (tpTo/ciGo ต่ออายุทุกเฟรม) — โหมดบินห้ามตรึงสู้
                      -- (เดิมบอทขยับ ~1 stud/เฟรม < เกณฑ์ resync 2 → บินดึงกลับทุกเฟรม บอทเดินไม่ได้ ผู้ใช้เจอ)
 local SPEED = 50
@@ -346,7 +348,8 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
     --        ก้าว CFrame กลางอากาศแบบ Hider (3 studs/เฟรม ~180/s) ไปจุดสูง FLY_H เหนือเป้า
     --        ก้าวละ 3 > เกณฑ์ resync 2 ของโหมดบิน = ไม่โดนดึงกลับ ; ถึงแล้วโหมดบินล็อคจุดใหม่เอง
     if FLY_ON then
-        local dest = pos + Vector3.new(0, FLY_H, 0)
+        -- v6.55: บินที่ระดับ พื้นหลัก+FLY_H ตายตัว (ไม่อิงความสูงเป้า — เป้าบนหลังคา/ใต้พื้นก็ไม่หลุดระดับ)
+        local dest = Vector3.new(pos.X, FLY_BASE + FLY_H, pos.Z)
         local r2 = hrp()
         local t0 = os.clock()
         while r2 and os.clock() - t0 < 10 and _G.AH74_GEN == MYGEN do
@@ -1266,13 +1269,8 @@ bind(RS.Heartbeat, function(dt)
             local dir = (h and h.MoveDirection) or Vector3.zero
             local flat = Vector3.new(dir.X, 0, dir.Z)
             FLY_POS = FLY_POS + flat * SPEED * dt
-            -- v6.51: ล็อคความสูง "จากพื้นใต้ตัว" (ปรับได้ FLY_H) — raycast ลงหาพื้นทุกเฟรม
-            --        เดินข้ามต่างระดับ/บันได ความสูงเหนือพื้นคงที่เอง ; ไม่เจอพื้น (เหว) = คงความสูงเดิม
-            local prm = RaycastParams.new()
-            prm.FilterType = Enum.RaycastFilterType.Exclude
-            prm.FilterDescendantsInstances = { c }
-            local hitF = workspace:Raycast(FLY_POS + Vector3.new(0, 2, 0), Vector3.new(0, -120, 0), prm)
-            if hitF then FLY_POS = Vector3.new(FLY_POS.X, hitF.Position.Y + FLY_H, FLY_POS.Z) end
+            -- v6.55: ล็อคความสูงจาก "พื้นหลัก" (FLY_BASE=3.4) ตายตัว — เลิก raycast (เคยเจอหลังคาแล้วพาขึ้นค้าง)
+            FLY_POS = Vector3.new(FLY_POS.X, FLY_BASE + FLY_H, FLY_POS.Z)
             r.CFrame = CFrame.new(FLY_POS) * (r.CFrame - r.CFrame.Position)   -- ล็อคตำแหน่ง คงการหมุนตัวเดิม
             r.AssemblyLinearVelocity = Vector3.zero
         end
@@ -1385,14 +1383,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.54", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.55", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.54 " .. lastStatus
+        title.Text = "v6.55 " .. lastStatus
     end
 end
 local function armDeathLog(char)
