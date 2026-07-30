@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.49 ผีเตียงในห้องไฟ = ข้าม ไม่เข้าใกล้ (กฎเดียวกับ Hider/สไลม์) — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.50 ถอดบินอัตโนมัติตอนรักษา (v6.48) + เพิ่มปุ่ม "บิน" ล็อคความสูงแบบ DW02: WASD แนวราบ ไม่มีทางตก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -59,6 +59,7 @@ local SLIME_ON = false   -- ล้างสไลม์ (เดิมพ่ว�
 local SYRUP_ON = false   -- ผีใต้เตียง: น้ำเชื่อมจ่อ MonsterBed (เดิมพ่วงดับไฟ)
 local CARRY_ON = false   -- อุ้มคนเป็นลมไปทิ้งขยะ/เตียง (เดิมพ่วงเคาน์เตอร์)
 local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
+local FLY_ON, FLY_POS = false, nil   -- v6.50: ปุ่ม "บิน" ล็อคความสูงแบบ DW02 (WASD แนวราบ ไม่ตก)
 local SPEED = 50
 local cam = workspace.CurrentCamera
 local setStatus = function() end   -- v4.32: โชว์ว่ากำลังทำอะไรบนหัว GUI (ตัวจริงผูกหลังสร้าง GUI)
@@ -336,22 +337,7 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         return
     end
     if not noGap then pos = ghostSafe(pos) end   -- v5.32: จ่ายยาผิดต้องถึงเตียงผีจริง (12m กดไม่ถึง)
-    -- v6.48: เปิดปุ่ม "รักษา" = เคลื่อนที่ด้วยท่าบินแบบ Hider (ผู้ใช้ขอ — ห้ามตกพื้น):
-    --        ก้าว CFrame กลางอากาศ 3 studs/frame (~180 studs/s) สูง +5 เหนือเป้า + ตรึง velocity ทุกเฟรม
-    --        (ท่าเดียวกับ flyTo ของ Hider ที่พิสูจน์แล้วว่าเกมไม่จับ insanity)
-    if AUTO_ON then
-        local dest = pos + Vector3.new(0, 5, 0)
-        local r2 = hrp()
-        local t0 = os.clock()
-        while r2 and os.clock() - t0 < 10 and _G.AH74_GEN == MYGEN do
-            local d = dest - r2.Position
-            if d.Magnitude < 2 then break end
-            r2.CFrame = r2.CFrame + d.Unit * math.min(3, d.Magnitude)
-            r2.AssemblyLinearVelocity = Vector3.zero
-            task.wait(); r2 = hrp()
-        end
-        return
-    end
+    -- (v6.50: ถอดบินอัตโนมัติตอนรักษาของ v6.48 ออก — ผู้ใช้เปลี่ยนเป็นปุ่ม "บิน" แบบ DW02 แทน)
     if TP_ON then
         -- v4.85: เลิกบิน CFrame ทั้งหมด — เกมยังจับได้ (ตายบ้าคลั่งซ้ำ Shift19)
         -- v4.87: เดินเร็วตาม "เส้นทางจริง" (pathfinding) ไม่ใช้ noclip —
@@ -1238,13 +1224,31 @@ bind(RS.Heartbeat, function(dt)
             if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
         end end
     end
-    -- v6.48: เปิด "รักษา" = ห้ามตกพื้น (ผู้ใช้ขอ) — ตัดความเร็วขาลงทุกเฟรม (แรงโน้มถ่วงไม่สะสม = ลอยค้าง)
-    --        คงความเร็วแนวราบไว้ ระบบอื่น (ciGo/สไลด์) ยังเคลื่อนที่ได้ปกติ
-    if AUTO_ON then
+    -- v6.50: ปุ่ม "บิน" (ล็อคบินแบบ DW02 Twisted Troller): noclip + จำ CFrame ล็อค แล้วเลื่อน
+    --        เฉพาะแนวราบตาม WASD (Humanoid.MoveDirection) — ความสูงคงที่ ไม่มีทางตก
+    --        ถ้าระบบบอท (วาป/สไลด์/Hider) ขยับตัวเราไปไกล >2 = ยอมรับตำแหน่งใหม่เป็นจุดล็อค (ไม่สู้กัน)
+    if FLY_ON then
         local r = hrp()
+        local h = hum()
         if r then
-            local v = r.AssemblyLinearVelocity
-            if v.Y < 0 then r.AssemblyLinearVelocity = Vector3.new(v.X, 0, v.Z) end
+            local c = LP.Character
+            if c then for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
+            end end
+            if not FLY_POS or (r.Position - FLY_POS).Magnitude > 2 then FLY_POS = r.Position end
+            local dir = (h and h.MoveDirection) or Vector3.zero
+            local flat = Vector3.new(dir.X, 0, dir.Z)
+            FLY_POS = FLY_POS + flat * SPEED * dt
+            r.CFrame = CFrame.new(FLY_POS) * (r.CFrame - r.CFrame.Position)   -- ล็อคตำแหน่ง คงการหมุนตัวเดิม
+            r.AssemblyLinearVelocity = Vector3.zero
+        end
+    elseif FLY_POS then
+        FLY_POS = nil
+        if not NOCLIP_ON then   -- คืน collide ตอนปิดบิน (ถ้าผู้ใช้ไม่ได้เปิด noclip เอง)
+            local c = LP.Character
+            if c then for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = true end
+            end end
         end
     end
 
@@ -1347,14 +1351,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.49", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.50", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.49 " .. lastStatus
+        title.Text = "v6.50 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -2868,6 +2872,8 @@ mkToggle("ฉุกเฉิน", "ผีเตียง", function() return SYR
 mkToggle("หลัก", "อุ้มคน", function() return CARRY_ON end, function(v) CARRY_ON = v end)
 -- v6.23: ปุ่มแยก "รับผี" (ผู้ใช้ขอ 2 ปุ่ม) — ON: เช็คอินให้ผี+ไม่ปิดชัตเตอร์ใส่ผี | OFF (ปกติ): กันผีทุกจุดเหมือนเดิม
 mkToggle("หลัก", "รับผี", function() return GHOSTCI_ON end, function(v) GHOSTCI_ON = v end, Color3.fromRGB(120,40,40))
+-- v6.50: ปุ่ม "บิน" ล็อคความสูงแบบ DW02 Twisted Troller (WASD แนวราบ ความสูงคงที่ ไม่มีทางตก)
+mkToggle("หลัก", "บิน", function() return FLY_ON end, function(v) FLY_ON = v end, Color3.fromRGB(30,80,110))
 
 -- v6.32: ป้ายสถิติสด (ผู้ใช้ขอ — เดิมต้องออกเกมถึงเห็นเงิน/คะแนน)
 -- StatView พิสูจน์: RF/RequestData:InvokeServer() คืน {Stats={Cash, LocalCash, PatientsTreated,
@@ -2977,7 +2983,7 @@ showTab("หลัก")   -- เปิดมาที่แท็บหลัก
 btn("CLOSE", 8, 198, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
         false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
-    SLIME_ON, SYRUP_ON, CARRY_ON, FIREFLOOR_ON = false, false, false, false
+    SLIME_ON, SYRUP_ON, CARRY_ON, FIREFLOOR_ON, FLY_ON = false, false, false, false, false
     local h = hum()
     if h then
         h.WalkSpeed = 16
