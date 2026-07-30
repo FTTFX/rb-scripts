@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.56 แก้บินกระตุกหน้าเคาน์เตอร์: ถึงเป้าแล้วไม่แตะ FLY_POS/BOTDRIVE + ตัดร่วงระหว่างบอทคุม)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.57 อุ้มคนตอนบิน: เพิ่ม dipPress ย่อลงกด (อุ้ม/ทิ้งถัง/วางเตียง) — กดจากบนอากาศไม่ติด ผู้ใช้เจอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -313,6 +313,29 @@ local function ghostSafe(pos)
         end
     end
     return pos
+end
+-- v6.57: "ย่อกด" สำหรับโหมดบิน — prompt บางตัว (ถังขยะ/วางคนไข้) กดจากบนอากาศไม่ติด (นอกระยะ)
+--        → บินย่อลงไประดับ prompt ชั่วคราว กดเสร็จปล่อยลอยกลับระดับเดิมเอง ; ไม่บิน = pressPrompt ปกติ
+local function dipPress(pp, done)
+    if not FLY_ON then return pressPrompt(pp, done) end
+    local pos = pp.Parent and partPos(pp.Parent)
+    local r = hrp()
+    if pos and r then
+        local dest = pos + Vector3.new(0, 2, 0)
+        local t0 = os.clock()
+        while r and os.clock() - t0 < 3 and _G.AH74_GEN == MYGEN do
+            BOTDRIVE = os.clock() + 0.2
+            local d = dest - r.Position
+            if d.Magnitude < 2 then break end
+            r.CFrame = r.CFrame + d.Unit * math.min(3, d.Magnitude)
+            r.AssemblyLinearVelocity = Vector3.zero
+            task.wait(); r = hrp()
+        end
+    end
+    BOTDRIVE = os.clock() + 1.2   -- ค้างระดับล่างระหว่างกด (กันตัวตรึงดึงขึ้นก่อนกดติด)
+    local ok = pressPrompt(pp, done)
+    BOTDRIVE = 0; FLY_POS = nil   -- ปล่อยให้ตัวตรึงยกกลับระดับบินเอง
+    return ok
 end
 local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override ความเร็ว | v5.32: noGap=ยอมประชิดผี (จ่ายยาผิด)
     if not pos then return end
@@ -1392,14 +1415,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.56", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.57", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.56 " .. lastStatus
+        title.Text = "v6.57 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -2656,7 +2679,7 @@ task.spawn(function()
                         if carryPP then
                             setStatus("อุ้ม " .. m.Name)
                             tpTo(partPos(m)); task.wait(0.15)
-                            pressPrompt(carryPP)
+                            dipPress(carryPP)   -- v6.57: โหมดบิน = ย่อลงกด (กดจากบนอากาศไม่ติด)
                             task.wait(0.15)   -- v5.29: เดิม 0.3 — เช็คอุ้มติดมือจริงอยู่แล้ว
                         end
                         -- v6.17: แวะถังขยะก่อน — บางตัวทิ้งได้ (ผู้ใช้พบ) เกมเป็นคนตัดสินเอง
@@ -2678,7 +2701,7 @@ task.spawn(function()
                             if best then
                                 setStatus("ลองทิ้ง " .. m.Name .. " 🗑️")
                                 tpTo(partPos(best.Parent)); task.wait(0.2)
-                                pressPrompt(best, function()
+                                dipPress(best, function()   -- v6.57: โหมดบิน = ย่อลงกดถังขยะ (ผู้ใช้เจอทิ้งไม่ได้)
                                     return m:GetAttribute("CarriedBy") == nil or not m.Parent
                                 end)
                                 task.wait(0.5)
@@ -2755,7 +2778,7 @@ task.spawn(function()
                             if dropPP then
                                 setStatus("วาง (" .. dropPP.ActionText .. ")")
                                 tpTo(partPos(dropPP.Parent)); task.wait(0.15)
-                                pressPrompt(dropPP, function()
+                                dipPress(dropPP, function()   -- v6.57: โหมดบิน = ย่อลงกดปุ่มวาง
                                     return not dropPP.Parent or not dropPP.Enabled
                                         or m:GetAttribute("CarriedBy") == nil or m:GetAttribute("InBed")
                                 end)
