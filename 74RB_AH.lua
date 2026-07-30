@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.50 ถอดบินอัตโนมัติตอนรักษา (v6.48) + เพิ่มปุ่ม "บิน" ล็อคความสูงแบบ DW02: WASD แนวราบ ไม่มีทางตก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.51 บิน: ล็อคความสูง "จากพื้นใต้ตัว" ปรับได้ (แถวปุ่ม สูง −/+ 2-50) — raycast หาพื้นทุกเฟรม เดินข้ามต่างระดับได้)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -60,6 +60,7 @@ local SYRUP_ON = false   -- ผีใต้เตียง: น้ำเชื�
 local CARRY_ON = false   -- อุ้มคนเป็นลมไปทิ้งขยะ/เตียง (เดิมพ่วงเคาน์เตอร์)
 local GUNKILL_ON = false -- v5.18: วาร์ปไปยิงผีด้วยปืน (remote) — แทนปุ่ม NPC เร็ว
 local FLY_ON, FLY_POS = false, nil   -- v6.50: ปุ่ม "บิน" ล็อคความสูงแบบ DW02 (WASD แนวราบ ไม่ตก)
+local FLY_H = 5   -- v6.51: ความสูงบินจาก "พื้นใต้ตัว" (raycast ลงหาพื้นทุกเฟรม) — ปรับได้จาก GUI
 local SPEED = 50
 local cam = workspace.CurrentCamera
 local setStatus = function() end   -- v4.32: โชว์ว่ากำลังทำอะไรบนหัว GUI (ตัวจริงผูกหลังสร้าง GUI)
@@ -1239,6 +1240,13 @@ bind(RS.Heartbeat, function(dt)
             local dir = (h and h.MoveDirection) or Vector3.zero
             local flat = Vector3.new(dir.X, 0, dir.Z)
             FLY_POS = FLY_POS + flat * SPEED * dt
+            -- v6.51: ล็อคความสูง "จากพื้นใต้ตัว" (ปรับได้ FLY_H) — raycast ลงหาพื้นทุกเฟรม
+            --        เดินข้ามต่างระดับ/บันได ความสูงเหนือพื้นคงที่เอง ; ไม่เจอพื้น (เหว) = คงความสูงเดิม
+            local prm = RaycastParams.new()
+            prm.FilterType = Enum.RaycastFilterType.Exclude
+            prm.FilterDescendantsInstances = { c }
+            local hitF = workspace:Raycast(FLY_POS + Vector3.new(0, 2, 0), Vector3.new(0, -120, 0), prm)
+            if hitF then FLY_POS = Vector3.new(FLY_POS.X, hitF.Position.Y + FLY_H, FLY_POS.Z) end
             r.CFrame = CFrame.new(FLY_POS) * (r.CFrame - r.CFrame.Position)   -- ล็อคตำแหน่ง คงการหมุนตัวเดิม
             r.AssemblyLinearVelocity = Vector3.zero
         end
@@ -1339,7 +1347,7 @@ local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "AH74GUI", false, 9999
 gui.Parent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
 
-local FULL_H = 230   -- v6.20: title(34)+แถบแท็บ(26)+หน้า 4 แถว(128)+CLOSE(24)
+local FULL_H = 262   -- v6.51: title(34)+แถบแท็บ(26)+หน้า 5 แถว(160)+CLOSE(24) — เพิ่มแถวให้ปุ่มบิน+ความสูง
 local f = Instance.new("Frame", gui)
 f.Size, f.Position = UDim2.new(0,192,0,FULL_H), UDim2.new(0,20,0.5,-146)
 f.BackgroundColor3, f.BackgroundTransparency = Color3.fromRGB(18,18,24), 0.1
@@ -1351,14 +1359,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.50", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.51", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.50 " .. lastStatus
+        title.Text = "v6.51 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1417,7 +1425,7 @@ local TAB_NAMES = {"หลัก", "ฉุกเฉิน", "ห้อง", "อ
 local pages, tabBtns, slotN = {}, {}, {}
 for _, name in ipairs(TAB_NAMES) do
     local p = Instance.new("Frame", f)
-    p.Position, p.Size = UDim2.new(0,0,0,66), UDim2.new(1,0,0,128)
+    p.Position, p.Size = UDim2.new(0,0,0,66), UDim2.new(1,0,0,160)   -- v6.51: 4→5 แถว
     p.BackgroundTransparency, p.Visible = 1, false
     pages[name], slotN[name] = p, 0
 end
@@ -2874,6 +2882,18 @@ mkToggle("หลัก", "อุ้มคน", function() return CARRY_ON end, f
 mkToggle("หลัก", "รับผี", function() return GHOSTCI_ON end, function(v) GHOSTCI_ON = v end, Color3.fromRGB(120,40,40))
 -- v6.50: ปุ่ม "บิน" ล็อคความสูงแบบ DW02 Twisted Troller (WASD แนวราบ ความสูงคงที่ ไม่มีทางตก)
 mkToggle("หลัก", "บิน", function() return FLY_ON end, function(v) FLY_ON = v end, Color3.fromRGB(30,80,110))
+-- v6.51: แถวปรับความสูงบินจากพื้น (FLY_H) — label + − / +
+do
+    local i = slotN["หลัก"]; slotN["หลัก"] = i + 1
+    local x, y = 8 + (i % 2) * 90, (math.floor(i / 2)) * 32
+    local fhL = btn("สูง " .. FLY_H, x, y, 34, 30, nil, pages["หลัก"]); fhL.Active = false
+    btn("−", x + 36, y, 24, 30, nil, pages["หลัก"]).MouseButton1Click:Connect(function()
+        FLY_H = math.max(2, FLY_H - 2); fhL.Text = "สูง " .. FLY_H
+    end)
+    btn("+", x + 62, y, 24, 30, nil, pages["หลัก"]).MouseButton1Click:Connect(function()
+        FLY_H = math.min(50, FLY_H + 2); fhL.Text = "สูง " .. FLY_H
+    end)
+end
 
 -- v6.32: ป้ายสถิติสด (ผู้ใช้ขอ — เดิมต้องออกเกมถึงเห็นเงิน/คะแนน)
 -- StatView พิสูจน์: RF/RequestData:InvokeServer() คืน {Stats={Cash, LocalCash, PatientsTreated,
@@ -2980,7 +3000,7 @@ end)
 
 showTab("หลัก")   -- เปิดมาที่แท็บหลัก (ทุกปุ่มสร้างครบแล้ว)
 
-btn("CLOSE", 8, 198, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
+btn("CLOSE", 8, 230, 176, 24, Color3.fromRGB(120,30,30)).MouseButton1Click:Connect(function()
     RUN_ON, NOCLIP_ON, ESP_ON, AUTO_ON, KILLGHOST_ON, WHACK_ON, R6_ON, CHECKIN_ON, SHUTTER_ON, FIRE_ON, GUNKILL_ON, HIDER_ON, SHOP_ON, COFFEE_ON, CAMFIX_ON, GHOSTKILL_ON =
         false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
     SLIME_ON, SYRUP_ON, CARRY_ON, FIREFLOOR_ON, FLY_ON = false, false, false, false, false
