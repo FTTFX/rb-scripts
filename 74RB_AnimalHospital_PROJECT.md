@@ -80,6 +80,7 @@ Workspace.Rooms.Medical.RoomN.Minigame.TV.Screen.UI.Report.inv.<ชื่อย�
 - โรค/ผล DNA: `Monitor.Screen.UI.Report.illnesses` (.Text), `.race` = ชื่อคนไข้
 - **match ยาด้วยชื่อตรงๆ**: จุดเก็บยา = ProximityPrompt ที่ `ActionText == ชื่อยา`
 - ยาทั่วไป: `Workspace.Model.Items.<ชื่อ>.PP` (Herbs/Eye Drops/Cough Syrup/Maple Syrup/Medicine...)
+- **v6.62 พิกัดยาจริง hardcode ใน `MED_SPOTS`** (MedLocSpy สแกน 2026-07-31): ยา 2 ปีกกระจก (ปีกเหนือ Z≈+37..63 / ปีกใต้ Z≈-57..-83, X≈-134/-155) + ชุด Room8 — `findPickup` รับเฉพาะ prompt ห่างพิกัดจริง ≤12 (ตัวก๊อปโซน (0,0) โดนตัด) ; เกมย้ายยาเมื่อไหร่ รัน MedLocSpy ใหม่แล้วอัปตาราง ; **เกร็ด: server ยอมให้ fp เก็บยาจากระยะ ≥12m** (GrabTest ยืนยัน — เพดานจริงยังไม่วัด)
 - ถังขยะ (ทิ้งยาเกิน): `Workspace.Trash.PP` (ActionText='Trash Item')
 - **⚠️ ให้ยาผิด/ซ้ำเกินจำนวน = คนไข้ตาย + strike** → ต้อง match ชื่อ + นับจำนวนเป๊ะ
 
