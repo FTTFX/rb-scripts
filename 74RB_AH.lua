@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.62 พิกัดยาจริง hardcode (MED_SPOTS จาก MedLocSpy): findPickup รับเฉพาะจุดตรงพิกัด ±12 — ตัวก๊อปโดนตัดหมด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.63 กรอบโรงพยาบาล: ของจริงทุกชนิด (ยา/กาแฟ/ปืน/ร้าน/ทุก prompt) ต้องอยู่ใน X-175..-85, Z-145..130 — นอกกรอบ=ก๊อป)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -101,11 +101,13 @@ local function partPos(inst)
     local b = inst:FindFirstChildWhichIsA("BasePart", true)
     return b and b.Position
 end
--- v6.61: กฎกลาง "โซนก๊อป" — เกมจอด copy ของทุกอย่าง (ยา/ห้อง/เครื่อง/prompt) ไว้แถวจุดกำเนิด (0,~,0)
--- โรงพยาบาลจริงอยู่ X -157..-97 ทั้งหมด → รัศมี 60 จาก (0,0) แนวราบ = ของปลอมแน่นอน ห้ามยุ่งทุกระบบ
--- (MoveSpy พิสูจน์: prompt ก๊อปบางตัวกดแล้วเกมดูดตัวเราไปที่เครื่องก๊อป = หลุดแมพรัวๆ)
+-- v6.61: กฎกลาง "โซนก๊อป" — เกมจอด copy ของทุกอย่าง (ยา/กาแฟ/ปืน/ห้อง/เครื่อง/prompt) นอกโรงพยาบาล
+-- v6.63 (ผู้ใช้สั่ง: ไอเทมทุกชนิด ไม่ใช่แค่ยา): กลับด้านเกณฑ์ — "ของจริงต้องอยู่ในกรอบโรงพยาบาล"
+--        (MedLocSpy: ของจริงทั้งหมด X -157..-97, Z -129..+112 — เผื่อขอบ ±20) นอกกรอบ = ก๊อป ห้ามยุ่งทุกระบบ
+-- ผูกกับ pressPrompt + blind-fire + tpTo อยู่แล้ว → คุม กาแฟ/ร้านค้า/ปืน/ตู้กดน้ำ/ทุกอย่าง อัตโนมัติ
+local HOSP = { x1 = -175, x2 = -85, z1 = -145, z2 = 130 }
 local function inCopyZone(pos)
-    return pos ~= nil and Vector3.new(pos.X, 0, pos.Z).Magnitude < 60
+    return pos ~= nil and not (pos.X > HOSP.x1 and pos.X < HOSP.x2 and pos.Z > HOSP.z1 and pos.Z < HOSP.z2)
 end
 local function promptFake(p)
     return p and p.Parent and inCopyZone(partPos(p.Parent)) or false
@@ -1328,8 +1330,7 @@ bind(RS.Heartbeat, function(dt)
     do
         local r = hrp()
         if r then
-            local flat = Vector3.new(r.Position.X, 0, r.Position.Z)
-            if flat.Magnitude < 60 then
+            if inCopyZone(r.Position) then   -- v6.63: หลุดนอกกรอบโรงพยาบาล = ดึงกลับ (เดิมเช็คแค่โซน 0,0)
                 if SAFE_POS then
                     r.CFrame = CFrame.new(SAFE_POS) * (r.CFrame - r.CFrame.Position)
                     r.AssemblyLinearVelocity = Vector3.zero
@@ -1485,14 +1486,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.62", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.63", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.62 " .. lastStatus
+        title.Text = "v6.63 " .. lastStatus
     end
 end
 local function armDeathLog(char)
