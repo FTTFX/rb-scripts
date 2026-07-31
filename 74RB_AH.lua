@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.66 แก้ห้องจริงโดนตีตรา "ปิด(มือ)": เช็คห้องก๊อปจากตัวห้องตรงๆ (ไม่อิง prompt Main ที่ลอยนอกแมพ) + แยกป้าย "ก๊อป")
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.67 แก้รักษาค้าง "บล็อคเป้าโซนก๊อป": bedApplyPP ตัด prompt Main ที่ลอยนอกแมพทิ้งตั้งแต่เลือก → ใช้ prompt บนตัวคนไข้แทน)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1031,7 +1031,8 @@ local function bedApplyPP(room)
     local rpos = partPos(room:FindFirstChild("Minigame") or room)
     local first, other
     for _, p in ipairs(room:GetDescendants()) do
-        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment" then
+        if p:IsA("ProximityPrompt") and p.ActionText == "Apply Treatment"
+           and not inCopyZone(partPos(p.Parent)) then   -- v6.67: Main ลอยนอกแมพ = ตัดทิ้งตั้งแต่ต้น
             if p.Enabled then
                 local pp = partPos(p.Parent)
                 if pp and rpos and (pp - rpos).Magnitude < 40 then
@@ -1504,14 +1505,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.66", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.67", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.66 " .. lastStatus
+        title.Text = "v6.67 " .. lastStatus
     end
 end
 local function armDeathLog(char)
