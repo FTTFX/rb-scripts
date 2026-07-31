@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.57 อุ้มคนตอนบิน: เพิ่ม dipPress ย่อลงกด (อุ้ม/ทิ้งถัง/วางเตียง) — กดจากบนอากาศไม่ติด ผู้ใช้เจอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.58 บินเร็วขึ้น: ความเร็วอิงเวลาจริง 250 studs/s — เดิม 3/เฟรม บนมือถือ fps ต่ำเหลือ ~90/s ช้ามาก)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -377,13 +377,16 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         -- v6.56: ถึงอยู่แล้ว = ไม่แตะอะไรเลย (เดิมยัง nil FLY_POS + ตั้ง BOTDRIVE → ร่วง-เด้งกระตุก)
         if r2 and (dest - r2.Position).Magnitude < 2 then return end
         local t0 = os.clock()
+        -- v6.58: ความเร็วบินอิง "เวลาจริง" 250 studs/s (เดิม 3/เฟรม — fps ต่ำ (มือถือ) เหลือ ~90/s ช้ามาก ผู้ใช้เจอ)
+        local FLY_SPEED = 250
+        local dtf = 1 / 60
         while r2 and os.clock() - t0 < 10 and _G.AH74_GEN == MYGEN do
             BOTDRIVE = os.clock() + 0.15
             local d = dest - r2.Position
             if d.Magnitude < 2 then break end
-            r2.CFrame = r2.CFrame + d.Unit * math.min(3, d.Magnitude)
+            r2.CFrame = r2.CFrame + d.Unit * math.min(FLY_SPEED * dtf, d.Magnitude)
             r2.AssemblyLinearVelocity = Vector3.zero
-            task.wait(); r2 = hrp()
+            dtf = task.wait() or 1 / 60; r2 = hrp()
         end
         BOTDRIVE = 0        -- v6.56: ถึงแล้วคืนมือให้ตัวตรึงทันที (เดิมค้าง 0.15s = ช่วงร่วงฟรี)
         FLY_POS = dest      -- v6.56: ล็อคต่อที่จุดถึงเลย ไม่ต้องรอ resync
@@ -1415,14 +1418,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.57", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.58", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.57 " .. lastStatus
+        title.Text = "v6.58 " .. lastStatus
     end
 end
 local function armDeathLog(char)
