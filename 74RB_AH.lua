@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.63 กรอบโรงพยาบาล: ของจริงทุกชนิด (ยา/กาแฟ/ปืน/ร้าน/ทุก prompt) ต้องอยู่ใน X-175..-85, Z-145..130 — นอกกรอบ=ก๊อป)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.64 แก้ R8 หาของไม่เจอ: โซน Room8 ผ่าน MED_SPOTS เสมอ — เกมสุ่มตำแหน่งของบนชั้นแต่ละรอบ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -493,6 +493,9 @@ local MED_SPOTS = {
     ["Transplant"]  = { V3(-133,4,97) },
 }
 local function atRealSpot(medName, pos)
+    -- v6.64: โซน Room8 ทั้งห้องผ่านเสมอ — เกมสุ่ม/ขยับตำแหน่งของบนชั้นแต่ละรอบ (ผู้ใช้เจอ: R8 หาของไม่เจอ)
+    --        ปลอดภัยเพราะกรอบโรงพยาบาล (inCopyZone) กันของก๊อปอยู่แล้วอีกชั้น
+    if pos.X > -165 and pos.X < -125 and pos.Z > 85 and pos.Z < 125 then return true end
     local spots = MED_SPOTS[medName]
     if not spots then return true end   -- ยาไม่รู้จัก = ปล่อยผ่าน (ใช้ตัวกรองเดิมคุม)
     for _, s in ipairs(spots) do
@@ -1486,14 +1489,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.63", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.64", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.63 " .. lastStatus
+        title.Text = "v6.64 " .. lastStatus
     end
 end
 local function armDeathLog(char)
