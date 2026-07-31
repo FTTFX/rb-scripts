@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.61 กฎโซนก๊อปทั้งระบบ: inCopyZone/promptFake — blind-fire/pressPrompt/เลือกห้อง/ยา/ผี/ไฟ/สไลม์/เตียงผี/ถังขยะ ข้ามของก๊อปหมด)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.62 พิกัดยาจริง hardcode (MED_SPOTS จาก MedLocSpy): findPickup รับเฉพาะจุดตรงพิกัด ±12 — ตัวก๊อปโดนตัดหมด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -469,6 +469,35 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         walkTo(pos)
     end
 end
+-- v6.62: พิกัดยา "ตัวจริง" hardcode (ผู้ใช้สั่ง — MedLocSpy สแกน 2026-07-31): ปีกเหนือ+ปีกใต้+ชุด Room8
+--        findPickup รับเฉพาะ prompt ที่อยู่ห่างพิกัดพวกนี้ ≤12 studs — ตัวก๊อปจอดที่อื่น = ตัดทิ้งเด็ดขาด
+--        ยาชื่อใหม่ที่ไม่อยู่ในตาราง = ใช้ตัวกรองเดิม (กันเกมออกยาใหม่แล้วบอทใบ้)
+local V3 = Vector3.new
+local MED_SPOTS = {
+    ["Bandages"]    = { V3(-155,4,37),  V3(-155,4,-83), V3(-133,4,105) },
+    ["Cough Syrup"] = { V3(-135,4,41),  V3(-134,4,-79) },
+    ["Eye Drops"]   = { V3(-155,4,63),  V3(-155,4,-57) },
+    ["Herbs"]       = { V3(-135,4,61),  V3(-134,4,-59) },
+    ["IV Drops"]    = { V3(-155,4,60),  V3(-155,4,-60), V3(-145,4,112) },
+    ["Maple Syrup"] = { V3(-135,4,39),  V3(-134,4,-82) },
+    ["Medicine"]    = { V3(-135,4,58),  V3(-134,4,-62), V3(-156,4,105) },
+    ["Medkit"]      = { V3(-155,4,51),  V3(-155,4,-69), V3(-133,4,101) },
+    ["Ointment"]    = { V3(-155,4,40),  V3(-155,4,-80) },
+    ["Thermo"]      = { V3(-155,4,49),  V3(-155,4,-72) },
+    ["Antibiotics"] = { V3(-149,4,112) },
+    ["Scalpel"]     = { V3(-156,4,97) },
+    ["Scissors"]    = { V3(-156,4,101) },
+    ["Organ"]       = { V3(-141,4,112) },
+    ["Transplant"]  = { V3(-133,4,97) },
+}
+local function atRealSpot(medName, pos)
+    local spots = MED_SPOTS[medName]
+    if not spots then return true end   -- ยาไม่รู้จัก = ปล่อยผ่าน (ใช้ตัวกรองเดิมคุม)
+    for _, s in ipairs(spots) do
+        if (pos - s).Magnitude <= 12 then return true end
+    end
+    return false
+end
 -- หา ProximityPrompt ที่ ActionText ตรงชื่อยา + "ใกล้ตัวเราสุด" (ยามีหลายจุด/ตู้หน้าห้อง)
 local function findPickup(medName)
     local fromPos = hrp() and hrp().Position
@@ -479,8 +508,9 @@ local function findPickup(medName)
             -- v4.67: ตัดจุดเก็บนอกแมพทิ้ง (เกมพักไอเทมไว้ใต้น้ำ/ไกล — บินตามไป = ลอยน้ำ)
             -- v4.79: กันของที่จอด "บนฟ้า" ด้วย (สูงกว่าตัวเรา >25 studs = ก๊อปปี้นอกแมพ — บินขึ้นฟ้ากลางทะเล)
             -- v6.59/v6.61: ตัดของในโซนก๊อปกลางแมพ (กฎกลาง inCopyZone)
+            -- v6.62: +ต้องอยู่ตรงพิกัดยาจริง (MED_SPOTS ±12) — ตัวก๊อปจอดที่ไหนก็โดนตัด (ผู้ใช้สั่ง)
             if pos and (not fromPos or ((pos - fromPos).Magnitude < 150 and pos.Y - fromPos.Y < 25)) and pos.Y > -50
-               and not inCopyZone(pos) then
+               and not inCopyZone(pos) and atRealSpot(medName, pos) then
                 local d = fromPos and (pos - fromPos).Magnitude or math.huge
                 if not best or d < bestD then best, bestD = p, d end
             end
@@ -1455,14 +1485,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.61", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.62", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.61 " .. lastStatus
+        title.Text = "v6.62 " .. lastStatus
     end
 end
 local function armDeathLog(char)
