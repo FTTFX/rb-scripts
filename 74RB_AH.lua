@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.65 auto เลี่ยง Ghost: ไม่ได้ถือ Scanner = จุดหมายถอยห่าง Ghost ≥5 studs เสมอ (ghostSafe) — ผู้ใช้ขอ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.66 แก้ห้องจริงโดนตีตรา "ปิด(มือ)": เช็คห้องก๊อปจากตัวห้องตรงๆ (ไม่อิง prompt Main ที่ลอยนอกแมพ) + แยกป้าย "ก๊อป")
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -1504,14 +1504,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.65", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.66", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.65 " .. lastStatus
+        title.Text = "v6.66 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1869,8 +1869,11 @@ task.spawn(function()
                         local work = loaded and hasWork(room, pat) and (not roomDone(room) or fresh)
                             or (not loaded and fresh) or farUnseen
                         -- v6.36: ปุ่มห้องนั้นปิด = ห้ามแตะห้องนั้นเด็ดขาด (ห้องที่ไม่รู้จัก = เปิดไว้ก่อน)
-                        -- v6.61: ห้องก๊อปที่จอดโซนกลางแมพ = ห้ามเลือกเด็ดขาด (MoveSpy จับได้ตอน "รักษา R3/R7")
-                        local blocked = ROOM_ON[room.Name] == false or inCopyZone(roomPos(room))
+                        local blocked = ROOM_ON[room.Name] == false
+                        -- v6.66: เช็คห้องก๊อปจาก "ตัวห้องตรงๆ" ไม่ใช่ roomPos (roomPos อิง prompt Apply
+                        --        ที่ลอยนอกแมพได้ (บั๊ก Main เก่า v4.50) — ห้องจริงเคยโดนตีตรา "ปิด(มือ)" ผู้ใช้เจอ)
+                        local copyRoom = inCopyZone(partPos(room:FindFirstChild("Minigame") or room))
+                        blocked = blocked or copyRoom
                         if pat and present and not blocked and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
@@ -1880,7 +1883,7 @@ task.spawn(function()
                             elseif grp == "Emergency" then d = -1 end
                             if not target or d < bestD then target, bestD = room, d end
                         elseif pat then   -- v4.97: ห้องมีคนไข้แต่โดนข้าม — จดเหตุผลแรกที่ติด
-                            local reason = blocked and "ปิด(มือ)" or not present and "ไกล" or (ghost and not killable) and "ผี"
+                            local reason = copyRoom and "ก๊อป" or blocked and "ปิด(มือ)" or not present and "ไกล" or (ghost and not killable) and "ผี"
                                 or not loaded and "รักษาแล้ว" or roomDone(room) and "จบ" or "ไม่มีปุ่ม"
                             why[#why+1] = room.Name:gsub("Room", "R") .. ":" .. reason
                         end
@@ -2849,8 +2852,9 @@ task.spawn(function()
                                 for _, grp in ipairs({"Medical", "Emergency"}) do
                                     local g = rooms:FindFirstChild(grp)
                                     if g then for _, r2 in ipairs(g:GetChildren()) do
-                                        -- v6.36: ห้องที่ปิด = ห้ามวางคนไข้ในนั้นด้วย ; v6.61: +ห้องก๊อป
-                                        if ROOM_ON[r2.Name] ~= false and not inCopyZone(roomPos(r2)) then
+                                        -- v6.36: ห้องที่ปิด = ห้ามวางคนไข้ในนั้นด้วย ; v6.66: ห้องก๊อปเช็คจากตัวห้องตรงๆ
+                                        if ROOM_ON[r2.Name] ~= false
+                                           and not inCopyZone(partPos(r2:FindFirstChild("Minigame") or r2)) then
                                             for _, p in ipairs(r2:GetDescendants()) do
                                                 if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
                                                     dropPP = p; break
