@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.60 ตาข่ายโซนก๊อป: ตัวหลุดเข้ารัศมี 60 จาก (0,0) = ดึงกลับจุดปลอดภัยทันทีในเฟรมเดียว ไม่ว่าตัวขับไหนพาไป)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.61 กฎโซนก๊อปทั้งระบบ: inCopyZone/promptFake — blind-fire/pressPrompt/เลือกห้อง/ยา/ผี/ไฟ/สไลม์/เตียงผี/ถังขยะ ข้ามของก๊อปหมด)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -100,6 +100,15 @@ local function partPos(inst)
     if inst:IsA("BasePart") then return inst.Position end
     local b = inst:FindFirstChildWhichIsA("BasePart", true)
     return b and b.Position
+end
+-- v6.61: กฎกลาง "โซนก๊อป" — เกมจอด copy ของทุกอย่าง (ยา/ห้อง/เครื่อง/prompt) ไว้แถวจุดกำเนิด (0,~,0)
+-- โรงพยาบาลจริงอยู่ X -157..-97 ทั้งหมด → รัศมี 60 จาก (0,0) แนวราบ = ของปลอมแน่นอน ห้ามยุ่งทุกระบบ
+-- (MoveSpy พิสูจน์: prompt ก๊อปบางตัวกดแล้วเกมดูดตัวเราไปที่เครื่องก๊อป = หลุดแมพรัวๆ)
+local function inCopyZone(pos)
+    return pos ~= nil and Vector3.new(pos.X, 0, pos.Z).Magnitude < 60
+end
+local function promptFake(p)
+    return p and p.Parent and inCopyZone(partPos(p.Parent)) or false
 end
 -- คืน NPC model (ลูกของ Workspace.NPCs) ที่ prompt สังกัด ; nil ถ้าไม่อยู่ใต้ NPCs
 -- ใช้ทั้ง "กด E ที่ NPC" (มอบใบ) + กันเช็คอินผี (เช็ค Skinwalker จาก owner)
@@ -251,6 +260,7 @@ end)
 --        (Room8 หันผิดนิดเดียว = จ่ายยาผิด) + ย้ายฟังก์ชันมาหลัง hrp/partPos (เดิมประกาศก่อน = เรียก nil)
 local function pressPrompt(pp, done)
     if not (pp and pp.Parent and pp.Enabled) then return true end
+    if promptFake(pp) then return true end   -- v6.61: prompt โซนก๊อป = ห้ามยิงเด็ดขาด (กันเกมดูดตัวไป)
     done = done or function() return not (pp.Parent and pp.Enabled) end
     local r, pos = hrp(), partPos(pp.Parent)
     if r and pos then
@@ -362,9 +372,8 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         setStatus("บล็อควาปเพี้ยน " .. math.floor((pos - r.Position).Magnitude) .. "m")
         return
     end
-    -- v6.59: โซนจอดของก๊อปกลางแมพ (0,~,0) — MoveSpy จับได้: "รักษา Room4" บินไป (0,6,0) รัวๆ
-    --        โรงพยาบาลจริงอยู่ X -157..-97 ทั้งหมด — รัศมี 40 จากจุดกำเนิดไม่มีของจริงแน่นอน
-    if Vector3.new(pos.X, 0, pos.Z).Magnitude < 40 then
+    -- v6.59/v6.61: โซนจอดของก๊อปกลางแมพ (0,~,0) — ใช้กฎกลาง inCopyZone (รัศมี 60)
+    if inCopyZone(pos) then
         setStatus("บล็อคเป้าโซนก๊อป (0,0)")
         return
     end
@@ -469,9 +478,9 @@ local function findPickup(medName)
             local pos = partPos(p.Parent)
             -- v4.67: ตัดจุดเก็บนอกแมพทิ้ง (เกมพักไอเทมไว้ใต้น้ำ/ไกล — บินตามไป = ลอยน้ำ)
             -- v4.79: กันของที่จอด "บนฟ้า" ด้วย (สูงกว่าตัวเรา >25 studs = ก๊อปปี้นอกแมพ — บินขึ้นฟ้ากลางทะเล)
-            -- v6.59: ตัดของในโซนก๊อปกลางแมพ (รัศมี 40 จากจุดกำเนิด) — MoveSpy จับได้ว่าบอทบินไปเก็บ
+            -- v6.59/v6.61: ตัดของในโซนก๊อปกลางแมพ (กฎกลาง inCopyZone)
             if pos and (not fromPos or ((pos - fromPos).Magnitude < 150 and pos.Y - fromPos.Y < 25)) and pos.Y > -50
-               and Vector3.new(pos.X, 0, pos.Z).Magnitude > 40 then
+               and not inCopyZone(pos) then
                 local d = fromPos and (pos - fromPos).Magnitude or math.huge
                 if not best or d < bestD then best, bestD = p, d end
             end
@@ -808,6 +817,7 @@ end
 --        กฎเดียวกับ tpTo/findPickup: Y ต่ำกว่า -50 / สูงกว่าเรา >30 / ไกลเกิน 200 = เป้าเพี้ยน ไม่ยิง
 local function validShootPos(p, me)
     return p and me and p.Y > -50 and (p.Y - me.Y) < 30 and (p - me).Magnitude < 200
+       and not inCopyZone(p)   -- v6.61: ผีก๊อปโซนกลางแมพ = ไม่ยิง
 end
 -- v5.21: ยิงเฉพาะคนไข้ปลอม (Skinwalker ที่ไม่ใช่ Anomaly) — ตัด Hider (Anomaly=true) เปลืองกระสุน + ตัด Ghost
 local function ghostToShoot(m)
@@ -862,8 +872,8 @@ local function hiderPending()   -- v5.35: มี Hider (Anomaly) ในระย
         -- v5.45: เฉพาะ Hider — Ghost (Anomaly+Ghost=true) ไม่เกี่ยวกับระบบนี้ (ผู้ใช้สั่ง)
         if m:IsA("Model") and m:GetAttribute("Anomaly") and not m:GetAttribute("Ghost") and not hiderSkip(m) then
             local p = partPos(m)
-            -- v6.47: Hider อยู่ใกล้ไฟ = ไม่นับเป็นงาน (ห้ามเข้าห้องไฟ)
-            if p and (p - me).Magnitude < 200 and not nearFire(p) then return true end
+            -- v6.47: Hider อยู่ใกล้ไฟ = ไม่นับเป็นงาน ; v6.61: +ตัวก๊อปโซนกลางแมพ
+            if p and (p - me).Magnitude < 200 and not nearFire(p) and not inCopyZone(p) then return true end
         end
     end
     return false
@@ -1067,7 +1077,7 @@ local function killWithWrongMed(room)
     setStatus("ผี" .. room.Name .. ": จ่าย " .. wrongName)
     if bedPP.Enabled then
         pressPrompt(bedPP)
-    else
+    elseif not promptFake(bedPP) then   -- v6.61: กัน prompt โซนก๊อป
         pcall(fp, bedPP, 0)   -- prompt ยังไม่ Enabled ก็ลองยิงตรงแบบเดิม (pressPrompt จะ no-op)
     end
     task.wait(0.2); return true
@@ -1370,7 +1380,7 @@ bind(RS.Heartbeat, function(dt)
                 end
             end
             for _, p in ipairs(workspace:GetDescendants()) do
-                if p:IsA("ProximityPrompt") and p.Enabled then
+                if p:IsA("ProximityPrompt") and p.Enabled and not promptFake(p) then   -- v6.61: ข้าม prompt โซนก๊อป
                     local a = p.ActionText
                     local owner = npcOwner(p)
                     local ghostOwner = owner and owner:GetAttribute("Skinwalker")
@@ -1445,14 +1455,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.60", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.61", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.60 " .. lastStatus
+        title.Text = "v6.61 " .. lastStatus
     end
 end
 local function armDeathLog(char)
@@ -1810,7 +1820,8 @@ task.spawn(function()
                         local work = loaded and hasWork(room, pat) and (not roomDone(room) or fresh)
                             or (not loaded and fresh) or farUnseen
                         -- v6.36: ปุ่มห้องนั้นปิด = ห้ามแตะห้องนั้นเด็ดขาด (ห้องที่ไม่รู้จัก = เปิดไว้ก่อน)
-                        local blocked = ROOM_ON[room.Name] == false
+                        -- v6.61: ห้องก๊อปที่จอดโซนกลางแมพ = ห้ามเลือกเด็ดขาด (MoveSpy จับได้ตอน "รักษา R3/R7")
+                        local blocked = ROOM_ON[room.Name] == false or inCopyZone(roomPos(room))
                         if pat and present and not blocked and (not ghost or killable) and work then
                             local pos = roomPos(room)
                             local d = (fromPos and pos) and (pos - fromPos).Magnitude or math.huge
@@ -2138,6 +2149,7 @@ task.spawn(function()
                             local pos = partPos(d.Parent)
                             -- v6.47: สไลม์ที่อยู่ใกล้ไฟ = ข้าม (ห้ามเข้าห้องไฟ — ไฟเป็นงานของปุ่มดับไฟห้อง)
                             if pos and mypos and (pos - mypos).Magnitude < 120
+                               and not inCopyZone(pos)   -- v6.61: ไฟ/สไลม์ก๊อปโซนกลางแมพ = ข้าม
                                and not (act == "Clean Slime" and nearFire(pos)) then
                                 fires[#fires+1] = d
                             end
@@ -2253,8 +2265,8 @@ task.spawn(function()
                     if d.Name == "MonsterBed" and d:IsA("Model")
                        and (not SYRUP_DONE[d] or os.clock() - SYRUP_DONE[d] > 60) then
                         local p = partPos(d)
-                        -- v6.49: เตียงผีอยู่ในห้องไฟ = ข้าม ไม่เข้าใกล้ (ผู้ใช้ขอ — กฎเดียวกับ Hider/สไลม์)
-                        if p and (p - me4).Magnitude < 150 and not nearFire(p) then bed = d; break end
+                        -- v6.49: เตียงผีอยู่ในห้องไฟ = ข้าม ; v6.61: +เตียงก๊อปโซนกลางแมพ
+                        if p and (p - me4).Magnitude < 150 and not nearFire(p) and not inCopyZone(p) then bed = d; break end
                     end
                 end
             end
@@ -2722,7 +2734,8 @@ task.spawn(function()
                                 if o.Name == "Trash" then
                                     local pp2 = o:FindFirstChildWhichIsA("ProximityPrompt", true)
                                     local tp = partPos(o)
-                                    if pp2 and pp2.ActionText == "Trash Item" and tp and me then
+                                    if pp2 and pp2.ActionText == "Trash Item" and tp and me
+                                       and not inCopyZone(tp) then   -- v6.61: ถังก๊อปโซนกลางแมพ = ข้าม
                                         local d = (tp - me).Magnitude
                                         if d < bd then best, bd = pp2, d end
                                     end
@@ -2787,8 +2800,8 @@ task.spawn(function()
                                 for _, grp in ipairs({"Medical", "Emergency"}) do
                                     local g = rooms:FindFirstChild(grp)
                                     if g then for _, r2 in ipairs(g:GetChildren()) do
-                                        -- v6.36: ห้องที่ปิด = ห้ามวางคนไข้ในนั้นด้วย
-                                        if ROOM_ON[r2.Name] ~= false then
+                                        -- v6.36: ห้องที่ปิด = ห้ามวางคนไข้ในนั้นด้วย ; v6.61: +ห้องก๊อป
+                                        if ROOM_ON[r2.Name] ~= false and not inCopyZone(roomPos(r2)) then
                                             for _, p in ipairs(r2:GetDescendants()) do
                                                 if p:IsA("ProximityPrompt") and p.Enabled and p.ActionText == "Place Patient" then
                                                     dropPP = p; break
