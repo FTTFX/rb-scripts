@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.59 แบนโซนก๊อปกลางแมพ: เป้า/ยา ในรัศมี 40 จากจุดกำเนิด (0,0) = ของก๊อป ไม่ไป — MoveSpy จับได้ตอนรักษา R4)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.60 ตาข่ายโซนก๊อป: ตัวหลุดเข้ารัศมี 60 จาก (0,0) = ดึงกลับจุดปลอดภัยทันทีในเฟรมเดียว ไม่ว่าตัวขับไหนพาไป)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -63,6 +63,7 @@ local FLY_ON, FLY_POS = false, nil   -- v6.50: ปุ่ม "บิน" ล็�
 local FLY_H = 5   -- v6.51: ความสูงบิน — ปรับได้จาก GUI
 local FLY_BASE = 3.4   -- v6.55: พื้นหลักของแมพ Y≈3.4 (จุดยืนเช็คอิน/แท่นถังยืนยัน) — ล็อคความสูงจากตรงนี้
                        -- ตายตัว ไม่ raycast แล้ว (เดิม raycast เจอหลังคา = พาขึ้นไปค้างบนหลังคา ผู้ใช้เจอ)
+local SAFE_POS = nil -- v6.60: จุดปลอดภัยล่าสุดในแมพจริง (ตาข่ายโซนก๊อปใช้ดึงกลับ)
 local BOTDRIVE = 0   -- v6.52: ระบบบอทกำลังพาตัวไป (tpTo/ciGo ต่ออายุทุกเฟรม) — โหมดบินห้ามตรึงสู้
                      -- (เดิมบอทขยับ ~1 stud/เฟรม < เกณฑ์ resync 2 → บินดึงกลับทุกเฟรม บอทเดินไม่ได้ ผู้ใช้เจอ)
 local SPEED = 50
@@ -1282,6 +1283,24 @@ bind(RS.Heartbeat, function(dt)
                 * (r.CFrame - r.CFrame.Position)
         end
     end
+    -- v6.60: ตาข่ายโซนก๊อปกลางแมพ — ตัวเราหลุดเข้ารัศมี 60 จากจุดกำเนิด (0,0) = ดึงกลับจุดปลอดภัย
+    --        ล่าสุดทันทีในเฟรมเดียว (v6.59 กันที่ tpTo แล้วแต่ยังมีตัวขับอื่นหลุดพาไป — MoveSpy ยืนยัน)
+    do
+        local r = hrp()
+        if r then
+            local flat = Vector3.new(r.Position.X, 0, r.Position.Z)
+            if flat.Magnitude < 60 then
+                if SAFE_POS then
+                    r.CFrame = CFrame.new(SAFE_POS) * (r.CFrame - r.CFrame.Position)
+                    r.AssemblyLinearVelocity = Vector3.zero
+                    FLY_POS = nil
+                    setStatus("ดึงกลับจากโซนก๊อป!")
+                end
+            else
+                SAFE_POS = r.Position   -- จุดปลอดภัยล่าสุด (ในแมพจริง)
+            end
+        end
+    end
     -- Noclip (ทุก frame)
     if NOCLIP_ON then
         local c = LP.Character
@@ -1426,14 +1445,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.59", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.60", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.59 " .. lastStatus
+        title.Text = "v6.60 " .. lastStatus
     end
 end
 local function armDeathLog(char)
