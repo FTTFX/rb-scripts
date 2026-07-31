@@ -49,13 +49,14 @@ local function testGrab(name)
     if not fp then res.Text = "❌ executor ไม่มี fireproximityprompt"; return end
     local me = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     local mp = me and me.Position
-    -- หา prompt ชื่อนี้ "ไกลสุด" (ทดสอบสุดทาง) + จดระยะ
+    -- v1.1: ยิง prompt "ใกล้สุด" (เดิมยิงตัวไกลสุดเสมอ — ยืนใกล้ก็ไม่ช่วย ผู้ใช้เจอ)
+    --        เดินไปยืนระยะต่างๆ แล้วกดซ้ำ = หาเพดานระยะที่ server ยอม
     local best, bd
     for _, p in ipairs(workspace:GetDescendants()) do
         if p:IsA("ProximityPrompt") and p.ActionText == name and p.Enabled and p.Parent then
             local pos = partPos(p.Parent)
             local d = pos and mp and (pos - mp).Magnitude
-            if d and (not best or d > bd) then best, bd = p, d end
+            if d and (not best or d < bd) then best, bd = p, d end
         end
     end
     if not best then res.Text = ("'%s' ไม่เจอ prompt เปิดอยู่"):format(name); return end
