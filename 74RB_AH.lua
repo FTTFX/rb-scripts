@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.58 บินเร็วขึ้น: ความเร็วอิงเวลาจริง 250 studs/s — เดิม 3/เฟรม บนมือถือ fps ต่ำเหลือ ~90/s ช้ามาก)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.59 แบนโซนก๊อปกลางแมพ: เป้า/ยา ในรัศมี 40 จากจุดกำเนิด (0,0) = ของก๊อป ไม่ไป — MoveSpy จับได้ตอนรักษา R4)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -361,6 +361,12 @@ local function tpTo(pos, speedOpt, noGap)   -- v5.05: speedOpt override คว�
         setStatus("บล็อควาปเพี้ยน " .. math.floor((pos - r.Position).Magnitude) .. "m")
         return
     end
+    -- v6.59: โซนจอดของก๊อปกลางแมพ (0,~,0) — MoveSpy จับได้: "รักษา Room4" บินไป (0,6,0) รัวๆ
+    --        โรงพยาบาลจริงอยู่ X -157..-97 ทั้งหมด — รัศมี 40 จากจุดกำเนิดไม่มีของจริงแน่นอน
+    if Vector3.new(pos.X, 0, pos.Z).Magnitude < 40 then
+        setStatus("บล็อคเป้าโซนก๊อป (0,0)")
+        return
+    end
     -- v4.79: กันบิน "ขึ้นฟ้า" — เป้าสูงกว่าตัวเรา >30 studs = เป้านอกแมพ (ลงต่ำได้ปกติ เผื่อหลุดไปอยู่ที่สูงแล้วต้องกลับพื้น)
     if r and pos.Y - r.Position.Y > 30 then
         setStatus("บล็อคเป้าบนฟ้า +" .. math.floor(pos.Y - r.Position.Y) .. "m")
@@ -462,7 +468,9 @@ local function findPickup(medName)
             local pos = partPos(p.Parent)
             -- v4.67: ตัดจุดเก็บนอกแมพทิ้ง (เกมพักไอเทมไว้ใต้น้ำ/ไกล — บินตามไป = ลอยน้ำ)
             -- v4.79: กันของที่จอด "บนฟ้า" ด้วย (สูงกว่าตัวเรา >25 studs = ก๊อปปี้นอกแมพ — บินขึ้นฟ้ากลางทะเล)
-            if pos and (not fromPos or ((pos - fromPos).Magnitude < 150 and pos.Y - fromPos.Y < 25)) and pos.Y > -50 then
+            -- v6.59: ตัดของในโซนก๊อปกลางแมพ (รัศมี 40 จากจุดกำเนิด) — MoveSpy จับได้ว่าบอทบินไปเก็บ
+            if pos and (not fromPos or ((pos - fromPos).Magnitude < 150 and pos.Y - fromPos.Y < 25)) and pos.Y > -50
+               and Vector3.new(pos.X, 0, pos.Z).Magnitude > 40 then
                 local d = fromPos and (pos - fromPos).Magnitude or math.huge
                 if not best or d < bestD then best, bestD = p, d end
             end
@@ -1418,14 +1426,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.58", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.59", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.58 " .. lastStatus
+        title.Text = "v6.59 " .. lastStatus
     end
 end
 local function armDeathLog(char)
