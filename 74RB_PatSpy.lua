@@ -1,7 +1,7 @@
 -- 74RB_PatSpy.lua v1.0 — สปายตำแหน่ง NPC/คนไข้ทุกตัว: มีตัวก๊อปจอดนอกกรอบไหม?
 -- แต่ละตัว: ชื่อ | พิกัด | DesignatedRoom | InBed | Treated | Skinwalker | ธง ⚠️ ถ้าอยู่นอกกรอบโรงพยาบาล
 -- ปุ่ม: RESCAN | COPY | ✕
-local HOSP = { x1 = -175, x2 = -85, z1 = -145, z2 = 130 }   -- กรอบเดียวกับ main v6.63
+local HOSP = { x1 = -230, x2 = -85, z1 = -160, z2 = 150 }   -- กรอบเดียวกับ main v6.68
 
 if _G.PATSPY_GUI then pcall(function() _G.PATSPY_GUI:Destroy() end) end
 
