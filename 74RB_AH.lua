@@ -1,4 +1,4 @@
--- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.64 แก้ R8 หาของไม่เจอ: โซน Room8 ผ่าน MED_SPOTS เสมอ — เกมสุ่มตำแหน่งของบนชั้นแต่ละรอบ)
+-- 74RB_AnimalHospital.lua — ESP + AUTO รักษา + ชัตเตอร์ + ดับไฟ + NPC เร็ว  (v6.65 auto เลี่ยง Ghost: ไม่ได้ถือ Scanner = จุดหมายถอยห่าง Ghost ≥5 studs เสมอ (ghostSafe) — ผู้ใช้ขอ)
 -- ESP ทะลุกำแพง: ผี🔴 (Skinwalker) | คนไข้🟢 (IsPatient) | NPC🟡 (visitor) | เพื่อน🔵 + ชื่อ+ระยะ
 -- Speed: บังคับ WalkSpeed ทุก frame | Noclip: ทะลุกำแพง | AUTO: match ยาตามจอ ไม่ฆ่าคนไข้
 local Players = game:GetService("Players")
@@ -315,13 +315,28 @@ local GHOST_GAP = 12
 local function ghostSafe(pos)
     local npcs = workspace:FindFirstChild("NPCs")
     if not npcs then return pos end
+    -- v6.65 (ผู้ใช้ขอ, auto): Ghost (Anomaly+Ghost) — ไม่ได้ถือ Scanner = ห้ามเข้าใกล้ ถอยห่าง ≥5
+    --        (ถือ Scanner อยู่ = ต้องประชิดไปสแกน — ไม่ถอย)
+    local hasScanner = false
+    do
+        local bp = LP:FindFirstChild("Backpack")
+        local held = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+        if held and held.Name:lower():find("scanner", 1, true) then hasScanner = true end
+        if not hasScanner and bp then
+            for _, t in ipairs(bp:GetChildren()) do
+                if t:IsA("Tool") and t.Name:lower():find("scanner", 1, true) then hasScanner = true; break end
+            end
+        end
+    end
     for _, m in ipairs(npcs:GetChildren()) do
-        if m:GetAttribute("Skinwalker") then
+        local gap = m:GetAttribute("Skinwalker") and GHOST_GAP
+            or (not hasScanner and m:GetAttribute("Ghost") and m:GetAttribute("Anomaly") and 5)
+        if gap then
             local g = partPos(m)
-            if g and (g - pos).Magnitude < GHOST_GAP then
+            if g and (g - pos).Magnitude < gap then
                 local away = (pos - g)
                 away = away.Magnitude > 0.5 and away.Unit or Vector3.new(1, 0, 0)
-                pos = g + away * GHOST_GAP
+                pos = g + away * gap
             end
         end
     end
@@ -1489,14 +1504,14 @@ Instance.new("UIStroke", f).Color = Color3.fromRGB(90,120,255)
 local title = Instance.new("TextLabel", f)
 title.Size, title.Position = UDim2.new(1,-40,0,26), UDim2.new(0,8,0,4)
 title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(150,180,255)
-title.Text, title.Font, title.TextSize = "AH74 v6.64", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
+title.Text, title.Font, title.TextSize = "AH74 v6.65", Enum.Font.GothamBold, 14   -- โชว์เวอร์ชัน+สถานะบนหัว GUI
 title.TextScaled = true
 -- v4.46 กล่องดำ: จำสถานะล่าสุด — ตอนตายโชว์ค้างว่า "ตายตอนกำลังทำอะไร + ผีใกล้สุดกี่ studs"
 local lastStatus, deadLock = "", false
 setStatus = function(s)
     lastStatus = s or ""
     if not deadLock then
-        title.Text = "v6.64 " .. lastStatus
+        title.Text = "v6.65 " .. lastStatus
     end
 end
 local function armDeathLog(char)
