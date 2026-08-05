@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.8: ระบบโชค ☘ — ค่าโชคไม่อยู่ใน attr ต้องแกะจากป้าย CrystalHover ('Luck: +6.0%')
+--       โชว์ ☘% ในป้าย ESP + ปุ่มเรียงวน 3 โหมด แพงสุด/ใกล้สุด/โชคสุด + TOP5 ตามโหมดเรียง
 -- v2.7: บินเปลี่ยนเป็นแกนแบบ 74RB แท้ — ตรึงตำแหน่งด้วย CFrame ทุกเฟรม (แรงโน้มถ่วง/
 --       แรงผลักทำอะไรไม่ได้ ลอยนิ่งสนิท) แต่บังคับเองด้วยจอย + ▲▼ | ทะลุกำแพงในตัว
 -- v2.6: ปุ่ม "บิน" — บินทะลุกำแพงแบบ 74RB: จอยบังคับทิศ + ปุ่ม ▲▼ ขึ้นลง + noclip
@@ -28,7 +30,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.7"
+local V = "2.8"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -38,7 +40,7 @@ local MARKS   = _G.IESP75_MARKS
 local MAX_SHOW   = 150            -- ป้ายพร้อมกันสูงสุด (กันเลค/จอแตก)
 local TIER_ON    = { [1]=false, [2]=false, [3]=false, [4]=true, [5]=true, [6]=true }
 local GIANT_ONLY = false          -- true = โชว์เฉพาะ SizeClass ~= Small
-local SORT_VALUE = true           -- true = แพงสุดก่อน | false = ใกล้สุดก่อน
+local SORT_MODE  = "val"          -- "val" แพงสุด | "dist" ใกล้สุด | "luck" โชคสุด
 local REACH      = 25             -- ระยะเก็บ (ยิง fp ถึง) — ก้อนในระยะนี้สว่าง+✅
 local TOP5_ONLY  = false          -- true = ติดป้ายเฉพาะ 5 ก้อนแพงสุด
 local TIER_NAMES = { "T1 Common", "T2", "T3", "T4", "T5 Legend", "T6 Mythic" }
@@ -73,6 +75,30 @@ local function getCrystals()
     return out
 end
 local CRYSTAL_GAME = #getCrystals() > 0 or (workspace:FindFirstChild("Things") ~= nil)
+
+-- ค่าโชคไม่มีใน Attributes — อยู่เป็นข้อความในป้าย CrystalHover ('Luck: +6.0%')
+-- แกะตัวเลขจาก TextLabel แล้ว cache ต่อก้อน (weak key — ก้อนหายแล้ว entry หายเอง)
+local LUCK_CACHE = setmetatable({}, { __mode = "k" })
+local function getLuck(c)
+    local v = LUCK_CACHE[c]
+    if v ~= nil then return v end
+    v = 0
+    local hover = c:FindFirstChild("CrystalHover")
+    if hover then
+        for _, l in ipairs(hover:GetDescendants()) do
+            if l:IsA("TextLabel") then
+                local n = l.Text:match("Luck:%s*%+?([%d%.]+)%%")
+                if n then v = tonumber(n) or 0 break end
+            end
+        end
+    end
+    LUCK_CACHE[c] = v
+    return v
+end
+local function fmtLuck(v)
+    if v <= 0 then return "" end
+    return " ☘" .. (v >= 1 and ("%.0f%%"):format(v) or ("%.2f%%"):format(v))
+end
 
 -- ==================== Markers ====================
 local function addMark(inst, text, col)
@@ -137,6 +163,7 @@ local function scanCrystals()
                     list[#list + 1] = {
                         inst = c,
                         d = mp and (p - mp).Magnitude or 1e9,
+                        luck = getLuck(c),
                         val = c:GetAttribute("Value") or 0,
                         name = c:GetAttribute("CrystalName") or c.Name,
                         sz = sz,
@@ -149,7 +176,9 @@ local function scanCrystals()
             end
         end
     end
-    if SORT_VALUE or TOP5_ONLY then
+    if SORT_MODE == "luck" then
+        table.sort(list, function(a, b) return a.luck > b.luck end)
+    elseif SORT_MODE == "val" or TOP5_ONLY then
         table.sort(list, function(a, b) return a.val > b.val end)
     else
         table.sort(list, function(a, b) return a.d < b.d end)
@@ -159,7 +188,8 @@ local function scanCrystals()
         local e = list[i]
         keep[e.inst] = true
         local szTag = (e.sz ~= "Small") and ("[" .. e.sz .. "] ") or ""
-        addMark(e.inst, ("%s%s %s %dm"):format(szTag, e.name, fmtMoney(e.val), math.floor(e.d)), e.col)
+        addMark(e.inst, ("%s%s %s%s %dm"):format(szTag, e.name, fmtMoney(e.val),
+            fmtLuck(e.luck), math.floor(e.d)), e.col)
     end
     for inst in pairs(MARKS) do
         if not keep[inst] or not inst.Parent then removeMark(inst) end
@@ -300,9 +330,18 @@ sortB.Size = UDim2.new(0, 86, 0, 26); sortB.Position = UDim2.new(0, 98, 0, 92)
 sortB.Text = "เรียง: แพงสุด"; sortB.Font = Enum.Font.GothamBold; sortB.TextSize = 10
 sortB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); sortB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", sortB).CornerRadius = UDim.new(0, 5)
+local SORT_ORDER = { "val", "dist", "luck" }
+local SORT_LABEL = { val = "เรียง: แพงสุด", dist = "เรียง: ใกล้สุด", luck = "เรียง: ☘โชคสุด" }
 sortB.MouseButton1Click:Connect(function()
-    SORT_VALUE = not SORT_VALUE
-    sortB.Text = SORT_VALUE and "เรียง: แพงสุด" or "เรียง: ใกล้สุด"
+    for i, m in ipairs(SORT_ORDER) do
+        if m == SORT_MODE then
+            SORT_MODE = SORT_ORDER[i % #SORT_ORDER + 1]
+            break
+        end
+    end
+    sortB.Text = SORT_LABEL[SORT_MODE]
+    sortB.BackgroundColor3 = SORT_MODE == "luck" and Color3.fromRGB(40, 130, 70)
+        or Color3.fromRGB(40, 90, 150)
     scan()
 end)
 
@@ -485,18 +524,24 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
             for _, c in ipairs(getCrystals()) do
                 local t2 = c:GetAttribute("Tier")
                 if t2 and TIER_ON[t2] then
-                    best[#best + 1] = { v = c:GetAttribute("Value") or 0,
+                    best[#best + 1] = { v = c:GetAttribute("Value") or 0, lk = getLuck(c),
                         n = c:GetAttribute("CrystalName") or "?", s = c:GetAttribute("SizeClassName") or "" }
                 end
             end
-            table.sort(best, function(a, b) return a.v > b.v end)
+            -- อันดับตามโหมดเรียง: โชคสุด → เรียงโชค | อื่นๆ → เรียงราคา
+            if SORT_MODE == "luck" then
+                table.sort(best, function(a, b) return a.lk > b.lk end)
+            else
+                table.sort(best, function(a, b) return a.v > b.v end)
+            end
             local lines = {}
             for i = 1, math.min(5, #best) do
                 local e = best[i]
-                lines[#lines + 1] = ("%d. %s%s %s"):format(i,
-                    e.s ~= "Small" and ("[" .. e.s .. "] ") or "", e.n, fmtMoney(e.v))
+                lines[#lines + 1] = ("%d. %s%s %s%s"):format(i,
+                    e.s ~= "Small" and ("[" .. e.s .. "] ") or "", e.n, fmtMoney(e.v), fmtLuck(e.lk))
             end
-            topBox.Text = " TOP5:\n " .. table.concat(lines, "\n ")
+            topBox.Text = (SORT_MODE == "luck" and " TOP5 ☘โชค:\n " or " TOP5 แพง:\n ")
+                .. table.concat(lines, "\n ")
         end
     end
 end))
