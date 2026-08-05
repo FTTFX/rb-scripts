@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.14: กดเกินเวลา +0.6 วิก่อนปล่อย + ข้ามก้อนที่โดนตัวเก่าตั้ง Hold=0
 -- v2.13: (PickSpy) วาป-เก็บเปลี่ยนเป็นกดค้างจริง InputHoldBegin/End — fp Hold=0 โดน server ปัด
 -- v2.12: เลิกทำท่าตกตอนบิน/วาป — ปิดสถานะ Freefall/FallingDown/Ragdoll ของ Humanoid
 --        ตอนบิน (ยืนลอยนิ่งแบบ 74) แล้วคืนตอนปิดบิน
@@ -38,7 +39,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.13"
+local V = "2.14"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -519,8 +520,9 @@ warpTo = function(inst)
             if not inst.Parent then break end   -- หายจากแมพ = เก็บสำเร็จ
             local pp = inst:FindFirstChildOfClass("ProximityPrompt")
             if not pp then break end
+            if pp.HoldDuration <= 0.05 then break end   -- โดนตัวเก่าตั้ง Hold=0 — เก็บไม่เข้าแล้ว
             pcall(function() pp:InputHoldBegin() end)
-            task.wait(pp.HoldDuration + 0.15)
+            task.wait(pp.HoldDuration + 0.6)   -- กดเกินไว้ ปล่อยเป๊ะเกิน engine นับไม่ถึง
             pcall(function() pp:InputHoldEnd() end)
             task.wait(0.8)
         end
