@@ -1,4 +1,5 @@
--- 75RB_ItemESP.lua v2.0 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.1: ก้อนใน "ระยะเก็บ" (ยิง fp ถึง) → สว่าง + ✅ หน้าชื่อ | ปุ่มปรับระยะเก็บ −/+
 -- v2.0: อ่าน Attributes ของเกมตรงๆ (CrystalName/TierName/Tier/Value/WeightKg/SizeClass/TierColor)
 --   ป้าย: "[Giant] Diamond $36.4M 31m" สีตามเทียร์ | กรองรายเทียร์ T1-T6 | ปุ่ม Giant only
 --   โชว์สูงสุด 150 ก้อน เลือกโหมด: ใกล้สุด / แพงสุด (กันจอแตก — ทั้งแมพมี ~2000 ก้อน)
@@ -18,7 +19,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.0"
+local V = "2.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -29,6 +30,7 @@ local MAX_SHOW   = 150            -- ป้ายพร้อมกันสู�
 local TIER_ON    = { [1]=false, [2]=false, [3]=false, [4]=true, [5]=true, [6]=true }
 local GIANT_ONLY = false          -- true = โชว์เฉพาะ SizeClass ~= Small
 local SORT_VALUE = true           -- true = แพงสุดก่อน | false = ใกล้สุดก่อน
+local REACH      = 25             -- ระยะเก็บ (ยิง fp ถึง) — ก้อนในระยะนี้สว่าง+✅
 local TIER_NAMES = { "T1 Common", "T2", "T3", "T4", "T5 Legend", "T6 Mythic" }
 
 local function partPos(inst)
@@ -280,11 +282,32 @@ sortB.MouseButton1Click:Connect(function()
 end)
 
 local rescanB = Instance.new("TextButton", panel)
-rescanB.Size = UDim2.new(0, 178, 0, 28); rescanB.Position = UDim2.new(0, 6, 0, 122)
+rescanB.Size = UDim2.new(0, 86, 0, 28); rescanB.Position = UDim2.new(0, 6, 0, 122)
 rescanB.Text = "RESCAN"; rescanB.Font = Enum.Font.GothamBold; rescanB.TextSize = 13
 rescanB.BackgroundColor3 = Color3.fromRGB(40, 130, 70); rescanB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", rescanB).CornerRadius = UDim.new(0, 5)
 rescanB.MouseButton1Click:Connect(scan)
+
+-- ระยะเก็บ − [25] + (ก้อนในระยะนี้ = ✅ สว่าง)
+local reachL = Instance.new("TextLabel", panel)
+reachL.Size = UDim2.new(0, 38, 0, 28); reachL.Position = UDim2.new(0, 124, 0, 122)
+reachL.BackgroundTransparency = 1
+reachL.Text = "✅25"
+reachL.Font = Enum.Font.GothamBold; reachL.TextSize = 12
+reachL.TextColor3 = Color3.fromRGB(120, 255, 160)
+local function reachBtn(txt, x, delta)
+    local b = Instance.new("TextButton", panel)
+    b.Size = UDim2.new(0, 24, 0, 28); b.Position = UDim2.new(0, x, 0, 122)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 15
+    b.BackgroundColor3 = Color3.fromRGB(45, 45, 65); b.TextColor3 = Color3.new(1, 1, 1)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    b.MouseButton1Click:Connect(function()
+        REACH = math.clamp(REACH + delta, 5, 300)
+        reachL.Text = "✅" .. REACH
+    end)
+end
+reachBtn("−", 98, -5)
+reachBtn("+", 162, 5)
 
 statusLbl = Instance.new("TextLabel", panel)
 statusLbl.Size = UDim2.new(1, -12, 0, 16); statusLbl.Position = UDim2.new(0, 6, 0, 154)
@@ -332,7 +355,12 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
             elseif mp then
                 local p = partPos(inst)
                 if p then
-                    m.lbl.Text = m.text:gsub(" %d+m$", "") .. " " .. math.floor((p - mp).Magnitude) .. "m"
+                    local d = (p - mp).Magnitude
+                    local inReach = d <= REACH
+                    m.lbl.Text = (inReach and "✅" or "") .. m.text:gsub(" %d+m$", "")
+                        .. " " .. math.floor(d) .. "m"
+                    m.hl.FillTransparency = inReach and 0.1 or 0.6
+                    m.tag.StudsOffset = Vector3.new(0, inReach and 4 or 3, 0)
                 end
             end
         end
