@@ -1,4 +1,6 @@
 -- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v2.0: (DeepSpy) เจอรีโมตตรง RS.Remotes.CrystalHoldComplete:FireServer(ก้อน) —
+--       client ยิงเองหลังกดครบ → เรายิงตรงเลย เร็วสุด ไม่ต้องกดค้าง
 -- v1.8: "กดค้างไม่นานพอ" — กดเกินเวลา +0.6 วิก่อนปล่อย (ปล่อยเป๊ะเกินไป engine นับไม่ถึง)
 --       + ก้อนที่โดนตัวเก่าตั้ง Hold=0 ทับ → กดยังไงก็ trigger ทันที server เท → ข้ามยาว 10 นาที
 -- v1.7: (PickSpy) server จับเวลากดค้าง — fp Hold=0 โดนปัด! → กดค้างจริงด้วย
@@ -20,11 +22,14 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.8"
+local V = "2.0"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+-- v2.0: รีโมตเก็บตรง (จาก DeepSpy) — client ยิงเองหลังกดครบ เรายิงแทนได้เลย
+local pickRemote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+pickRemote = pickRemote and pickRemote:FindFirstChild("CrystalHoldComplete")
 
 -- หาก้อนคริสตัลสดทุกรอบ (เหมือน ItemESP v2.4)
 local function getCrystals()
@@ -245,37 +250,20 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
         end
     end
     if not best then return end
-    local pp = best:FindFirstChildOfClass("ProximityPrompt")
-    if not pp then return end
-    -- v1.7 (จาก PickSpy): server จับเวลาช่วงกดค้าง — fp Hold=0 โดนปัดเกือบหมด
-    -- → กดค้างแบบถูกกติกาผ่าน InputHoldBegin → รอครบ HoldDuration → InputHoldEnd
-    --   engine trigger เองเหมือนนิ้วกดจริง server แยกไม่ออก
-    local hold = pp.HoldDuration
-    if hold <= 0.05 then
-        -- ก้อนที่โดนตัวเก่า (≤v1.6) ตั้ง Hold=0 ทับไว้ — กดค้างยังไง engine ก็ trigger ทันที
-        -- server เทตลอด → ข้ามยาวเลย (เดี๋ยวก้อนใหม่ spawn มา Hold ปกติ)
-        FAILED[best] = os.clock() + 600
-        lastL.Text = ("⚠️ %s Hold=0 (โดนตัวเก่าแก้ค่า) ข้ามถาวร"):format(
-            best:GetAttribute("CrystalName") or best.Name)
-        return
-    end
+    -- v2.0 (DeepSpy): เจอรีโมตตรง! เก็บมือจริงๆ = client ยิง
+    --   RS.Remotes.CrystalHoldComplete:FireServer(ก้อน) หลังกดครบ
+    -- → เรายิงตรงเลย ไม่ต้องกดค้าง ไม่ต้องง้อ ProximityPrompt (เร็วสุด)
+    if not pickRemote then return end
     pending = {
         inst = best, d = math.floor(bd),
         name = best:GetAttribute("CrystalName") or best.Name,
         val = best:GetAttribute("Value") or 0,
         kg = best:GetAttribute("WeightKg") or 0,
     }
-    pendT = -(hold + 1.0)   -- นับ timeout 1.2s "หลัง" กดครบ (ไม่ตัดสินระหว่างยังกดอยู่)
-    lastL.Text = ("⏳ กดค้าง %s %.1f วิ..."):format(pending.name, hold)
-    task.spawn(function()
-        -- v1.7b: กดเกินเวลาไว้ 0.6 วิ — ปล่อยเป๊ะเกิน engine นับไม่ถึงเส้น = ไม่ trigger
-        -- (Triggered เด้งเองตอนครบเวลาแม้ยังกดอยู่ — ปล่อยช้าไม่เสียอะไร)
-        pcall(function() pp:InputHoldBegin() end)
-        task.wait(hold + 0.6)
-        pcall(function() pp:InputHoldEnd() end)
-    end)
+    pendT = 0
+    pcall(function() pickRemote:FireServer(best) end)
 end))
 
 updStat()
-print("[75RB Assist v" .. V .. "] โหมดกดค้างจริง (InputHoldBegin/End)"
-    .. " | ระยะ prompt จริง ~9-16m — ตั้งระยะ ≤15 ผลดีสุด")
+print("[75RB Assist v" .. V .. "] รีโมตตรง CrystalHoldComplete="
+    .. tostring(pickRemote ~= nil) .. " | ยิงเก็บทันที ไม่ต้องกดค้าง")
