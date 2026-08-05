@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.11: วาป-แล้ว-เก็บเลย — ถึงก้อนรอ 0.4 วิ (ให้ server รับตำแหน่ง) แล้วยิง fp ซ้ำจนก้อนหาย
 -- v2.10: กรองบ้านเพื่อนแบบชัวร์ (จาก HomeSpy) — ก้อนบ้านชื่อ 'Handle' ใต้ Things.Plots
 --        และไม่มี prompt → กรอง: ไม่อยู่ใต้ Plots + ต้องมี ProximityPrompt เปิด (เก็บได้จริง)
 -- v2.9: TOP5 กดได้ — แตะแถวไหนวาปบินไปลอยเหนือก้อนนั้นเลย (เปิดบินอัตโนมัติ)
@@ -34,7 +35,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.10"
+local V = "2.11"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -488,11 +489,25 @@ end
 flyB.MouseButton1Click:Connect(function() setFly(not FLY_ON) end)
 
 -- วาปไปก้อน (TOP5 กด) — เปิดบินก่อน (จะได้ลอยค้าง ไม่ร่วง) แล้วย้ายจุดตรึงไปเหนือก้อน 6 studs
+-- v2.11: ถึงแล้วเก็บเองเลย — รอ 0.4 วิให้ server รับตำแหน่งใหม่ แล้วยิง fp ซ้ำจนก้อนหาย (สูงสุด 6 ครั้ง)
+local fpr = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 warpTo = function(inst)
     local p = partPos(inst)
     if not p then return end
     if not FLY_ON then setFly(true) end
     FLY_POS = p + Vector3.new(0, 6, 0)
+    if not fpr then return end
+    task.spawn(function()
+        task.wait(0.4)   -- ให้ replication ตำแหน่งใหม่ไปถึง server ก่อน ไม่งั้นโดนเช็คระยะปัด
+        for _ = 1, 6 do
+            if not inst.Parent then break end   -- หายจากแมพ = เก็บสำเร็จ
+            local pp = inst:FindFirstChildOfClass("ProximityPrompt")
+            if not pp then break end
+            pp.HoldDuration = 0
+            pcall(fpr, pp, 0)
+            task.wait(0.5)
+        end
+    end)
 end
 
 -- แกนแบบ 74RB: คำนวณ FLY_POS จากจอย แล้ว "เขียน CFrame ทับ" ทุกเฟรม
