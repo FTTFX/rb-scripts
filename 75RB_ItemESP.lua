@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.12: เลิกทำท่าตกตอนบิน/วาป — ปิดสถานะ Freefall/FallingDown/Ragdoll ของ Humanoid
+--        ตอนบิน (ยืนลอยนิ่งแบบ 74) แล้วคืนตอนปิดบิน
 -- v2.11: วาป-แล้ว-เก็บเลย — ถึงก้อนรอ 0.4 วิ (ให้ server รับตำแหน่ง) แล้วยิง fp ซ้ำจนก้อนหาย
 -- v2.10: กรองบ้านเพื่อนแบบชัวร์ (จาก HomeSpy) — ก้อนบ้านชื่อ 'Handle' ใต้ Things.Plots
 --        และไม่มี prompt → กรอง: ไม่อยู่ใต้ Plots + ต้องมี ProximityPrompt เปิด (เก็บได้จริง)
@@ -35,7 +37,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.11"
+local V = "2.12"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -475,10 +477,24 @@ local function setFly(on)
     flyB.TextColor3 = FLY_ON and Color3.new(1, 1, 1) or Color3.fromRGB(110, 110, 125)
     local char = LP.Character
     local r = char and char:FindFirstChild("HumanoidRootPart")
+    local h = char and char:FindFirstChildOfClass("Humanoid")
     if FLY_ON then
         FLY_POS = r and r.Position or nil   -- เริ่มตรึงจากจุดที่ยืน
+        -- v2.12: ปิดสถานะ "ตก" — Humanoid เห็นตัวลอยแล้วเล่นท่าดิ้น Freefall น่าเกลียด
+        -- ปิดทิ้งตอนบิน = ยืนลอยนิ่งๆ แบบ 74 (วาปไกลก็ไม่ทำท่าตก)
+        if h then
+            h:SetStateEnabled(Enum.HumanoidStateType.Freefall, false)
+            h:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+            h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+            h:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
     else
         FLY_POS = nil
+        if h then   -- คืนสถานะตกตอนปิด (ไม่งั้นเดินตกเหวแล้วลอยค้างท่ายืน)
+            h:SetStateEnabled(Enum.HumanoidStateType.Freefall, true)
+            h:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+        end
         if char then   -- คืน CanCollide ตอนปิด
             for _, p in ipairs(char:GetDescendants()) do
                 if p:IsA("BasePart") then p.CanCollide = true end
