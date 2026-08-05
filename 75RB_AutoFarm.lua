@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v1.6: กรองช่วงน้ำหนักแร่ (ดีฟอลต์ 50-1000 kg) ปรับได้ที่แผง — ก้อนจิ๋ว 0.2kg เสียเวลาวาปเปล่า
 -- v1.5: วนหา 8 มุมรอบก้อน (ระดับเดียวกัน) + เช็ค "ปุ่มติดไหม" ด้วย PromptShown ก่อนกด
 --       ติด=กดจริงรอผล | ไม่ติด=วาปมุมถัดไปทันที (ไม่เสียเวลากดลม) + จำมุมที่เข้า
 -- v1.4: ยิง remote เปล่าไม่เข้าแล้ว (ยิง 10 ครั้งก้อนไม่ขยับ) → บอทไล่หา "ท่าที่เข้า" เอง
@@ -22,7 +23,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.5"
+local V = "1.6"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -35,6 +36,8 @@ local sellR = Rem and Rem:FindFirstChild("SellRequest")
 -- ==================== Config/State ====================
 local MIN_TIER  = 4
 local SELL_PCT  = 0.85          -- กระเป๋าถึง % นี้ → ไปขาย
+local KG_MIN    = 50            -- v1.6: เอาเฉพาะก้อน 50-1000 kg (ก้อนจิ๋วเสียเวลาวาปเปล่า)
+local KG_MAX    = 1000
 local statPick, statVal, statSell = 0, 0, 0
 local FAILED = {}               -- ก้อนที่เก็บไม่เข้า พัก 30 วิ
 local TARGET_POS = nil          -- จุดตรึงตัว (nil = ไม่ตรึง เดินเองได้)
@@ -98,7 +101,8 @@ local function bestCrystal(maxKg)
         local t = c:GetAttribute("Tier")
         if t and t >= MIN_TIER and (not FAILED[c] or os.clock() > FAILED[c]) then
             local kg = c:GetAttribute("WeightKg") or 0
-            if kg <= maxKg then   -- เอาเฉพาะก้อนที่ยัดกระเป๋าลง
+            -- ยัดกระเป๋าลง + อยู่ในช่วงน้ำหนักที่ตั้งไว้ (v1.6)
+            if kg <= maxKg and kg >= KG_MIN and kg <= KG_MAX then
                 local v = c:GetAttribute("Value") or 0
                 if not bv or v > bv then best, bv = c, v end
             end
@@ -186,10 +190,10 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.AF75_GUI = gui
 
-local FULL_H, MIN_H = 394, 32
+local FULL_H, MIN_H = 440, 32
 local panel = Instance.new("Frame", gui)
 panel.Size = UDim2.new(0, 210, 0, FULL_H)
-panel.Position = UDim2.new(0.5, -105, 0, 40)
+panel.Position = UDim2.new(0.5, -105, 0, 20)
 panel.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 panel.BorderSizePixel = 0
 panel.Active, panel.Draggable = true, true
@@ -242,8 +246,39 @@ pctB.MouseButton1Click:Connect(function()
     pctB.Text = ("ขายที่ %d%%"):format(SELL_PCT * 100)
 end)
 
+-- v1.6: ช่วงน้ำหนักแร่ที่จะเก็บ  ต่ำสุด − [50] +   สูงสุด − [1000] +
+local kgL = Instance.new("TextLabel", panel)
+kgL.Size = UDim2.new(1, -12, 0, 18); kgL.Position = UDim2.new(0, 6, 0, 102)
+kgL.BackgroundTransparency = 1
+kgL.Text = "น้ำหนักแร่ 50 - 1000 kg"
+kgL.Font = Enum.Font.GothamBold; kgL.TextSize = 12
+kgL.TextColor3 = Color3.fromRGB(255, 220, 150)
+local function updKgL()
+    kgL.Text = ("น้ำหนักแร่ %d - %d kg"):format(KG_MIN, KG_MAX)
+end
+local function kgBtn(txt, x, isMin, delta)
+    local b = Instance.new("TextButton", panel)
+    b.Size = UDim2.new(0, 42, 0, 24); b.Position = UDim2.new(0, x, 0, 122)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
+    b.BackgroundColor3 = isMin and Color3.fromRGB(45, 65, 45) or Color3.fromRGB(65, 45, 45)
+    b.TextColor3 = Color3.new(1, 1, 1)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    b.MouseButton1Click:Connect(function()
+        if isMin then
+            KG_MIN = math.clamp(KG_MIN + delta, 0, KG_MAX - 10)
+        else
+            KG_MAX = math.clamp(KG_MAX + delta, KG_MIN + 10, 5000)
+        end
+        updKgL()
+    end)
+end
+kgBtn("ต่ำ −", 6, true, -25)
+kgBtn("ต่ำ +", 52, true, 25)
+kgBtn("สูง −", 110, false, -100)
+kgBtn("สูง +", 156, false, 100)
+
 local statusL = Instance.new("TextLabel", panel)
-statusL.Size = UDim2.new(1, -12, 0, 34); statusL.Position = UDim2.new(0, 6, 0, 104)
+statusL.Size = UDim2.new(1, -12, 0, 34); statusL.Position = UDim2.new(0, 6, 0, 150)
 statusL.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 statusL.Text = " พร้อม"
 statusL.Font = Enum.Font.Gotham; statusL.TextSize = 11
@@ -257,7 +292,7 @@ local function status(s) statusL.Text = " " .. s end
 local LOG = {}
 local T0 = os.clock()
 local logBox = Instance.new("TextLabel", panel)
-logBox.Size = UDim2.new(1, -12, 0, 120); logBox.Position = UDim2.new(0, 6, 0, 240)
+logBox.Size = UDim2.new(1, -12, 0, 120); logBox.Position = UDim2.new(0, 6, 0, 286)
 logBox.BackgroundColor3 = Color3.fromRGB(6, 6, 10)
 logBox.Text = ""
 logBox.Font = Enum.Font.Code; logBox.TextSize = 10
@@ -276,7 +311,7 @@ local function LG(s)
 end
 
 local copyB = Instance.new("TextButton", panel)
-copyB.Size = UDim2.new(0, 96, 0, 24); copyB.Position = UDim2.new(0, 6, 0, 364)
+copyB.Size = UDim2.new(0, 96, 0, 24); copyB.Position = UDim2.new(0, 6, 0, 410)
 copyB.Text = "COPY log"; copyB.Font = Enum.Font.GothamBold; copyB.TextSize = 12
 copyB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); copyB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", copyB).CornerRadius = UDim.new(0, 5)
@@ -291,14 +326,14 @@ copyB.MouseButton1Click:Connect(function()
 end)
 
 local clrB = Instance.new("TextButton", panel)
-clrB.Size = UDim2.new(0, 96, 0, 24); clrB.Position = UDim2.new(0, 108, 0, 364)
+clrB.Size = UDim2.new(0, 96, 0, 24); clrB.Position = UDim2.new(0, 108, 0, 410)
 clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 12
 clrB.BackgroundColor3 = Color3.fromRGB(90, 60, 30); clrB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", clrB).CornerRadius = UDim.new(0, 5)
 clrB.MouseButton1Click:Connect(function() LOG = {}; logBox.Text = "" end)
 
 local statL = Instance.new("TextLabel", panel)
-statL.Size = UDim2.new(1, -12, 0, 92); statL.Position = UDim2.new(0, 6, 0, 144)
+statL.Size = UDim2.new(1, -12, 0, 92); statL.Position = UDim2.new(0, 6, 0, 190)
 statL.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 statL.Font = Enum.Font.Code; statL.TextSize = 11
 statL.TextColor3 = Color3.fromRGB(190, 220, 190)
@@ -468,7 +503,8 @@ local function farmLoop()
             -- ─── ขุด ───
             local c = bestCrystal(cap - cur)
             if not c then
-                status("🔍 ไม่เจอก้อน (เทียร์ ≥ T" .. MIN_TIER .. ") — รอ spawn...")
+                status(("🔍 ไม่เจอก้อน (T≥%d, %d-%dkg) — รอ spawn..."):format(
+                    MIN_TIER, KG_MIN, KG_MAX))
                 task.wait(2)
             else
                 local nm = c:GetAttribute("CrystalName") or "?"
