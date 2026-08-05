@@ -1,4 +1,8 @@
--- 75RB_SellSpy.lua v1.3 — แกะเมนูขาย
+-- 75RB_SellSpy.lua v1.4 — แกะเมนูขาย
+-- v1.4: แก้ 💥 ERROR (dumpTree ถูกเรียกก่อนประกาศ) + ค้น "prompt ขาย" ทั้ง workspace
+--       (เจอ ProximityPrompts.Prompt.Frame.ActionText='Sell Crystals' → ร้านมี prompt จริง
+--        แค่ไม่ได้อยู่ใต้ Model SellWorker!)
+-- v1.3: แกะเมนูขาย
 -- v1.3: กดปุ่มแล้วจอว่าง! — วาด log สดทุกบรรทัด (เดิมวาดตอนจบ ถ้า error กลางทาง = ไม่เห็นอะไร)
 --       + หุ้ม pcall ทุกปุ่ม โชว์ 💥 ERROR ให้เห็น
 -- v1.2: แกะเมนูขาย (ร้านไม่มี ProximityPrompt! ปุ่ม E เป็น UI เกมเอง)
@@ -28,6 +32,25 @@ local function L(s)
     OUT[#OUT + 1] = s
     if #OUT > 250 then table.remove(OUT, 1) end
     if BOX then BOX.Text = table.concat(OUT, "\n") end
+end
+
+-- v1.4: ประกาศไว้บนสุด (เดิมอยู่ใต้ scan → เรียกแล้ว nil = 💥 ERROR บรรทัด 100)
+local function dumpTree(root, label)
+    L("--- ต้นไม้ " .. label .. " ---")
+    local function walk(o, ind)
+        for _, c in ipairs(o:GetChildren()) do
+            local extra = ""
+            if c:IsA("GuiButton") then
+                extra = (" ⭐ปุ่ม Active=%s ZIndex=%d"):format(tostring(c.Active), c.ZIndex)
+            elseif c:IsA("GuiObject") then
+                extra = (" Vis=%s"):format(tostring(c.Visible))
+            end
+            local txt = (c:IsA("TextLabel") or c:IsA("TextButton")) and (" '" .. c.Text .. "'") or ""
+            L(("%s%s [%s]%s%s"):format(ind, c.Name, c.ClassName, extra, txt))
+            if #ind < 12 then walk(c, ind .. "  ") end
+        end
+    end
+    walk(root, "  ")
 end
 
 local function isSellish(txt)
@@ -102,6 +125,24 @@ local function scan()
         if sg then dumpTree(sg, "Sell (ปุ่มขายใหญ่)") end
     end
 
+    -- v1.4: ร้านมี prompt จริง (เห็น ProximityPrompts.Prompt.Frame.ActionText='Sell Crystals')
+    -- แต่ไม่ได้อยู่ใต้ Model SellWorker → ค้นทั้ง workspace หา prompt ที่ ActionText มีคำว่า Sell
+    L("--- ค้น ProximityPrompt ที่เกี่ยวกับการขาย (ทั้ง workspace) ---")
+    local nsp = 0
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("ProximityPrompt") then
+            local t = (d.ActionText or "") .. " " .. (d.ObjectText or "")
+            if t:lower():find("sell") or t:find("ขาย") then
+                nsp += 1
+                L(("SELL PROMPT: %s | Action='%s' Obj='%s' Hold=%.1f Max=%d En=%s Style=%s")
+                    :format(d:GetFullName():gsub("^Workspace%.", ""), d.ActionText, d.ObjectText,
+                        d.HoldDuration, d.MaxActivationDistance, tostring(d.Enabled), tostring(d.Style)))
+                L("   → พ่อของมัน: " .. tostring(d.Parent and d.Parent:GetFullName() or "?"))
+            end
+        end
+    end
+    if nsp == 0 then L("(ไม่เจอ prompt คำว่า sell — อาจอยู่นอก workspace)") end
+
     L("--- prompt ของ SellWorker ---")
     for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("Model") and d.Name == "SellWorker" then
@@ -115,25 +156,6 @@ local function scan()
         end
     end
     L("=== จบ — COPY ส่งผล หรือกด 'กดขายให้เลย' ทดลอง ===")
-end
-
--- v1.1: ดัมพ์ต้นไม้เต็มของ GUI ที่ชื่อ dialog / Sell (ตัวจริงที่ต้องกด)
-local function dumpTree(root, label)
-    L("--- ต้นไม้ " .. label .. " ---")
-    local function walk(o, ind)
-        for _, c in ipairs(o:GetChildren()) do
-            local extra = ""
-            if c:IsA("GuiButton") then
-                extra = (" ⭐ปุ่ม Active=%s ZIndex=%d"):format(tostring(c.Active), c.ZIndex)
-            elseif c:IsA("GuiObject") then
-                extra = (" Vis=%s"):format(tostring(c.Visible))
-            end
-            local txt = (c:IsA("TextLabel") or c:IsA("TextButton")) and (" '" .. c.Text .. "'") or ""
-            L(("%s%s [%s]%s%s"):format(ind, c.Name, c.ClassName, extra, txt))
-            if #ind < 12 then walk(c, ind .. "  ") end
-        end
-    end
-    walk(root, "  ")
 end
 
 -- ยิงทุกสัญญาณของ GuiObject หนึ่งตัว (คลิก/แตะ/กดปล่อย)
