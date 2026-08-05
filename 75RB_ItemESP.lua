@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.7: บินเปลี่ยนเป็นแกนแบบ 74RB แท้ — ตรึงตำแหน่งด้วย CFrame ทุกเฟรม (แรงโน้มถ่วง/
+--       แรงผลักทำอะไรไม่ได้ ลอยนิ่งสนิท) แต่บังคับเองด้วยจอย + ▲▼ | ทะลุกำแพงในตัว
 -- v2.6: ปุ่ม "บิน" — บินทะลุกำแพงแบบ 74RB: จอยบังคับทิศ + ปุ่ม ▲▼ ขึ้นลง + noclip
 -- v2.5: สแกนหาของห่วย — เลิกพึ่งโฟลเดอร์ Things.Crystals อย่างเดียว กวาดทั้ง workspace
 --       ทุกรอบ (ก้อนอยู่โฟลเดอร์ไหนก็เจอ) + สถานะโชว์จำนวนแยกรายเทียร์ (เห็นว่าหลุดตรงไหน)
@@ -26,7 +28,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.6"
+local V = "2.7"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -372,6 +374,7 @@ Instance.new("UICorner", topBox).CornerRadius = UDim.new(0, 5)
 -- กดค้าง ▲/▼ = ขึ้น/ลง | noclip อัตโนมัติตอนบิน | ความเร็ว 60
 local FLY_ON, UPIN = false, 0
 local FLY_SPEED = 60
+local FLY_POS = nil        -- ตำแหน่งตรึงแบบ 74RB — เขียน CFrame ทับทุกเฟรม
 
 local flyB = Instance.new("TextButton", panel)
 flyB.Size = UDim2.new(0, 86, 0, 28); flyB.Position = UDim2.new(0, 6, 0, 284)
@@ -400,28 +403,38 @@ flyB.MouseButton1Click:Connect(function()
     flyB.BackgroundColor3 = FLY_ON and Color3.fromRGB(30, 120, 60) or Color3.fromRGB(30, 30, 42)
     flyB.TextColor3 = FLY_ON and Color3.new(1, 1, 1) or Color3.fromRGB(110, 110, 125)
     local char = LP.Character
-    local h = char and char:FindFirstChildOfClass("Humanoid")
-    if h then h.PlatformStand = false end
-    if not FLY_ON and char then   -- คืน CanCollide ตอนปิด
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = true end
+    local r = char and char:FindFirstChild("HumanoidRootPart")
+    if FLY_ON then
+        FLY_POS = r and r.Position or nil   -- เริ่มตรึงจากจุดที่ยืน
+    else
+        FLY_POS = nil
+        if char then   -- คืน CanCollide ตอนปิด
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = true end
+            end
         end
     end
 end)
 
-table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function()
+-- แกนแบบ 74RB: คำนวณ FLY_POS จากจอย แล้ว "เขียน CFrame ทับ" ทุกเฟรม
+-- → แรงโน้มถ่วง/แรงผลัก/ชนอะไรก็ไม่ขยับ (ตำแหน่งเป็นของเรา 100%) + ทะลุกำแพงในตัว
+table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
     if not FLY_ON then return end
     local char = LP.Character
     local r = char and char:FindFirstChild("HumanoidRootPart")
     local h = char and char:FindFirstChildOfClass("Humanoid")
     if not r or not h then return end
+    if not FLY_POS then FLY_POS = r.Position end
     -- noclip ทะลุกำแพง
     for _, p in ipairs(char:GetChildren()) do
         if p:IsA("BasePart") then p.CanCollide = false end
     end
-    -- ลอย: ตั้งความเร็วตรงๆ (สู้แรงโน้มถ่วง) — จอยดันไปทิศไหนก็ไปทิศนั้น
-    local move = h.MoveDirection * FLY_SPEED
-    r.AssemblyLinearVelocity = Vector3.new(move.X, UPIN * FLY_SPEED, move.Z)
+    -- จอยดันทิศไหน = เลื่อนจุดตรึงทิศนั้น (dt-based ลื่นเท่ากันทุกเครื่อง)
+    local mv = h.MoveDirection
+    FLY_POS = FLY_POS + Vector3.new(mv.X, 0, mv.Z) * (FLY_SPEED * dt)
+        + Vector3.new(0, UPIN * FLY_SPEED * dt, 0)
+    r.CFrame = CFrame.new(FLY_POS) * (r.CFrame - r.CFrame.Position)   -- ตรึงตำแหน่ง คงการหัน
+    r.AssemblyLinearVelocity = Vector3.zero
 end))
 
 local folded = false
