@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.8: "หยิบก่อน ขวานทีหลัง" — เลิกฟันขวานระหว่างวนมุม/รอผล (ขวานทำก้อนแตก ของร่วงลงถ้ำ
+--       แทนที่จะเข้ากระเป๋าตรงๆ) ใช้ขวานเฉพาะตอนหยิบไม่ได้จริงๆ เท่านั้น
 -- v2.7: Max=0 เป็นค่าชั่วคราว! (ก้อนเดียวกันเดี๋ยว 0 เดี๋ยว 14) → รอเช็คซ้ำ 1.5 วิก่อนตัดสินใจฟันขวาน
 -- v2.6: (PickSpy v2.0) 2 บั๊กใหญ่ — (ก) เกมโชว์ปุ่มให้ก้อนใกล้สุดก้อนเดียว ก้อนเป้าหมายเลย
 --       ไม่เคย "ปุ่มติด" ในโซนก้อนเยอะ → คิดระยะเองจาก MaxActivationDistance แทน
@@ -47,7 +49,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.7"
+local V = "2.8"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -534,18 +536,16 @@ local function attempt(c, kg0, pname, ppos)
     TARGET_POS = ppos
     TARGET_LOOK = c.Position          -- หันหน้าใส่แร่ตลอด (ขวานถึงจะโดน)
     local cam = workspace.CurrentCamera
-    local tool = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-    -- รอปุ่มติดสูงสุด 0.4 วิ (v2.3 เดิม 0.75 — ปุ่มติดเร็วกว่านั้นมาก) ระหว่างรอฟันขวานไปเลย
+    -- v2.8: ห้ามฟันขวานตอนนี้! (ขวานทำก้อนแตก ของร่วงลงถ้ำแทนที่จะเข้ากระเป๋าตรงๆ)
+    -- เฟสนี้ = "หยิบอย่างเดียว" ขวานเก็บไว้เป็นทางสุดท้ายเท่านั้น
     local t0 = os.clock()
     local ok = false
     for _ = 1, 4 do
         pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
-        if tool then pcall(function() tool:Activate() end) end
         task.wait(0.1)
         if picked(kg0) then
-            TM.mine = (TM.mine or 0) + (os.clock() - t0)
-            LG(("  ✅ เข้า! [%s + ขวาน] %.1f วิ"):format(pname, os.clock() - t0))
-            WIN_POS, WIN_WAY = pname, "ขวาน"
+            LG(("  ✅ เข้า! [%s] %.1f วิ"):format(pname, os.clock() - t0))
+            WIN_POS, WIN_WAY = pname, "หยิบ"
             return true
         end
         if promptReady(c) then ok = true break end
@@ -558,8 +558,7 @@ local function attempt(c, kg0, pname, ppos)
     local t1 = os.clock()
     doWay(c, "both", kg0)
     for _ = 1, 8 do
-        if tool then pcall(function() tool:Activate() end) end   -- ฟันไปด้วยระหว่างรอผล
-        task.wait(0.1)
+        task.wait(0.1)   -- v2.8: รอผลเฉยๆ ไม่ฟันขวาน (กันก้อนแตกก่อนของเข้ากระเป๋า)
         if picked(kg0) then
             TM.hold = (TM.hold or 0) + (os.clock() - t1)
             LG(("  ✅ เข้า! [%s] กดค้าง %.1f วิ"):format(pname, os.clock() - t1))
@@ -667,7 +666,7 @@ end
 
 function tryPick(c, kg0)
     markBase()           -- v2.5: จำจำนวนก้อนในกระเป๋าตอนเริ่ม (ใช้ยืนยันคู่กับน้ำหนัก)
-    equipPick()          -- v2.1: ถือขวานไว้ตลอด จะได้ฟันได้ทุกมุมที่วน
+    -- v2.8: ไม่หยิบขวานตั้งแต่แรกแล้ว — ลอง "หยิบเข้ากระเป๋า" ให้ครบก่อน ค่อยใช้ขวานทีหลัง
     local cpos = c.Position   -- จำไว้ เผื่อก้อนหาย (ของตกแถวนี้)
     -- v2.6 (PickSpy v2.0): MaxActivationDistance = 0 → ปุ่ม "ไม่มีวันขึ้น" (ก้อนยังฝังในหิน)
     -- วนหามุมเท่าไหร่ก็เสียเวลาเปล่า → ไปฟันขวานเลย
