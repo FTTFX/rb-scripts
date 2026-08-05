@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v1.7: ขายไม่เข้า — (ก) ยืนระดับเดียวกับ NPC วน 8 มุมจนปุ่ม E ติด แล้วกด E เปิดเมนูก่อน
+--       (ข) กดตัวเลือก 1 แน่นขึ้น: คีย์ '1' จริง (VirtualInputManager/keypress) + ยิงสัญญาณทุกชั้น
 -- v1.6: กรองช่วงน้ำหนักแร่ (ดีฟอลต์ 50-1000 kg) ปรับได้ที่แผง — ก้อนจิ๋ว 0.2kg เสียเวลาวาปเปล่า
 -- v1.5: วนหา 8 มุมรอบก้อน (ระดับเดียวกัน) + เช็ค "ปุ่มติดไหม" ด้วย PromptShown ก่อนกด
 --       ติด=กดจริงรอผล | ไม่ติด=วาปมุมถัดไปทันที (ไม่เสียเวลากดลม) + จำมุมที่เข้า
@@ -23,7 +25,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.6"
+local V = "1.7"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -121,23 +123,50 @@ local function fireAll(obj)
         pcall(function() if obj[s] then FS(obj[s]) end end)
     end
 end
+-- v1.7: กดตัวเลือก 1 ให้แน่นขึ้น — ยิงทุก GuiObject ในสาย dialogResponses.1 (ไม่ใช่แค่ GuiButton)
+-- + ยิงปุ่มที่ "ข้อความมีคำว่าขายทั้งหมด" ทุกตัวใน PlayerGui + กดคีย์ 1 จริงผ่าน VirtualInputManager
+local VIM = (function()
+    local ok, s = pcall(function() return game:GetService("VirtualInputManager") end)
+    return ok and s or nil
+end)()
+local function pressKey1()
+    -- เมนู NPC แบบนี้มักผูกกับเลข 1 บนคีย์บอร์ด — ยิงคีย์จริงถ้า executor ให้ (มือถือก็ผ่าน VIM ได้)
+    if VIM then
+        pcall(function()
+            VIM:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+            task.wait(0.06)
+            VIM:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+        end)
+    end
+    local kp = (keypress or (getgenv and getgenv().keypress))
+    local kr = (keyrelease or (getgenv and getgenv().keyrelease))
+    if kp and kr then
+        pcall(function() kp(0x31); task.wait(0.06); kr(0x31) end)   -- 0x31 = '1'
+    end
+end
 local function pressSellMenu()
     local pg = LP:FindFirstChild("PlayerGui")
     if not pg then return end
+    -- 1) คีย์ 1 (ทางที่คนเล่นใช้จริง)
+    pressKey1()
+    -- 2) ยิงสัญญาณทุกชั้นในสายตัวเลือก 1
     local dlg = pg:FindFirstChild("dialog", true)
     local resp = dlg and dlg:FindFirstChild("dialogResponses", true)
     local one = resp and resp:FindFirstChild("1")     -- "Sell all crystals"
     if one then
         fireAll(one)
-        for _, c in ipairs(one:GetDescendants()) do
-            if c:IsA("GuiButton") then fireAll(c) end
-        end
+        for _, c in ipairs(one:GetDescendants()) do fireAll(c) end   -- ทุกตัว ไม่เฉพาะ GuiButton
         local p = one.Parent
-        while p and p ~= pg do
-            if p:IsA("GuiButton") then fireAll(p) end
-            p = p.Parent
+        while p and p ~= pg do fireAll(p); p = p.Parent end
+    end
+    -- 3) ปุ่มไหนก็ตามที่ข้อความ = ขายทั้งหมด
+    for _, d in ipairs(pg:GetDescendants()) do
+        if d:IsA("GuiButton") and d.Visible then
+            local t = (d:IsA("TextButton") and d.Text or "") .. " " .. d.Name
+            if t:find("ทั้งหมด") or t:lower():find("sell all") then fireAll(d) end
         end
     end
+    -- 4) ปุ่มขายใหญ่
     local sg = pg:FindFirstChild("Sell")
     local sbtn = sg and sg:FindFirstChild("Frame")
     sbtn = sbtn and sbtn:FindFirstChild("Sell")
@@ -147,9 +176,15 @@ end
 local function findSeller()
     for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("Model") and d.Name == "SellWorker" then
-            local p = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart", true)
+            local p = d.PrimaryPart or d:FindFirstChild("HumanoidRootPart")
+                or d:FindFirstChildWhichIsA("BasePart", true)
             if p then return d, p.Position end
         end
+    end
+end
+local function sellerPrompt(seller)
+    for _, d in ipairs(seller:GetDescendants()) do
+        if d:IsA("ProximityPrompt") then return d end
     end
 end
 
@@ -471,8 +506,32 @@ local function farmLoop()
             LG(("💰 กระเป๋า %.1f/%.0f (%.0f%%) → ไปขาย"):format(cur, cap, cur / cap * 100))
             status("💰 วาปไปร้าน...")
             setNoFall(true)
-            TARGET_POS = spos + Vector3.new(0, 3, 0)
-            task.wait(1.2)   -- ให้ตำแหน่ง replicate + SellOpen เด้ง
+            -- v1.7: ยืน "ระดับเดียวกับ NPC" (บทเรียนเดียวกับตอนขุด — ลอยเหนือหลังคาปุ่มไม่ติด)
+            -- วน 8 มุมจนปุ่ม E ร้านติด → กด E เปิดเมนู → ค่อยกดตัวเลือก 1
+            local sp = sellerPrompt(seller)
+            local opened = false
+            for _, dd in ipairs({ { 0, -1 }, { 0.7, -0.7 }, { 1, 0 }, { 0.7, 0.7 },
+                { 0, 1 }, { -0.7, 0.7 }, { -1, 0 }, { -0.7, -0.7 } }) do
+                if not _G.AF75_RUN then break end
+                TARGET_POS = spos + Vector3.new(dd[1] * 5, 0, dd[2] * 5)
+                for _ = 1, 5 do
+                    task.wait(0.15)
+                    if sp and PROMPT_ON == sp then opened = true break end
+                end
+                if opened then
+                    LG("  🚪 ปุ่ม E ร้านติด — กดเปิดเมนู")
+                    pcall(function() sp:InputHoldBegin() end)
+                    task.wait(math.max(sp.HoldDuration, 0.1) + 0.35)
+                    pcall(function() sp:InputHoldEnd() end)
+                    task.wait(0.7)
+                    break
+                end
+            end
+            if not opened then
+                LG("  ⚠ ปุ่ม E ร้านไม่ติดสักมุม (prompt=" .. tostring(sp ~= nil) .. ")")
+                TARGET_POS = spos + Vector3.new(0, 0, -5)
+                task.wait(0.8)
+            end
             local before = cur
             local sold = false
             -- v1.1 (SellSpy): ขาย = กดตัวเลือก 1 ในเมนู GUI 'dialog' ("Sell all crystals")
