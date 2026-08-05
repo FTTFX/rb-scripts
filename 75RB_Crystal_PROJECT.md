@@ -7,8 +7,8 @@
 
 | ไฟล์ | หน้าที่ | สถานะ |
 |---|---|---|
-| `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+ระยะ สีตามเทียร์, กรอง T1-T6, Giant only, TOP5 only, ✅=ในระยะเก็บ | v2.4 |
-| `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ | v1.3 |
+| `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+☘โชค+ระยะ สีตามเทียร์, กรอง T1-T6, Giant only, TOP5, เรียงแพง/ใกล้/โชค, บินแบบ 74 บังคับได้+noclip | v2.8 |
+| `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ | v1.4 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -44,6 +44,9 @@
 - แมพมีคริสตัล ~2,000 ก้อน — ติดป้ายหมดจอแตก+เลค ต้องจำกัด (MAX_SHOW 150 / TOP5 only)
 - ก้อนที่ยิง fp ไม่เข้า (ไกลเกิน) ต้อง blacklist ชั่วคราว 8 วิ ไม่งั้นบอทยิงก้อนเดิมซ้ำไม่ไปไหน
 - ระยะเก็บใช้ร่วมกัน 2 สคริปต์ผ่าน `_G.AS75_RANGE` (ซิงก์สองทาง Assist ↔ ItemESP)
+- **ค่าโชค (Luck) ไม่มีใน Attributes** — มีแค่เป็นข้อความใน TextLabel ของ `CrystalHover`
+  รูปแบบ `'Luck: +6.0%'` → ต้องแกะด้วย pattern `Luck:%s*%+?([%d%.]+)%%` แล้ว cache
+  (weak table กัน memory leak) — ทำแล้วใน ESP v2.8
 - executor นี้มี `hookmetamethod` ✅ (ดัก __namecall ได้)
 
 ## _G ที่ใช้ (กันชนกัน)
