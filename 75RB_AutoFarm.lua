@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v1.2: จังหวะแม่นขึ้น — รอ "ถึงก้อนจริง" ก่อนยิง + ยืนยันด้วย "น้ำหนักกระเป๋าเพิ่ม"
+--       (ก้อนหายจากแมพไม่พอ! FX ลบก้อนก่อนของเข้ากระเป๋า → เดิมวาปหนีเร็วเกินของหลุด)
 -- การเคลื่อนที่: ตรึง CFrame แบบ 74RB (ไม่ร่วง ไม่โดนผลัก ทะลุกำแพง) + ปิดท่าตก
 if _G.AF75_CONNS then
     for _, c in pairs(_G.AF75_CONNS) do pcall(function() c:Disconnect() end) end
@@ -15,7 +17,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.1"
+local V = "1.2"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -309,21 +311,37 @@ local function farmLoop()
             else
                 local nm = c:GetAttribute("CrystalName") or "?"
                 local v = c:GetAttribute("Value") or 0
-                status(("⛏ %s %s"):format(nm, fmtMoney(v)))
+                local kg0 = cur   -- น้ำหนักก่อนเก็บ — ใช้ยืนยันว่าของเข้ากระเป๋าจริง
+                status(("⛏ ไปหา %s %s"):format(nm, fmtMoney(v)))
                 setNoFall(true)
-                TARGET_POS = c.Position + Vector3.new(0, 6, 0)
-                task.wait(0.45)   -- ให้ server รับตำแหน่งใหม่
-                local t0 = os.clock()
-                while _G.AF75_RUN and c.Parent and os.clock() - t0 < 5 do
-                    pcall(function() pickR:FireServer(c) end)
-                    task.wait(0.6)
+                local dest = c.Position + Vector3.new(0, 6, 0)
+                TARGET_POS = dest
+                -- v1.2: รอ "ถึงจริง" ก่อนยิง (เช็คระยะ) — ไม่ใช่หลับตารอเวลาคงที่
+                local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                local tA = os.clock()
+                while _G.AF75_RUN and r and (r.Position - dest).Magnitude > 5
+                    and os.clock() - tA < 3 do
+                    task.wait(0.1)
                 end
-                if c.Parent then
-                    FAILED[c] = os.clock() + 30
-                    status("❌ " .. nm .. " เก็บไม่เข้า — ข้าม 30 วิ")
-                else
+                task.wait(0.35)   -- ให้ตำแหน่งใหม่ replicate ถึง server
+                -- v1.2: ยิงแล้วรอ "น้ำหนักกระเป๋าเพิ่มจริง" (ก้อนหายจากแมพไม่พอ — FX ลบก่อนของเข้า)
+                status(("⛏ ขุด %s %s"):format(nm, fmtMoney(v)))
+                local got = false
+                local t0 = os.clock()
+                while _G.AF75_RUN and not got and os.clock() - t0 < 8 do
+                    if c.Parent then pcall(function() pickR:FireServer(c) end) end
+                    for _ = 1, 5 do            -- เช็คถี่ๆ ระหว่างรอ (0.15s x 5)
+                        task.wait(0.15)
+                        if bagInfo() > kg0 + 0.05 then got = true break end
+                    end
+                end
+                if got then
                     statPick += 1
                     statVal += v
+                    task.wait(0.25)   -- ค้างอีกนิด ให้ FX/ของเข้าครบก่อนวาปหนี
+                else
+                    FAILED[c] = os.clock() + 30
+                    status("❌ " .. nm .. " เก็บไม่เข้า — ข้าม 30 วิ")
                 end
                 updStat()
             end
