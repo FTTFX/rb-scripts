@@ -10,6 +10,7 @@
 | `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+☘โชค+ระยะ, กรอง T1-T6/Giant, เรียงแพง/ใกล้/โชค, TOP5 กดวาปไปได้, บินแบบ 74+noclip, กรองบ้านเพื่อน | v2.10 |
 | `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ, กรองบ้านเพื่อน | v1.6 |
 | `75RB_HomeSpy.lua` | สปายแยกก้อนป่า vs ก้อนบ้าน: TOP20 path เต็ม + census ตามโฟลเดอร์แม่ + นับ prompt | v1.0 |
+| `75RB_PickSpy.lua` | สปายจังหวะเก็บ: HoldBegan/Ended/Triggered + เวลา + เฝ้าก้อนหาย (พิสูจน์ server จับเวลากด) | v1.0 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -33,9 +34,12 @@
 ## ระบบเน็ตเวิร์ก (จาก NetSpy)
 
 - **เก็บของไม่ยิง Remote เลย** — ProximityPrompt ล้วน (Roblox ส่งให้ server เอง)
-  → บอทใช้ `fireproximityprompt(pp, 0)` + ตั้ง `HoldDuration = 0` ก่อนยิง (bypass กดค้าง 5 วิ)
-- **server เช็คระยะเก็บ**: ❌ ที่ 37m / 54m / 65m / 128m — ✅ เก็บได้ระยะใกล้
-  เพดานจริงยังไม่นิ่ง (Assist v1.1+ วัดสะสมให้เอง โชว์ `เพดาน: ✅x ❌y`)
+- **server จับเวลากดค้าง! (PickSpy 2026-08-05)** — `fireproximityprompt` + `Hold=0`
+  โดนปัดเกือบหมดแม้ @3m (TRIGGER ไม่มีช่วงกดค้าง = โกง) ส่วนเก็บมือกดครบ Hold ✅ ทุกก้อน
+  → **วิธีที่ถูก: `pp:InputHoldBegin()` → รอ `HoldDuration`+0.15 → `pp:InputHoldEnd()`**
+  engine trigger เองเหมือนนิ้วกดจริง server แยกไม่ออก (Assist v1.7 / ESP warp v2.13)
+- **ระยะ prompt จริงเล็กมาก**: `MaxActivationDistance` = 9-16m (ต่อก้อนไม่เท่ากัน)
+  — ตั้งระยะ Assist ≤15 ผลดีสุด (ตัวเลข ❌37m/54m/65m ที่เคยเจอคือเกินระยะ prompt นั่นเอง)
 - การขาย: ยังไม่ได้สปาย (รอ user ขายมือ 1 ครั้งพร้อม NetSpy เปิด)
 
 ## บทเรียน/กับดัก
