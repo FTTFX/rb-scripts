@@ -1,4 +1,5 @@
--- 75RB_DeepSpy.lua v1.0 — ดักทุกช่องทางตอน "เก็บมือสำเร็จ 1 ก้อน" หาทางรีโมตตรง
+-- 75RB_DeepSpy.lua v1.1 — ดักทุกช่องทาง หาทางรีโมตตรง
+-- v1.1: ปุ่ม "ซ่อน" พับกล่อง log (กล่องบังจอ กดปุ่มขายในเกมไม่ได้) — ดักต่อเบื้องหลัง
 -- ดัก: (1) ขาไป: FireServer/InvokeServer (namecall hook)
 --      (2) ขากลับ: OnClientEvent ของ RemoteEvent ทุกตัวใน RS+workspace (server ส่งอะไรมา)
 --      (3) BindableEvent Fire ภายใน client
@@ -139,7 +140,14 @@ end
 local listB  = hbtn("LIST", 8, 60, Color3.fromRGB(40, 130, 70))
 local clearB = hbtn("CLEAR", 72, 66, Color3.fromRGB(90, 60, 30))
 local copyB  = hbtn("COPY", 142, 66)
-local closeB = hbtn("✕", 212, 34, Color3.fromRGB(150, 40, 40))
+local foldB  = hbtn("ซ่อน", 212, 60, Color3.fromRGB(50, 50, 70))
+local closeB = hbtn("✕", 276, 34, Color3.fromRGB(150, 40, 40))
+
+-- v1.1: กล่องบังจอ กดขายไม่ได้ — ปุ่มซ่อน/โชว์กล่อง (ดัก log ต่อเบื้องหลังตามปกติ)
+foldB.MouseButton1Click:Connect(function()
+    box.Visible = not box.Visible
+    foldB.Text = box.Visible and "ซ่อน" or "โชว์"
+end)
 
 listB.MouseButton1Click:Connect(listInteresting)
 clearB.MouseButton1Click:Connect(function() OUT = {}; box.Text = "" end)
