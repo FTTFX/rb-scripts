@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.2: ระยะเก็บซิงก์กับ Assist อัตโนมัติ (_G.AS75_RANGE) — ปรับที่ Assist ที่เดียวพอ
 -- v2.1: ก้อนใน "ระยะเก็บ" (ยิง fp ถึง) → สว่าง + ✅ หน้าชื่อ | ปุ่มปรับระยะเก็บ −/+
 -- v2.0: อ่าน Attributes ของเกมตรงๆ (CrystalName/TierName/Tier/Value/WeightKg/SizeClass/TierColor)
 --   ป้าย: "[Giant] Diamond $36.4M 31m" สีตามเทียร์ | กรองรายเทียร์ T1-T6 | ปุ่ม Giant only
@@ -19,7 +20,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.1"
+local V = "2.2"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -304,6 +305,7 @@ local function reachBtn(txt, x, delta)
     b.MouseButton1Click:Connect(function()
         REACH = math.clamp(REACH + delta, 5, 300)
         reachL.Text = "✅" .. REACH
+        if _G.AS75_RANGE then _G.AS75_RANGE = REACH end   -- ซิงก์กลับไป Assist ด้วย
     end)
 end
 reachBtn("−", 98, -5)
@@ -356,6 +358,9 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
                 local p = partPos(inst)
                 if p then
                     local d = (p - mp).Magnitude
+                    -- ซิงก์กับ Assist: ถ้า Assist รันอยู่ ใช้ระยะของมัน (ปรับที่เดียวพอ)
+                    local r = _G.AS75_RANGE or REACH
+                    if r ~= REACH then REACH = r; reachL.Text = "✅" .. REACH end
                     local inReach = d <= REACH
                     m.lbl.Text = (inReach and "✅" or "") .. m.text:gsub(" %d+m$", "")
                         .. " " .. math.floor(d) .. "m"
