@@ -1,4 +1,5 @@
 -- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v1.2: ซิงก์ระยะกับ ItemESP ผ่าน _G.AS75_RANGE — ปรับที่ Assist ตัวเดียว ESP ✅ ตามทันที
 -- v1.1: ก้อนที่ ❌ พักไว้ 8 วิ (เลิกยิงก้อนเดิมซ้ำ — ไปเก็บก้อนถัดไปแทน)
 --       + วัดเพดานระยะอัตโนมัติ: จำ ✅ไกลสุด / ❌ใกล้สุด โชว์ตลอด
 -- จากสปาย: เก็บของ = ProximityPrompt ล้วน (ไม่มี remote) → ยิง fp ใส่ก้อนที่ "แพงสุดในระยะ"
@@ -11,7 +12,7 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.1"
+local V = "1.2"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -22,7 +23,8 @@ CRYSTALS = CRYSTALS and CRYSTALS:FindFirstChild("Crystals")
 
 -- ==================== State ====================
 local AUTO_ON   = false
-local RANGE     = 50
+local RANGE     = 25
+_G.AS75_RANGE   = RANGE   -- ItemESP อ่านค่านี้ไปวาด ✅
 local MIN_TIER  = 4
 local GIANT_ONLY = false
 local statPick, statVal, statKg = 0, 0, 0
@@ -94,7 +96,7 @@ end)
 local rangeL = Instance.new("TextLabel", panel)
 rangeL.Size = UDim2.new(0, 90, 0, 26); rangeL.Position = UDim2.new(0, 40, 0, 68)
 rangeL.BackgroundTransparency = 1
-rangeL.Text = "ระยะ 50"
+rangeL.Text = "ระยะ 25"
 rangeL.Font = Enum.Font.GothamBold; rangeL.TextSize = 13
 rangeL.TextColor3 = Color3.fromRGB(200, 200, 220)
 local function rbtn(txt, x, delta)
@@ -106,6 +108,7 @@ local function rbtn(txt, x, delta)
     b.MouseButton1Click:Connect(function()
         RANGE = math.clamp(RANGE + delta, 10, 500)
         rangeL.Text = "ระยะ " .. RANGE
+        _G.AS75_RANGE = RANGE
     end)
 end
 rbtn("−", 6, -10)
@@ -199,6 +202,11 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
     acc = 0
     local mp = myPos()
     if not mp or not fp then return end
+    -- ซิงก์สองทาง: ItemESP อาจปรับ _G.AS75_RANGE มา
+    if _G.AS75_RANGE and _G.AS75_RANGE ~= RANGE then
+        RANGE = _G.AS75_RANGE
+        rangeL.Text = "ระยะ " .. RANGE
+    end
     local best, bd
     for _, c in ipairs(CRYSTALS:GetChildren()) do
         local tier = c:GetAttribute("Tier")
