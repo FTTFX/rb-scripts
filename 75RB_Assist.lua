@@ -1,4 +1,5 @@
 -- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v1.6: กรองบ้านเพื่อนชัวร์ (HomeSpy): ไม่อยู่ใต้ Plots + ต้องมี prompt เปิด
 -- v1.5: ตัดของวางบ้านเพื่อน (Placed_*) ออก — ไม่ยิง fp ใส่ของตกแต่งคนอื่น
 -- v1.4: กวาดทั้ง workspace เสมอ (ก้อนอยู่ path ไหนก็เจอ)
 -- v1.3: หาก้อนคริสตัลสดทุกรอบ (ไม่ cache โฟลเดอร์ — วาร์ปโซนแล้วชี้ที่ว่าง) + ค้นลึกทุกชั้น
@@ -15,7 +16,7 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.5"
+local V = "1.6"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -24,11 +25,16 @@ local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 -- หาก้อนคริสตัลสดทุกรอบ (เหมือน ItemESP v2.4)
 local function getCrystals()
     -- v1.4: กวาดทั้ง workspace เสมอ (เหมือน ItemESP v2.5) — ก้อนอยู่ path ไหนก็เจอ
+    -- v1.6 (จาก HomeSpy): ก้อนบ้านเพื่อน = 'Handle' ใต้ Things.Plots + ไม่มี prompt
+    -- → กรอง: ไม่อยู่ใต้ Plots + ต้องมี prompt เปิด (เก็บได้จริงเท่านั้น)
     local out = {}
     for _, c in ipairs(workspace:GetDescendants()) do
         if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier")
-            and not c.Name:match("^Placed") then   -- ตัดของวางบ้านเพื่อน
-            out[#out + 1] = c
+            and not c:FindFirstAncestor("Plots") then
+            local pp = c:FindFirstChildOfClass("ProximityPrompt")
+            if pp and pp.Enabled then
+                out[#out + 1] = c
+            end
         end
     end
     return out
