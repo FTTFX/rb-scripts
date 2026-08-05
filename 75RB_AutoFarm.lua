@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.2: (ก) เกมขึ้น "ไกลเกินไป! เข้าใกล้เพื่อขุด" → ยืนชิดขึ้น (2.5-5.5 studs แทน 4-10)
+--       (ข) ขุดแตกแล้วของร่วงลงถ้ำ → ตามเก็บก้อนใน DroppedCrystals รัศมี 120 รอบจุดเดิม
 -- v2.1: รวมร่าง — ทุกมุมที่วนจะ "หันหน้าใส่แร่ + ฟันขวาน" ไปพร้อมกับรอปุ่มติด
 --       (ถือขวานไว้ตลอด) เร็วขึ้นและครอบคลุมทั้งก้อนหยิบและก้อนที่ต้องขุด
 -- v2.0: ก้อนเล็กแต่แพง (T6 2-8kg) กด prompt ไม่เข้าเลย → เพิ่มโหมด "ฟันขวาน":
@@ -34,7 +36,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.1"
+local V = "2.2"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -448,7 +450,8 @@ end
 -- v1.5: 8 มุมรอบก้อน "ระดับเดียวกัน" (ท่าที่ log พิสูจน์ว่าเข้า) + สำรองต่ำ/สูง
 local function posList(c)
     local p, out = c.Position, {}
-    local d = 4 + math.min(6, (c.Size.Magnitude or 4) / 2)   -- ก้อนใหญ่ยืนห่างขึ้นนิด
+    -- v2.2: เกมขึ้น "ไกลเกินไป! เข้าใกล้เพื่อขุด" → ระยะขุดสั้นกว่าระยะหยิบ ต้องยืนชิดกว่าเดิม
+    local d = 2.5 + math.min(3, (c.Size.Magnitude or 4) / 4)
     local dirs = {
         { "N", 0, -1 }, { "NE", 0.7, -0.7 }, { "E", 1, 0 }, { "SE", 0.7, 0.7 },
         { "S", 0, 1 }, { "SW", -0.7, 0.7 }, { "W", -1, 0 }, { "NW", -0.7, -0.7 },
@@ -546,7 +549,8 @@ local function mineIt(c, kg0)
     local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if not r then return false end
     -- ยืนระดับเดียวกัน ห่าง ~6 แล้วหันหน้า+กล้องใส่ก้อน (สคริปต์เกมยิง ray จากกล้อง/เมาส์)
-    TARGET_POS = c.Position + Vector3.new(0, 0, -6)
+    TARGET_POS = c.Position + Vector3.new(0, 0, -3)   -- v2.2: ชิดกว่าเดิม (เกมบอก "ไกลเกินไป")
+    TARGET_LOOK = c.Position
     task.wait(0.4)
     LG("  ⛏ โหมดฟันขวาน (" .. tool.Name .. ")")
     for i = 1, 25 do
@@ -567,8 +571,47 @@ local function mineIt(c, kg0)
     return bagInfo() > kg0 + 0.05
 end
 
+-- v2.2: ขุดแตกแล้วของ "ตกพื้น" (ร่วงลงถ้ำ) — ตามไปเก็บก้อนที่ตกแถวนั้น
+-- ก้อนตก = อยู่ใน DroppedCrystals หรือมี attr DroppedByUserId (มี prompt Action='Mine'/'Pickup')
+local function collectDropped(near, kg0)
+    local found = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("BasePart") and d:GetAttribute("CrystalName")
+            and (d:FindFirstAncestor("DroppedCrystals") or d:GetAttribute("DroppedByUserId"))
+            and (d.Position - near).Magnitude < 120 then
+            found[#found + 1] = d
+        end
+    end
+    if #found == 0 then return false end
+    LG(("  📦 เจอก้อนตกพื้น %d ชิ้น — ตามเก็บ"):format(#found))
+    table.sort(found, function(a, b)
+        return (a.Position - near).Magnitude < (b.Position - near).Magnitude
+    end)
+    for i = 1, math.min(4, #found) do
+        local dr = found[i]
+        if not _G.AF75_RUN or not dr.Parent then break end
+        status("📦 เก็บของตก")
+        for _, dd in ipairs({ { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }) do
+            if not dr.Parent then break end
+            TARGET_POS = dr.Position + Vector3.new(dd[1] * 3, 0, dd[2] * 3)
+            TARGET_LOOK = dr.Position
+            for _ = 1, 4 do
+                task.wait(0.15)
+                if bagInfo() > kg0 + 0.05 then LG("  ✅ เก็บของตกได้") return true end
+                if promptReady(dr) then
+                    doWay(dr, "both")
+                    task.wait(0.6)
+                    if bagInfo() > kg0 + 0.05 then LG("  ✅ เก็บของตกได้") return true end
+                end
+            end
+        end
+    end
+    return bagInfo() > kg0 + 0.05
+end
+
 function tryPick(c, kg0)
     equipPick()          -- v2.1: ถือขวานไว้ตลอด จะได้ฟันได้ทุกมุมที่วน
+    local cpos = c.Position   -- จำไว้ เผื่อก้อนหาย (ของตกแถวนี้)
     local list = posList(c)
     -- 1) มุมที่เคยเข้า ลองก่อน (เร็ว)
     if WIN_POS then
@@ -585,7 +628,8 @@ function tryPick(c, kg0)
         if not _G.AF75_RUN then return false end
         if not c.Parent then
             task.wait(0.5)
-            return bagInfo() > kg0 + 0.05
+            if bagInfo() > kg0 + 0.05 then return true end
+            return collectDropped(cpos, kg0)   -- v2.2: ก้อนแตกแล้วของตกพื้น → ตามเก็บ
         end
         if e[1] ~= WIN_POS then
             status("🔎 " .. e[1])
@@ -595,7 +639,9 @@ function tryPick(c, kg0)
     -- v2.0: กด prompt ไม่เข้า → ลองฟันขวาน (ก้อนเล็กแพงๆ ต้องขุด ไม่ใช่หยิบ)
     LG(("  ⚠ วนครบ %d มุมไม่เข้า → ลองฟันขวาน"):format(#list))
     if c.Parent and mineIt(c, kg0) then return true end
-    LG(("  ❌ ฟันขวานก็ไม่เข้า (ก้อนหาย=%s)"):format(tostring(c.Parent == nil)))
+    -- v2.2: ขุดแตกแล้วของร่วง (ลงถ้ำ) → ตามเก็บก้อนที่ตกแถวนั้น
+    if collectDropped(cpos, kg0) then return true end
+    LG(("  ❌ ไม่เข้า (ก้อนหาย=%s)"):format(tostring(c.Parent == nil)))
     return false
 end
 
