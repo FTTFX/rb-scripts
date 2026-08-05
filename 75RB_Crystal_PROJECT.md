@@ -7,8 +7,8 @@
 
 | ไฟล์ | หน้าที่ | สถานะ |
 |---|---|---|
-| `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+☘โชค+ระยะ สีตามเทียร์, กรอง T1-T6, Giant only, TOP5, เรียงแพง/ใกล้/โชค, บินแบบ 74 บังคับได้+noclip | v2.8 |
-| `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ | v1.4 |
+| `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+☘โชค+ระยะ, กรอง T1-T6/Giant, เรียงแพง/ใกล้/โชค, TOP5 กดวาปไปได้, บินแบบ 74+noclip, ไม่นับ Placed_* | v2.9 |
+| `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ, ไม่นับ Placed_* | v1.5 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -47,6 +47,10 @@
 - **ค่าโชค (Luck) ไม่มีใน Attributes** — มีแค่เป็นข้อความใน TextLabel ของ `CrystalHover`
   รูปแบบ `'Luck: +6.0%'` → ต้องแกะด้วย pattern `Luck:%s*%+?([%d%.]+)%%` แล้ว cache
   (weak table กัน memory leak) — ทำแล้วใน ESP v2.8
+- ก้อนชื่อ `Placed_2..6` = ของวางตกแต่งบ้านผู้เล่น — เก็บไม่ได้/ไม่ควรนับ ต้องกรอง
+  `c.Name:match("^Placed")` ออกทุกสแกน (ESP v2.9 / Assist v1.5)
+- วาปไปก้อน: เปิดโหมดบิน (CFrame pin) ก่อนแล้วค่อยย้าย `FLY_POS` ไปเหนือก้อน +6 studs
+  → ถึงแล้วลอยค้างเลย ไม่ร่วง ไม่โดนฟิสิกส์เตะ (ESP v2.9 TOP5 กดได้)
 - executor นี้มี `hookmetamethod` ✅ (ดัก __namecall ได้)
 
 ## _G ที่ใช้ (กันชนกัน)
