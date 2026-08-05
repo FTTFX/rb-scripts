@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v1.4: ยิง remote เปล่าไม่เข้าแล้ว (ยิง 10 ครั้งก้อนไม่ขยับ) → บอทไล่หา "ท่าที่เข้า" เอง
+--       6 ตำแหน่ง (ระดับเดียวกัน N/E/S/W, ต่ำกว่า, เหนือ) x 4 วิธี (prompt/both/remote/fp)
+--       เจอแล้วจำสูตรไว้ใช้กับก้อนต่อไปทันที
 -- v1.3: กล่อง log ในตัว (สปายการทำงานเอง) — เวลาวาป/จำนวนครั้งที่ยิง/ก้อนหายเทียบของเข้า/
 --       จังหวะขาย + ปุ่ม COPY log ส่งให้ Claude วิเคราะห์
 -- v1.2: จังหวะแม่นขึ้น — รอ "ถึงก้อนจริง" ก่อนยิง + ยืนยันด้วย "น้ำหนักกระเป๋าเพิ่ม"
@@ -19,7 +22,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.3"
+local V = "1.4"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -311,6 +314,84 @@ local function updStat()
 end
 updStat()
 
+-- ==================== v1.4: ตัวไล่หา "ท่าที่เก็บเข้า" ====================
+-- ยิง remote เปล่าไม่เข้า (ยิง 10 ครั้งก้อนไม่ขยับ) แต่กดมือ E เข้า
+-- → ไล่ลอง ตำแหน่ง x วิธี จนเจอสูตรที่ได้ผล แล้ว "จำสูตรนั้น" ใช้กับก้อนต่อไปเลย
+-- ตำแหน่ง: ระดับเดียวกับก้อน (รอบทิศ) / เหนือ / ใต้  | วิธี: prompt กดค้าง / remote / ทั้งคู่
+local WIN_POS, WIN_WAY = nil, nil     -- สูตรที่เคยเข้า (จำไว้ ลองอันนี้ก่อนเสมอ)
+local function posList(c)
+    local p, out = c.Position, {}
+    local d = 4 + math.min(6, (c.Size.Magnitude or 4) / 2)   -- ก้อนใหญ่ยืนห่างขึ้นนิด
+    out[#out + 1] = { "ระดับเดียวกัน N", p + Vector3.new(0, 0, -d) }
+    out[#out + 1] = { "ระดับเดียวกัน E", p + Vector3.new(d, 0, 0) }
+    out[#out + 1] = { "ระดับเดียวกัน S", p + Vector3.new(0, 0, d) }
+    out[#out + 1] = { "ระดับเดียวกัน W", p + Vector3.new(-d, 0, 0) }
+    out[#out + 1] = { "ระดับพื้น (ต่ำกว่า 3)", p + Vector3.new(0, -3, -d) }
+    out[#out + 1] = { "เหนือ 6", p + Vector3.new(0, 6, 0) }
+    return out
+end
+local function doWay(c, way)
+    local pp = c:FindFirstChildOfClass("ProximityPrompt")
+    if way == "prompt" and pp then
+        pcall(function() pp:InputHoldBegin() end)
+        task.wait(pp.HoldDuration + 0.4)
+        pcall(function() pp:InputHoldEnd() end)
+    elseif way == "remote" then
+        pcall(function() pickR:FireServer(c) end)
+    elseif way == "both" and pp then
+        pcall(function() pp:InputHoldBegin() end)
+        pcall(function() pickR:FireServer(c) end)
+        task.wait(pp.HoldDuration + 0.4)
+        pcall(function() pp:InputHoldEnd() end)
+        pcall(function() pickR:FireServer(c) end)
+    elseif way == "fp" then
+        local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+        if fp and pp then pcall(fp, pp, 1) end
+    end
+end
+-- ลองท่าหนึ่ง: ย้ายไปตำแหน่ง → ทำวิธี → เช็คน้ำหนัก
+local function attempt(c, kg0, pname, ppos, way)
+    TARGET_POS = ppos
+    task.wait(0.4)                       -- ให้ตำแหน่งใหม่ถึง server ก่อน
+    doWay(c, way)
+    for _ = 1, 8 do                      -- รอผลสูงสุด ~1.2 วิ
+        task.wait(0.15)
+        if bagInfo() > kg0 + 0.05 then
+            LG(("  ✅ เข้า! ท่า [%s + %s]"):format(pname, way))
+            WIN_POS, WIN_WAY = pname, way
+            return true
+        end
+    end
+    return false
+end
+function tryPick(c, kg0)
+    -- 1) สูตรที่เคยเข้า ลองก่อน (เร็ว)
+    if WIN_POS and WIN_WAY then
+        for _, e in ipairs(posList(c)) do
+            if e[1] == WIN_POS then
+                if attempt(c, kg0, e[1], e[2], WIN_WAY) then return true end
+                break
+            end
+        end
+        LG("  ⚠ สูตรเดิมไม่เข้า — ไล่หาใหม่")
+    end
+    -- 2) ไล่ทุกท่า (ตำแหน่ง x วิธี) จนเจอ
+    for _, e in ipairs(posList(c)) do
+        for _, way in ipairs({ "prompt", "both", "remote", "fp" }) do
+            if not _G.AF75_RUN or not c.Parent then
+                -- ก้อนหายระหว่างลอง = อาจเข้าแล้ว เช็คน้ำหนักอีกที
+                task.wait(0.5)
+                if bagInfo() > kg0 + 0.05 then return true end
+                return false
+            end
+            status(("🔎 ลอง %s + %s"):format(e[1], way))
+            if attempt(c, kg0, e[1], e[2], way) then return true end
+        end
+    end
+    LG("  ❌ ลองครบทุกท่าแล้วไม่เข้า (ก้อนหาย=" .. tostring(c.Parent == nil) .. ")")
+    return false
+end
+
 -- ==================== Main farm loop ====================
 local function farmLoop()
     while _G.AF75_RUN do
@@ -382,32 +463,14 @@ local function farmLoop()
                 LG(("  ✈ ถึงแล้วใน %.2f วิ (ห่างเป้า %.1f)"):format(os.clock() - tA,
                     r and (r.Position - dest).Magnitude or -1))
                 task.wait(0.35)   -- ให้ตำแหน่งใหม่ replicate ถึง server
-                -- v1.2: ยิงแล้วรอ "น้ำหนักกระเป๋าเพิ่มจริง" (ก้อนหายจากแมพไม่พอ — FX ลบก่อนของเข้า)
                 status(("⛏ ขุด %s %s"):format(nm, fmtMoney(v)))
-                local got, shots, goneAt = false, 0, nil
-                local t0 = os.clock()
-                while _G.AF75_RUN and not got and os.clock() - t0 < 8 do
-                    if c.Parent then
-                        pcall(function() pickR:FireServer(c) end)
-                        shots += 1
-                    elseif not goneAt then
-                        goneAt = os.clock() - t0   -- ก้อนหายจากแมพตอนไหน (เทียบกับของเข้าจริง)
-                    end
-                    for _ = 1, 5 do            -- เช็คถี่ๆ ระหว่างรอ (0.15s x 5)
-                        task.wait(0.15)
-                        if bagInfo() > kg0 + 0.05 then got = true break end
-                    end
-                end
+                local got = tryPick(c, kg0)
                 if got then
                     statPick += 1
                     statVal += v
-                    LG(("  ✅ เข้า! ยิง %d ครั้ง ใช้ %.2f วิ (ก้อนหายที่ %s) → %.1fkg"):format(
-                        shots, os.clock() - t0, goneAt and ("%.2f"):format(goneAt) or "-", bagInfo()))
                     task.wait(0.25)   -- ค้างอีกนิด ให้ FX/ของเข้าครบก่อนวาปหนี
                 else
                     FAILED[c] = os.clock() + 30
-                    LG(("  ❌ ไม่เข้า ยิง %d ครั้ง 8 วิ (ก้อนหาย=%s) ข้าม 30 วิ"):format(
-                        shots, tostring(c.Parent == nil)))
                     status("❌ " .. nm .. " เก็บไม่เข้า — ข้าม 30 วิ")
                 end
                 updStat()
