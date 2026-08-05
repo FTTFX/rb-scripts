@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.18: บินของ ESP แย่งตำแหน่งกับ AutoFarm (วาปไม่ถึงเป้า ห่าง 28 studs!) →
+--        ถ้า _G.AF75_PIN เปิดอยู่ (AutoFarm คุมตำแหน่ง) ESP หยุดเขียน CFrame ให้เลย
 -- v2.17: อันดับโชคผิด — ป้ายโชคแปลเป็นไทย ("โชค +2.9%") pattern หา 'Luck:' ไม่เจอ
 --        → จับ "+ตัวเลข%" ตรงๆ ทุกภาษา + เลิกแคชค่า 0 (ป้ายโหลดช้าจะได้ลองใหม่)
 -- v2.16: เรียงโหมดที่ 4 "หนักสุด" (WeightKg) + ตาราง TOP ขยาย 5 → 20 อันดับ เลื่อนได้
@@ -44,7 +46,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.17"
+local V = "2.18"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -554,6 +556,8 @@ end
 -- → แรงโน้มถ่วง/แรงผลัก/ชนอะไรก็ไม่ขยับ (ตำแหน่งเป็นของเรา 100%) + ทะลุกำแพงในตัว
 table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
     if not FLY_ON then return end
+    -- v2.18: ถ้า AutoFarm กำลังคุมตำแหน่งอยู่ ให้หยุดเขียน CFrame (เดิมแย่งกันจนวาปไม่ถึงเป้า)
+    if _G.AF75_PIN then FLY_POS = nil return end
     local char = LP.Character
     local r = char and char:FindFirstChild("HumanoidRootPart")
     local h = char and char:FindFirstChildOfClass("Humanoid")
