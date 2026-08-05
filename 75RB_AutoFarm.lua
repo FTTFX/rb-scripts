@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.0: ก้อนเล็กแต่แพง (T6 2-8kg) กด prompt ไม่เข้าเลย → เพิ่มโหมด "ฟันขวาน":
+--       ถือขวาน หันตัว+กล้องใส่ก้อน แล้ว Tool:Activate() รัวสูงสุด 25 ที เช็คน้ำหนักทุกที
 -- v1.9: ปุ่มน้ำหนักปรับทีละ 5 kg (เดิม 25/100 หยาบไป) + เงื่อนไข "หรือราคา"
 --       ก้อนที่ราคา ≥ ค่าที่ตั้ง (ดีฟอลต์ $1M) เก็บเลยไม่สนน้ำหนัก | ปุ่ม ปิด/1M สลับเปิดปิด
 -- v1.8: เจอตัวจริง! prompt ขาย = Workspace.Things.SellProx.ProximityPrompt
@@ -30,7 +32,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.9"
+local V = "2.0"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -495,6 +497,56 @@ local function attempt(c, kg0, pname, ppos)
     return false
 end
 
+-- v2.0: โหมดฟันขวาน — ก้อนเล็กแต่แพง (T6 2-8kg) กด prompt ไม่เข้า ต้อง "ขุด" หลายทีจริงๆ
+-- (ตรงกับ CrystalMineFX("hit", part, progress...) ที่เจอตอนสปาย)
+-- ถือขวาน → หันกล้องใส่ก้อน → Tool:Activate() รัวๆ → เช็คน้ำหนัก
+local function equipPick()
+    local char = LP.Character
+    if not char then return nil end
+    -- ถืออยู่แล้ว?
+    local held = char:FindFirstChildOfClass("Tool")
+    if held and (held:GetAttribute("DigPower") or held.Name:lower():find("pick")) then return held end
+    local bp = LP:FindFirstChildOfClass("Backpack")
+    if not bp then return held end
+    for _, t in ipairs(bp:GetChildren()) do
+        if t:IsA("Tool") and (t:GetAttribute("DigPower") or t.Name:lower():find("pick")) then
+            local h = char:FindFirstChildOfClass("Humanoid")
+            if h then pcall(function() h:EquipTool(t) end) end
+            task.wait(0.3)
+            return char:FindFirstChildOfClass("Tool")
+        end
+    end
+    return held
+end
+
+local function mineIt(c, kg0)
+    local tool = equipPick()
+    if not tool then LG("  ⚠ ไม่เจอขวานในกระเป๋า") return false end
+    local cam = workspace.CurrentCamera
+    local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not r then return false end
+    -- ยืนระดับเดียวกัน ห่าง ~6 แล้วหันหน้า+กล้องใส่ก้อน (สคริปต์เกมยิง ray จากกล้อง/เมาส์)
+    TARGET_POS = c.Position + Vector3.new(0, 0, -6)
+    task.wait(0.4)
+    LG("  ⛏ โหมดฟันขวาน (" .. tool.Name .. ")")
+    for i = 1, 25 do
+        if not _G.AF75_RUN or not c.Parent then break end
+        local rr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if rr then
+            rr.CFrame = CFrame.lookAt(rr.Position, c.Position)   -- หันตัวใส่ก้อน
+            TARGET_POS = rr.Position
+        end
+        pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
+        pcall(function() tool:Activate() end)
+        task.wait(0.25)
+        if bagInfo() > kg0 + 0.05 then
+            LG(("  ✅ เข้า! ฟันขวาน %d ที"):format(i))
+            return true
+        end
+    end
+    return bagInfo() > kg0 + 0.05
+end
+
 function tryPick(c, kg0)
     local list = posList(c)
     -- 1) มุมที่เคยเข้า ลองก่อน (เร็ว)
@@ -519,7 +571,10 @@ function tryPick(c, kg0)
             if attempt(c, kg0, e[1], e[2]) then return true end
         end
     end
-    LG(("  ❌ วนครบ %d มุมแล้วไม่เข้า (ก้อนหาย=%s)"):format(#list, tostring(c.Parent == nil)))
+    -- v2.0: กด prompt ไม่เข้า → ลองฟันขวาน (ก้อนเล็กแพงๆ ต้องขุด ไม่ใช่หยิบ)
+    LG(("  ⚠ วนครบ %d มุมไม่เข้า → ลองฟันขวาน"):format(#list))
+    if c.Parent and mineIt(c, kg0) then return true end
+    LG(("  ❌ ฟันขวานก็ไม่เข้า (ก้อนหาย=%s)"):format(tostring(c.Parent == nil)))
     return false
 end
 
