@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.9: TOP5 กดได้ — แตะแถวไหนวาปบินไปลอยเหนือก้อนนั้นเลย (เปิดบินอัตโนมัติ)
+--       + ตัดของวางบ้านเพื่อน (Placed_*) ออกจากการสแกนทั้งหมด
 -- v2.8: ระบบโชค ☘ — ค่าโชคไม่อยู่ใน attr ต้องแกะจากป้าย CrystalHover ('Luck: +6.0%')
 --       โชว์ ☘% ในป้าย ESP + ปุ่มเรียงวน 3 โหมด แพงสุด/ใกล้สุด/โชคสุด + TOP5 ตามโหมดเรียง
 -- v2.7: บินเปลี่ยนเป็นแกนแบบ 74RB แท้ — ตรึงตำแหน่งด้วย CFrame ทุกเฟรม (แรงโน้มถ่วง/
@@ -30,7 +32,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.8"
+local V = "2.9"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -68,7 +70,8 @@ end
 local function getCrystals()
     local out = {}
     for _, c in ipairs(workspace:GetDescendants()) do
-        if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier") then
+        if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier")
+            and not c.Name:match("^Placed") then   -- ตัดของวางบ้านเพื่อน (Placed_2..6)
             out[#out + 1] = c
         end
     end
@@ -258,7 +261,7 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.IESP75_GUI = gui
 
-local FULL_H, MIN_H = 322, 32
+local FULL_H, MIN_H = 336, 32
 local panel = Instance.new("Frame", gui)
 panel.Size = UDim2.new(0, 190, 0, FULL_H)
 panel.Position = UDim2.new(1, -200, 0.5, -FULL_H / 2)
@@ -396,17 +399,37 @@ statusLbl.Font = Enum.Font.Gotham; statusLbl.TextSize = 11
 statusLbl.TextColor3 = Color3.fromRGB(130, 130, 150)
 statusLbl.TextXAlignment = Enum.TextXAlignment.Left
 
--- Top 5 แพงสุดที่กำลังโชว์ (ป้ายในจอ)
-local topBox = Instance.new("TextLabel", panel)
-topBox.Size = UDim2.new(1, -12, 0, 76); topBox.Position = UDim2.new(0, 6, 0, 202)
-topBox.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
-topBox.Text = ""
-topBox.Font = Enum.Font.Code; topBox.TextSize = 10
-topBox.TextColor3 = Color3.fromRGB(190, 220, 190)
-topBox.TextXAlignment = Enum.TextXAlignment.Left
-topBox.TextYAlignment = Enum.TextYAlignment.Top
-topBox.TextWrapped = true
-Instance.new("UICorner", topBox).CornerRadius = UDim.new(0, 5)
+-- TOP5 แบบกดได้ (v2.9) — แตะแถวไหน = เปิดบิน + วาปไปลอยเหนือก้อนนั้น
+local warpTo   -- forward — นิยามจริงอยู่โซนบินด้านล่าง
+local topHead = Instance.new("TextLabel", panel)
+topHead.Size = UDim2.new(1, -12, 0, 13); topHead.Position = UDim2.new(0, 6, 0, 202)
+topHead.BackgroundTransparency = 1
+topHead.Text = "TOP5 แพง (แตะ = วาปไป):"
+topHead.Font = Enum.Font.GothamBold; topHead.TextSize = 10
+topHead.TextColor3 = Color3.fromRGB(255, 200, 90)
+topHead.TextXAlignment = Enum.TextXAlignment.Left
+
+local topRows, topTargets = {}, {}   -- Instance ยัด field เองไม่ได้ — เก็บ target แยกตาราง
+for i = 1, 5 do
+    local b = Instance.new("TextButton", panel)
+    b.Size = UDim2.new(1, -12, 0, 15)
+    b.Position = UDim2.new(0, 6, 0, 216 + (i - 1) * 16)
+    b.Text = ""
+    b.Font = Enum.Font.Code; b.TextSize = 10
+    b.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+    b.TextColor3 = Color3.fromRGB(190, 220, 190)
+    b.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+    topRows[i] = b
+    b.MouseButton1Click:Connect(function()
+        local t = topTargets[i]
+        if t and t.Parent and warpTo then
+            warpTo(t)
+            b.BackgroundColor3 = Color3.fromRGB(30, 120, 60)
+            task.delay(0.6, function() b.BackgroundColor3 = Color3.fromRGB(8, 8, 12) end)
+        end
+    end)
+end
 
 -- ==================== บิน + ทะลุกำแพง (แบบ 74RB) ====================
 -- จอย/WASD บังคับทิศ (อ่าน Humanoid.MoveDirection — ใช้ได้ทั้งมือถือ/คอม)
@@ -416,14 +439,14 @@ local FLY_SPEED = 60
 local FLY_POS = nil        -- ตำแหน่งตรึงแบบ 74RB — เขียน CFrame ทับทุกเฟรม
 
 local flyB = Instance.new("TextButton", panel)
-flyB.Size = UDim2.new(0, 86, 0, 28); flyB.Position = UDim2.new(0, 6, 0, 284)
+flyB.Size = UDim2.new(0, 86, 0, 28); flyB.Position = UDim2.new(0, 6, 0, 300)
 flyB.Text = "บิน: OFF"; flyB.Font = Enum.Font.GothamBold; flyB.TextSize = 13
 flyB.BackgroundColor3 = Color3.fromRGB(30, 30, 42); flyB.TextColor3 = Color3.fromRGB(110, 110, 125)
 Instance.new("UICorner", flyB).CornerRadius = UDim.new(0, 5)
 
 local function holdBtn(txt, x)
     local b = Instance.new("TextButton", panel)
-    b.Size = UDim2.new(0, 42, 0, 28); b.Position = UDim2.new(0, x, 0, 284)
+    b.Size = UDim2.new(0, 42, 0, 28); b.Position = UDim2.new(0, x, 0, 300)
     b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 15
     b.BackgroundColor3 = Color3.fromRGB(45, 45, 65); b.TextColor3 = Color3.new(1, 1, 1)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
@@ -435,8 +458,8 @@ upB.MouseButton1Up:Connect(function() UPIN = 0 end)
 downB.MouseButton1Down:Connect(function() UPIN = -1 end)
 downB.MouseButton1Up:Connect(function() UPIN = 0 end)
 
-flyB.MouseButton1Click:Connect(function()
-    FLY_ON = not FLY_ON
+local function setFly(on)
+    FLY_ON = on
     UPIN = 0
     flyB.Text = "บิน: " .. (FLY_ON and "ON" or "OFF")
     flyB.BackgroundColor3 = FLY_ON and Color3.fromRGB(30, 120, 60) or Color3.fromRGB(30, 30, 42)
@@ -453,7 +476,16 @@ flyB.MouseButton1Click:Connect(function()
             end
         end
     end
-end)
+end
+flyB.MouseButton1Click:Connect(function() setFly(not FLY_ON) end)
+
+-- วาปไปก้อน (TOP5 กด) — เปิดบินก่อน (จะได้ลอยค้าง ไม่ร่วง) แล้วย้ายจุดตรึงไปเหนือก้อน 6 studs
+warpTo = function(inst)
+    local p = partPos(inst)
+    if not p then return end
+    if not FLY_ON then setFly(true) end
+    FLY_POS = p + Vector3.new(0, 6, 0)
+end
 
 -- แกนแบบ 74RB: คำนวณ FLY_POS จากจอย แล้ว "เขียน CFrame ทับ" ทุกเฟรม
 -- → แรงโน้มถ่วง/แรงผลัก/ชนอะไรก็ไม่ขยับ (ตำแหน่งเป็นของเรา 100%) + ทะลุกำแพงในตัว
@@ -524,7 +556,7 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
             for _, c in ipairs(getCrystals()) do
                 local t2 = c:GetAttribute("Tier")
                 if t2 and TIER_ON[t2] then
-                    best[#best + 1] = { v = c:GetAttribute("Value") or 0, lk = getLuck(c),
+                    best[#best + 1] = { inst = c, v = c:GetAttribute("Value") or 0, lk = getLuck(c),
                         n = c:GetAttribute("CrystalName") or "?", s = c:GetAttribute("SizeClassName") or "" }
                 end
             end
@@ -534,14 +566,13 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
             else
                 table.sort(best, function(a, b) return a.v > b.v end)
             end
-            local lines = {}
-            for i = 1, math.min(5, #best) do
+            topHead.Text = (SORT_MODE == "luck" and "TOP5 ☘โชค" or "TOP5 แพง") .. " (แตะ = วาปไป):"
+            for i = 1, 5 do
                 local e = best[i]
-                lines[#lines + 1] = ("%d. %s%s %s%s"):format(i,
-                    e.s ~= "Small" and ("[" .. e.s .. "] ") or "", e.n, fmtMoney(e.v), fmtLuck(e.lk))
+                topTargets[i] = e and e.inst or nil
+                topRows[i].Text = e and (" %d. %s%s %s%s"):format(i,
+                    e.s ~= "Small" and ("[" .. e.s .. "] ") or "", e.n, fmtMoney(e.v), fmtLuck(e.lk)) or ""
             end
-            topBox.Text = (SORT_MODE == "luck" and " TOP5 ☘โชค:\n " or " TOP5 แพง:\n ")
-                .. table.concat(lines, "\n ")
         end
     end
 end))
