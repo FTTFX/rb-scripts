@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.7: Max=0 เป็นค่าชั่วคราว! (ก้อนเดียวกันเดี๋ยว 0 เดี๋ยว 14) → รอเช็คซ้ำ 1.5 วิก่อนตัดสินใจฟันขวาน
 -- v2.6: (PickSpy v2.0) 2 บั๊กใหญ่ — (ก) เกมโชว์ปุ่มให้ก้อนใกล้สุดก้อนเดียว ก้อนเป้าหมายเลย
 --       ไม่เคย "ปุ่มติด" ในโซนก้อนเยอะ → คิดระยะเองจาก MaxActivationDistance แทน
 --       (ข) ก้อน Max=0 = กดไม่ได้เลย (ยังฝังในหิน) → ข้ามการวนมุม ไปฟันขวานทันที
@@ -46,7 +47,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.6"
+local V = "2.7"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -670,7 +671,15 @@ function tryPick(c, kg0)
     local cpos = c.Position   -- จำไว้ เผื่อก้อนหาย (ของตกแถวนี้)
     -- v2.6 (PickSpy v2.0): MaxActivationDistance = 0 → ปุ่ม "ไม่มีวันขึ้น" (ก้อนยังฝังในหิน)
     -- วนหามุมเท่าไหร่ก็เสียเวลาเปล่า → ไปฟันขวานเลย
+    -- v2.7: Max=0 เป็นค่า "ชั่วคราว" (ก้อนยังโหลดไม่เสร็จ/คนอื่นขุดอยู่) — รอ 1.5 วิเช็คซ้ำก่อน
+    -- (log: Apexarch Max=0 เสียเวลา 30 วิ แต่ 1 นาทีถัดมาก้อนเดียวกันกดเข้าใน 2.1 วิ)
     local pp0 = c:FindFirstChildOfClass("ProximityPrompt")
+    if pp0 and pp0.MaxActivationDistance <= 0 then
+        for _ = 1, 10 do
+            task.wait(0.15)
+            if pp0.MaxActivationDistance > 0 then break end
+        end
+    end
     if pp0 and pp0.MaxActivationDistance <= 0 then
         LG("  ⛏ ก้อนนี้ Max=0 (ปุ่มขึ้นไม่ได้) → ฟันขวานเลย")
         if mineIt(c, kg0) then return true end
