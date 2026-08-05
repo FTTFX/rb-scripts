@@ -12,6 +12,8 @@
 | `75RB_HomeSpy.lua` | สปายแยกก้อนป่า vs ก้อนบ้าน: TOP20 path เต็ม + census ตามโฟลเดอร์แม่ + นับ prompt | v1.0 |
 | `75RB_PickSpy.lua` | สปายจังหวะเก็บ: HoldBegan/Ended/Triggered + เวลา + เฝ้าก้อนหาย (พิสูจน์ server จับเวลากด) | v1.0 |
 | `75RB_DeepSpy.lua` | ดักขาไป+ขากลับ (OnClientEvent ทุก remote) + LIST ชื่อเข้าเค้า — ตัวเจอ CrystalHoldComplete | v1.0 |
+| `75RB_BagSpy.lua` | ดัมพ์ attrs/Values ทั้ง Player + GUI "x / y" — ตัวเจอที่เก็บน้ำหนัก/เงิน | v1.0 |
+| `75RB_AutoFarm.lua` | ฟาร์มครบวงจร: วาปเก็บก้อนแพงสุด → กระเป๋าถึง % → วาปขายที่ SellWorker → วน | v1.0 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -48,6 +50,18 @@
   TakeOutAllCrystals`, `CrystalDropRequest/CrystalDroppedPickup`, `LuckEventSync`,
   `RadarDropRequest`, `PlotPlacePickup`
 - ระยะ prompt จริง `MaxActivationDistance` = 9-16m — แต่ยิงรีโมตตรงอาจไม่ติดลิมิตนี้ (รอวัด)
+
+## ที่เก็บข้อมูลผู้เล่น (BagSpy 2026-08-05)
+
+- น้ำหนักกระเป๋า (จอ): GUI `PlayerGui.ExplorerHud.BackpackPanel.Value` = `'656.0 / 1237.0 kg'`
+- เพดาน: `LP.PlayerData.RealStats.CarryWeight` | เงิน: `RealStats.Cash` (NumberValue)
+- ของในกระเป๋า: `LP.PlayerData.Inventory.Crystals.Crystal_*` (RayValue + attr Value/WeightKg ครบ)
+- ของวางที่บ้านเรา: `LP.PlayerData.PlotData.Crystals.*` (แยกจากกระเป๋า)
+- stat อื่นน่าสนใจ: `PlotLuck`, `LuckBoostRemaining`, `CurrentAir/AirCapacity` (ระบบอากาศ!),
+  `JetpackFuel` (attr บน LP), `TrustedTeleport` (attr — เกมมีระบบเช็ควาป?), `SellCount`
+- ร้านขาย = Model ชื่อ `SellWorker` ใน workspace (เดินใกล้ → server ยิง `SellOpen` มาให้)
+- `SellRequest` args ยังไม่คอนเฟิร์ม — AutoFarm v1.0 ลอง 3 แบบ: `()`, `(sellerModel)`, `("All")`
+  ถ้าไม่เข้าสักแบบ ให้ user ขายมือพร้อม DeepSpy แล้วดู args จริง
 - การขาย: ยังไม่ได้สปาย (รอ user ขายมือ 1 ครั้งพร้อม NetSpy เปิด)
 
 ## บทเรียน/กับดัก
