@@ -7,8 +7,9 @@
 
 | ไฟล์ | หน้าที่ | สถานะ |
 |---|---|---|
-| `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+☘โชค+ระยะ, กรอง T1-T6/Giant, เรียงแพง/ใกล้/โชค, TOP5 กดวาปไปได้, บินแบบ 74+noclip, ไม่นับ Placed_* | v2.9 |
-| `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ, ไม่นับ Placed_* | v1.5 |
+| `75RB_ItemESP.lua` | ESP คริสตัล: ป้ายชื่อ+ราคา+☘โชค+ระยะ, กรอง T1-T6/Giant, เรียงแพง/ใกล้/โชค, TOP5 กดวาปไปได้, บินแบบ 74+noclip, กรองบ้านเพื่อน | v2.10 |
+| `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ, กรองบ้านเพื่อน | v1.6 |
+| `75RB_HomeSpy.lua` | สปายแยกก้อนป่า vs ก้อนบ้าน: TOP20 path เต็ม + census ตามโฟลเดอร์แม่ + นับ prompt | v1.0 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -47,8 +48,13 @@
 - **ค่าโชค (Luck) ไม่มีใน Attributes** — มีแค่เป็นข้อความใน TextLabel ของ `CrystalHover`
   รูปแบบ `'Luck: +6.0%'` → ต้องแกะด้วย pattern `Luck:%s*%+?([%d%.]+)%%` แล้ว cache
   (weak table กัน memory leak) — ทำแล้วใน ESP v2.8
-- ก้อนชื่อ `Placed_2..6` = ของวางตกแต่งบ้านผู้เล่น — เก็บไม่ได้/ไม่ควรนับ ต้องกรอง
-  `c.Name:match("^Placed")` ออกทุกสแกน (ESP v2.9 / Assist v1.5)
+- **ก้อนบ้านเพื่อน (จาก HomeSpy 2026-08-05)**: ตัวก้อนจริงชื่อ `Handle` อยู่ใต้
+  `Things.Plots.Slots.<ชื่อผู้เล่น>.PlacedCrystals.Placed_2..6` — กรองชื่อ `Placed_*` เฉยๆ ไม่โดน!
+  จุดชี้ตัวชัวร์: **ไม่มี ProximityPrompt เลย** (เก็บได้ 0/8) ส่วนก้อนป่ามี 1465/1467
+  → กรอง 2 ชั้น: `not c:FindFirstAncestor("Plots")` + ต้องมี prompt เปิดอยู่ (ESP v2.10 / Assist v1.6)
+  หมายเหตุ: มูลค่าก้อนโชว์บ้านโป่งเวอร์ ($3.5B) — attr `CE_Value=1`, บางก้อน `BombCrystal=true`
+- มีก้อนตกพื้นจากผู้เล่น: `DroppedCrystals.DroppedCrystal_T6` — attr `Purchased`,
+  `DroppedByUserId`, `DisplayName` — บางก้อนมี prompt เก็บได้จริง (ผ่านตัวกรองอัตโนมัติ)
 - วาปไปก้อน: เปิดโหมดบิน (CFrame pin) ก่อนแล้วค่อยย้าย `FLY_POS` ไปเหนือก้อน +6 studs
   → ถึงแล้วลอยค้างเลย ไม่ร่วง ไม่โดนฟิสิกส์เตะ (ESP v2.9 TOP5 กดได้)
 - executor นี้มี `hookmetamethod` ✅ (ดัก __namecall ได้)
