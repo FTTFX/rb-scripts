@@ -11,6 +11,7 @@
 | `75RB_Assist.lua` | เก็บอัตโนมัติ: fireproximityprompt ก้อนแพงสุดในระยะ + Hold bypass + วัดเพดานระยะ, กรองบ้านเพื่อน | v1.6 |
 | `75RB_HomeSpy.lua` | สปายแยกก้อนป่า vs ก้อนบ้าน: TOP20 path เต็ม + census ตามโฟลเดอร์แม่ + นับ prompt | v1.0 |
 | `75RB_PickSpy.lua` | สปายจังหวะเก็บ: HoldBegan/Ended/Triggered + เวลา + เฝ้าก้อนหาย (พิสูจน์ server จับเวลากด) | v1.0 |
+| `75RB_DeepSpy.lua` | ดักขาไป+ขากลับ (OnClientEvent ทุก remote) + LIST ชื่อเข้าเค้า — ตัวเจอ CrystalHoldComplete | v1.0 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -33,13 +34,20 @@
 
 ## ระบบเน็ตเวิร์ก (จาก NetSpy)
 
-- **เก็บของไม่ยิง Remote เลย** — ProximityPrompt ล้วน (Roblox ส่งให้ server เอง)
-- **server จับเวลากดค้าง! (PickSpy 2026-08-05)** — `fireproximityprompt` + `Hold=0`
-  โดนปัดเกือบหมดแม้ @3m (TRIGGER ไม่มีช่วงกดค้าง = โกง) ส่วนเก็บมือกดครบ Hold ✅ ทุกก้อน
-  → **วิธีที่ถูก: `pp:InputHoldBegin()` → รอ `HoldDuration`+0.15 → `pp:InputHoldEnd()`**
-  engine trigger เองเหมือนนิ้วกดจริง server แยกไม่ออก (Assist v1.7 / ESP warp v2.13)
-- **ระยะ prompt จริงเล็กมาก**: `MaxActivationDistance` = 9-16m (ต่อก้อนไม่เท่ากัน)
-  — ตั้งระยะ Assist ≤15 ผลดีสุด (ตัวเลข ❌37m/54m/65m ที่เคยเจอคือเกินระยะ prompt นั่นเอง)
+- **เก็บของ = รีโมตตรง! (DeepSpy 2026-08-05)** — เก็บมือจริงๆ client ยิง
+  **`RS.Remotes.CrystalHoldComplete:FireServer(<ก้อน MeshPart>)`** หลังกดครบ
+  → บอทยิง remote นี้ตรงๆ เลย ไม่ต้องกดค้าง (Assist v2.0 / ESP warp v2.15)
+  (NetSpy รอบแรกเห็นว่าไม่มี remote — ตอนนั้นดักก่อนเกมอัปเดต/พลาด — ความจริงมี)
+- ประวัติทางตัน (กันเดินซ้ำ): `fireproximityprompt`+`Hold=0` เคยใช้ได้ยุคแรก → โดนอุด
+  (server เท TRIGGER ที่ไม่มีช่วงกดค้าง แม้ @3m) | `InputHoldBegin/End` กดค้างจริงก็ยังไม่เข้า
+  (user รายงาน "กดค้างไม่นานพอ") → จบที่ยิงรีโมตตรง
+- ขากลับตอนเก็บสำเร็จ: `CrystalMinePrompt(part,false)` → `CrystalMineFX("hit",part,progress,
+  userId,n1,n2)` → `CrystalMineFX("end")` → `CrystalPickupJuice(part,true)` → `IndexDiscover`
+  → `Notify` — สังเกต MineFX มีเลข progress อาจต้องยิงหลายทีถ้าก้อนใหญ่ (T3 ทีเดียวหาย)
+- remote น่าสนใจอื่น: `SellOpen/SellRequest/SellResult` (ขาย!), `TakeOutCrystal/
+  TakeOutAllCrystals`, `CrystalDropRequest/CrystalDroppedPickup`, `LuckEventSync`,
+  `RadarDropRequest`, `PlotPlacePickup`
+- ระยะ prompt จริง `MaxActivationDistance` = 9-16m — แต่ยิงรีโมตตรงอาจไม่ติดลิมิตนี้ (รอวัด)
 - การขาย: ยังไม่ได้สปาย (รอ user ขายมือ 1 ครั้งพร้อม NetSpy เปิด)
 
 ## บทเรียน/กับดัก
