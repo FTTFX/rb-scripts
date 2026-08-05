@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.6: ปุ่ม "บิน" — บินทะลุกำแพงแบบ 74RB: จอยบังคับทิศ + ปุ่ม ▲▼ ขึ้นลง + noclip
 -- v2.5: สแกนหาของห่วย — เลิกพึ่งโฟลเดอร์ Things.Crystals อย่างเดียว กวาดทั้ง workspace
 --       ทุกรอบ (ก้อนอยู่โฟลเดอร์ไหนก็เจอ) + สถานะโชว์จำนวนแยกรายเทียร์ (เห็นว่าหลุดตรงไหน)
 -- v2.4: สแกนกว้างขึ้น — หาโฟลเดอร์ Crystals ใหม่ทุกรอบ (เกมสร้างใหม่/วาร์ปโซนแล้วตัวเก่าชี้ที่ว่าง)
@@ -25,7 +26,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.5"
+local V = "2.6"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -225,7 +226,7 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.IESP75_GUI = gui
 
-local FULL_H, MIN_H = 288, 32
+local FULL_H, MIN_H = 322, 32
 local panel = Instance.new("Frame", gui)
 panel.Size = UDim2.new(0, 190, 0, FULL_H)
 panel.Position = UDim2.new(1, -200, 0.5, -FULL_H / 2)
@@ -365,6 +366,63 @@ topBox.TextXAlignment = Enum.TextXAlignment.Left
 topBox.TextYAlignment = Enum.TextYAlignment.Top
 topBox.TextWrapped = true
 Instance.new("UICorner", topBox).CornerRadius = UDim.new(0, 5)
+
+-- ==================== บิน + ทะลุกำแพง (แบบ 74RB) ====================
+-- จอย/WASD บังคับทิศ (อ่าน Humanoid.MoveDirection — ใช้ได้ทั้งมือถือ/คอม)
+-- กดค้าง ▲/▼ = ขึ้น/ลง | noclip อัตโนมัติตอนบิน | ความเร็ว 60
+local FLY_ON, UPIN = false, 0
+local FLY_SPEED = 60
+
+local flyB = Instance.new("TextButton", panel)
+flyB.Size = UDim2.new(0, 86, 0, 28); flyB.Position = UDim2.new(0, 6, 0, 284)
+flyB.Text = "บิน: OFF"; flyB.Font = Enum.Font.GothamBold; flyB.TextSize = 13
+flyB.BackgroundColor3 = Color3.fromRGB(30, 30, 42); flyB.TextColor3 = Color3.fromRGB(110, 110, 125)
+Instance.new("UICorner", flyB).CornerRadius = UDim.new(0, 5)
+
+local function holdBtn(txt, x)
+    local b = Instance.new("TextButton", panel)
+    b.Size = UDim2.new(0, 42, 0, 28); b.Position = UDim2.new(0, x, 0, 284)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 15
+    b.BackgroundColor3 = Color3.fromRGB(45, 45, 65); b.TextColor3 = Color3.new(1, 1, 1)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    return b
+end
+local upB, downB = holdBtn("▲", 98), holdBtn("▼", 146)
+upB.MouseButton1Down:Connect(function() UPIN = 1 end)
+upB.MouseButton1Up:Connect(function() UPIN = 0 end)
+downB.MouseButton1Down:Connect(function() UPIN = -1 end)
+downB.MouseButton1Up:Connect(function() UPIN = 0 end)
+
+flyB.MouseButton1Click:Connect(function()
+    FLY_ON = not FLY_ON
+    UPIN = 0
+    flyB.Text = "บิน: " .. (FLY_ON and "ON" or "OFF")
+    flyB.BackgroundColor3 = FLY_ON and Color3.fromRGB(30, 120, 60) or Color3.fromRGB(30, 30, 42)
+    flyB.TextColor3 = FLY_ON and Color3.new(1, 1, 1) or Color3.fromRGB(110, 110, 125)
+    local char = LP.Character
+    local h = char and char:FindFirstChildOfClass("Humanoid")
+    if h then h.PlatformStand = false end
+    if not FLY_ON and char then   -- คืน CanCollide ตอนปิด
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = true end
+        end
+    end
+end)
+
+table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function()
+    if not FLY_ON then return end
+    local char = LP.Character
+    local r = char and char:FindFirstChild("HumanoidRootPart")
+    local h = char and char:FindFirstChildOfClass("Humanoid")
+    if not r or not h then return end
+    -- noclip ทะลุกำแพง
+    for _, p in ipairs(char:GetChildren()) do
+        if p:IsA("BasePart") then p.CanCollide = false end
+    end
+    -- ลอย: ตั้งความเร็วตรงๆ (สู้แรงโน้มถ่วง) — จอยดันไปทิศไหนก็ไปทิศนั้น
+    local move = h.MoveDirection * FLY_SPEED
+    r.AssemblyLinearVelocity = Vector3.new(move.X, UPIN * FLY_SPEED, move.Z)
+end))
 
 local folded = false
 foldB.MouseButton1Click:Connect(function()
