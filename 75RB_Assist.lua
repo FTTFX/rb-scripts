@@ -1,4 +1,6 @@
--- 75RB_Assist.lua v1.0 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v1.1: ก้อนที่ ❌ พักไว้ 8 วิ (เลิกยิงก้อนเดิมซ้ำ — ไปเก็บก้อนถัดไปแทน)
+--       + วัดเพดานระยะอัตโนมัติ: จำ ✅ไกลสุด / ❌ใกล้สุด โชว์ตลอด
 -- จากสปาย: เก็บของ = ProximityPrompt ล้วน (ไม่มี remote) → ยิง fp ใส่ก้อนที่ "แพงสุดในระยะ"
 -- ฟีเจอร์: AUTO เก็บ ON/OFF | ระยะปรับได้ −/+ (10-500) | เทียร์ขั้นต่ำ T1-T6 | Giant only
 --   Hold bypass (ก้อน Mythic ต้องกดค้าง 5 วิ → เราตั้ง Hold=0 เก็บทันที)
@@ -9,7 +11,7 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.0"
+local V = "1.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -26,6 +28,8 @@ local GIANT_ONLY = false
 local statPick, statVal, statKg = 0, 0, 0
 local pending   = nil    -- {inst=, name=, val=, kg=, d=, t=} รอเช็คว่าหายจากแมพ = เก็บสำเร็จ
 local pendT     = 0
+local FAILED    = {}     -- [inst] = os.clock() หมดโทษ — ก้อนที่ยิงไม่เข้า พัก 8 วิ
+local maxOK, minFail = nil, nil   -- วัดเพดานระยะ server
 
 local function myPos()
     local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -178,10 +182,15 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
         if not pending.inst.Parent then
             statPick += 1; statVal += pending.val; statKg += pending.kg
             updStat()
-            lastL.Text = ("ล่าสุด: ✅ %s %s @%dm"):format(pending.name, fmtMoney(pending.val), pending.d)
+            if not maxOK or pending.d > maxOK then maxOK = pending.d end
+            lastL.Text = ("✅ %s %s @%dm | เพดาน: ✅%s ❌%s"):format(pending.name,
+                fmtMoney(pending.val), pending.d, tostring(maxOK), tostring(minFail or "-"))
             pending = nil
         elseif pendT > 1.2 then
-            lastL.Text = ("ล่าสุด: ❌ %s ไม่เข้า @%dm (ไกลไป? ลดระยะ)"):format(pending.name, pending.d)
+            FAILED[pending.inst] = os.clock() + 8
+            if not minFail or pending.d < minFail then minFail = pending.d end
+            lastL.Text = ("❌ %s @%dm | เพดาน: ✅%s ❌%s"):format(pending.name,
+                pending.d, tostring(maxOK or "-"), tostring(minFail))
             pending = nil
         end
         return   -- รอผลก่อนค่อยยิงก้อนถัดไป (กันยิงรัว)
@@ -197,7 +206,7 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
             local sz = c:GetAttribute("SizeClassName") or "Small"
             if not GIANT_ONLY or sz ~= "Small" then
                 local d = (c.Position - mp).Magnitude
-                if d <= RANGE then
+                if d <= RANGE and (not FAILED[c] or os.clock() > FAILED[c]) then
                     local v = c:GetAttribute("Value") or 0
                     if not best or v > (best:GetAttribute("Value") or 0) then best, bd = c, d end
                 end
