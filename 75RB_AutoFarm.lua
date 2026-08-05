@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.0: ตัวกรองเปลี่ยนเป็น "พิมพ์เอง" 3 ช่อง (kg ต่ำ / kg สูง / ราคาขั้นต่ำ) รับ 30M 500K 1.5m
+--       แทนปุ่ม −/+ ที่ปรับทีละนิดช้า | ราคา 0 = ปิดเงื่อนไขราคา
 -- v2.9: ป๊อปอัป "เสร็จสิ้นการขุดแร่/ก้อนใหญ่เกิน" (PlayerGui.Sell.Frame) บังจอ → กดโอเค/X ปิดเอง
 --       (ห้ามแตะปุ่ม "ขโมย/STEAL" เด็ดขาด — เสีย Robux จริง)
 -- v2.8: "หยิบก่อน ขวานทีหลัง" — เลิกฟันขวานระหว่างวนมุม/รอผล (ขวานทำก้อนแตก ของร่วงลงถ้ำ
@@ -51,7 +53,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.9"
+local V = "3.0"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -362,50 +364,52 @@ local function updKgL()
     kgL.Text = ("น้ำหนัก %d-%d kg  หรือ ≥%s"):format(KG_MIN, KG_MAX,
         VAL_MIN > 0 and fmtMoney(VAL_MIN) or "ปิด")
 end
-local function kgBtn(txt, x, isMin, delta)
-    local b = Instance.new("TextButton", panel)
-    b.Size = UDim2.new(0, 42, 0, 24); b.Position = UDim2.new(0, x, 0, 122)
-    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
-    b.BackgroundColor3 = isMin and Color3.fromRGB(45, 65, 45) or Color3.fromRGB(65, 45, 45)
-    b.TextColor3 = Color3.new(1, 1, 1)
+-- v3.0: พิมพ์เอง — 3 ช่องกรอก (kg ต่ำ / kg สูง / ราคาขั้นต่ำ) รับ 30M, 500K, 1.5m ได้
+-- ราคา 0 = ปิดเงื่อนไขราคา (ใช้น้ำหนักอย่างเดียว)
+local function parseNum(s)
+    s = tostring(s):gsub("[%s,%$]", "")
+    local n, suf = s:match("^([%d%.]+)([kKmMbB]?)$")
+    n = tonumber(n)
+    if not n then return nil end
+    suf = suf:lower()
+    if suf == "k" then n = n * 1e3
+    elseif suf == "m" then n = n * 1e6
+    elseif suf == "b" then n = n * 1e9 end
+    return n
+end
+local function inputBox(x, w, y, val, tip, apply)
+    local b = Instance.new("TextBox", panel)
+    b.Size = UDim2.new(0, w, 0, 24); b.Position = UDim2.new(0, x, 0, y)
+    b.Text = val; b.PlaceholderText = tip
+    b.Font = Enum.Font.GothamBold; b.TextSize = 12
+    b.BackgroundColor3 = Color3.fromRGB(28, 28, 40); b.TextColor3 = Color3.new(1, 1, 1)
+    b.ClearTextOnFocus = false
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
-    b.MouseButton1Click:Connect(function()
-        if isMin then
-            KG_MIN = math.clamp(KG_MIN + delta, 0, KG_MAX - 5)
-        else
-            KG_MAX = math.clamp(KG_MAX + delta, KG_MIN + 5, 5000)
-        end
+    b.FocusLost:Connect(function()
+        local n = parseNum(b.Text)
+        if n then apply(n) else b.Text = "?" end
         updKgL()
     end)
+    return b
 end
-kgBtn("ต่ำ −", 6, true, -5)      -- v1.9: ปรับทีละ 5 kg (เดิม 25/100 หยาบไป)
-kgBtn("ต่ำ +", 52, true, 5)
-kgBtn("สูง −", 110, false, -5)
-kgBtn("สูง +", 156, false, 5)
-
--- v1.9: แถวราคา — ก้อนที่ราคา ≥ ค่านี้ เก็บเลยไม่สนน้ำหนัก (ปรับทีละ $250K, 0 = ปิด)
-local function valBtn(txt, x, delta)
-    local b = Instance.new("TextButton", panel)
-    b.Size = UDim2.new(0, 42, 0, 24); b.Position = UDim2.new(0, x, 0, 150)
-    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
-    b.BackgroundColor3 = Color3.fromRGB(60, 55, 30); b.TextColor3 = Color3.new(1, 1, 1)
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
-    b.MouseButton1Click:Connect(function()
-        VAL_MIN = math.clamp(VAL_MIN + delta, 0, 1e9)
-        updKgL()
-    end)
-end
-valBtn("ราคา −", 6, -250e3)
-valBtn("ราคา +", 52, 250e3)
-local valOffB = Instance.new("TextButton", panel)
-valOffB.Size = UDim2.new(0, 88, 0, 24); valOffB.Position = UDim2.new(0, 110, 0, 150)
-valOffB.Text = "ปิด/1M"; valOffB.Font = Enum.Font.GothamBold; valOffB.TextSize = 12
-valOffB.BackgroundColor3 = Color3.fromRGB(45, 45, 65); valOffB.TextColor3 = Color3.new(1, 1, 1)
-Instance.new("UICorner", valOffB).CornerRadius = UDim.new(0, 5)
-valOffB.MouseButton1Click:Connect(function()
-    VAL_MIN = VAL_MIN > 0 and 0 or 1e6
-    updKgL()
+local kgMinB, kgMaxB, valB
+kgMinB = inputBox(6, 58, 122, tostring(KG_MIN), "kg ต่ำ", function(n)
+    KG_MIN = math.clamp(n, 0, 1e5); kgMinB.Text = tostring(math.floor(KG_MIN))
 end)
+kgMaxB = inputBox(68, 58, 122, tostring(KG_MAX), "kg สูง", function(n)
+    KG_MAX = math.clamp(n, 0, 1e5); kgMaxB.Text = tostring(math.floor(KG_MAX))
+end)
+valB = inputBox(130, 74, 122, "1M", "ราคาต่ำสุด", function(n)
+    VAL_MIN = math.clamp(n, 0, 1e12)
+    valB.Text = VAL_MIN > 0 and fmtMoney(VAL_MIN):gsub("%$", "") or "0"
+end)
+local hintL = Instance.new("TextLabel", panel)
+hintL.Size = UDim2.new(1, -12, 0, 16); hintL.Position = UDim2.new(0, 6, 0, 148)
+hintL.BackgroundTransparency = 1
+hintL.Text = "แตะช่องแล้วพิมพ์: kgต่ำ | kgสูง | ราคา (30M, 500K, 0=ปิด)"
+hintL.Font = Enum.Font.Gotham; hintL.TextSize = 10
+hintL.TextColor3 = Color3.fromRGB(130, 130, 150)
+hintL.TextXAlignment = Enum.TextXAlignment.Left
 updKgL()
 
 local statusL = Instance.new("TextLabel", panel)
