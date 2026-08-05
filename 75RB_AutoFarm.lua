@@ -7,9 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v1.5: วนหา 8 มุมรอบก้อน (ระดับเดียวกัน) + เช็ค "ปุ่มติดไหม" ด้วย PromptShown ก่อนกด
+--       ติด=กดจริงรอผล | ไม่ติด=วาปมุมถัดไปทันที (ไม่เสียเวลากดลม) + จำมุมที่เข้า
 -- v1.4: ยิง remote เปล่าไม่เข้าแล้ว (ยิง 10 ครั้งก้อนไม่ขยับ) → บอทไล่หา "ท่าที่เข้า" เอง
---       6 ตำแหน่ง (ระดับเดียวกัน N/E/S/W, ต่ำกว่า, เหนือ) x 4 วิธี (prompt/both/remote/fp)
---       เจอแล้วจำสูตรไว้ใช้กับก้อนต่อไปทันที
 -- v1.3: กล่อง log ในตัว (สปายการทำงานเอง) — เวลาวาป/จำนวนครั้งที่ยิง/ก้อนหายเทียบของเข้า/
 --       จังหวะขาย + ปุ่ม COPY log ส่งให้ Claude วิเคราะห์
 -- v1.2: จังหวะแม่นขึ้น — รอ "ถึงก้อนจริง" ก่อนยิง + ยืนยันด้วย "น้ำหนักกระเป๋าเพิ่ม"
@@ -22,7 +22,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.4"
+local V = "1.5"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -319,14 +319,33 @@ updStat()
 -- → ไล่ลอง ตำแหน่ง x วิธี จนเจอสูตรที่ได้ผล แล้ว "จำสูตรนั้น" ใช้กับก้อนต่อไปเลย
 -- ตำแหน่ง: ระดับเดียวกับก้อน (รอบทิศ) / เหนือ / ใต้  | วิธี: prompt กดค้าง / remote / ทั้งคู่
 local WIN_POS, WIN_WAY = nil, nil     -- สูตรที่เคยเข้า (จำไว้ ลองอันนี้ก่อนเสมอ)
+
+-- v1.5: เช็ค "ปุ่มติดไหม" ด้วย PromptShown/PromptHidden (เกมโชว์ปุ่ม E = อยู่ในระยะ+มองเห็น)
+-- → วาปวนมุม ถ้าปุ่มติดค่อยกด ถ้าไม่ติดวาปมุมถัดไปเลย ไม่เสียเวลากดลม
+local PROMPT_ON = nil
+local PPS = game:GetService("ProximityPromptService")
+table.insert(_G.AF75_CONNS, PPS.PromptShown:Connect(function(pp) PROMPT_ON = pp end))
+table.insert(_G.AF75_CONNS, PPS.PromptHidden:Connect(function(pp)
+    if PROMPT_ON == pp then PROMPT_ON = nil end
+end))
+local function promptReady(c)
+    local pp = c:FindFirstChildOfClass("ProximityPrompt")
+    return pp and PROMPT_ON == pp
+end
+
+-- v1.5: 8 มุมรอบก้อน "ระดับเดียวกัน" (ท่าที่ log พิสูจน์ว่าเข้า) + สำรองต่ำ/สูง
 local function posList(c)
     local p, out = c.Position, {}
     local d = 4 + math.min(6, (c.Size.Magnitude or 4) / 2)   -- ก้อนใหญ่ยืนห่างขึ้นนิด
-    out[#out + 1] = { "ระดับเดียวกัน N", p + Vector3.new(0, 0, -d) }
-    out[#out + 1] = { "ระดับเดียวกัน E", p + Vector3.new(d, 0, 0) }
-    out[#out + 1] = { "ระดับเดียวกัน S", p + Vector3.new(0, 0, d) }
-    out[#out + 1] = { "ระดับเดียวกัน W", p + Vector3.new(-d, 0, 0) }
-    out[#out + 1] = { "ระดับพื้น (ต่ำกว่า 3)", p + Vector3.new(0, -3, -d) }
+    local dirs = {
+        { "N", 0, -1 }, { "NE", 0.7, -0.7 }, { "E", 1, 0 }, { "SE", 0.7, 0.7 },
+        { "S", 0, 1 }, { "SW", -0.7, 0.7 }, { "W", -1, 0 }, { "NW", -0.7, -0.7 },
+    }
+    for _, dir in ipairs(dirs) do
+        out[#out + 1] = { "ระดับเดียวกัน " .. dir[1],
+            p + Vector3.new(dir[2] * d, 0, dir[3] * d) }
+    end
+    out[#out + 1] = { "ต่ำกว่า 3", p + Vector3.new(0, -3, -d) }
     out[#out + 1] = { "เหนือ 6", p + Vector3.new(0, 6, 0) }
     return out
 end
@@ -349,46 +368,56 @@ local function doWay(c, way)
         if fp and pp then pcall(fp, pp, 1) end
     end
 end
--- ลองท่าหนึ่ง: ย้ายไปตำแหน่ง → ทำวิธี → เช็คน้ำหนัก
-local function attempt(c, kg0, pname, ppos, way)
+-- v1.5: ที่มุมนี้ "กดติดไหม" → ติดก็กดจริง (รอผล) | ไม่ติดก็รีเทิร์นไว ไปมุมถัดไป
+local function attempt(c, kg0, pname, ppos)
     TARGET_POS = ppos
-    task.wait(0.4)                       -- ให้ตำแหน่งใหม่ถึง server ก่อน
-    doWay(c, way)
-    for _ = 1, 8 do                      -- รอผลสูงสุด ~1.2 วิ
+    -- รอปุ่มติดสูงสุด 0.75 วิ (เช็คถี่ — ติดเร็วก็กดเร็ว)
+    local ok = false
+    for _ = 1, 5 do
         task.wait(0.15)
-        if bagInfo() > kg0 + 0.05 then
-            LG(("  ✅ เข้า! ท่า [%s + %s]"):format(pname, way))
-            WIN_POS, WIN_WAY = pname, way
-            return true
+        if promptReady(c) then ok = true break end
+    end
+    if not ok then return false end       -- ไม่ติด → วาปมุมถัดไปทันที
+    for _, way in ipairs({ "both", "prompt" }) do
+        doWay(c, way)
+        for _ = 1, 8 do
+            task.wait(0.15)
+            if bagInfo() > kg0 + 0.05 then
+                LG(("  ✅ เข้า! [%s + %s] (ปุ่มติด)"):format(pname, way))
+                WIN_POS, WIN_WAY = pname, way
+                return true
+            end
         end
+        if not c.Parent then break end
     end
     return false
 end
+
 function tryPick(c, kg0)
-    -- 1) สูตรที่เคยเข้า ลองก่อน (เร็ว)
-    if WIN_POS and WIN_WAY then
-        for _, e in ipairs(posList(c)) do
+    local list = posList(c)
+    -- 1) มุมที่เคยเข้า ลองก่อน (เร็ว)
+    if WIN_POS then
+        for _, e in ipairs(list) do
             if e[1] == WIN_POS then
-                if attempt(c, kg0, e[1], e[2], WIN_WAY) then return true end
+                status("⛏ " .. WIN_POS)
+                if attempt(c, kg0, e[1], e[2]) then return true end
                 break
             end
         end
-        LG("  ⚠ สูตรเดิมไม่เข้า — ไล่หาใหม่")
     end
-    -- 2) ไล่ทุกท่า (ตำแหน่ง x วิธี) จนเจอ
-    for _, e in ipairs(posList(c)) do
-        for _, way in ipairs({ "prompt", "both", "remote", "fp" }) do
-            if not _G.AF75_RUN or not c.Parent then
-                -- ก้อนหายระหว่างลอง = อาจเข้าแล้ว เช็คน้ำหนักอีกที
-                task.wait(0.5)
-                if bagInfo() > kg0 + 0.05 then return true end
-                return false
-            end
-            status(("🔎 ลอง %s + %s"):format(e[1], way))
-            if attempt(c, kg0, e[1], e[2], way) then return true end
+    -- 2) วนหามุมที่ "ปุ่มติด" (8 มุมรอบก้อน + ต่ำ/สูง) — ติดแล้วกด ไม่ติดวาปต่อ
+    for _, e in ipairs(list) do
+        if not _G.AF75_RUN then return false end
+        if not c.Parent then
+            task.wait(0.5)
+            return bagInfo() > kg0 + 0.05
+        end
+        if e[1] ~= WIN_POS then
+            status("🔎 " .. e[1])
+            if attempt(c, kg0, e[1], e[2]) then return true end
         end
     end
-    LG("  ❌ ลองครบทุกท่าแล้วไม่เข้า (ก้อนหาย=" .. tostring(c.Parent == nil) .. ")")
+    LG(("  ❌ วนครบ %d มุมแล้วไม่เข้า (ก้อนหาย=%s)"):format(#list, tostring(c.Parent == nil)))
     return false
 end
 
