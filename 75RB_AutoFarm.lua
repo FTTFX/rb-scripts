@@ -2,7 +2,8 @@
 --   กระเป๋าใกล้เต็ม → วาปไปร้าน SellWorker → ยิงขาย → วนใหม่
 -- ใช้ความรู้จากสปายทั้งหมด:
 --   เก็บ = RS.Remotes.CrystalHoldComplete:FireServer(ก้อน)   (DeepSpy)
---   ขาย = RS.Remotes.SellRequest:FireServer(...)             (args ยังเดา — มี fallback 3 แบบ)
+--   ขาย = firesignal ตัวเลือก 1 ในเมนู GUI 'dialog' ("Sell all crystals")  (SellSpy v1.1)
+--         *ยิง SellRequest ตรงๆ ไม่ได้ผล — server รับเฉพาะการเลือกในเมนูจริง*
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
@@ -14,7 +15,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.0"
+local V = "1.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -97,6 +98,39 @@ local function bestCrystal(maxKg)
         end
     end
     return best
+end
+
+-- v1.1 (SellSpy): กดขาย = ยิงทุกสัญญาณใส่ตัวเลือก 1 ในเมนู GUI 'dialog' + ปุ่ม Sell.Frame.Sell
+-- (ยิง SellRequest ตรงๆ server ไม่รับ — ต้อง "เลือกในเมนู" จริงเท่านั้น)
+local FS = firesignal or (getgenv and getgenv().firesignal)
+local function fireAll(obj)
+    if not FS or not obj then return end
+    for _, s in ipairs({ "MouseButton1Click", "Activated", "MouseButton1Down",
+        "MouseButton1Up", "InputBegan", "InputEnded", "TouchTap" }) do
+        pcall(function() if obj[s] then FS(obj[s]) end end)
+    end
+end
+local function pressSellMenu()
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local dlg = pg:FindFirstChild("dialog", true)
+    local resp = dlg and dlg:FindFirstChild("dialogResponses", true)
+    local one = resp and resp:FindFirstChild("1")     -- "Sell all crystals"
+    if one then
+        fireAll(one)
+        for _, c in ipairs(one:GetDescendants()) do
+            if c:IsA("GuiButton") then fireAll(c) end
+        end
+        local p = one.Parent
+        while p and p ~= pg do
+            if p:IsA("GuiButton") then fireAll(p) end
+            p = p.Parent
+        end
+    end
+    local sg = pg:FindFirstChild("Sell")
+    local sbtn = sg and sg:FindFirstChild("Frame")
+    sbtn = sbtn and sbtn:FindFirstChild("Sell")
+    if sbtn then fireAll(sbtn) end
 end
 
 local function findSeller()
@@ -247,16 +281,12 @@ local function farmLoop()
             task.wait(1.2)   -- ให้ตำแหน่ง replicate + SellOpen เด้ง
             local before = cur
             local sold = false
-            -- args ของ SellRequest ยังไม่รู้แน่ — ลอง 3 แบบ (ไม่รู้แบบไหนติดก็ลองถัดไป)
-            local variants = {
-                function() sellR:FireServer() end,
-                function() sellR:FireServer(seller) end,
-                function() sellR:FireServer("All") end,
-            }
-            for vi = 1, #variants do
+            -- v1.1 (SellSpy): ขาย = กดตัวเลือก 1 ในเมนู GUI 'dialog' ("Sell all crystals")
+            -- ด้วย firesignal (ยิง SellRequest เปล่าๆ server ไม่รับ ต้องเลือกในเมนูจริง)
+            for vi = 1, 5 do
                 if not _G.AF75_RUN then break end
-                status(("💰 ลองขายแบบ %d/3..."):format(vi))
-                pcall(variants[vi])
+                status(("💰 กดขาย ครั้งที่ %d/5..."):format(vi))
+                pressSellMenu()
                 task.wait(1.5)
                 local c2 = bagInfo()
                 if c2 < before - 1 then sold = true break end
@@ -266,7 +296,7 @@ local function farmLoop()
                 statSell += 1
                 status("✅ ขายสำเร็จ! ฟาร์มต่อ")
             else
-                status("❌ ขายไม่เข้า — ขายมือ 1 ครั้งพร้อม DeepSpy แล้วส่ง log ให้ Claude")
+                status("❌ ขายไม่เข้า — เมนูอาจไม่เปิด (ลองเดินเข้าใกล้ NPC อีกนิด)")
                 _G.AF75_RUN = false
                 break
             end
@@ -328,7 +358,6 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.AF75_GUI, _G.AF75_CONNS = nil, {}
 end)
 
-if not pickR or not sellR then
-    status("⚠️ หา remote ไม่ครบ! pick=" .. tostring(pickR ~= nil) .. " sell=" .. tostring(sellR ~= nil))
-end
-print("[75RB AutoFarm v" .. V .. "] พร้อม | เก็บ=CrystalHoldComplete ขาย=SellRequest(เดา args 3 แบบ)")
+if not pickR then status("⚠️ ไม่เจอ remote เก็บ CrystalHoldComplete!") end
+if not FS then status("⚠️ executor ไม่มี firesignal — ขายอัตโนมัติไม่ได้ (ต้องขายมือ)") end
+print("[75RB AutoFarm v" .. V .. "] พร้อม | เก็บ=CrystalHoldComplete | ขาย=กดเมนู dialog ตัวเลือก 1")
