@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.1: รวมร่าง — ทุกมุมที่วนจะ "หันหน้าใส่แร่ + ฟันขวาน" ไปพร้อมกับรอปุ่มติด
+--       (ถือขวานไว้ตลอด) เร็วขึ้นและครอบคลุมทั้งก้อนหยิบและก้อนที่ต้องขุด
 -- v2.0: ก้อนเล็กแต่แพง (T6 2-8kg) กด prompt ไม่เข้าเลย → เพิ่มโหมด "ฟันขวาน":
 --       ถือขวาน หันตัว+กล้องใส่ก้อน แล้ว Tool:Activate() รัวสูงสุด 25 ที เช็คน้ำหนักทุกที
 -- v1.9: ปุ่มน้ำหนักปรับทีละ 5 kg (เดิม 25/100 หยาบไป) + เงื่อนไข "หรือราคา"
@@ -32,7 +34,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.0"
+local V = "2.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -51,6 +53,7 @@ local VAL_MIN   = 1e6           -- v1.9: "หรือ" ราคา ≥ นี�
 local statPick, statVal, statSell = 0, 0, 0
 local FAILED = {}               -- ก้อนที่เก็บไม่เข้า พัก 30 วิ
 local TARGET_POS = nil          -- จุดตรึงตัว (nil = ไม่ตรึง เดินเองได้)
+local TARGET_LOOK = nil         -- v2.1: จุดที่ให้หันหน้าใส่ (แร่) — ขวานต้องเล็งถึงจะโดน
 
 local function fmtMoney(v)
     if v >= 1e9 then return ("$%.2fB"):format(v / 1e9) end
@@ -212,11 +215,16 @@ table.insert(_G.AF75_CONNS, RunSvc.Heartbeat:Connect(function()
     for _, p in ipairs(char:GetChildren()) do
         if p:IsA("BasePart") then p.CanCollide = false end
     end
-    r.CFrame = CFrame.new(TARGET_POS) * (r.CFrame - r.CFrame.Position)
+    -- v2.1: ถ้ามีเป้าให้มอง = หันตัวใส่แร่ทุกเฟรม (ขวานยิง ray ตามทิศที่หัน)
+    if TARGET_LOOK and (TARGET_LOOK - TARGET_POS).Magnitude > 0.5 then
+        r.CFrame = CFrame.lookAt(TARGET_POS, Vector3.new(TARGET_LOOK.X, TARGET_POS.Y, TARGET_LOOK.Z))
+    else
+        r.CFrame = CFrame.new(TARGET_POS) * (r.CFrame - r.CFrame.Position)
+    end
     r.AssemblyLinearVelocity = Vector3.zero
 end))
 local function unpin()
-    TARGET_POS = nil
+    TARGET_POS, TARGET_LOOK = nil, nil
     setNoFall(false)
     local char = LP.Character
     if char then
@@ -473,18 +481,30 @@ local function doWay(c, way)
     end
 end
 -- v1.5: ที่มุมนี้ "กดติดไหม" → ติดก็กดจริง (รอผล) | ไม่ติดก็รีเทิร์นไว ไปมุมถัดไป
+-- v2.1: ทุกมุมที่วน — หันหน้าใส่แร่ + ฟันขวานไปด้วยระหว่างรอปุ่มติด (ทำสองอย่างพร้อมกัน เร็วขึ้น)
 local function attempt(c, kg0, pname, ppos)
     TARGET_POS = ppos
-    -- รอปุ่มติดสูงสุด 0.75 วิ (เช็คถี่ — ติดเร็วก็กดเร็ว)
+    TARGET_LOOK = c.Position          -- หันหน้าใส่แร่ตลอด (ขวานถึงจะโดน)
+    local cam = workspace.CurrentCamera
+    local tool = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+    -- รอปุ่มติดสูงสุด 0.75 วิ — ระหว่างรอก็ฟันขวานไปเลย (ก้อนที่ต้องขุดจะเข้าตรงนี้)
     local ok = false
     for _ = 1, 5 do
+        pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
+        if tool then pcall(function() tool:Activate() end) end
         task.wait(0.15)
+        if bagInfo() > kg0 + 0.05 then
+            LG(("  ✅ เข้า! [%s + ขวาน]"):format(pname))
+            WIN_POS, WIN_WAY = pname, "ขวาน"
+            return true
+        end
         if promptReady(c) then ok = true break end
     end
-    if not ok then return false end       -- ไม่ติด → วาปมุมถัดไปทันที
+    if not ok then return false end       -- ปุ่มไม่ติด → วาปมุมถัดไปทันที
     for _, way in ipairs({ "both", "prompt" }) do
         doWay(c, way)
         for _ = 1, 8 do
+            if tool then pcall(function() tool:Activate() end) end   -- ฟันไปด้วยระหว่างรอผล
             task.wait(0.15)
             if bagInfo() > kg0 + 0.05 then
                 LG(("  ✅ เข้า! [%s + %s] (ปุ่มติด)"):format(pname, way))
@@ -548,6 +568,7 @@ local function mineIt(c, kg0)
 end
 
 function tryPick(c, kg0)
+    equipPick()          -- v2.1: ถือขวานไว้ตลอด จะได้ฟันได้ทุกมุมที่วน
     local list = posList(c)
     -- 1) มุมที่เคยเข้า ลองก่อน (เร็ว)
     if WIN_POS then
