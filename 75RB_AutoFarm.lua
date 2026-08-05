@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.3: เก็บช้า — (ก) กดค้างเช็คระหว่างทาง ของเข้าปล่อยทันที (เดิมรอครบ Hold 5 วิเสมอ)
+--       (ข) ลองแค่ "both" พอ (เดิมลอง both แล้ว prompt ซ้ำ = เสียเวลา 2 เท่า)
+--       (ค) รอปุ่มติดต่อมุมเหลือ 0.4 วิ + สปายจับเวลารายขั้น (⏱ หามุม/กดค้าง/ขวาน)
 -- v2.2: (ก) เกมขึ้น "ไกลเกินไป! เข้าใกล้เพื่อขุด" → ยืนชิดขึ้น (2.5-5.5 studs แทน 4-10)
 --       (ข) ขุดแตกแล้วของร่วงลงถ้ำ → ตามเก็บก้อนใน DroppedCrystals รัศมี 120 รอบจุดเดิม
 -- v2.1: รวมร่าง — ทุกมุมที่วนจะ "หันหน้าใส่แร่ + ฟันขวาน" ไปพร้อมกับรอปุ่มติด
@@ -36,7 +39,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.2"
+local V = "2.3"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -464,19 +467,26 @@ local function posList(c)
     out[#out + 1] = { "เหนือ 6", p + Vector3.new(0, 6, 0) }
     return out
 end
-local function doWay(c, way)
+-- v2.3: "กดค้าง" คือตัวกินเวลาหลัก (T6 Hold=5 วิ!) — กดค้างแบบ "เช็คระหว่างทาง"
+-- ของเข้าเมื่อไหร่ปล่อยทันที ไม่รอครบเวลา (เดิมรอเต็ม HoldDuration+0.4 เสมอ)
+local function holdUntil(pp, c, kg0)
+    pcall(function() pp:InputHoldBegin() end)
+    local dl = os.clock() + pp.HoldDuration + 0.5
+    while os.clock() < dl do
+        task.wait(0.1)
+        if bagInfo() > kg0 + 0.05 or not c.Parent then break end
+    end
+    pcall(function() pp:InputHoldEnd() end)
+end
+local function doWay(c, way, kg0)
     local pp = c:FindFirstChildOfClass("ProximityPrompt")
     if way == "prompt" and pp then
-        pcall(function() pp:InputHoldBegin() end)
-        task.wait(pp.HoldDuration + 0.4)
-        pcall(function() pp:InputHoldEnd() end)
+        holdUntil(pp, c, kg0)
     elseif way == "remote" then
         pcall(function() pickR:FireServer(c) end)
     elseif way == "both" and pp then
-        pcall(function() pp:InputHoldBegin() end)
         pcall(function() pickR:FireServer(c) end)
-        task.wait(pp.HoldDuration + 0.4)
-        pcall(function() pp:InputHoldEnd() end)
+        holdUntil(pp, c, kg0)
         pcall(function() pickR:FireServer(c) end)
     elseif way == "fp" then
         local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
@@ -485,38 +495,45 @@ local function doWay(c, way)
 end
 -- v1.5: ที่มุมนี้ "กดติดไหม" → ติดก็กดจริง (รอผล) | ไม่ติดก็รีเทิร์นไว ไปมุมถัดไป
 -- v2.1: ทุกมุมที่วน — หันหน้าใส่แร่ + ฟันขวานไปด้วยระหว่างรอปุ่มติด (ทำสองอย่างพร้อมกัน เร็วขึ้น)
+local TM = {}   -- v2.3: จับเวลาสะสมรายขั้น (สปายในตัว — ดูว่าช้าตรงไหน)
 local function attempt(c, kg0, pname, ppos)
     TARGET_POS = ppos
     TARGET_LOOK = c.Position          -- หันหน้าใส่แร่ตลอด (ขวานถึงจะโดน)
     local cam = workspace.CurrentCamera
     local tool = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-    -- รอปุ่มติดสูงสุด 0.75 วิ — ระหว่างรอก็ฟันขวานไปเลย (ก้อนที่ต้องขุดจะเข้าตรงนี้)
+    -- รอปุ่มติดสูงสุด 0.4 วิ (v2.3 เดิม 0.75 — ปุ่มติดเร็วกว่านั้นมาก) ระหว่างรอฟันขวานไปเลย
+    local t0 = os.clock()
     local ok = false
-    for _ = 1, 5 do
+    for _ = 1, 4 do
         pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
         if tool then pcall(function() tool:Activate() end) end
-        task.wait(0.15)
+        task.wait(0.1)
         if bagInfo() > kg0 + 0.05 then
-            LG(("  ✅ เข้า! [%s + ขวาน]"):format(pname))
+            TM.mine = (TM.mine or 0) + (os.clock() - t0)
+            LG(("  ✅ เข้า! [%s + ขวาน] %.1f วิ"):format(pname, os.clock() - t0))
             WIN_POS, WIN_WAY = pname, "ขวาน"
             return true
         end
         if promptReady(c) then ok = true break end
     end
-    if not ok then return false end       -- ปุ่มไม่ติด → วาปมุมถัดไปทันที
-    for _, way in ipairs({ "both", "prompt" }) do
-        doWay(c, way)
-        for _ = 1, 8 do
-            if tool then pcall(function() tool:Activate() end) end   -- ฟันไปด้วยระหว่างรอผล
-            task.wait(0.15)
-            if bagInfo() > kg0 + 0.05 then
-                LG(("  ✅ เข้า! [%s + %s] (ปุ่มติด)"):format(pname, way))
-                WIN_POS, WIN_WAY = pname, way
-                return true
-            end
-        end
-        if not c.Parent then break end
+    if not ok then
+        TM.scan = (TM.scan or 0) + (os.clock() - t0)   -- เวลาที่เสียไปกับมุมที่ปุ่มไม่ติด
+        return false
     end
+    -- v2.3: ใช้ "both" อย่างเดียว (มันครอบ prompt อยู่แล้ว) — เดิมลอง 2 รอบเสียเวลาซ้ำซ้อน
+    local t1 = os.clock()
+    doWay(c, "both", kg0)
+    for _ = 1, 8 do
+        if tool then pcall(function() tool:Activate() end) end   -- ฟันไปด้วยระหว่างรอผล
+        task.wait(0.1)
+        if bagInfo() > kg0 + 0.05 then
+            TM.hold = (TM.hold or 0) + (os.clock() - t1)
+            LG(("  ✅ เข้า! [%s] กดค้าง %.1f วิ"):format(pname, os.clock() - t1))
+            WIN_POS, WIN_WAY = pname, "both"
+            return true
+        end
+    end
+    TM.hold = (TM.hold or 0) + (os.clock() - t1)
     return false
 end
 
@@ -599,7 +616,7 @@ local function collectDropped(near, kg0)
                 task.wait(0.15)
                 if bagInfo() > kg0 + 0.05 then LG("  ✅ เก็บของตกได้") return true end
                 if promptReady(dr) then
-                    doWay(dr, "both")
+                    doWay(dr, "both", kg0)
                     task.wait(0.6)
                     if bagInfo() > kg0 + 0.05 then LG("  ✅ เก็บของตกได้") return true end
                 end
@@ -747,6 +764,10 @@ local function farmLoop()
                 if got then
                     statPick += 1
                     statVal += v
+                    -- v2.3: สรุปเวลาที่เสียไปแต่ละขั้น (สปายในตัว — ช้าตรงไหนเห็นเลย)
+                    LG(("  ⏱ รวม %.1f วิ | หามุม %.1f | กดค้าง %.1f | ขวาน %.1f"):format(
+                        os.clock() - tA, TM.scan or 0, TM.hold or 0, TM.mine or 0))
+                    TM = {}
                     task.wait(0.25)   -- ค้างอีกนิด ให้ FX/ของเข้าครบก่อนวาปหนี
                 else
                     FAILED[c] = os.clock() + 30
