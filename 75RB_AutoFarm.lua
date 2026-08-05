@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v1.8: เจอตัวจริง! prompt ขาย = Workspace.Things.SellProx.ProximityPrompt
+--       (Action='Sell Crystals' Hold=0 Max=10) ไม่ได้อยู่ใต้ Model SellWorker
+--       + ตัวเลือกเมนู = ImageButton ที่ dialog.dialogResponses.1
 -- v1.7: ขายไม่เข้า — (ก) ยืนระดับเดียวกับ NPC วน 8 มุมจนปุ่ม E ติด แล้วกด E เปิดเมนูก่อน
 --       (ข) กดตัวเลือก 1 แน่นขึ้น: คีย์ '1' จริง (VirtualInputManager/keypress) + ยิงสัญญาณทุกชั้น
 -- v1.6: กรองช่วงน้ำหนักแร่ (ดีฟอลต์ 50-1000 kg) ปรับได้ที่แผง — ก้อนจิ๋ว 0.2kg เสียเวลาวาปเปล่า
@@ -25,7 +28,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "1.7"
+local V = "1.8"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -144,12 +147,17 @@ local function pressKey1()
         pcall(function() kp(0x31); task.wait(0.06); kr(0x31) end)   -- 0x31 = '1'
     end
 end
+-- v1.8: ตัวเลือกในเมนูคือ ImageButton ที่ dialog.dialogResponses.1 (SellSpy v1.4 ยืนยัน)
+-- ("ขายคริสตัลทั้งหมด" — ปุ่มที่ 2 = ขายอันเดียว) | คีย์ 1 ใช้ไม่ได้ (ไปสลับช่องไอเทมแทน)
 local function pressSellMenu()
     local pg = LP:FindFirstChild("PlayerGui")
     if not pg then return end
-    -- 1) คีย์ 1 (ทางที่คนเล่นใช้จริง)
-    pressKey1()
-    -- 2) ยิงสัญญาณทุกชั้นในสายตัวเลือก 1
+    -- 1) กดปุ่มตัวเลือก 1 ตรงๆ (ImageButton)
+    local dlg0 = pg:FindFirstChild("dialog", true)
+    local resp0 = dlg0 and dlg0:FindFirstChild("dialogResponses", true)
+    local btn1 = resp0 and resp0:FindFirstChild("1")
+    if btn1 and btn1:IsA("GuiButton") then fireAll(btn1) end
+    -- 2) ยิงสัญญาณทุกชั้นในสายตัวเลือก 1 (เผื่อ handler อยู่ชั้นอื่น)
     local dlg = pg:FindFirstChild("dialog", true)
     local resp = dlg and dlg:FindFirstChild("dialogResponses", true)
     local one = resp and resp:FindFirstChild("1")     -- "Sell all crystals"
@@ -166,25 +174,18 @@ local function pressSellMenu()
             if t:find("ทั้งหมด") or t:lower():find("sell all") then fireAll(d) end
         end
     end
-    -- 4) ปุ่มขายใหญ่
-    local sg = pg:FindFirstChild("Sell")
-    local sbtn = sg and sg:FindFirstChild("Frame")
-    sbtn = sbtn and sbtn:FindFirstChild("Sell")
-    if sbtn then fireAll(sbtn) end
 end
 
-local function findSeller()
+-- v1.8 (SellSpy v1.4): prompt ขายตัวจริงอยู่ที่ Workspace.Things.SellProx.ProximityPrompt
+-- (Action='Sell Crystals' Hold=0 Max=10) — ไม่ได้อยู่ใต้ Model SellWorker! เดิมเลยหาไม่เจอ
+local function findSellPrompt()
     for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("Model") and d.Name == "SellWorker" then
-            local p = d.PrimaryPart or d:FindFirstChild("HumanoidRootPart")
-                or d:FindFirstChildWhichIsA("BasePart", true)
+        if d:IsA("ProximityPrompt") and (d.ActionText or ""):lower():find("sell") then
+            local holder = d.Parent
+            local p = holder and (holder:IsA("BasePart") and holder
+                or holder:FindFirstChildWhichIsA("BasePart", true))
             if p then return d, p.Position end
         end
-    end
-end
-local function sellerPrompt(seller)
-    for _, d in ipairs(seller:GetDescendants()) do
-        if d:IsA("ProximityPrompt") then return d end
     end
 end
 
@@ -498,9 +499,9 @@ local function farmLoop()
         updStat()
         if cur / cap >= SELL_PCT then
             -- ─── ไปขาย ───
-            local seller, spos = findSeller()
-            if not seller then
-                status("❌ หาร้าน SellWorker ไม่เจอ — หยุด")
+            local sp, spos = findSellPrompt()
+            if not sp then
+                status("❌ หา prompt ขาย (SellProx) ไม่เจอ — หยุด")
                 break
             end
             LG(("💰 กระเป๋า %.1f/%.0f (%.0f%%) → ไปขาย"):format(cur, cap, cur / cap * 100))
@@ -508,7 +509,6 @@ local function farmLoop()
             setNoFall(true)
             -- v1.7: ยืน "ระดับเดียวกับ NPC" (บทเรียนเดียวกับตอนขุด — ลอยเหนือหลังคาปุ่มไม่ติด)
             -- วน 8 มุมจนปุ่ม E ร้านติด → กด E เปิดเมนู → ค่อยกดตัวเลือก 1
-            local sp = sellerPrompt(seller)
             local opened = false
             for _, dd in ipairs({ { 0, -1 }, { 0.7, -0.7 }, { 1, 0 }, { 0.7, 0.7 },
                 { 0, 1 }, { -0.7, 0.7 }, { -1, 0 }, { -0.7, -0.7 } }) do
@@ -523,6 +523,8 @@ local function farmLoop()
                     pcall(function() sp:InputHoldBegin() end)
                     task.wait(math.max(sp.HoldDuration, 0.1) + 0.35)
                     pcall(function() sp:InputHoldEnd() end)
+                    local fpz = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+                    if fpz then pcall(fpz, sp, 1) end   -- เผื่อ InputHold ไม่ติด
                     task.wait(0.7)
                     break
                 end
