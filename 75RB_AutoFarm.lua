@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.1: "ขายที่ %" ปรับทีละ 5% ด้วยปุ่ม − [85%] + (เดิมกดวนทีละ 15% ข้ามค่าที่ต้องการ)
 -- v3.0: ตัวกรองเปลี่ยนเป็น "พิมพ์เอง" 3 ช่อง (kg ต่ำ / kg สูง / ราคาขั้นต่ำ) รับ 30M 500K 1.5m
 --       แทนปุ่ม −/+ ที่ปรับทีละนิดช้า | ราคา 0 = ปิดเงื่อนไขราคา
 -- v2.9: ป๊อปอัป "เสร็จสิ้นการขุดแร่/ก้อนใหญ่เกิน" (PlayerGui.Sell.Frame) บังจอ → กดโอเค/X ปิดเอง
@@ -53,7 +54,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.0"
+local V = "3.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -343,15 +344,34 @@ tierB.MouseButton1Click:Connect(function()
     tierB.Text = "เทียร์ ≥ T" .. MIN_TIER
 end)
 
+-- v3.1: ขายที่ % — ปรับทีละ 5% ด้วยปุ่ม −/+ (เดิมกดวนทีละ 15% ข้ามค่าที่อยากได้)
 local pctB = Instance.new("TextButton", panel)
-pctB.Size = UDim2.new(0, 96, 0, 26); pctB.Position = UDim2.new(0, 108, 0, 72)
-pctB.Text = "ขายที่ 85%"; pctB.Font = Enum.Font.GothamBold; pctB.TextSize = 12
+pctB.Size = UDim2.new(0, 52, 0, 26); pctB.Position = UDim2.new(0, 132, 0, 72)
+pctB.Text = "85%"; pctB.Font = Enum.Font.GothamBold; pctB.TextSize = 12
 pctB.BackgroundColor3 = Color3.fromRGB(150, 110, 30); pctB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", pctB).CornerRadius = UDim.new(0, 5)
-pctB.MouseButton1Click:Connect(function()
-    SELL_PCT = SELL_PCT >= 0.95 and 0.5 or SELL_PCT + 0.15
-    pctB.Text = ("ขายที่ %d%%"):format(SELL_PCT * 100)
-end)
+local function pctBtn(txt, x)
+    local b = Instance.new("TextButton", panel)
+    b.Size = UDim2.new(0, 24, 0, 26); b.Position = UDim2.new(0, x, 0, 72)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 15
+    b.BackgroundColor3 = Color3.fromRGB(45, 45, 65); b.TextColor3 = Color3.new(1, 1, 1)
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    return b
+end
+local pctDn, pctUp = pctBtn("−", 106), pctBtn("+", 186)
+local function setPct(d)
+    SELL_PCT = math.clamp(SELL_PCT + d, 0.10, 0.95)
+    pctB.Text = ("%d%%"):format(math.floor(SELL_PCT * 100 + 0.5))
+end
+pctDn.MouseButton1Click:Connect(function() setPct(-0.05) end)
+pctUp.MouseButton1Click:Connect(function() setPct(0.05) end)
+setPct(0)
+local pctTag = Instance.new("TextLabel", panel)
+pctTag.Size = UDim2.new(0, 96, 0, 26); pctTag.Position = UDim2.new(0, 108, 0, 46)
+pctTag.BackgroundTransparency = 1
+pctTag.Text = "ขายเมื่อกระเป๋าถึง"
+pctTag.Font = Enum.Font.Gotham; pctTag.TextSize = 10
+pctTag.TextColor3 = Color3.fromRGB(130, 130, 150)
 
 -- v1.6: ช่วงน้ำหนักแร่ที่จะเก็บ  ต่ำสุด − [50] +   สูงสุด − [1000] +
 local kgL = Instance.new("TextLabel", panel)
