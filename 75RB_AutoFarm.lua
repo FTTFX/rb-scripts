@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.4: "เห็นแต่เก็บไม่ได้" = วาปไม่ถึง (ห่างเป้า 28!) เพราะ ItemESP เปิดบินอยู่ แย่งเขียน CFrame
+--       → ตั้ง _G.AF75_PIN ให้ ESP หลบ (ESP v2.18) + ตอกตำแหน่งซ้ำทุกรอบ รอถึง 5 วิ + เตือนใน log
 -- v2.3: เก็บช้า — (ก) กดค้างเช็คระหว่างทาง ของเข้าปล่อยทันที (เดิมรอครบ Hold 5 วิเสมอ)
 --       (ข) ลองแค่ "both" พอ (เดิมลอง both แล้ว prompt ซ้ำ = เสียเวลา 2 เท่า)
 --       (ค) รอปุ่มติดต่อมุมเหลือ 0.4 วิ + สปายจับเวลารายขั้น (⏱ หามุม/กดค้าง/ขวาน)
@@ -39,7 +41,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.3"
+local V = "2.4"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -213,6 +215,7 @@ local function setNoFall(on)
     h:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, not on)
 end
 table.insert(_G.AF75_CONNS, RunSvc.Heartbeat:Connect(function()
+    _G.AF75_PIN = TARGET_POS ~= nil   -- v2.4: บอก ItemESP ว่าเราคุมตำแหน่งอยู่ (กันแย่งกันเขียน CFrame)
     if not TARGET_POS then return end
     local char = LP.Character
     local r = char and char:FindFirstChild("HumanoidRootPart")
@@ -750,11 +753,19 @@ local function farmLoop()
                 local dest = c.Position + Vector3.new(0, 6, 0)
                 TARGET_POS = dest
                 -- v1.2: รอ "ถึงจริง" ก่อนยิง (เช็คระยะ) — ไม่ใช่หลับตารอเวลาคงที่
+                -- v2.4: วาปไม่ถึงบ่อย (ห่างเป้า 28!) → ตอกตำแหน่งซ้ำทุกรอบ + รอนานขึ้น
                 local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                 local tA = os.clock()
-                while _G.AF75_RUN and r and (r.Position - dest).Magnitude > 5
-                    and os.clock() - tA < 3 do
+                while _G.AF75_RUN and os.clock() - tA < 5 do
+                    r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                    if not r then break end
+                    if (r.Position - dest).Magnitude <= 5 then break end
+                    TARGET_POS = dest    -- ตอกซ้ำ เผื่อโดนสคริปต์อื่น/เกมดึงกลับ
                     task.wait(0.1)
+                end
+                local off = r and (r.Position - dest).Magnitude or -1
+                if off > 5 then
+                    LG(("  ⚠ วาปไม่ถึง! ห่าง %.0f — ปิดปุ่ม 'บิน' ใน ItemESP ด้วย (แย่งตำแหน่งกัน)"):format(off))
                 end
                 LG(("  ✈ ถึงแล้วใน %.2f วิ (ห่างเป้า %.1f)"):format(os.clock() - tA,
                     r and (r.Position - dest).Magnitude or -1))
