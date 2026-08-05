@@ -77,6 +77,15 @@
 - **ยืนยันการเก็บต้องดู "น้ำหนักกระเป๋าเพิ่ม" ไม่ใช่ "ก้อนหายจากแมพ"** — FX ลบก้อนออกก่อน
   ของเข้ากระเป๋าจริง ถ้าวาปหนีทันทีที่ก้อนหาย = ของหลุด (AutoFarm v1.2 แก้แล้ว: รอ kg เพิ่ม
   + รอ "ถึงก้อนจริง" ด้วยการเช็คระยะก่อนยิง ไม่ใช่ task.wait เวลาคงที่)
+- **จุดขายตัวจริง (SellSpy v1.4)**: `Workspace.Things.SellProx.ProximityPrompt`
+  Action='Sell Crystals' Obj='Crystal Buyer' **Hold=0 Max=10** Style=Custom
+  ⚠ **ไม่ได้อยู่ใต้ Model `SellWorker`** — ค้นใต้ SellWorker จะได้ prompt=false (AutoFarm v1.7 พลาดตรงนี้)
+  → หา prompt ด้วย `ActionText:find("sell")` ทั้ง workspace แล้ววาปไปหา "พาร์ตพ่อของมัน" ระยะ ≤10
+- **เมนูตัวเลือก = ImageButton** ที่ `PlayerGui.dialog.dialogResponses.1` (Active=true)
+  1=ขายทั้งหมด 2=ขายอันเดียว 3=ราคา 4=ลาก่อน (ช่อง 5-9 คือ 'temp text' ตัวสำรองที่ซ่อนไว้)
+  ⚠ GUI `dialog` **มีอยู่ตลอดเวลา** — เช็ค "เมนูเปิดไหม" จากการมีอยู่ของมันไม่ได้
+- **เลข 1-4 ในเมนูไม่ใช่คีย์ลัด** — ContextActionService ไม่มี action ผูกเลขพวกนี้เลย
+  ยิงคีย์ '1' (VirtualInputManager/keypress) ไม่มีผล แถมไปสลับช่องไอเทมแทน
 - บทเรียน: อย่ากรอง GUI ด้วย "ชื่อมีคำว่าขาย" — ตัวจริงชื่อ `dialog` / `1` เฉยๆ ต้องดัมพ์ต้นไม้ดู
 - การขาย: ยังไม่ได้สปาย (รอ user ขายมือ 1 ครั้งพร้อม NetSpy เปิด)
 
