@@ -1,4 +1,6 @@
--- 75RB_NetSpy.lua v1.0 — ดักรีโมตเกมคริสตัล: เก็บของ/ขาย/อัปเกรด ยิง Remote อะไร?
+-- 75RB_NetSpy.lua v1.1 — ดักรีโมตเกมคริสตัล: เก็บของ/ขาย/อัปเกรด ยิง Remote อะไร?
+-- v1.1: log ว่าง — เพิ่ม (1) ดัก ProximityPrompt (กด E ไม่ผ่าน remote — Roblox ส่งเอง)
+--       (2) โชว์ชัดว่า executor มี hookmetamethod ไหม (3) แถวแรกอยู่บนสุด อ่านง่าย
 -- 1) LIST: รายชื่อ RemoteEvent/RemoteFunction ทั้งหมดใน ReplicatedStorage (path เต็ม)
 -- 2) HOOK: ดัก __namecall FireServer/InvokeServer → log ชื่อ remote + args ทุกครั้งที่เกมยิง
 -- วิธีใช้: รัน → เก็บคริสตัล 1 ก้อน / ขาย 1 ครั้ง → ดู log ว่าเด้งอะไร → COPY ส่งผล
@@ -22,7 +24,7 @@ local box = Instance.new("TextBox", gui)
 box.Size = UDim2.new(0, 640, 0, 340); box.Position = UDim2.new(0, 8, 0.24, 0)
 box.BackgroundColor3 = Color3.new(0, 0, 0); box.BackgroundTransparency = 0.15
 box.TextColor3 = Color3.fromRGB(255, 220, 160); box.TextSize = 11; box.Font = Enum.Font.Code
-box.TextXAlignment = Enum.TextXAlignment.Left; box.TextYAlignment = Enum.TextYAlignment.Bottom
+box.TextXAlignment = Enum.TextXAlignment.Left; box.TextYAlignment = Enum.TextYAlignment.Top
 box.TextWrapped = true; box.MultiLine = true
 box.ClearTextOnFocus = false; box.TextEditable = false
 
@@ -110,6 +112,18 @@ if not _G.NSPY75_HOOKED and hookmetamethod then
 end
 _G.NSPY75_LOG = L
 
+-- ==================== ดัก ProximityPrompt (กด E — ไม่ผ่าน remote) ====================
+-- PromptTriggered ยิงฝั่ง client ทุกครั้งที่เรากดปุ่ม E สำเร็จ → เห็นว่าเก็บก้อนไหน
+local PPS = game:GetService("ProximityPromptService")
+_G.NSPY75_PPCONN = _G.NSPY75_PPCONN or PPS.PromptTriggered:Connect(function(pp, plr)
+    if plr ~= LP or PAUSED or not _G.NSPY75_LOG then return end
+    local holder = pp.Parent
+    local name = holder and (holder:GetAttribute("CrystalName") or holder.Name) or "?"
+    local val = holder and holder:GetAttribute("Value")
+    _G.NSPY75_LOG(("[%s] PROMPT '%s' @ %s%s"):format(os.date("%H:%M:%S"),
+        pp.ActionText, tostring(name), val and (" $" .. val) or ""))
+end)
+
 -- ==================== Buttons ====================
 listB.MouseButton1Click:Connect(listRemotes)
 clearB.MouseButton1Click:Connect(function() OUT = {}; redraw() end)
@@ -132,5 +146,6 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.NSPY75_GUI = nil
 end)
 
-L("[NetSpy v1.0] hook=" .. tostring(_G.NSPY75_HOOKED == true)
-    .. " — เก็บคริสตัล 1 ก้อน แล้วดูว่าเด้ง remote อะไร | กด LIST ดูรายชื่อ remote ทั้งหมด")
+L("[NetSpy v1.1] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)")
+    .. " | ดักปุ่ม E=✅")
+L("→ เก็บคริสตัล 1 ก้อน / ขาย 1 ครั้ง แล้วดู log | กด LIST ดูรายชื่อ remote")
