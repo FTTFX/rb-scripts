@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.4: สแกนกว้างขึ้น — หาโฟลเดอร์ Crystals ใหม่ทุกรอบ (เกมสร้างใหม่/วาร์ปโซนแล้วตัวเก่าชี้ที่ว่าง)
+--       + ค้นทั้ง workspace หาของที่มี attr Tier (ไม่จำกัดแค่ Things.Crystals ชั้นแรก)
 -- v2.3: ปุ่ม "โชว์: TOP5" — ติดป้ายเฉพาะ 5 ก้อนแพงสุดในแมพ (จอสะอาด)
 -- v2.2: ระยะเก็บซิงก์กับ Assist อัตโนมัติ (_G.AS75_RANGE) — ปรับที่ Assist ที่เดียวพอ
 -- v2.1: ก้อนใน "ระยะเก็บ" (ยิง fp ถึง) → สว่าง + ✅ หน้าชื่อ | ปุ่มปรับระยะเก็บ −/+
@@ -21,7 +23,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.3"
+local V = "2.4"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -53,9 +55,28 @@ local function fmtMoney(v)
     return "$" .. math.floor(v)
 end
 
--- โฟลเดอร์คริสตัลของเกมนี้ (nil = ไม่ใช่เกมนี้ → โหมด universal)
-local CRYSTALS = workspace:FindFirstChild("Things")
-CRYSTALS = CRYSTALS and CRYSTALS:FindFirstChild("Crystals")
+-- หา "ก้อนคริสตัลทุกก้อน" สดๆ ทุกรอบ (อย่า cache โฟลเดอร์ — เกมสร้างใหม่/วาร์ปโซนแล้วชี้ที่ว่าง)
+-- หลัก: Things.Crystals | สำรอง: ค้นทั้ง workspace หา BasePart ที่มี attr Tier+CrystalName
+local function getCrystals()
+    local things = workspace:FindFirstChild("Things")
+    local folder = things and things:FindFirstChild("Crystals")
+    local out = {}
+    if folder then
+        for _, c in ipairs(folder:GetDescendants()) do
+            if c:IsA("BasePart") and c:GetAttribute("Tier") then out[#out + 1] = c end
+        end
+        if folder:GetAttribute("Tier") then out[#out + 1] = folder end
+    end
+    if #out == 0 then   -- โฟลเดอร์ย้าย/เปลี่ยนชื่อ → กวาดทั้ง workspace
+        for _, c in ipairs(workspace:GetDescendants()) do
+            if c:IsA("BasePart") and c:GetAttribute("Tier") and c:GetAttribute("CrystalName") then
+                out[#out + 1] = c
+            end
+        end
+    end
+    return out
+end
+local CRYSTAL_GAME = #getCrystals() > 0 or (workspace:FindFirstChild("Things") ~= nil)
 
 -- ==================== Markers ====================
 local function addMark(inst, text, col)
@@ -108,7 +129,7 @@ local statusLbl   -- forward
 local function scanCrystals()
     local mp = myPos()
     local list = {}
-    for _, c in ipairs(CRYSTALS:GetChildren()) do
+    for _, c in ipairs(getCrystals()) do
         local tier = c:GetAttribute("Tier")
         if tier and TIER_ON[tier] then
             local sz = c:GetAttribute("SizeClassName") or "?"
@@ -196,7 +217,7 @@ local function scanUniversal()
 end
 
 local function scan()
-    if CRYSTALS and CRYSTALS.Parent then scanCrystals() else scanUniversal() end
+    if CRYSTAL_GAME then scanCrystals() else scanUniversal() end
 end
 
 -- ==================== GUI ====================
@@ -390,9 +411,9 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
         accScan = 0
         scan()
         -- Top 5 แพงสุดในแมพ (ตามเทียร์ที่เปิด)
-        if CRYSTALS and CRYSTALS.Parent then
+        if CRYSTAL_GAME then
             local best = {}
-            for _, c in ipairs(CRYSTALS:GetChildren()) do
+            for _, c in ipairs(getCrystals()) do
                 local t2 = c:GetAttribute("Tier")
                 if t2 and TIER_ON[t2] then
                     best[#best + 1] = { v = c:GetAttribute("Value") or 0,
@@ -412,5 +433,5 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
 end))
 
 scan()
-print("[75RB ItemESP v" .. V .. "] โหมด: " .. (CRYSTALS and "Crystal" or "Universal")
+print("[75RB ItemESP v" .. V .. "] โหมด: " .. (CRYSTAL_GAME and "Crystal" or "Universal")
     .. " | เปิดเทียร์ 4-6 อยู่ กดปุ่ม T1-T6 ปรับได้")
