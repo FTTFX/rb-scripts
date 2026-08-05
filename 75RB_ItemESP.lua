@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.13: (PickSpy) วาป-เก็บเปลี่ยนเป็นกดค้างจริง InputHoldBegin/End — fp Hold=0 โดน server ปัด
 -- v2.12: เลิกทำท่าตกตอนบิน/วาป — ปิดสถานะ Freefall/FallingDown/Ragdoll ของ Humanoid
 --        ตอนบิน (ยืนลอยนิ่งแบบ 74) แล้วคืนตอนปิดบิน
 -- v2.11: วาป-แล้ว-เก็บเลย — ถึงก้อนรอ 0.4 วิ (ให้ server รับตำแหน่ง) แล้วยิง fp ซ้ำจนก้อนหาย
@@ -37,7 +38,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.12"
+local V = "2.13"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -505,23 +506,23 @@ end
 flyB.MouseButton1Click:Connect(function() setFly(not FLY_ON) end)
 
 -- วาปไปก้อน (TOP5 กด) — เปิดบินก่อน (จะได้ลอยค้าง ไม่ร่วง) แล้วย้ายจุดตรึงไปเหนือก้อน 6 studs
--- v2.11: ถึงแล้วเก็บเองเลย — รอ 0.4 วิให้ server รับตำแหน่งใหม่ แล้วยิง fp ซ้ำจนก้อนหาย (สูงสุด 6 ครั้ง)
-local fpr = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+-- v2.13 (จาก PickSpy): server จับเวลากดค้าง — fp Hold=0 โดนปัด → กดค้างจริงด้วย
+-- InputHoldBegin → รอครบ HoldDuration → InputHoldEnd (เหมือนนิ้วกด server แยกไม่ออก)
 warpTo = function(inst)
     local p = partPos(inst)
     if not p then return end
     if not FLY_ON then setFly(true) end
     FLY_POS = p + Vector3.new(0, 6, 0)
-    if not fpr then return end
     task.spawn(function()
-        task.wait(0.4)   -- ให้ replication ตำแหน่งใหม่ไปถึง server ก่อน ไม่งั้นโดนเช็คระยะปัด
-        for _ = 1, 6 do
+        task.wait(0.4)   -- ให้ replication ตำแหน่งใหม่ไปถึง server ก่อน
+        for _ = 1, 3 do
             if not inst.Parent then break end   -- หายจากแมพ = เก็บสำเร็จ
             local pp = inst:FindFirstChildOfClass("ProximityPrompt")
             if not pp then break end
-            pp.HoldDuration = 0
-            pcall(fpr, pp, 0)
-            task.wait(0.5)
+            pcall(function() pp:InputHoldBegin() end)
+            task.wait(pp.HoldDuration + 0.15)
+            pcall(function() pp:InputHoldEnd() end)
+            task.wait(0.8)
         end
     end)
 end
