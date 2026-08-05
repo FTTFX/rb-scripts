@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.9: ป๊อปอัป "เสร็จสิ้นการขุดแร่/ก้อนใหญ่เกิน" (PlayerGui.Sell.Frame) บังจอ → กดโอเค/X ปิดเอง
+--       (ห้ามแตะปุ่ม "ขโมย/STEAL" เด็ดขาด — เสีย Robux จริง)
 -- v2.8: "หยิบก่อน ขวานทีหลัง" — เลิกฟันขวานระหว่างวนมุม/รอผล (ขวานทำก้อนแตก ของร่วงลงถ้ำ
 --       แทนที่จะเข้ากระเป๋าตรงๆ) ใช้ขวานเฉพาะตอนหยิบไม่ได้จริงๆ เท่านั้น
 -- v2.7: Max=0 เป็นค่าชั่วคราว! (ก้อนเดียวกันเดี๋ยว 0 เดี๋ยว 14) → รอเช็คซ้ำ 1.5 วิก่อนตัดสินใจฟันขวาน
@@ -49,7 +51,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.8"
+local V = "2.9"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -220,6 +222,25 @@ end
 
 -- v1.8 (SellSpy v1.4): prompt ขายตัวจริงอยู่ที่ Workspace.Things.SellProx.ProximityPrompt
 -- (Action='Sell Crystals' Hold=0 Max=10) — ไม่ได้อยู่ใต้ Model SellWorker! เดิมเลยหาไม่เจอ
+-- v2.9: ป๊อปอัป "เสร็จสิ้นการขุดแร่! / ก้อนใหญ่เกิน" (PlayerGui.Sell.Frame) บล็อกจอ บอททำต่อไม่ได้
+-- → กด "โอเค" (ปุ่ม Sell/Keep Digging) หรือ X ให้อัตโนมัติ
+-- ⚠ ห้ามแตะปุ่ม "ขโมย/STEAL" เด็ดขาด — เสีย Robux จริง!
+local function closeBlockPopup()
+    local pg = LP:FindFirstChild("PlayerGui")
+    local sg = pg and pg:FindFirstChild("Sell")
+    local fr = sg and sg:FindFirstChild("Frame")
+    if not fr or not fr.Visible then return false end
+    for _, n in ipairs({ "Sell", "Close" }) do    -- Sell = "โอเค/Keep Digging", Close = X
+        local b = fr:FindFirstChild(n)
+        if b and b:IsA("GuiButton") then fireAll(b) end
+    end
+    return true
+end
+table.insert(_G.AF75_CONNS, RunSvc.Heartbeat:Connect(function()
+    if not _G.AF75_RUN then return end
+    if os.clock() % 1 < 0.02 then closeBlockPopup() end   -- เช็ควินาทีละครั้ง ไม่กินแรง
+end))
+
 local function findSellPrompt()
     for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("ProximityPrompt") and (d.ActionText or ""):lower():find("sell") then
@@ -827,6 +848,7 @@ local function farmLoop()
                     r and (r.Position - dest).Magnitude or -1))
                 task.wait(0.35)   -- ให้ตำแหน่งใหม่ replicate ถึง server
                 status(("⛏ ขุด %s %s"):format(nm, fmtMoney(v)))
+                if closeBlockPopup() then LG("  🪟 ปิดป๊อปอัปที่บังจอ") end
                 local got = tryPick(c, kg0)
                 if got then
                     statPick += 1
