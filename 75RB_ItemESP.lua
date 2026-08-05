@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.15: (DeepSpy) วาป-เก็บยิงรีโมตตรง RS.Remotes.CrystalHoldComplete แทนกดค้าง
 -- v2.14: กดเกินเวลา +0.6 วิก่อนปล่อย + ข้ามก้อนที่โดนตัวเก่าตั้ง Hold=0
 -- v2.13: (PickSpy) วาป-เก็บเปลี่ยนเป็นกดค้างจริง InputHoldBegin/End — fp Hold=0 โดน server ปัด
 -- v2.12: เลิกทำท่าตกตอนบิน/วาป — ปิดสถานะ Freefall/FallingDown/Ragdoll ของ Humanoid
@@ -39,7 +40,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.14"
+local V = "2.15"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -507,24 +508,22 @@ end
 flyB.MouseButton1Click:Connect(function() setFly(not FLY_ON) end)
 
 -- วาปไปก้อน (TOP5 กด) — เปิดบินก่อน (จะได้ลอยค้าง ไม่ร่วง) แล้วย้ายจุดตรึงไปเหนือก้อน 6 studs
--- v2.13 (จาก PickSpy): server จับเวลากดค้าง — fp Hold=0 โดนปัด → กดค้างจริงด้วย
--- InputHoldBegin → รอครบ HoldDuration → InputHoldEnd (เหมือนนิ้วกด server แยกไม่ออก)
+-- v2.15 (DeepSpy): เก็บ = ยิงรีโมตตรง RS.Remotes.CrystalHoldComplete:FireServer(ก้อน)
+-- (client ยิงเองหลังกดครบอยู่แล้ว — เรายิงแทนได้เลย ไม่ต้องกดค้าง)
+local pickRemote = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+pickRemote = pickRemote and pickRemote:FindFirstChild("CrystalHoldComplete")
 warpTo = function(inst)
     local p = partPos(inst)
     if not p then return end
     if not FLY_ON then setFly(true) end
     FLY_POS = p + Vector3.new(0, 6, 0)
+    if not pickRemote then return end
     task.spawn(function()
         task.wait(0.4)   -- ให้ replication ตำแหน่งใหม่ไปถึง server ก่อน
-        for _ = 1, 3 do
+        for _ = 1, 5 do
             if not inst.Parent then break end   -- หายจากแมพ = เก็บสำเร็จ
-            local pp = inst:FindFirstChildOfClass("ProximityPrompt")
-            if not pp then break end
-            if pp.HoldDuration <= 0.05 then break end   -- โดนตัวเก่าตั้ง Hold=0 — เก็บไม่เข้าแล้ว
-            pcall(function() pp:InputHoldBegin() end)
-            task.wait(pp.HoldDuration + 0.6)   -- กดเกินไว้ ปล่อยเป๊ะเกิน engine นับไม่ถึง
-            pcall(function() pp:InputHoldEnd() end)
-            task.wait(0.8)
+            pcall(function() pickRemote:FireServer(inst) end)
+            task.wait(0.7)
         end
     end)
 end
