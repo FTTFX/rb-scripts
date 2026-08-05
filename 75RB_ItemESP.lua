@@ -1,4 +1,5 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.3: ปุ่ม "โชว์: TOP5" — ติดป้ายเฉพาะ 5 ก้อนแพงสุดในแมพ (จอสะอาด)
 -- v2.2: ระยะเก็บซิงก์กับ Assist อัตโนมัติ (_G.AS75_RANGE) — ปรับที่ Assist ที่เดียวพอ
 -- v2.1: ก้อนใน "ระยะเก็บ" (ยิง fp ถึง) → สว่าง + ✅ หน้าชื่อ | ปุ่มปรับระยะเก็บ −/+
 -- v2.0: อ่าน Attributes ของเกมตรงๆ (CrystalName/TierName/Tier/Value/WeightKg/SizeClass/TierColor)
@@ -20,7 +21,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.2"
+local V = "2.3"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -32,6 +33,7 @@ local TIER_ON    = { [1]=false, [2]=false, [3]=false, [4]=true, [5]=true, [6]=tr
 local GIANT_ONLY = false          -- true = โชว์เฉพาะ SizeClass ~= Small
 local SORT_VALUE = true           -- true = แพงสุดก่อน | false = ใกล้สุดก่อน
 local REACH      = 25             -- ระยะเก็บ (ยิง fp ถึง) — ก้อนในระยะนี้สว่าง+✅
+local TOP5_ONLY  = false          -- true = ติดป้ายเฉพาะ 5 ก้อนแพงสุด
 local TIER_NAMES = { "T1 Common", "T2", "T3", "T4", "T5 Legend", "T6 Mythic" }
 
 local function partPos(inst)
@@ -128,13 +130,13 @@ local function scanCrystals()
             end
         end
     end
-    if SORT_VALUE then
+    if SORT_VALUE or TOP5_ONLY then
         table.sort(list, function(a, b) return a.val > b.val end)
     else
         table.sort(list, function(a, b) return a.d < b.d end)
     end
     local keep = {}
-    for i = 1, math.min(MAX_SHOW, #list) do
+    for i = 1, math.min(TOP5_ONLY and 5 or MAX_SHOW, #list) do
         local e = list[i]
         keep[e.inst] = true
         local szTag = (e.sz ~= "Small") and ("[" .. e.sz .. "] ") or ""
@@ -204,7 +206,7 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.IESP75_GUI = gui
 
-local FULL_H, MIN_H = 258, 32
+local FULL_H, MIN_H = 288, 32
 local panel = Instance.new("Frame", gui)
 panel.Size = UDim2.new(0, 190, 0, FULL_H)
 panel.Position = UDim2.new(1, -200, 0.5, -FULL_H / 2)
@@ -311,8 +313,22 @@ end
 reachBtn("−", 98, -5)
 reachBtn("+", 162, 5)
 
+-- ปุ่ม TOP5 only
+local top5B = Instance.new("TextButton", panel)
+top5B.Size = UDim2.new(0, 178, 0, 26); top5B.Position = UDim2.new(0, 6, 0, 154)
+top5B.Text = "โชว์: ทั้งหมด (กด=TOP5)"; top5B.Font = Enum.Font.GothamBold; top5B.TextSize = 12
+top5B.BackgroundColor3 = Color3.fromRGB(30, 30, 42); top5B.TextColor3 = Color3.fromRGB(110, 110, 125)
+Instance.new("UICorner", top5B).CornerRadius = UDim.new(0, 5)
+top5B.MouseButton1Click:Connect(function()
+    TOP5_ONLY = not TOP5_ONLY
+    top5B.Text = TOP5_ONLY and "โชว์: TOP5 แพงสุดเท่านั้น" or "โชว์: ทั้งหมด (กด=TOP5)"
+    top5B.BackgroundColor3 = TOP5_ONLY and Color3.fromRGB(150, 110, 30) or Color3.fromRGB(30, 30, 42)
+    top5B.TextColor3 = TOP5_ONLY and Color3.new(1, 1, 1) or Color3.fromRGB(110, 110, 125)
+    scan()
+end)
+
 statusLbl = Instance.new("TextLabel", panel)
-statusLbl.Size = UDim2.new(1, -12, 0, 16); statusLbl.Position = UDim2.new(0, 6, 0, 154)
+statusLbl.Size = UDim2.new(1, -12, 0, 16); statusLbl.Position = UDim2.new(0, 6, 0, 184)
 statusLbl.BackgroundTransparency = 1
 statusLbl.Text = "..."
 statusLbl.Font = Enum.Font.Gotham; statusLbl.TextSize = 11
@@ -321,7 +337,7 @@ statusLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 -- Top 5 แพงสุดที่กำลังโชว์ (ป้ายในจอ)
 local topBox = Instance.new("TextLabel", panel)
-topBox.Size = UDim2.new(1, -12, 0, 76); topBox.Position = UDim2.new(0, 6, 0, 172)
+topBox.Size = UDim2.new(1, -12, 0, 76); topBox.Position = UDim2.new(0, 6, 0, 202)
 topBox.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 topBox.Text = ""
 topBox.Font = Enum.Font.Code; topBox.TextSize = 10
