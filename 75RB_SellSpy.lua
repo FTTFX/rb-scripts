@@ -1,4 +1,8 @@
--- 75RB_SellSpy.lua v1.0 — แกะเมนูขาย (กด 1 ไม่ได้!) เพื่อกดมันด้วยสคริปต์
+-- 75RB_SellSpy.lua v1.1 — แกะเมนูขาย (กด 1 ไม่ได้!) เพื่อกดมันด้วยสคริปต์
+-- v1.1: SCAN เจอตัวจริงแล้ว — GUI 'dialog' (dialogResponses.1 = "Sell all crystals")
+--       + 'Sell.Frame.Sell' ImageButton | executor มี firesignal ✅
+--       เพิ่มปุ่ม "กดเมนู 1" = ยิงทุกสัญญาณใส่ตัวเลือก 1 + พ่อทุกชั้น + ปุ่มขายใหญ่
+--       แล้ววัดน้ำหนักกระเป๋าก่อน/หลัง (ลด = ขายสำเร็จ)
 -- อาการ: SellOpen เด้งมาแล้ว เมนู 4 ตัวเลือกโผล่ ("ขายคริสตัลทั้งหมด" ฯลฯ) แต่แตะไม่ติด
 -- เดา 2 ทาง: (ก) เป็น Roblox Dialog/DialogChoice (ไม่ใช่ GUI ปกติ)
 --             (ข) เป็น GUI ของเกมที่ปุ่มซ้อน/ปิด Active อยู่
@@ -77,6 +81,15 @@ local function scan()
     L("--- เจอ GUI " .. ng .. " ตัว | ปุ่มกดได้ " .. #foundBtns .. " ตัว ---")
 
     -- (3) ProximityPrompt ของร้าน
+    -- v1.1: ต้นไม้เต็มของ GUI ตัวจริง
+    local pg2 = LP:FindFirstChild("PlayerGui")
+    if pg2 then
+        local dlg = pg2:FindFirstChild("dialog", true)
+        if dlg then dumpTree(dlg, "dialog (เมนูตัวเลือก)") else L("(ไม่เจอ GUI dialog — กด E ก่อน)") end
+        local sg = pg2:FindFirstChild("Sell")
+        if sg then dumpTree(sg, "Sell (ปุ่มขายใหญ่)") end
+    end
+
     L("--- prompt ของ SellWorker ---")
     for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("Model") and d.Name == "SellWorker" then
@@ -90,6 +103,89 @@ local function scan()
         end
     end
     L("=== จบ — COPY ส่งผล หรือกด 'กดขายให้เลย' ทดลอง ===")
+end
+
+-- v1.1: ดัมพ์ต้นไม้เต็มของ GUI ที่ชื่อ dialog / Sell (ตัวจริงที่ต้องกด)
+local function dumpTree(root, label)
+    L("--- ต้นไม้ " .. label .. " ---")
+    local function walk(o, ind)
+        for _, c in ipairs(o:GetChildren()) do
+            local extra = ""
+            if c:IsA("GuiButton") then
+                extra = (" ⭐ปุ่ม Active=%s ZIndex=%d"):format(tostring(c.Active), c.ZIndex)
+            elseif c:IsA("GuiObject") then
+                extra = (" Vis=%s"):format(tostring(c.Visible))
+            end
+            local txt = (c:IsA("TextLabel") or c:IsA("TextButton")) and (" '" .. c.Text .. "'") or ""
+            L(("%s%s [%s]%s%s"):format(ind, c.Name, c.ClassName, extra, txt))
+            if #ind < 12 then walk(c, ind .. "  ") end
+        end
+    end
+    walk(root, "  ")
+end
+
+-- ยิงทุกสัญญาณของ GuiObject หนึ่งตัว (คลิก/แตะ/กดปล่อย)
+local function fireAll(obj, why)
+    local fs = firesignal or (getgenv and getgenv().firesignal)
+    if not fs or not obj then return end
+    local sigs = { "MouseButton1Click", "Activated", "MouseButton1Down", "MouseButton1Up",
+        "InputBegan", "InputEnded", "TouchTap" }
+    local hit = {}
+    for _, s in ipairs(sigs) do
+        pcall(function()
+            if obj[s] then fs(obj[s]); hit[#hit + 1] = s end
+        end)
+    end
+    L(("ยิง %s (%s): %s"):format(obj.Name, why, table.concat(hit, ",")))
+end
+
+-- v1.1: กดตัวเลือกในเมนู dialog + ปุ่ม Sell ตรงๆ (ตัวที่ SCAN เจอ)
+local function pressMenu()
+    L("")
+    L(">>> กดเมนูขายตรงๆ (dialog + ปุ่ม Sell) <<<")
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local before = select(1, (function()
+        local l = pg:FindFirstChild("ExplorerHud")
+        l = l and l:FindFirstChild("BackpackPanel")
+        l = l and l:FindFirstChild("Value")
+        return l and l.Text or "?"
+    end)())
+    L("กระเป๋าก่อนกด: " .. tostring(before))
+
+    -- 1) ตัวเลือกที่ 1 ในเมนู dialog ("Sell all crystals") — ยิงทั้งตัวมันและพ่อทุกชั้น
+    local dlg = pg:FindFirstChild("dialog", true)
+    if dlg then
+        local resp = dlg:FindFirstChild("dialogResponses", true)
+        local one = resp and resp:FindFirstChild("1")
+        if one then
+            fireAll(one, "ตัวเลือก 1")
+            for _, c in ipairs(one:GetDescendants()) do
+                if c:IsA("GuiButton") then fireAll(c, "ปุ่มใน ตัวเลือก1") end
+            end
+            local p = one.Parent
+            while p and p ~= pg do
+                if p:IsA("GuiButton") then fireAll(p, "พ่อของตัวเลือก1") end
+                p = p.Parent
+            end
+        else
+            L("❌ ไม่เจอ dialogResponses.1 (เมนูยังไม่เปิด? กด E ก่อน)")
+        end
+    else
+        L("❌ ไม่เจอ GUI 'dialog' (กด E ที่ร้านให้เมนูเด้งก่อน)")
+    end
+
+    -- 2) ปุ่มขายใหญ่ Sell.Frame.Sell
+    local sg = pg:FindFirstChild("Sell")
+    local sbtn = sg and sg:FindFirstChild("Frame")
+    sbtn = sbtn and sbtn:FindFirstChild("Sell")
+    if sbtn then fireAll(sbtn, "ปุ่มขายใหญ่") else L("❌ ไม่เจอ Sell.Frame.Sell") end
+
+    task.wait(1.5)
+    local l = pg:FindFirstChild("ExplorerHud")
+    l = l and l:FindFirstChild("BackpackPanel")
+    l = l and l:FindFirstChild("Value")
+    L("กระเป๋าหลังกด: " .. (l and l.Text or "?") .. "  ← ลดลง = ขายสำเร็จ!")
 end
 
 -- ยิงทุกช่องทางที่เป็นไปได้
@@ -170,12 +266,16 @@ local function hbtn(txt, x, w, col)
     return b
 end
 local scanB = hbtn("SCAN", 8, 66, Color3.fromRGB(40, 130, 70))
-local sellB = hbtn("กดขายให้เลย", 78, 108, Color3.fromRGB(150, 110, 30))
-local copyB = hbtn("COPY", 190, 66)
-local hideB = hbtn("ซ่อน", 260, 60, Color3.fromRGB(50, 50, 70))
-local closeB = hbtn("✕", 324, 34, Color3.fromRGB(150, 40, 40))
+local menuB = hbtn("กดเมนู 1", 78, 92, Color3.fromRGB(30, 120, 60))
+local sellB = hbtn("ยิง remote", 174, 96, Color3.fromRGB(150, 110, 30))
+local copyB = hbtn("COPY", 274, 66)
+local hideB = hbtn("ซ่อน", 344, 60, Color3.fromRGB(50, 50, 70))
+local closeB = hbtn("✕", 408, 34, Color3.fromRGB(150, 40, 40))
 
 scanB.MouseButton1Click:Connect(function() scan(); redraw() end)
+menuB.MouseButton1Click:Connect(function()
+    task.spawn(function() pressMenu(); redraw() end)
+end)
 sellB.MouseButton1Click:Connect(function()
     task.spawn(function() trySell(); redraw() end)
 end)
