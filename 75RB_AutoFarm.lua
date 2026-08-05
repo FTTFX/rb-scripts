@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.2: "ขายที่ %" ลงต่ำกว่า 10% ได้ (ต่ำกว่า 10 ปรับทีละ 1% ต่ำสุด 1%)
 -- v3.1: "ขายที่ %" ปรับทีละ 5% ด้วยปุ่ม − [85%] + (เดิมกดวนทีละ 15% ข้ามค่าที่ต้องการ)
 -- v3.0: ตัวกรองเปลี่ยนเป็น "พิมพ์เอง" 3 ช่อง (kg ต่ำ / kg สูง / ราคาขั้นต่ำ) รับ 30M 500K 1.5m
 --       แทนปุ่ม −/+ ที่ปรับทีละนิดช้า | ราคา 0 = ปิดเงื่อนไขราคา
@@ -54,7 +55,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.1"
+local V = "3.2"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -359,13 +360,17 @@ local function pctBtn(txt, x)
     return b
 end
 local pctDn, pctUp = pctBtn("−", 106), pctBtn("+", 186)
+-- v3.2: ลงต่ำกว่า 10% ได้ — ต่ำกว่า 10 ปรับทีละ 1% (9,8,...,1) ตั้งแต่ 10 ขึ้นไปทีละ 5%
 local function setPct(d)
-    SELL_PCT = math.clamp(SELL_PCT + d, 0.10, 0.95)
-    pctB.Text = ("%d%%"):format(math.floor(SELL_PCT * 100 + 0.5))
+    local p = SELL_PCT * 100
+    local step = (d < 0 and p <= 10) or (d > 0 and p < 10) and 1 or 5
+    p = math.clamp(p + (d > 0 and step or -step), 1, 95)
+    SELL_PCT = p / 100
+    pctB.Text = ("%d%%"):format(math.floor(p + 0.5))
 end
-pctDn.MouseButton1Click:Connect(function() setPct(-0.05) end)
-pctUp.MouseButton1Click:Connect(function() setPct(0.05) end)
-setPct(0)
+pctDn.MouseButton1Click:Connect(function() setPct(-1) end)
+pctUp.MouseButton1Click:Connect(function() setPct(1) end)
+pctB.Text = ("%d%%"):format(math.floor(SELL_PCT * 100 + 0.5))
 local pctTag = Instance.new("TextLabel", panel)
 pctTag.Size = UDim2.new(0, 96, 0, 26); pctTag.Position = UDim2.new(0, 108, 0, 46)
 pctTag.BackgroundTransparency = 1
