@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.17: อันดับโชคผิด — ป้ายโชคแปลเป็นไทย ("โชค +2.9%") pattern หา 'Luck:' ไม่เจอ
+--        → จับ "+ตัวเลข%" ตรงๆ ทุกภาษา + เลิกแคชค่า 0 (ป้ายโหลดช้าจะได้ลองใหม่)
 -- v2.16: เรียงโหมดที่ 4 "หนักสุด" (WeightKg) + ตาราง TOP ขยาย 5 → 20 อันดับ เลื่อนได้
 --        (ScrollingFrame สูงเท่าเดิม เห็น ~5 แถว ลากเลื่อนดูถึงอันดับ 20 กดวาปได้ทุกแถว)
 -- v2.15: (DeepSpy) วาป-เก็บยิงรีโมตตรง RS.Remotes.CrystalHoldComplete แทนกดค้าง
@@ -42,7 +44,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.16"
+local V = "2.17"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -100,18 +102,20 @@ local CRYSTAL_GAME = #getCrystals() > 0 or (workspace:FindFirstChild("Things") ~
 local LUCK_CACHE = setmetatable({}, { __mode = "k" })
 local function getLuck(c)
     local v = LUCK_CACHE[c]
-    if v ~= nil then return v end
+    if v then return v end   -- v2.17: แคชเฉพาะค่าที่เจอจริง (0 ไม่แคช — ป้ายอาจยังโหลดไม่มา)
     v = 0
     local hover = c:FindFirstChild("CrystalHover")
     if hover then
         for _, l in ipairs(hover:GetDescendants()) do
             if l:IsA("TextLabel") then
-                local n = l.Text:match("Luck:%s*%+?([%d%.]+)%%")
+                -- v2.17: ป้ายโชคแปลตามภาษาเครื่อง ("Luck: +6.0%" / "โชค +2.9%")
+                -- → เลิกหาคำ จับรูปแบบ "+ตัวเลข%" ตรงๆ (มีแค่ป้ายโชคที่ใช้แบบนี้)
+                local n = l.Text:match("%+%s*([%d%.]+)%%")
                 if n then v = tonumber(n) or 0 break end
             end
         end
     end
-    LUCK_CACHE[c] = v
+    if v > 0 then LUCK_CACHE[c] = v end
     return v
 end
 local function fmtLuck(v)
