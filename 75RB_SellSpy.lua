@@ -1,4 +1,8 @@
--- 75RB_SellSpy.lua v1.1 — แกะเมนูขาย (กด 1 ไม่ได้!) เพื่อกดมันด้วยสคริปต์
+-- 75RB_SellSpy.lua v1.2 — แกะเมนูขาย (ร้านไม่มี ProximityPrompt! ปุ่ม E เป็น UI เกมเอง)
+-- v1.2: ปุ่มใหม่ 3 ตัว — "ไล่กดทีละตัว" (หาชิ้นที่ทำให้กระเป๋าลดจริง แล้วบอกชื่อเต็ม)
+--       "ยิงคีย์ 1" (VirtualInputManager/keypress/ยิงเข้า InputBegan ตรงๆ)
+--       "ดูปุ่มผูก" (ContextActionService — เมนูอาจผูกเลข 1-4 ไว้ที่นี่)
+-- v1.1: แกะเมนูขาย (กด 1 ไม่ได้!) เพื่อกดมันด้วยสคริปต์
 -- v1.1: SCAN เจอตัวจริงแล้ว — GUI 'dialog' (dialogResponses.1 = "Sell all crystals")
 --       + 'Sell.Frame.Sell' ImageButton | executor มี firesignal ✅
 --       เพิ่มปุ่ม "กดเมนู 1" = ยิงทุกสัญญาณใส่ตัวเลือก 1 + พ่อทุกชั้น + ปุ่มขายใหญ่
@@ -188,6 +192,124 @@ local function pressMenu()
     L("กระเป๋าหลังกด: " .. (l and l.Text or "?") .. "  ← ลดลง = ขายสำเร็จ!")
 end
 
+-- v1.2: ไล่กด "ทีละชิ้น" ในเมนู dialog จนเจอตัวที่ทำให้กระเป๋าลด แล้วบอกชื่อเต็มของมัน
+-- (ยิงรวดเดียวทั้งกองแล้วไม่เข้า = ต้องรู้ว่าตัวไหนคือของจริง / หรือไม่มีตัวไหนเลย)
+local function bagKg()
+    local pg = LP:FindFirstChild("PlayerGui")
+    local l = pg and pg:FindFirstChild("ExplorerHud")
+    l = l and l:FindFirstChild("BackpackPanel")
+    l = l and l:FindFirstChild("Value")
+    local a = l and l.Text:match("([%d%.]+)")
+    return tonumber(a) or -1
+end
+
+local function probeOneByOne()
+    L("")
+    L(">>> ไล่กดทีละชิ้น (หาตัวจริง) <<<")
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local dlg = pg:FindFirstChild("dialog", true)
+    if not dlg then L("❌ ไม่เจอ GUI dialog") return end
+
+    -- รวมผู้ต้องสงสัย: ทุก GuiObject ใต้ dialog + ปุ่มที่ข้อความเกี่ยวกับขาย
+    local cand = {}
+    for _, d in ipairs(dlg:GetDescendants()) do
+        if d:IsA("GuiObject") then cand[#cand + 1] = d end
+    end
+    cand[#cand + 1] = dlg
+    L(("ผู้ต้องสงสัย %d ชิ้น | กระเป๋าเริ่ม %.1f kg"):format(#cand, bagKg()))
+
+    local start = bagKg()
+    for i, d in ipairs(cand) do
+        if bagKg() < start - 0.5 then
+            L(("🎉 ขายเข้าแล้ว! ตัวก่อนหน้าคือของจริง (ชิ้นที่ %d)"):format(i - 1))
+            return
+        end
+        fireAll(d, "ชิ้น " .. i)
+        task.wait(0.25)
+        if bagKg() < start - 0.5 then
+            L(("🎉🎉 เจอแล้ว! ชิ้นที่ %d = %s [%s]"):format(i,
+                d:GetFullName():gsub("^Players%." .. LP.Name .. "%.PlayerGui%.", ""), d.ClassName))
+            L("    → เอาชื่อนี้ไปใส่ AutoFarm ได้เลย")
+            return
+        end
+    end
+    L("❌ กดครบทุกชิ้นแล้วกระเป๋าไม่ลด — เมนูนี้ไม่รับ firesignal (ต้องหาทางอื่น)")
+    L(("กระเป๋าตอนนี้ %.1f kg"):format(bagKg()))
+end
+
+-- v1.2: ดัก ContextActionService/UserInputService — เมนูอาจผูกปุ่ม 1-4 ไว้ตรงนี้ ไม่ใช่ GUI คลิก
+local function listBinds()
+    L("")
+    L(">>> ปุ่มที่เกมผูกไว้ (ContextAction) <<<")
+    local CAS = game:GetService("ContextActionService")
+    local ok, binds = pcall(function() return CAS:GetAllBoundActionInfo() end)
+    if ok and binds then
+        local n = 0
+        for name, info in pairs(binds) do
+            n += 1
+            local keys = {}
+            for _, k in ipairs(info.inputTypes or {}) do keys[#keys + 1] = tostring(k) end
+            L(("action '%s' ← %s"):format(name, table.concat(keys, ",")))
+        end
+        if n == 0 then L("(ไม่มี action ผูกอยู่)") end
+    else
+        L("❌ อ่าน ContextActionService ไม่ได้")
+    end
+    -- getconnections ของ UserInputService.InputBegan (ถ้า executor ให้)
+    local gc = getconnections or (getgenv and getgenv().getconnections)
+    if gc then
+        local UIS = game:GetService("UserInputService")
+        local ok2, conns = pcall(gc, UIS.InputBegan)
+        L("UserInputService.InputBegan มีคนฟัง: " .. (ok2 and #conns or "อ่านไม่ได้") .. " ตัว")
+        L("→ ถ้ามี เราสั่ง Fire ให้เหมือนกดคีย์ 1 ได้ (ปุ่ม 'ยิงคีย์ 1')")
+    else
+        L("executor ไม่มี getconnections")
+    end
+end
+
+-- v1.2: จำลองกดคีย์ '1' ทุกทาง
+local function fireKey1()
+    L("")
+    L(">>> ยิงคีย์ '1' ทุกทาง <<<")
+    local before = bagKg()
+    local VIM = select(2, pcall(function() return game:GetService("VirtualInputManager") end))
+    if VIM then
+        local ok = pcall(function()
+            VIM:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+            task.wait(0.08)
+            VIM:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+        end)
+        L("VirtualInputManager SendKeyEvent: " .. tostring(ok))
+    end
+    local kp = keypress or (getgenv and getgenv().keypress)
+    if kp then
+        local kr = keyrelease or (getgenv and getgenv().keyrelease)
+        local ok = pcall(function() kp(0x31); task.wait(0.08); if kr then kr(0x31) end end)
+        L("keypress(0x31): " .. tostring(ok))
+    else
+        L("executor ไม่มี keypress")
+    end
+    -- ยิงเข้า connection ของ InputBegan ตรงๆ (จำลอง InputObject KeyCode.One)
+    local gc = getconnections or (getgenv and getgenv().getconnections)
+    if gc then
+        local UIS = game:GetService("UserInputService")
+        local ok, conns = pcall(gc, UIS.InputBegan)
+        if ok then
+            local fake = { KeyCode = Enum.KeyCode.One, UserInputType = Enum.UserInputType.Keyboard,
+                UserInputState = Enum.UserInputState.Begin }
+            local n = 0
+            for _, cn in ipairs(conns) do
+                pcall(function() cn:Fire(fake, false); n += 1 end)
+            end
+            L(("ยิงเข้า InputBegan %d ตัว"):format(n))
+        end
+    end
+    task.wait(1.2)
+    L(("กระเป๋า %.1f → %.1f kg %s"):format(before, bagKg(),
+        bagKg() < before - 0.5 and "🎉 ขายเข้า!" or "(ไม่ขยับ)"))
+end
+
 -- ยิงทุกช่องทางที่เป็นไปได้
 local function trySell()
     L("")
@@ -265,12 +387,23 @@ local function hbtn(txt, x, w, col)
     b.BackgroundColor3 = col or Color3.fromRGB(40, 90, 150); b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
-local scanB = hbtn("SCAN", 8, 66, Color3.fromRGB(40, 130, 70))
-local menuB = hbtn("กดเมนู 1", 78, 92, Color3.fromRGB(30, 120, 60))
-local sellB = hbtn("ยิง remote", 174, 96, Color3.fromRGB(150, 110, 30))
-local copyB = hbtn("COPY", 274, 66)
-local hideB = hbtn("ซ่อน", 344, 60, Color3.fromRGB(50, 50, 70))
-local closeB = hbtn("✕", 408, 34, Color3.fromRGB(150, 40, 40))
+local scanB = hbtn("SCAN", 8, 60, Color3.fromRGB(40, 130, 70))
+local probeB = hbtn("ไล่กดทีละตัว", 72, 104, Color3.fromRGB(30, 120, 60))
+local keyB  = hbtn("ยิงคีย์ 1", 180, 82, Color3.fromRGB(120, 60, 140))
+local bindB = hbtn("ดูปุ่มผูก", 266, 82, Color3.fromRGB(40, 90, 150))
+local menuB = hbtn("กดเมนู", 352, 70, Color3.fromRGB(60, 100, 60))
+local sellB = hbtn("ยิง remote", 426, 90, Color3.fromRGB(150, 110, 30))
+local copyB = hbtn("COPY", 520, 60)
+local hideB = hbtn("ซ่อน", 584, 56, Color3.fromRGB(50, 50, 70))
+local closeB = hbtn("✕", 644, 34, Color3.fromRGB(150, 40, 40))
+
+probeB.MouseButton1Click:Connect(function()
+    task.spawn(function() probeOneByOne(); redraw() end)
+end)
+keyB.MouseButton1Click:Connect(function()
+    task.spawn(function() fireKey1(); redraw() end)
+end)
+bindB.MouseButton1Click:Connect(function() listBinds(); redraw() end)
 
 scanB.MouseButton1Click:Connect(function() scan(); redraw() end)
 menuB.MouseButton1Click:Connect(function()
