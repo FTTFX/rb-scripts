@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.5: บั๊กร้าย! ตัวอ่านน้ำหนัก (GUI) คืน 0.0 ทั้งที่เพิ่งเก็บ 354kg → บอทคิดว่าเก็บไม่เข้าทุกก้อน
+--       → อ่านจากข้อมูลจริง PlayerData.Inventory.Crystals แทน + ยืนยันด้วย "จำนวนก้อนเพิ่ม" ด้วย
 -- v2.4: "เห็นแต่เก็บไม่ได้" = วาปไม่ถึง (ห่างเป้า 28!) เพราะ ItemESP เปิดบินอยู่ แย่งเขียน CFrame
 --       → ตั้ง _G.AF75_PIN ให้ ESP หลบ (ESP v2.18) + ตอกตำแหน่งซ้ำทุกรอบ รอถึง 5 วิ + เตือนใน log
 -- v2.3: เก็บช้า — (ก) กดค้างเช็คระหว่างทาง ของเข้าปล่อยทันที (เดิมรอครบ Hold 5 วิเสมอ)
@@ -41,7 +43,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.4"
+local V = "2.5"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -70,7 +72,22 @@ local function fmtMoney(v)
 end
 
 -- น้ำหนักกระเป๋า: อ่านจาก GUI (ตรงกับจอเป๊ะ) | สำรอง: บวก WeightKg ของในกระเป๋า
+-- v2.5: อ่านน้ำหนักจาก "ข้อมูลจริง" เป็นหลัก — GUI เชื่อไม่ได้!
+-- (log เจอ GUI คืน 0.0 ทั้งที่เพิ่งเก็บ 354kg → บอทคิดว่าเก็บไม่เข้าทุกก้อนตั้งแต่นั้น)
+-- หลัก: บวก WeightKg ของทุกก้อนใน PlayerData.Inventory.Crystals | สำรอง: ป้าย GUI
 local function bagInfo()
+    local pd = LP:FindFirstChild("PlayerData")
+    local inv = pd and pd:FindFirstChild("Inventory")
+    inv = inv and inv:FindFirstChild("Crystals")
+    local rs2 = pd and pd:FindFirstChild("RealStats")
+    local cw = rs2 and rs2:FindFirstChild("CarryWeight")
+    if inv then
+        local cur = 0
+        for _, c in ipairs(inv:GetChildren()) do
+            cur += (c:GetAttribute("WeightKg") or 0)
+        end
+        return cur, (cw and cw.Value or 1237)
+    end
     local pg = LP:FindFirstChild("PlayerGui")
     local lbl = pg and pg:FindFirstChild("ExplorerHud")
     lbl = lbl and lbl:FindFirstChild("BackpackPanel")
@@ -79,20 +96,22 @@ local function bagInfo()
         local a, b = lbl.Text:match("([%d%.]+)%s*/%s*([%d%.]+)")
         if a and b then return tonumber(a), tonumber(b) end
     end
-    -- สำรอง: บวกเองจาก Inventory.Crystals + CarryWeight
-    local cur, cap = 0, 1e9
+    return 0, (cw and cw.Value or 1237)
+end
+
+-- v2.5: นับ "จำนวนก้อนในกระเป๋า" เป็นตัวยืนยันคู่กับน้ำหนัก (ก้อนเบามาก น้ำหนักอาจไม่ขยับชัด)
+local function bagCount()
     local pd = LP:FindFirstChild("PlayerData")
     local inv = pd and pd:FindFirstChild("Inventory")
     inv = inv and inv:FindFirstChild("Crystals")
-    if inv then
-        for _, c in ipairs(inv:GetChildren()) do
-            cur += (c:GetAttribute("WeightKg") or 0)
-        end
-    end
-    local rs2 = pd and pd:FindFirstChild("RealStats")
-    local cw = rs2 and rs2:FindFirstChild("CarryWeight")
-    if cw then cap = cw.Value end
-    return cur, cap
+    return inv and #inv:GetChildren() or 0
+end
+
+-- v2.5: "เก็บเข้าแล้วหรือยัง" = น้ำหนักเพิ่ม "หรือ" จำนวนก้อนเพิ่ม (อย่างใดอย่างหนึ่งก็พอ)
+local BAG_N0 = 0
+local function markBase() BAG_N0 = bagCount() end
+local function picked(kg0)
+    return bagInfo() > kg0 + 0.05 or bagCount() > BAG_N0
 end
 
 local function cashNow()
@@ -477,7 +496,7 @@ local function holdUntil(pp, c, kg0)
     local dl = os.clock() + pp.HoldDuration + 0.5
     while os.clock() < dl do
         task.wait(0.1)
-        if bagInfo() > kg0 + 0.05 or not c.Parent then break end
+        if picked(kg0) or not c.Parent then break end
     end
     pcall(function() pp:InputHoldEnd() end)
 end
@@ -511,7 +530,7 @@ local function attempt(c, kg0, pname, ppos)
         pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
         if tool then pcall(function() tool:Activate() end) end
         task.wait(0.1)
-        if bagInfo() > kg0 + 0.05 then
+        if picked(kg0) then
             TM.mine = (TM.mine or 0) + (os.clock() - t0)
             LG(("  ✅ เข้า! [%s + ขวาน] %.1f วิ"):format(pname, os.clock() - t0))
             WIN_POS, WIN_WAY = pname, "ขวาน"
@@ -529,7 +548,7 @@ local function attempt(c, kg0, pname, ppos)
     for _ = 1, 8 do
         if tool then pcall(function() tool:Activate() end) end   -- ฟันไปด้วยระหว่างรอผล
         task.wait(0.1)
-        if bagInfo() > kg0 + 0.05 then
+        if picked(kg0) then
             TM.hold = (TM.hold or 0) + (os.clock() - t1)
             LG(("  ✅ เข้า! [%s] กดค้าง %.1f วิ"):format(pname, os.clock() - t1))
             WIN_POS, WIN_WAY = pname, "both"
@@ -583,12 +602,12 @@ local function mineIt(c, kg0)
         pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
         pcall(function() tool:Activate() end)
         task.wait(0.25)
-        if bagInfo() > kg0 + 0.05 then
+        if picked(kg0) then
             LG(("  ✅ เข้า! ฟันขวาน %d ที"):format(i))
             return true
         end
     end
-    return bagInfo() > kg0 + 0.05
+    return picked(kg0)
 end
 
 -- v2.2: ขุดแตกแล้วของ "ตกพื้น" (ร่วงลงถ้ำ) — ตามไปเก็บก้อนที่ตกแถวนั้น
@@ -617,19 +636,20 @@ local function collectDropped(near, kg0)
             TARGET_LOOK = dr.Position
             for _ = 1, 4 do
                 task.wait(0.15)
-                if bagInfo() > kg0 + 0.05 then LG("  ✅ เก็บของตกได้") return true end
+                if picked(kg0) then LG("  ✅ เก็บของตกได้") return true end
                 if promptReady(dr) then
                     doWay(dr, "both", kg0)
                     task.wait(0.6)
-                    if bagInfo() > kg0 + 0.05 then LG("  ✅ เก็บของตกได้") return true end
+                    if picked(kg0) then LG("  ✅ เก็บของตกได้") return true end
                 end
             end
         end
     end
-    return bagInfo() > kg0 + 0.05
+    return picked(kg0)
 end
 
 function tryPick(c, kg0)
+    markBase()           -- v2.5: จำจำนวนก้อนในกระเป๋าตอนเริ่ม (ใช้ยืนยันคู่กับน้ำหนัก)
     equipPick()          -- v2.1: ถือขวานไว้ตลอด จะได้ฟันได้ทุกมุมที่วน
     local cpos = c.Position   -- จำไว้ เผื่อก้อนหาย (ของตกแถวนี้)
     local list = posList(c)
@@ -648,7 +668,7 @@ function tryPick(c, kg0)
         if not _G.AF75_RUN then return false end
         if not c.Parent then
             task.wait(0.5)
-            if bagInfo() > kg0 + 0.05 then return true end
+            if picked(kg0) then return true end
             return collectDropped(cpos, kg0)   -- v2.2: ก้อนแตกแล้วของตกพื้น → ตามเก็บ
         end
         if e[1] ~= WIN_POS then
