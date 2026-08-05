@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.10: กรองบ้านเพื่อนแบบชัวร์ (จาก HomeSpy) — ก้อนบ้านชื่อ 'Handle' ใต้ Things.Plots
+--        และไม่มี prompt → กรอง: ไม่อยู่ใต้ Plots + ต้องมี ProximityPrompt เปิด (เก็บได้จริง)
 -- v2.9: TOP5 กดได้ — แตะแถวไหนวาปบินไปลอยเหนือก้อนนั้นเลย (เปิดบินอัตโนมัติ)
 --       + ตัดของวางบ้านเพื่อน (Placed_*) ออกจากการสแกนทั้งหมด
 -- v2.8: ระบบโชค ☘ — ค่าโชคไม่อยู่ใน attr ต้องแกะจากป้าย CrystalHover ('Luck: +6.0%')
@@ -32,7 +34,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.9"
+local V = "2.10"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -67,12 +69,18 @@ end
 -- หา "ก้อนคริสตัลทุกก้อน" สดๆ ทุกรอบ (อย่า cache โฟลเดอร์ — เกมสร้างใหม่/วาร์ปโซนแล้วชี้ที่ว่าง)
 -- หลัก: Things.Crystals | สำรอง: ค้นทั้ง workspace หา BasePart ที่มี attr Tier+CrystalName
 -- v2.5: กวาดทั้ง workspace ทุกรอบ — ก้อนอยู่โฟลเดอร์ไหน/โซนไหนก็เจอ (เกมย้าย path ได้)
+-- v2.10 (จาก HomeSpy): ก้อนบ้านเพื่อนชื่อ "Handle" อยู่ใต้ Things.Plots.Slots.<ชื่อ>.PlacedCrystals
+-- และ "ไม่มี ProximityPrompt" (เก็บไม่ได้ 0/8) ส่วนก้อนป่ามี prompt 1465/1467
+-- → กรอง 2 ชั้น: ไม่อยู่ใต้ Plots + ต้องมี prompt เปิดอยู่ (= เก็บได้จริงเท่านั้น)
 local function getCrystals()
     local out = {}
     for _, c in ipairs(workspace:GetDescendants()) do
         if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier")
-            and not c.Name:match("^Placed") then   -- ตัดของวางบ้านเพื่อน (Placed_2..6)
-            out[#out + 1] = c
+            and not c:FindFirstAncestor("Plots") then
+            local pp = c:FindFirstChildOfClass("ProximityPrompt")
+            if pp and pp.Enabled then
+                out[#out + 1] = c
+            end
         end
     end
     return out
