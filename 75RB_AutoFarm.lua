@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v2.6: (PickSpy v2.0) 2 บั๊กใหญ่ — (ก) เกมโชว์ปุ่มให้ก้อนใกล้สุดก้อนเดียว ก้อนเป้าหมายเลย
+--       ไม่เคย "ปุ่มติด" ในโซนก้อนเยอะ → คิดระยะเองจาก MaxActivationDistance แทน
+--       (ข) ก้อน Max=0 = กดไม่ได้เลย (ยังฝังในหิน) → ข้ามการวนมุม ไปฟันขวานทันที
 -- v2.5: บั๊กร้าย! ตัวอ่านน้ำหนัก (GUI) คืน 0.0 ทั้งที่เพิ่งเก็บ 354kg → บอทคิดว่าเก็บไม่เข้าทุกก้อน
 --       → อ่านจากข้อมูลจริง PlayerData.Inventory.Crystals แทน + ยืนยันด้วย "จำนวนก้อนเพิ่ม" ด้วย
 -- v2.4: "เห็นแต่เก็บไม่ได้" = วาปไม่ถึง (ห่างเป้า 28!) เพราะ ItemESP เปิดบินอยู่ แย่งเขียน CFrame
@@ -43,7 +46,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "2.5"
+local V = "2.6"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -467,9 +470,17 @@ table.insert(_G.AF75_CONNS, PPS.PromptShown:Connect(function(pp) PROMPT_ON = pp 
 table.insert(_G.AF75_CONNS, PPS.PromptHidden:Connect(function(pp)
     if PROMPT_ON == pp then PROMPT_ON = nil end
 end))
+-- v2.6 (PickSpy v2.0): เกมโชว์ปุ่มให้ "ก้อนใกล้สุดก้อนเดียว" — ในโซนก้อนเยอะ ปุ่มของเป้าหมายเรา
+-- ไม่มีวันขึ้น (log เห็น Starsapphire/Cerulime สลับแย่งกันตลอด) → เลิกรอ PromptShown อย่างเดียว
+-- คิดเองด้วยระยะจริง: ห่าง ≤ MaxActivationDistance = กดได้แน่ (Max=0 คือกดไม่ได้เลย)
 local function promptReady(c)
     local pp = c:FindFirstChildOfClass("ProximityPrompt")
-    return pp and PROMPT_ON == pp
+    if not pp or not pp.Enabled then return false end
+    if PROMPT_ON == pp then return true end
+    local mx = pp.MaxActivationDistance
+    if mx <= 0 then return false end
+    local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    return r and (c.Position - r.Position).Magnitude <= mx * 0.9
 end
 
 -- v1.5: 8 มุมรอบก้อน "ระดับเดียวกัน" (ท่าที่ log พิสูจน์ว่าเข้า) + สำรองต่ำ/สูง
@@ -592,8 +603,13 @@ local function mineIt(c, kg0)
     TARGET_LOOK = c.Position
     task.wait(0.4)
     LG("  ⛏ โหมดฟันขวาน (" .. tool.Name .. ")")
-    for i = 1, 25 do
-        if not _G.AF75_RUN or not c.Parent then break end
+    for i = 1, 40 do        -- v2.6: ฟันได้ถึง 40 ที (ก้อนใหญ่ต้องหลายที) ถี่ขึ้นเป็น 0.15 วิ
+        if not _G.AF75_RUN then break end
+        if not c.Parent then           -- ก้อนแตกแล้ว → ของร่วงเป็นก้อนตกพื้น ตามเก็บทันที
+            LG(("  💥 ก้อนแตกหลังฟัน %d ที → ตามเก็บของตก"):format(i))
+            task.wait(0.4)
+            return collectDropped(c.Position, kg0)
+        end
         local rr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         if rr then
             rr.CFrame = CFrame.lookAt(rr.Position, c.Position)   -- หันตัวใส่ก้อน
@@ -601,7 +617,7 @@ local function mineIt(c, kg0)
         end
         pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
         pcall(function() tool:Activate() end)
-        task.wait(0.25)
+        task.wait(0.15)
         if picked(kg0) then
             LG(("  ✅ เข้า! ฟันขวาน %d ที"):format(i))
             return true
@@ -652,6 +668,16 @@ function tryPick(c, kg0)
     markBase()           -- v2.5: จำจำนวนก้อนในกระเป๋าตอนเริ่ม (ใช้ยืนยันคู่กับน้ำหนัก)
     equipPick()          -- v2.1: ถือขวานไว้ตลอด จะได้ฟันได้ทุกมุมที่วน
     local cpos = c.Position   -- จำไว้ เผื่อก้อนหาย (ของตกแถวนี้)
+    -- v2.6 (PickSpy v2.0): MaxActivationDistance = 0 → ปุ่ม "ไม่มีวันขึ้น" (ก้อนยังฝังในหิน)
+    -- วนหามุมเท่าไหร่ก็เสียเวลาเปล่า → ไปฟันขวานเลย
+    local pp0 = c:FindFirstChildOfClass("ProximityPrompt")
+    if pp0 and pp0.MaxActivationDistance <= 0 then
+        LG("  ⛏ ก้อนนี้ Max=0 (ปุ่มขึ้นไม่ได้) → ฟันขวานเลย")
+        if mineIt(c, kg0) then return true end
+        if collectDropped(cpos, kg0) then return true end
+        LG("  ❌ ฟันไม่แตก")
+        return false
+    end
     local list = posList(c)
     -- 1) มุมที่เคยเข้า ลองก่อน (เร็ว)
     if WIN_POS then
@@ -765,9 +791,11 @@ local function farmLoop()
                 local v = c:GetAttribute("Value") or 0
                 local kg0 = cur   -- น้ำหนักก่อนเก็บ — ใช้ยืนยันว่าของเข้ากระเป๋าจริง
                 local myp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                LG(("🎯 %s %s %.1fkg | ห่าง %dm | กระเป๋า %.1f"):format(nm, fmtMoney(v),
-                    c:GetAttribute("WeightKg") or 0,
-                    myp and math.floor((c.Position - myp.Position).Magnitude) or -1, kg0))
+                local ppx = c:FindFirstChildOfClass("ProximityPrompt")
+                LG(("🎯 %s %s %.1fkg | ห่าง %dm | %s Max=%d | กระเป๋า %.1f"):format(
+                    nm, fmtMoney(v), c:GetAttribute("WeightKg") or 0,
+                    myp and math.floor((c.Position - myp.Position).Magnitude) or -1,
+                    ppx and ppx.ActionText or "?", ppx and ppx.MaxActivationDistance or -1, kg0))
                 status(("⛏ ไปหา %s %s"):format(nm, fmtMoney(v)))
                 setNoFall(true)
                 local dest = c.Position + Vector3.new(0, 6, 0)
