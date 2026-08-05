@@ -1,4 +1,6 @@
 -- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v1.7: (PickSpy) server จับเวลากดค้าง — fp Hold=0 โดนปัด! → กดค้างจริงด้วย
+--       InputHoldBegin → รอครบ HoldDuration → InputHoldEnd (server แยกไม่ออกจากนิ้วกด)
 -- v1.6: กรองบ้านเพื่อนชัวร์ (HomeSpy): ไม่อยู่ใต้ Plots + ต้องมี prompt เปิด
 -- v1.5: ตัดของวางบ้านเพื่อน (Placed_*) ออก — ไม่ยิง fp ใส่ของตกแต่งคนอื่น
 -- v1.4: กวาดทั้ง workspace เสมอ (ก้อนอยู่ path ไหนก็เจอ)
@@ -16,7 +18,7 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.6"
+local V = "1.7"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -220,7 +222,7 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
     if acc < 0.5 then return end
     acc = 0
     local mp = myPos()
-    if not mp or not fp then return end
+    if not mp then return end   -- v1.7: ไม่ต้องพึ่ง fp แล้ว (ใช้ InputHoldBegin/End แทน)
     -- ซิงก์สองทาง: ItemESP อาจปรับ _G.AS75_RANGE มา
     if _G.AS75_RANGE and _G.AS75_RANGE ~= RANGE then
         RANGE = _G.AS75_RANGE
@@ -243,17 +245,25 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
     if not best then return end
     local pp = best:FindFirstChildOfClass("ProximityPrompt")
     if not pp then return end
-    pcall(function() pp.HoldDuration = 0 end)
-    pcall(fp, pp, 0)
+    -- v1.7 (จาก PickSpy): server จับเวลาช่วงกดค้าง — fp Hold=0 โดนปัดเกือบหมด
+    -- → กดค้างแบบถูกกติกาผ่าน InputHoldBegin → รอครบ HoldDuration → InputHoldEnd
+    --   engine trigger เองเหมือนนิ้วกดจริง server แยกไม่ออก
+    local hold = pp.HoldDuration
     pending = {
         inst = best, d = math.floor(bd),
         name = best:GetAttribute("CrystalName") or best.Name,
         val = best:GetAttribute("Value") or 0,
         kg = best:GetAttribute("WeightKg") or 0,
     }
-    pendT = 0
+    pendT = -(hold + 0.4)   -- นับ timeout 1.2s "หลัง" กดครบ (ไม่ตัดสินระหว่างยังกดอยู่)
+    lastL.Text = ("⏳ กดค้าง %s %.1f วิ..."):format(pending.name, hold)
+    task.spawn(function()
+        pcall(function() pp:InputHoldBegin() end)
+        task.wait(hold + 0.15)
+        pcall(function() pp:InputHoldEnd() end)
+    end)
 end))
 
 updStat()
-print("[75RB Assist v" .. V .. "] fp=" .. tostring(fp ~= nil)
-    .. " | เปิด AUTO แล้วดูช่อง 'ล่าสุด' — ✅=เก็บได้ ❌=ไกลเกิน ลอง +ระยะ หาเพดาน")
+print("[75RB Assist v" .. V .. "] โหมดกดค้างจริง (InputHoldBegin/End)"
+    .. " | ระยะ prompt จริง ~9-16m — ตั้งระยะ ≤15 ผลดีสุด")
