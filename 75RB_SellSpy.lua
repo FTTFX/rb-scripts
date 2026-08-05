@@ -1,4 +1,7 @@
--- 75RB_SellSpy.lua v1.2 — แกะเมนูขาย (ร้านไม่มี ProximityPrompt! ปุ่ม E เป็น UI เกมเอง)
+-- 75RB_SellSpy.lua v1.3 — แกะเมนูขาย
+-- v1.3: กดปุ่มแล้วจอว่าง! — วาด log สดทุกบรรทัด (เดิมวาดตอนจบ ถ้า error กลางทาง = ไม่เห็นอะไร)
+--       + หุ้ม pcall ทุกปุ่ม โชว์ 💥 ERROR ให้เห็น
+-- v1.2: แกะเมนูขาย (ร้านไม่มี ProximityPrompt! ปุ่ม E เป็น UI เกมเอง)
 -- v1.2: ปุ่มใหม่ 3 ตัว — "ไล่กดทีละตัว" (หาชิ้นที่ทำให้กระเป๋าลดจริง แล้วบอกชื่อเต็ม)
 --       "ยิงคีย์ 1" (VirtualInputManager/keypress/ยิงเข้า InputBegan ตรงๆ)
 --       "ดูปุ่มผูก" (ContextActionService — เมนูอาจผูกเลข 1-4 ไว้ที่นี่)
@@ -20,7 +23,12 @@ local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local OUT = {}
-local function L(s) OUT[#OUT + 1] = s end
+local BOX   -- forward — v1.3: วาดสดทุกบรรทัด (เดิมวาดตอนจบ ถ้า error กลางทาง = จอว่างเปล่า)
+local function L(s)
+    OUT[#OUT + 1] = s
+    if #OUT > 250 then table.remove(OUT, 1) end
+    if BOX then BOX.Text = table.concat(OUT, "\n") end
+end
 
 local function isSellish(txt)
     if not txt or txt == "" then return false end
@@ -371,6 +379,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.SSPY75_GUI = gui
 
 local box = Instance.new("TextBox", gui)
+BOX = box
 box.Size = UDim2.new(0, 620, 0, 300); box.Position = UDim2.new(0, 8, 0.3, 0)
 box.BackgroundColor3 = Color3.new(0, 0, 0); box.BackgroundTransparency = 0.15
 box.TextColor3 = Color3.fromRGB(255, 230, 170); box.TextSize = 11; box.Font = Enum.Font.Code
@@ -397,21 +406,25 @@ local copyB = hbtn("COPY", 520, 60)
 local hideB = hbtn("ซ่อน", 584, 56, Color3.fromRGB(50, 50, 70))
 local closeB = hbtn("✕", 644, 34, Color3.fromRGB(150, 40, 40))
 
-probeB.MouseButton1Click:Connect(function()
-    task.spawn(function() probeOneByOne(); redraw() end)
-end)
-keyB.MouseButton1Click:Connect(function()
-    task.spawn(function() fireKey1(); redraw() end)
-end)
-bindB.MouseButton1Click:Connect(function() listBinds(); redraw() end)
+-- v1.3: หุ้ม pcall ทุกปุ่ม — พังตรงไหนโชว์ error ให้เห็น (เดิมพังเงียบ จอว่าง)
+local function run(name, fn)
+    return function()
+        task.spawn(function()
+            L("")
+            L("▶ " .. name .. " ...")
+            local ok, err = pcall(fn)
+            if not ok then L("💥 ERROR: " .. tostring(err)) end
+            redraw()
+        end)
+    end
+end
+probeB.MouseButton1Click:Connect(run("ไล่กดทีละตัว", probeOneByOne))
+keyB.MouseButton1Click:Connect(run("ยิงคีย์ 1", fireKey1))
+bindB.MouseButton1Click:Connect(run("ดูปุ่มผูก", listBinds))
 
-scanB.MouseButton1Click:Connect(function() scan(); redraw() end)
-menuB.MouseButton1Click:Connect(function()
-    task.spawn(function() pressMenu(); redraw() end)
-end)
-sellB.MouseButton1Click:Connect(function()
-    task.spawn(function() trySell(); redraw() end)
-end)
+scanB.MouseButton1Click:Connect(run("SCAN", scan))
+menuB.MouseButton1Click:Connect(run("กดเมนู", pressMenu))
+sellB.MouseButton1Click:Connect(run("ยิง remote", trySell))
 hideB.MouseButton1Click:Connect(function()
     box.Visible = not box.Visible
     hideB.Text = box.Visible and "ซ่อน" or "โชว์"
@@ -427,7 +440,7 @@ copyB.MouseButton1Click:Connect(function()
 end)
 closeB.MouseButton1Click:Connect(function() gui:Destroy(); _G.SSPY75_GUI = nil end)
 
-L("[SellSpy v1.0] เดินไปร้าน กด E ให้เมนูขายเด้งก่อน แล้วกด SCAN")
+L("[SellSpy v1.3] เดินไปร้าน กด E ให้เมนูขายเด้งก่อน แล้วกด SCAN")
 L("firesignal=" .. tostring((firesignal or (getgenv and getgenv().firesignal)) ~= nil)
     .. " (ถ้ามี = กดปุ่ม GUI ด้วยสคริปต์ได้)")
 redraw()
