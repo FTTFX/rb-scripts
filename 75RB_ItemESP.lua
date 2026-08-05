@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.5: สแกนหาของห่วย — เลิกพึ่งโฟลเดอร์ Things.Crystals อย่างเดียว กวาดทั้ง workspace
+--       ทุกรอบ (ก้อนอยู่โฟลเดอร์ไหนก็เจอ) + สถานะโชว์จำนวนแยกรายเทียร์ (เห็นว่าหลุดตรงไหน)
 -- v2.4: สแกนกว้างขึ้น — หาโฟลเดอร์ Crystals ใหม่ทุกรอบ (เกมสร้างใหม่/วาร์ปโซนแล้วตัวเก่าชี้ที่ว่าง)
 --       + ค้นทั้ง workspace หาของที่มี attr Tier (ไม่จำกัดแค่ Things.Crystals ชั้นแรก)
 -- v2.3: ปุ่ม "โชว์: TOP5" — ติดป้ายเฉพาะ 5 ก้อนแพงสุดในแมพ (จอสะอาด)
@@ -23,7 +25,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.4"
+local V = "2.5"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -57,21 +59,12 @@ end
 
 -- หา "ก้อนคริสตัลทุกก้อน" สดๆ ทุกรอบ (อย่า cache โฟลเดอร์ — เกมสร้างใหม่/วาร์ปโซนแล้วชี้ที่ว่าง)
 -- หลัก: Things.Crystals | สำรอง: ค้นทั้ง workspace หา BasePart ที่มี attr Tier+CrystalName
+-- v2.5: กวาดทั้ง workspace ทุกรอบ — ก้อนอยู่โฟลเดอร์ไหน/โซนไหนก็เจอ (เกมย้าย path ได้)
 local function getCrystals()
-    local things = workspace:FindFirstChild("Things")
-    local folder = things and things:FindFirstChild("Crystals")
     local out = {}
-    if folder then
-        for _, c in ipairs(folder:GetDescendants()) do
-            if c:IsA("BasePart") and c:GetAttribute("Tier") then out[#out + 1] = c end
-        end
-        if folder:GetAttribute("Tier") then out[#out + 1] = folder end
-    end
-    if #out == 0 then   -- โฟลเดอร์ย้าย/เปลี่ยนชื่อ → กวาดทั้ง workspace
-        for _, c in ipairs(workspace:GetDescendants()) do
-            if c:IsA("BasePart") and c:GetAttribute("Tier") and c:GetAttribute("CrystalName") then
-                out[#out + 1] = c
-            end
+    for _, c in ipairs(workspace:GetDescendants()) do
+        if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier") then
+            out[#out + 1] = c
         end
     end
     return out
@@ -129,8 +122,10 @@ local statusLbl   -- forward
 local function scanCrystals()
     local mp = myPos()
     local list = {}
+    local tierCount = { 0, 0, 0, 0, 0, 0 }   -- นับทั้งหมดก่อนกรอง (ดีบัก: เกมมีจริงกี่ก้อน)
     for _, c in ipairs(getCrystals()) do
         local tier = c:GetAttribute("Tier")
+        if tier and tierCount[tier] then tierCount[tier] += 1 end
         if tier and TIER_ON[tier] then
             local sz = c:GetAttribute("SizeClassName") or "?"
             if not GIANT_ONLY or sz ~= "Small" then
@@ -167,8 +162,11 @@ local function scanCrystals()
         if not keep[inst] or not inst.Parent then removeMark(inst) end
     end
     if statusLbl then
-        statusLbl.Text = ("โชว์ %d/%d ก้อน | %s"):format(
-            math.min(MAX_SHOW, #list), #list, SORT_VALUE and "แพงสุดก่อน" or "ใกล้สุดก่อน")
+        local total = 0
+        for _, n in ipairs(tierCount) do total += n end
+        statusLbl.Text = ("โชว์ %d/%d | ทั้งแมพ %d (T456: %d/%d/%d)"):format(
+            math.min(TOP5_ONLY and 5 or MAX_SHOW, #list), #list, total,
+            tierCount[4], tierCount[5], tierCount[6])
     end
 end
 
