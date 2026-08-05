@@ -13,7 +13,8 @@
 | `75RB_PickSpy.lua` | สปายจังหวะเก็บ: HoldBegan/Ended/Triggered + เวลา + เฝ้าก้อนหาย (พิสูจน์ server จับเวลากด) | v1.0 |
 | `75RB_DeepSpy.lua` | ดักขาไป+ขากลับ (OnClientEvent ทุก remote) + LIST ชื่อเข้าเค้า — ตัวเจอ CrystalHoldComplete | v1.0 |
 | `75RB_BagSpy.lua` | ดัมพ์ attrs/Values ทั้ง Player + GUI "x / y" — ตัวเจอที่เก็บน้ำหนัก/เงิน | v1.0 |
-| `75RB_AutoFarm.lua` | ฟาร์มครบวงจร: วาปเก็บก้อนแพงสุด → กระเป๋าถึง % → วาปขายที่ SellWorker → วน | v1.0 |
+| `75RB_AutoFarm.lua` | ฟาร์มครบวงจร: วาปเก็บก้อนแพงสุด → กระเป๋าถึง % → วาปขายที่ SellWorker → วน | v1.1 |
+| `75RB_SellSpy.lua` | แกะเมนูขาย: ดัมพ์ต้นไม้ GUI dialog/Sell + ปุ่มกดขายด้วย firesignal | v1.1 |
 | `75RB_ItemSpy.lua` | สปายดัมพ์ prompt เก็บของ 15 ตัวใกล้สุด: attrs/สี/mesh/label | v1.0 |
 | `75RB_NetSpy.lua` | ดัก FireServer/InvokeServer + ProximityPrompt (ปุ่ม E) + LIST remotes | v1.1 |
 
@@ -60,8 +61,14 @@
 - stat อื่นน่าสนใจ: `PlotLuck`, `LuckBoostRemaining`, `CurrentAir/AirCapacity` (ระบบอากาศ!),
   `JetpackFuel` (attr บน LP), `TrustedTeleport` (attr — เกมมีระบบเช็ควาป?), `SellCount`
 - ร้านขาย = Model ชื่อ `SellWorker` ใน workspace (เดินใกล้ → server ยิง `SellOpen` มาให้)
-- `SellRequest` args ยังไม่คอนเฟิร์ม — AutoFarm v1.0 ลอง 3 แบบ: `()`, `(sellerModel)`, `("All")`
-  ถ้าไม่เข้าสักแบบ ให้ user ขายมือพร้อม DeepSpy แล้วดู args จริง
+- **การขาย (SellSpy 2026-08-05)**: ยิง `SellRequest:FireServer(...)` ตรงๆ **ไม่ได้ผลทุกรูปแบบ**
+  (ยิงออกจริงแต่ server เท — ต้อง "เลือกในเมนู" จริงเท่านั้น)
+  วิธีที่ได้ผล: เดินใกล้ NPC `SellWorker` → server ส่ง `SellOpen` → เมนูโผล่เป็น GUI ชื่อ
+  **`PlayerGui.dialog`** → `dialogResponses.1` = "Sell all crystals" (`.2` = ขายอันเดียว)
+  → **`firesignal` ทุกสัญญาณใส่ตัวเลือก 1 + พ่อทุกชั้น + `Sell.Frame.Sell`** → ขายเข้า ✅
+  (พิสูจน์แล้ว: กระเป๋า 2.3 → 0.0 kg) — executor นี้มี `firesignal` ✅
+  บางครั้งต้องกดซ้ำ 2-3 ที (เมนูอาจยังไม่ทันเปิด) → AutoFarm v1.1 ลองสูงสุด 5 รอบ
+- บทเรียน: อย่ากรอง GUI ด้วย "ชื่อมีคำว่าขาย" — ตัวจริงชื่อ `dialog` / `1` เฉยๆ ต้องดัมพ์ต้นไม้ดู
 - การขาย: ยังไม่ได้สปาย (รอ user ขายมือ 1 ครั้งพร้อม NetSpy เปิด)
 
 ## บทเรียน/กับดัก
