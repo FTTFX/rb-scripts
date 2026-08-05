@@ -1,4 +1,6 @@
 -- 75RB_ItemESP.lua v2.1 — ESP คริสตัล (เกมเหมืองแร่) + โหมด universal สำรอง
+-- v2.16: เรียงโหมดที่ 4 "หนักสุด" (WeightKg) + ตาราง TOP ขยาย 5 → 20 อันดับ เลื่อนได้
+--        (ScrollingFrame สูงเท่าเดิม เห็น ~5 แถว ลากเลื่อนดูถึงอันดับ 20 กดวาปได้ทุกแถว)
 -- v2.15: (DeepSpy) วาป-เก็บยิงรีโมตตรง RS.Remotes.CrystalHoldComplete แทนกดค้าง
 -- v2.14: กดเกินเวลา +0.6 วิก่อนปล่อย + ข้ามก้อนที่โดนตัวเก่าตั้ง Hold=0
 -- v2.13: (PickSpy) วาป-เก็บเปลี่ยนเป็นกดค้างจริง InputHoldBegin/End — fp Hold=0 โดน server ปัด
@@ -40,7 +42,7 @@ if _G.IESP75_GUI then pcall(function() _G.IESP75_GUI:Destroy() end) end
 _G.IESP75_CONNS = {}
 _G.IESP75_MARKS = {}
 
-local V = "2.15"
+local V = "2.16"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -50,7 +52,7 @@ local MARKS   = _G.IESP75_MARKS
 local MAX_SHOW   = 150            -- ป้ายพร้อมกันสูงสุด (กันเลค/จอแตก)
 local TIER_ON    = { [1]=false, [2]=false, [3]=false, [4]=true, [5]=true, [6]=true }
 local GIANT_ONLY = false          -- true = โชว์เฉพาะ SizeClass ~= Small
-local SORT_MODE  = "val"          -- "val" แพงสุด | "dist" ใกล้สุด | "luck" โชคสุด
+local SORT_MODE  = "val"          -- "val" แพงสุด | "dist" ใกล้สุด | "luck" โชคสุด | "wt" หนักสุด
 local REACH      = 25             -- ระยะเก็บ (ยิง fp ถึง) — ก้อนในระยะนี้สว่าง+✅
 local TOP5_ONLY  = false          -- true = ติดป้ายเฉพาะ 5 ก้อนแพงสุด
 local TIER_NAMES = { "T1 Common", "T2", "T3", "T4", "T5 Legend", "T6 Mythic" }
@@ -181,6 +183,7 @@ local function scanCrystals()
                         inst = c,
                         d = mp and (p - mp).Magnitude or 1e9,
                         luck = getLuck(c),
+                        kg = c:GetAttribute("WeightKg") or 0,
                         val = c:GetAttribute("Value") or 0,
                         name = c:GetAttribute("CrystalName") or c.Name,
                         sz = sz,
@@ -195,6 +198,8 @@ local function scanCrystals()
     end
     if SORT_MODE == "luck" then
         table.sort(list, function(a, b) return a.luck > b.luck end)
+    elseif SORT_MODE == "wt" then
+        table.sort(list, function(a, b) return a.kg > b.kg end)
     elseif SORT_MODE == "val" or TOP5_ONLY then
         table.sort(list, function(a, b) return a.val > b.val end)
     else
@@ -347,8 +352,9 @@ sortB.Size = UDim2.new(0, 86, 0, 26); sortB.Position = UDim2.new(0, 98, 0, 92)
 sortB.Text = "เรียง: แพงสุด"; sortB.Font = Enum.Font.GothamBold; sortB.TextSize = 10
 sortB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); sortB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", sortB).CornerRadius = UDim.new(0, 5)
-local SORT_ORDER = { "val", "dist", "luck" }
-local SORT_LABEL = { val = "เรียง: แพงสุด", dist = "เรียง: ใกล้สุด", luck = "เรียง: ☘โชคสุด" }
+local SORT_ORDER = { "val", "dist", "luck", "wt" }
+local SORT_LABEL = { val = "เรียง: แพงสุด", dist = "เรียง: ใกล้สุด",
+    luck = "เรียง: ☘โชคสุด", wt = "เรียง: ⚖หนักสุด" }
 sortB.MouseButton1Click:Connect(function()
     for i, m in ipairs(SORT_ORDER) do
         if m == SORT_MODE then
@@ -358,6 +364,7 @@ sortB.MouseButton1Click:Connect(function()
     end
     sortB.Text = SORT_LABEL[SORT_MODE]
     sortB.BackgroundColor3 = SORT_MODE == "luck" and Color3.fromRGB(40, 130, 70)
+        or SORT_MODE == "wt" and Color3.fromRGB(150, 110, 30)
         or Color3.fromRGB(40, 90, 150)
     scan()
 end)
@@ -423,24 +430,35 @@ topHead.Font = Enum.Font.GothamBold; topHead.TextSize = 10
 topHead.TextColor3 = Color3.fromRGB(255, 200, 90)
 topHead.TextXAlignment = Enum.TextXAlignment.Left
 
+-- v2.16: 20 อันดับใน ScrollingFrame (เห็น ~5 แถว ลากเลื่อนดูที่เหลือ)
+local TOP_N = 20
+local topScroll = Instance.new("ScrollingFrame", panel)
+topScroll.Size = UDim2.new(1, -12, 0, 80); topScroll.Position = UDim2.new(0, 6, 0, 216)
+topScroll.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+topScroll.BorderSizePixel = 0
+topScroll.CanvasSize = UDim2.new(0, 0, 0, TOP_N * 16)
+topScroll.ScrollBarThickness = 4
+topScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+Instance.new("UICorner", topScroll).CornerRadius = UDim.new(0, 5)
+
 local topRows, topTargets = {}, {}   -- Instance ยัด field เองไม่ได้ — เก็บ target แยกตาราง
-for i = 1, 5 do
-    local b = Instance.new("TextButton", panel)
-    b.Size = UDim2.new(1, -12, 0, 15)
-    b.Position = UDim2.new(0, 6, 0, 216 + (i - 1) * 16)
+for i = 1, TOP_N do
+    local b = Instance.new("TextButton", topScroll)
+    b.Size = UDim2.new(1, -8, 0, 15)
+    b.Position = UDim2.new(0, 4, 0, (i - 1) * 16)
     b.Text = ""
     b.Font = Enum.Font.Code; b.TextSize = 10
-    b.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+    b.BackgroundTransparency = 1
     b.TextColor3 = Color3.fromRGB(190, 220, 190)
     b.TextXAlignment = Enum.TextXAlignment.Left
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
     topRows[i] = b
     b.MouseButton1Click:Connect(function()
         local t = topTargets[i]
         if t and t.Parent and warpTo then
             warpTo(t)
+            b.BackgroundTransparency = 0
             b.BackgroundColor3 = Color3.fromRGB(30, 120, 60)
-            task.delay(0.6, function() b.BackgroundColor3 = Color3.fromRGB(8, 8, 12) end)
+            task.delay(0.6, function() b.BackgroundTransparency = 1 end)
         end
     end)
 end
@@ -598,21 +616,26 @@ table.insert(_G.IESP75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
                 local t2 = c:GetAttribute("Tier")
                 if t2 and TIER_ON[t2] then
                     best[#best + 1] = { inst = c, v = c:GetAttribute("Value") or 0, lk = getLuck(c),
+                        kg = c:GetAttribute("WeightKg") or 0,
                         n = c:GetAttribute("CrystalName") or "?", s = c:GetAttribute("SizeClassName") or "" }
                 end
             end
-            -- อันดับตามโหมดเรียง: โชคสุด → เรียงโชค | อื่นๆ → เรียงราคา
+            -- อันดับตามโหมดเรียง: โชค/น้ำหนัก → ตามนั้น | อื่นๆ → เรียงราคา
             if SORT_MODE == "luck" then
                 table.sort(best, function(a, b) return a.lk > b.lk end)
+            elseif SORT_MODE == "wt" then
+                table.sort(best, function(a, b) return a.kg > b.kg end)
             else
                 table.sort(best, function(a, b) return a.v > b.v end)
             end
-            topHead.Text = (SORT_MODE == "luck" and "TOP5 ☘โชค" or "TOP5 แพง") .. " (แตะ = วาปไป):"
-            for i = 1, 5 do
+            topHead.Text = ("TOP%d %s (แตะ = วาปไป):"):format(TOP_N,
+                SORT_MODE == "luck" and "☘โชค" or SORT_MODE == "wt" and "⚖หนัก" or "แพง")
+            for i = 1, TOP_N do
                 local e = best[i]
                 topTargets[i] = e and e.inst or nil
-                topRows[i].Text = e and (" %d. %s%s %s%s"):format(i,
-                    e.s ~= "Small" and ("[" .. e.s .. "] ") or "", e.n, fmtMoney(e.v), fmtLuck(e.lk)) or ""
+                topRows[i].Text = e and ("%2d. %s%s %s %.0fkg%s"):format(i,
+                    e.s ~= "Small" and ("[" .. e.s .. "] ") or "", e.n, fmtMoney(e.v),
+                    e.kg, fmtLuck(e.lk)) or ""
             end
         end
     end
