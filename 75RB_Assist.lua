@@ -1,4 +1,5 @@
 -- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v1.5: ตัดของวางบ้านเพื่อน (Placed_*) ออก — ไม่ยิง fp ใส่ของตกแต่งคนอื่น
 -- v1.4: กวาดทั้ง workspace เสมอ (ก้อนอยู่ path ไหนก็เจอ)
 -- v1.3: หาก้อนคริสตัลสดทุกรอบ (ไม่ cache โฟลเดอร์ — วาร์ปโซนแล้วชี้ที่ว่าง) + ค้นลึกทุกชั้น
 -- v1.2: ซิงก์ระยะกับ ItemESP ผ่าน _G.AS75_RANGE — ปรับที่ Assist ตัวเดียว ESP ✅ ตามทันที
@@ -14,7 +15,7 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.4"
+local V = "1.5"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
@@ -25,7 +26,8 @@ local function getCrystals()
     -- v1.4: กวาดทั้ง workspace เสมอ (เหมือน ItemESP v2.5) — ก้อนอยู่ path ไหนก็เจอ
     local out = {}
     for _, c in ipairs(workspace:GetDescendants()) do
-        if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier") then
+        if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier")
+            and not c.Name:match("^Placed") then   -- ตัดของวางบ้านเพื่อน
             out[#out + 1] = c
         end
     end
