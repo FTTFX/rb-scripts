@@ -1,4 +1,5 @@
 -- 75RB_Assist.lua v1.1 — ระบบช่วยเกมคริสตัล: เก็บอัตโนมัติด้วย fireproximityprompt
+-- v1.3: หาก้อนคริสตัลสดทุกรอบ (ไม่ cache โฟลเดอร์ — วาร์ปโซนแล้วชี้ที่ว่าง) + ค้นลึกทุกชั้น
 -- v1.2: ซิงก์ระยะกับ ItemESP ผ่าน _G.AS75_RANGE — ปรับที่ Assist ตัวเดียว ESP ✅ ตามทันที
 -- v1.1: ก้อนที่ ❌ พักไว้ 8 วิ (เลิกยิงก้อนเดิมซ้ำ — ไปเก็บก้อนถัดไปแทน)
 --       + วัดเพดานระยะอัตโนมัติ: จำ ✅ไกลสุด / ❌ใกล้สุด โชว์ตลอด
@@ -12,14 +13,31 @@ end
 if _G.AS75_GUI then pcall(function() _G.AS75_GUI:Destroy() end) end
 _G.AS75_CONNS = {}
 
-local V = "1.2"
+local V = "1.3"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local LP      = Players.LocalPlayer
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local CRYSTALS = workspace:FindFirstChild("Things")
-CRYSTALS = CRYSTALS and CRYSTALS:FindFirstChild("Crystals")
+-- หาก้อนคริสตัลสดทุกรอบ (เหมือน ItemESP v2.4)
+local function getCrystals()
+    local things = workspace:FindFirstChild("Things")
+    local folder = things and things:FindFirstChild("Crystals")
+    local out = {}
+    if folder then
+        for _, c in ipairs(folder:GetDescendants()) do
+            if c:IsA("BasePart") and c:GetAttribute("Tier") then out[#out + 1] = c end
+        end
+    end
+    if #out == 0 then
+        for _, c in ipairs(workspace:GetDescendants()) do
+            if c:IsA("BasePart") and c:GetAttribute("Tier") and c:GetAttribute("CrystalName") then
+                out[#out + 1] = c
+            end
+        end
+    end
+    return out
+end
 
 -- ==================== State ====================
 local AUTO_ON   = false
@@ -177,7 +195,7 @@ end
 -- ก้อนหาย = เก็บสำเร็จ (นับสถิติ) | ยังอยู่ = ล้มเหลว (โชว์ระยะไว้หาเพดาน)
 local acc = 0
 table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
-    if not AUTO_ON or not CRYSTALS or not CRYSTALS.Parent then return end
+    if not AUTO_ON then return end
     acc += dt
     -- เช็คผลก้อนที่ยิงไปแล้ว
     if pending then
@@ -208,9 +226,9 @@ table.insert(_G.AS75_CONNS, RunSvc.Heartbeat:Connect(function(dt)
         rangeL.Text = "ระยะ " .. RANGE
     end
     local best, bd
-    for _, c in ipairs(CRYSTALS:GetChildren()) do
+    for _, c in ipairs(getCrystals()) do
         local tier = c:GetAttribute("Tier")
-        if tier and tier >= MIN_TIER and c:IsA("BasePart") then
+        if tier and tier >= MIN_TIER then
             local sz = c:GetAttribute("SizeClassName") or "Small"
             if not GIANT_ONLY or sz ~= "Small" then
                 local d = (c.Position - mp).Magnitude
