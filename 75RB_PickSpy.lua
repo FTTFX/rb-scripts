@@ -1,4 +1,6 @@
--- 75RB_PickSpy.lua v2.0 — สปายการเก็บของแบบแม่นยำ: ดูตั้งแต่กดจนของเข้ากระเป๋าจริง
+-- 75RB_PickSpy.lua v2.1 — สปายการเก็บของแบบแม่นยำ: ดูตั้งแต่กดจนของเข้ากระเป๋าจริง
+-- v2.1: ปุ่ม "ทดลองเอง" — ไม่ต้องกด E ค้างเอง สคริปต์ไปยืนข้างก้อนใกล้สุด 3 ก้อน แล้วไล่ลอง
+--       ทุกวิธี (InputHold / remote / fireproximityprompt / ฟันขวาน) บอกผลทีละวิธี
 -- ตอบให้ครบ 5 คำถาม:
 --   1) ก้อนแบบไหน "หยิบ" แบบไหน "ต้องขุด"  (Action ของ prompt + MaxActivationDistance)
 --   2) ตอนกด เรายืนห่างเท่าไหร่ / ปุ่มขึ้นตอนห่างเท่าไหร่ (ระยะจริงที่ใช้ได้)
@@ -172,10 +174,95 @@ local function hbtn(txt, x, w, col)
     b.BackgroundColor3 = col or Color3.fromRGB(40, 90, 150); b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
-local clearB = hbtn("CLEAR", 8, 70, Color3.fromRGB(90, 60, 30))
-local copyB  = hbtn("COPY", 84, 70)
-local hideB  = hbtn("ซ่อน", 158, 60, Color3.fromRGB(50, 50, 70))
-local closeB = hbtn("✕", 222, 34, Color3.fromRGB(150, 40, 40))
+-- v2.1: ปุ่ม "ทดลองเอง" — ไม่ต้องกด E ค้างเอง สคริปต์ไปยืนข้างก้อนใกล้สุดแล้วลองให้ครบทุกวิธี
+local function autoTest()
+    local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not r then return end
+    -- หาก้อนใกล้สุด 3 ก้อน (ที่ไม่ใช่ของบ้านเพื่อน)
+    local list = {}
+    for _, c in ipairs(workspace:GetDescendants()) do
+        if c:IsA("BasePart") and c:GetAttribute("CrystalName")
+            and not c:FindFirstAncestor("Plots") then
+            local d = (c.Position - r.Position).Magnitude
+            if d < 300 then list[#list + 1] = { c = c, d = d } end
+        end
+    end
+    table.sort(list, function(a, b) return a.d < b.d end)
+    if #list == 0 then L("❌ ไม่เจอก้อนใกล้ๆ") return end
+
+    local function bagKgN() local a, b = bagNow() return a, b end
+    for i = 1, math.min(3, #list) do
+        local c = list[i].c
+        local pp = c:FindFirstChildOfClass("ProximityPrompt")
+        local nm = c:GetAttribute("CrystalName") or c.Name
+        L("")
+        L(("===== ทดลองก้อน %d: %s %.1fkg | %s Max=%s Hold=%s ====="):format(i, nm,
+            c:GetAttribute("WeightKg") or 0, pp and pp.ActionText or "ไม่มี prompt",
+            pp and tostring(pp.MaxActivationDistance) or "-",
+            pp and tostring(pp.HoldDuration) or "-"))
+        -- ไปยืนข้างก้อน ระดับเดียวกัน ห่าง 4
+        local ways = {
+            { "InputHold ครบเวลา", function()
+                if not pp then return end
+                pp:InputHoldBegin(); task.wait((pp.HoldDuration or 1) + 0.6); pp:InputHoldEnd()
+            end },
+            { "remote CrystalHoldComplete", function()
+                local rem = RS:FindFirstChild("Remotes")
+                local rr = rem and rem:FindFirstChild("CrystalHoldComplete")
+                if rr then rr:FireServer(c) end
+                task.wait(1)
+            end },
+            { "fireproximityprompt", function()
+                local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+                if fp and pp then pcall(fp, pp, 1) end
+                task.wait(1)
+            end },
+            { "ขวาน Activate x12", function()
+                local tool = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+                for _ = 1, 12 do
+                    if tool then pcall(function() tool:Activate() end) end
+                    task.wait(0.15)
+                end
+            end },
+        }
+        for _, w in ipairs(ways) do
+            if not c.Parent then L("  (ก้อนหายไปแล้ว)") break end
+            local kg1, n1 = bagKgN()
+            -- ยืนใหม่ทุกครั้ง (เผื่อโดนดัน)
+            local rr2 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            if rr2 then
+                rr2.CFrame = CFrame.lookAt(c.Position + Vector3.new(0, 0, -4), c.Position)
+                rr2.AssemblyLinearVelocity = Vector3.zero
+            end
+            task.wait(0.4)
+            local dd = rr2 and (c.Position - rr2.Position).Magnitude or -1
+            local ok, err = pcall(w[2])
+            task.wait(0.5)
+            local kg2, n2 = bagKgN()
+            L(("  %s @%.1f → %s%s"):format(w[1], dd,
+                (n2 > n1 or kg2 > kg1 + 0.05) and "✅ เข้า!" or "❌ ไม่เข้า",
+                ok and "" or (" (พัง: " .. tostring(err) .. ")")))
+            if n2 > n1 or kg2 > kg1 + 0.05 then break end
+        end
+    end
+    L("")
+    L("===== จบการทดลอง — COPY ส่งผล =====")
+end
+
+local autoB = hbtn("ทดลองเอง (ไม่ต้องกด E)", 8, 168, Color3.fromRGB(30, 120, 60))
+autoB.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        L("")
+        L("▶ เริ่มทดลองอัตโนมัติ...")
+        local ok, err = pcall(autoTest)
+        if not ok then L("💥 ERROR: " .. tostring(err)) end
+    end)
+end)
+
+local clearB = hbtn("CLEAR", 182, 70, Color3.fromRGB(90, 60, 30))
+local copyB  = hbtn("COPY", 258, 70)
+local hideB  = hbtn("ซ่อน", 332, 60, Color3.fromRGB(50, 50, 70))
+local closeB = hbtn("✕", 396, 34, Color3.fromRGB(150, 40, 40))
 
 clearB.MouseButton1Click:Connect(function() OUT = {}; box.Text = "" end)
 hideB.MouseButton1Click:Connect(function()
