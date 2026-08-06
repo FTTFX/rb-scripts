@@ -1,4 +1,6 @@
--- 75RB_SpawnSpy.lua v1.0 — สปาย "การเสกแร่" (เรดาร์/ระเบิด)
+-- 75RB_SpawnSpy.lua v1.1 — สปาย "การเสกแร่" (เรดาร์/ระเบิด)
+-- v1.1: เจอระบบร้านครบ! RadarShopQuery→RadarBuyRequest→RadarActivate/RadarDropRequest
+--       (ระเบิดก็มีชุดเดียวกัน) + ปุ่ม "ถามร้านเรดาร์" ดูของ/ราคาโดยไม่เสียเงิน
 -- เบาะแสที่มีอยู่แล้ว: RS.Remotes.RadarDropRequest / CrystalDropRequest / BigCrystalShake
 --   RealStats: RadarPurchases='496083|CrystalRadar:1' RadarSkipCount BombPurchases BombSkipCount
 --   Settings: AutoContinueRadar
@@ -158,11 +160,44 @@ local function hbtn(txt, x, w, col)
     b.BackgroundColor3 = col or Color3.fromRGB(40, 90, 150); b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
-local dumpB  = hbtn("ดูของ/สถิติ", 8, 100, Color3.fromRGB(40, 130, 70))
-local clearB = hbtn("CLEAR", 112, 66, Color3.fromRGB(90, 60, 30))
-local copyB  = hbtn("COPY", 182, 66)
-local hideB  = hbtn("ซ่อน", 252, 56, Color3.fromRGB(50, 50, 70))
-local closeB = hbtn("✕", 312, 34, Color3.fromRGB(150, 40, 40))
+-- v1.1: ถามร้านเรดาร์/ระเบิด (RemoteFunction Query = แค่ถาม ไม่เสียเงิน)
+local function askShops()
+    if not Rem then L("❌ ไม่เจอ RS.Remotes") return end
+    for _, n in ipairs({ "RadarShopQuery", "BombShopQuery" }) do
+        local f = Rem:FindFirstChild(n)
+        if f and f:IsA("RemoteFunction") then
+            local ok, res = pcall(function() return f:InvokeServer() end)
+            if ok then
+                L(("📋 %s → %s"):format(n, ser(res)))
+                if typeof(res) == "table" then     -- กางรายการให้อ่านง่าย
+                    for k, v in pairs(res) do
+                        L(("    %s = %s"):format(tostring(k), ser(v)))
+                    end
+                end
+            else
+                L(("❌ %s พัง: %s"):format(n, tostring(res)))
+            end
+        else
+            L("(ไม่เจอ " .. n .. ")")
+        end
+    end
+    L("→ ดูราคา/ของในร้าน แล้วค่อยตัดสินใจว่าจะให้บอทซื้อ+ใช้อัตโนมัติไหม")
+end
+
+local askB   = hbtn("ถามร้านเรดาร์", 8, 104, Color3.fromRGB(120, 60, 140))
+askB.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        L("")
+        local ok, err = pcall(askShops)
+        if not ok then L("💥 ERROR: " .. tostring(err)) end
+    end)
+end)
+
+local dumpB  = hbtn("ดูของ/สถิติ", 116, 100, Color3.fromRGB(40, 130, 70))
+local clearB = hbtn("CLEAR", 220, 66, Color3.fromRGB(90, 60, 30))
+local copyB  = hbtn("COPY", 290, 66)
+local hideB  = hbtn("ซ่อน", 360, 56, Color3.fromRGB(50, 50, 70))
+local closeB = hbtn("✕", 420, 34, Color3.fromRGB(150, 40, 40))
 
 dumpB.MouseButton1Click:Connect(function()
     task.spawn(function()
