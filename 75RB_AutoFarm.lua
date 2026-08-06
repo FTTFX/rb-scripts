@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.8: ใช้ LoS ตัดสินใจแทนเดา — LoS=true (ก้อนโล่ง) = หยิบอย่างเดียว ไม่ฟันขวาน ข้ามไว
+--       LoS=false (ฝังดิน) = ลองหยิบแค่ 3 มุม ไม่เข้าก็ไปฟันขวานเลย ไม่วนครบ 14 มุม
 -- v3.7: ดินบัง = กดไม่ได้! (prompt บางก้อน RequiresLineOfSight=true) → ยิง ray เช็คก่อนทุกมุม
 --       มุมไหนโดนบังข้ามทันที + เพิ่ม 4 มุม "เฉียงบน" (มองข้ามดินได้) + log LoS ของก้อน
 -- v3.6: (PickSpy) "ยิงตรงแบบ 74" ใช้ได้จริง! ยิง CrystalHoldComplete เฉยๆ ของเข้าใน 0.3 วิ
@@ -67,7 +69,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.7"
+local V = "3.8"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -826,7 +828,13 @@ function tryPick(c, kg0)
         LG("  ❌ ฟันไม่แตก")
         return false
     end
+    -- v3.8: LoS=false + Max ปกติ → ลองหยิบเร็วๆ แค่ 3 มุมพอ ไม่เข้าก็ไปขวานเลย (ไม่วนครบ 14 มุม)
     local list = posList(c)
+    if pp0 and not pp0.RequiresLineOfSight then
+        local short = {}
+        for i = 1, 3 do short[i] = list[i] end
+        list = short
+    end
     -- 1) มุมที่เคยเข้า ลองก่อน (เร็ว)
     if WIN_POS then
         for _, e in ipairs(list) do
@@ -854,8 +862,14 @@ function tryPick(c, kg0)
             if attempt(c, kg0, e[1], e[2]) then return true end
         end
     end
-    -- v2.0: กด prompt ไม่เข้า → ลองฟันขวาน (ก้อนเล็กแพงๆ ต้องขุด ไม่ใช่หยิบ)
-    LG(("  ⚠ วนครบ %d มุมไม่เข้า → ลองฟันขวาน"):format(#list))
+    -- v3.8: ใช้ LoS ตัดสินใจแทนการเดา
+    --   LoS=true  = ก้อนโล่ง (ต้องมองเห็นถึงกดได้) → หยิบอย่างเดียว ไม่ต้องฟันขวาน = ไว
+    --   LoS=false = ก้อนฝังในดิน (มองไม่เห็นก็กดได้) → ต้องทุบดินด้วยขวาน
+    if pp0 and pp0.RequiresLineOfSight then
+        LG("  ⏭ LoS=true (ก้อนโล่ง) — ไม่ต้องขวาน ข้ามไปก้อนถัดไปเลย")
+        return collectDropped(cpos, kg0)
+    end
+    LG(("  ⛏ วนครบ %d มุมไม่เข้า | LoS=false (ฝังดิน) → ฟันขวาน"):format(#list))
     if c.Parent and mineIt(c, kg0) then return true end
     -- v2.2: ขุดแตกแล้วของร่วง (ลงถ้ำ) → ตามเก็บก้อนที่ตกแถวนั้น
     if collectDropped(cpos, kg0) then return true end
