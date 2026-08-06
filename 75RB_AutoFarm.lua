@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.8: แก้ 2 บั๊ก — (ก) mineIt เรียก collectDropped ที่ประกาศทีหลัง = 💥 ERROR บรรทัด 880
+--       (ข) ก้อนโดนคนอื่นเก็บตัดหน้าระหว่างบิน → Position เพี้ยนเป็นล้าน ("ห่าง 1000296") ไล่ต่อไม่จบ
 -- v4.7: SCAN บอกรายก้อน — ไล่ดู 5 ก้อนใกล้สุด บอกทีละก้อนว่าผ่านหรือตกเพราะอะไร
 --       (รวมถึง "พักโทษ" จาก FAILED ที่มองไม่เห็นมาก่อน)
 -- v4.6: ปุ่ม "เก็บหมด (T1+)" ผ่อนตัวกรองรวดเดียว + ช่องกรอกพิมพ์ผิดคืนค่าเดิม (ไม่โชว์ "?")
@@ -86,7 +88,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.7"
+local V = "4.8"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -840,6 +842,9 @@ end
 -- v2.0: โหมดฟันขวาน — ก้อนเล็กแต่แพง (T6 2-8kg) กด prompt ไม่เข้า ต้อง "ขุด" หลายทีจริงๆ
 -- (ตรงกับ CrystalMineFX("hit", part, progress...) ที่เจอตอนสปาย)
 -- ถือขวาน → หันกล้องใส่ก้อน → Tool:Activate() รัวๆ → เช็คน้ำหนัก
+-- v4.8: ประกาศล่วงหน้า — mineIt เรียก collectDropped ที่อยู่ข้างล่าง (เดิม nil = 💥 ERROR)
+local collectDropped
+
 local function equipPick()
     local char = LP.Character
     if not char then return nil end
@@ -897,7 +902,7 @@ end
 
 -- v2.2: ขุดแตกแล้วของ "ตกพื้น" (ร่วงลงถ้ำ) — ตามไปเก็บก้อนที่ตกแถวนั้น
 -- ก้อนตก = อยู่ใน DroppedCrystals หรือมี attr DroppedByUserId (มี prompt Action='Mine'/'Pickup')
-local function collectDropped(near, kg0)
+function collectDropped(near, kg0)
     local found = {}
     for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("BasePart") and d:GetAttribute("CrystalName")
@@ -1171,9 +1176,21 @@ local function farmLoop()
                 while _G.AF75_RUN and os.clock() - tA < 5 do
                     r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                     if not r then break end
+                    -- v4.8: ก้อนหายระหว่างบิน (คนอื่นเก็บตัดหน้า) → Position เพี้ยนเป็นล้าน เลิกไล่
+                    if not c.Parent then
+                        LG("  ↩ ก้อนหายระหว่างบิน (โดนตัดหน้า) — เปลี่ยนเป้า")
+                        break
+                    end
                     if (r.Position - dest).Magnitude <= 5 then break end
                     TARGET_POS = dest    -- ตอกซ้ำ เผื่อโดนสคริปต์อื่น/เกมดึงกลับ
                     task.wait(0.1)
+                end
+                if not c.Parent then       -- v4.8: ก้อนหายแล้ว ข้ามไปก้อนถัดไปเลย
+                    task.wait(0.3)
+                    if picked(kg0) then statPick += 1; statVal += v end
+                    updStat()
+                    task.wait(0.2)
+                    continue
                 end
                 local off = r and (r.Position - dest).Magnitude or -1
                 if off > 5 then
