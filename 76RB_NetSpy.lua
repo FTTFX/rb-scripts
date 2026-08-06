@@ -1,11 +1,15 @@
--- 76RB_NetSpy.lua v1.1 — สปายเกมทันคูน เบซิก (Tycoon Basic)
--- v1.0 พิสูจน์แล้ว: เลขลอยไม่ได้มาจากอาคาร แต่มาจาก WS.NpcCaptureCloud.RootPart.RewardText (จับ NPC ได้เงิน)
---   ค่าเงินไม่คงที่ (322-1095) → v1.1 ขุดต่อ 3 จุด:
---   1) กันซ้ำ popup (เดิม log 2-3 บรรทัดต่อ 1 ป้ายเพราะ Added+TextChanged ซ้อนกัน)
---   2) ดัก "ผลลัพธ์" (return value) ของ InvokeServer ด้วย ไม่ใช่แค่ args ที่ยิงไป
---   3) เฝ้า WS.NpcCaptureCloud ตรงๆ — log ทุก NPC/ลูกที่ถูกเพิ่ม พร้อม attribute ทั้งหมด (หา field มูลค่า/rarity)
--- เป้าหมาย: หาสูตรว่ามูลค่าต่อ NPC ขึ้นกับอะไร (ชนิด NPC? UpgradeLevel? สุ่ม?)
--- วิธีใช้: รัน → ไปจับ NPC ที่ NpcCaptureCloud 5-6 ตัว → ดู log ว่า [CLOUD]/[POPUP]/[STAT] ตรงกันไหม
+-- 76RB_NetSpy.lua v1.2 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- v1.1 พิสูจน์แล้ว: NpcCaptureCloud มีลูกแค่ "RootPart" ตัวเดียว (ไม่ใช่ที่เก็บ NPC จริง)
+--   → มันคือ "จุดปักป้ายลอยตัวเลข" ที่ใช้ร่วมกันเฉยๆ ไม่ใช่ folder เก็บ NPC ที่ถูกจับ
+--   → ค่าเงินแต่ละครั้งไม่คงที่ (144-4443) เป็นกลุ่มขั้น (เล็ก/กลาง/ใหญ่/มหาศาล) คล้ายระบบ rarity
+--   → STAT บางครั้งกระโดดเท่ากับ "ผลรวม" ของ popup ที่เด้งพร้อมกันหลายอัน (เช่น 1235+4360=5595) = ยืนยันว่า
+--     popup = มูลค่าจริงต่อ NPC 1 ตัว ไม่ใช่ของปลอม/สุ่มแสดงผล
+-- v1.2 ขุดหา "ตัว NPC จริง" ที่ถูกจับ (ต้องอยู่ที่อื่นในเกม ไม่ใช่ใต้ NpcCaptureCloud):
+--   1) dump workspace:GetChildren() ตอนโหลด — หา folder ที่น่าจะเก็บ NPC (Npcs/Customers/Enemies/...)
+--   2) เฝ้า DescendantRemoving ทั้ง workspace — ตอน NPC ถูกจับ โมเดลควรหายไปจาก workspace
+--      กรองเฉพาะ Model ที่มี Humanoid หรือชื่อ/attribute ดูเป็น NPC แล้ว dump attribute ก่อนหาย (หา field ค่า/tier)
+--   3) ดัก ProximityPromptService.PromptTriggered เผื่อการจับใช้ปุ่ม E ไม่ใช่ touch ล้วน
+-- วิธีใช้: รัน → ไปจับ NPC 5-6 ตัว → ดู [NPC-] (ก่อนหาย) เทียบกับ [POPUP]/[STAT] ว่า field ไหนตรงกับมูลค่า
 --         → กด LIST ดู remote เงิน → COPY ส่งผลมา
 -- ปุ่ม: LIST | CLEAR | COPY | PAUSE | ✕
 if _G.NSPY76_GUI then pcall(function() _G.NSPY76_GUI:Destroy() end) end
@@ -282,6 +286,47 @@ local function watchCaptureCloud()
     end))
 end
 
+-- ==================== 5) หา NPC จริง — dump workspace children + จับตอนหายไป (capture) ====================
+local function dumpWorkspaceTop()
+    local names = {}
+    for _, c in ipairs(workspace:GetChildren()) do
+        names[#names + 1] = c.Name .. "[" .. c.ClassName .. "]"
+    end
+    L("[WS-TOP] " .. table.concat(names, ", "))
+end
+
+local NPC_KEY = { "npc", "customer", "visitor", "enemy", "mob", "pet", "creature", "zombie", "monster" }
+local function looksLikeNpcName(name)
+    local l = name:lower()
+    for _, k in ipairs(NPC_KEY) do
+        if l:find(k, 1, true) then return true end
+    end
+    return false
+end
+
+local function watchNpcRemoval()
+    table.insert(_G.NSPY76_CONNS, workspace.DescendantRemoving:Connect(function(inst)
+        if PAUSED then return end
+        if not inst:IsA("Model") then return end
+        local hum = inst:FindFirstChildOfClass("Humanoid")
+        if not hum and not looksLikeNpcName(inst.Name) then return end
+        L(("[NPC-หาย] %s attr={%s}"):format(inst.Name, dumpAttrs(inst)))
+    end))
+    L("[SETUP] ดักโมเดล NPC ที่หายไปจาก workspace (สงสัยว่า=ถูกจับ)")
+end
+
+-- ==================== 6) ดัก ProximityPrompt (เผื่อการจับใช้ปุ่ม E) ====================
+local function watchPrompts()
+    local PPS = game:GetService("ProximityPromptService")
+    table.insert(_G.NSPY76_CONNS, PPS.PromptTriggered:Connect(function(pp, plr)
+        if plr ~= LP or PAUSED then return end
+        local holder = pp.Parent
+        L(("[PROMPT] '%s' บน %s attr={%s}"):format(
+            pp.ActionText, holder and holder.Name or "?", holder and dumpAttrs(holder) or ""))
+    end))
+    L("[SETUP] ดัก ProximityPrompt ที่กด")
+end
+
 -- ==================== Buttons ====================
 listB.MouseButton1Click:Connect(listRemotes)
 clearB.MouseButton1Click:Connect(function() OUT = {}; redraw() end)
@@ -311,7 +356,10 @@ scanLeaderstats()
 watchContainer(workspace, "Workspace")
 watchContainer(LP:WaitForChild("PlayerGui"), "PlayerGui")
 watchCaptureCloud()
+dumpWorkspaceTop()
+watchNpcRemoval()
+watchPrompts()
 
-L("[NetSpy76 v1.1] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
-L("→ ไปจับ NPC ที่ NpcCaptureCloud 5-6 ตัว → ดู [CLOUD]/[POPUP]/[STAT] ตรงกันไหม → กด LIST ดู remote → COPY ส่งผล")
+L("[NetSpy76 v1.2] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
+L("→ ไปจับ NPC 5-6 ตัว → เทียบ [NPC-หาย]/[PROMPT] กับ [POPUP]/[STAT] → กด LIST ดู remote → COPY ส่งผล")
 warn("[NetSpy76] loaded")
