@@ -1,4 +1,7 @@
--- 76RB_NetSpy.lua v1.3 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- 76RB_NetSpy.lua v1.4 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- v1.3 พิสูจน์แล้ว: โมเดลมอนสเตอร์ (PapaFlame21 ฯลฯ) ไม่มี Attribute เลยสักตัว
+--   → v1.4 ไล่ดู "ลูก" ของโมเดลมอนสเตอร์ด้วย (ValueBase/Config/attribute ที่ซ่อนอยู่ในลูก) — ดู [MONSTER-ใน]
+--   → แนะนำ: เปิดเมนูอัปเกรด/ข้อมูลมอนสเตอร์ในเกมระหว่าง spy ทำงาน ให้ remote ข้อมูลจริงถูกยิงออกมา (ดู [REMOTE])
 -- v1.2 พิสูจน์แล้ว: Npc_* ที่ "หาย" ไม่ใช่ถูกจับ — เป็น NPC ผู้เยี่ยมชมเดินเพ่นพ่านทั่วเกาะ (ทุกฐาน ทุกคน)
 --   ถูกสร้างใหม่ทุก ~1.45s ตาม pathfinding (ลบเก่า+สร้างใหม่ทุกก้าว ไม่เกี่ยวกับเงิน)
 --   รายได้จริงน่าจะมาจาก "มอนสเตอร์" ที่วางในฐาน (ชื่อแปลกๆ เช่น PapaFlame21, Bigkun15z) จับ NPC ที่เดินผ่านเอง
@@ -345,14 +348,40 @@ local function isSkippable(name)
     return false
 end
 
+-- ไล่ลูกโมเดลหา ValueBase (NumberValue/StringValue/...) + folder ที่ดูเป็น config/stat + attribute ที่ซ่อนอยู่ในลูก
+local function scanInternals(m)
+    local lines = {}
+    for _, d in ipairs(m:GetDescendants()) do
+        local isValue = d:IsA("ValueBase")
+        local hasAttr = next(d:GetAttributes()) ~= nil
+        local looksConfig = d.Name:lower():find("config") or d.Name:lower():find("stat")
+            or d.Name:lower():find("data") or d.Name:lower():find("level") or d.Name:lower():find("speed")
+            or d.Name:lower():find("rate") or d.Name:lower():find("cooldown")
+        if isValue or hasAttr or looksConfig then
+            local v = isValue and (" =" .. tostring(d.Value)) or ""
+            local a = hasAttr and (" attr={" .. dumpAttrs(d) .. "}") or ""
+            lines[#lines + 1] = d.Name .. "[" .. d.ClassName .. "]" .. v .. a
+        end
+        if #lines >= 40 then lines[#lines + 1] = "...(ตัดที่ 40)" break end
+    end
+    return #lines > 0 and table.concat(lines, " | ") or "(ไม่พบ Value/Config/attribute ในลูกเลย)"
+end
+
 local watchedMonster = {}
 local function watchMonster(m)
     if watchedMonster[m] then return end
     watchedMonster[m] = true
     L(("[MONSTER] %s [%s] attr={%s}"):format(m.Name, m.ClassName, dumpAttrs(m)))
+    L(("[MONSTER-ใน] %s ลูก: %s"):format(m.Name, scanInternals(m)))
     table.insert(_G.NSPY76_CONNS, m.AttributeChanged:Connect(function(attr)
         if PAUSED then return end
         L(("[MONSTER] %s.%s → %s"):format(m.Name, attr, ser(m:GetAttribute(attr))))
+    end))
+    table.insert(_G.NSPY76_CONNS, m.DescendantAdded:Connect(function(d)
+        if PAUSED then return end
+        if d:IsA("ValueBase") then
+            L(("[MONSTER-ใน] %s +เพิ่ม %s[%s]=%s"):format(m.Name, d.Name, d.ClassName, tostring(d.Value)))
+        end
     end))
 end
 
@@ -408,6 +437,6 @@ watchNpcRemoval()
 watchPrompts()
 scanMonsters()
 
-L("[NetSpy76 v1.3] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
-L("→ ปล่อยไว้เฉยๆ 20-30 วิ (ไม่ต้องกดอะไร) → ดู [MONSTER] เปลี่ยนพร้อม [POPUP]/[STAT] ไหม → กด LIST → COPY ส่งผล")
+L("[NetSpy76 v1.4] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
+L("→ เปิดเมนูอัปเกรด/มอนสเตอร์ในเกมดู 5-10 วิ + ปล่อยจับ NPC ไปด้วย → ดู [MONSTER-ใน]/[REMOTE] → กด LIST → COPY ส่งผล")
 warn("[NetSpy76] loaded")
