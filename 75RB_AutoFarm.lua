@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.7: ดินบัง = กดไม่ได้! (prompt บางก้อน RequiresLineOfSight=true) → ยิง ray เช็คก่อนทุกมุม
+--       มุมไหนโดนบังข้ามทันที + เพิ่ม 4 มุม "เฉียงบน" (มองข้ามดินได้) + log LoS ของก้อน
 -- v3.6: (PickSpy) "ยิงตรงแบบ 74" ใช้ได้จริง! ยิง CrystalHoldComplete เฉยๆ ของเข้าใน 0.3 วิ
 --       ขอแค่อยู่ในระยะ (4-13 studs) → ทุกมุมลองยิงตรงก่อน ไม่เข้าค่อยกดค้าง (เร็วขึ้น ~4 เท่า)
 -- v3.5: v3.4 ยิง remote รัวเกิน (ทุกก้อน x3 รอบ) → server เมินทุกคำสั่ง เก็บไม่เข้าเลย!
@@ -65,7 +67,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.6"
+local V = "3.7"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -564,6 +566,11 @@ local function posList(c)
     end
     out[#out + 1] = { "ต่ำกว่า 3", p + Vector3.new(0, -3, -d) }
     out[#out + 1] = { "เหนือ 6", p + Vector3.new(0, 6, 0) }
+    -- v3.7: มุมเฉียงจากบน — ก้อนที่มีดินบังรอบข้าง มักมองจากบนลงมาได้
+    out[#out + 1] = { "เฉียงบน N", p + Vector3.new(0, 5, -d * 0.7) }
+    out[#out + 1] = { "เฉียงบน E", p + Vector3.new(d * 0.7, 5, 0) }
+    out[#out + 1] = { "เฉียงบน S", p + Vector3.new(0, 5, d * 0.7) }
+    out[#out + 1] = { "เฉียงบน W", p + Vector3.new(-d * 0.7, 5, 0) }
     return out
 end
 -- v2.3: "กดค้าง" คือตัวกินเวลาหลัก (T6 Hold=5 วิ!) — กดค้างแบบ "เช็คระหว่างทาง"
@@ -602,7 +609,26 @@ end
 -- v1.5: ที่มุมนี้ "กดติดไหม" → ติดก็กดจริง (รอผล) | ไม่ติดก็รีเทิร์นไว ไปมุมถัดไป
 -- v2.1: ทุกมุมที่วน — หันหน้าใส่แร่ + ฟันขวานไปด้วยระหว่างรอปุ่มติด (ทำสองอย่างพร้อมกัน เร็วขึ้น)
 local TM = {}   -- v2.3: จับเวลาสะสมรายขั้น (สปายในตัว — ดูว่าช้าตรงไหน)
+-- v3.7: ก้อนที่ prompt ตั้ง RequiresLineOfSight=true → มีหิน/ดินบัง = กดไม่ได้เลย
+-- ยิง ray จากจุดที่จะไปยืน ไปหาก้อน ถ้าโดนอะไรขวางก่อนถึง = ข้ามมุมนี้ทันที (ไม่เสียเวลา)
+local function seesCrystal(fromPos, c)
+    local pp = c:FindFirstChildOfClass("ProximityPrompt")
+    if not pp or not pp.RequiresLineOfSight then return true end   -- ไม่ต้องมองเห็นก็ได้
+    local par = RaycastParams.new()
+    par.FilterType = Enum.RaycastFilterType.Exclude
+    par.FilterDescendantsInstances = { LP.Character, c }
+    par.IgnoreWater = true
+    local dir = c.Position - fromPos
+    local hit = workspace:Raycast(fromPos, dir, par)
+    return hit == nil
+end
+
 local function attempt(c, kg0, pname, ppos)
+    -- v3.7: มุมนี้มองเห็นก้อนไหม? โดนดินบัง = ข้ามเลย
+    if not seesCrystal(ppos, c) then
+        TM.blocked = (TM.blocked or 0) + 1
+        return false
+    end
     TARGET_POS = ppos
     TARGET_LOOK = c.Position          -- หันหน้าใส่แร่ตลอด (ขวานถึงจะโดน)
     local cam = workspace.CurrentCamera
@@ -918,10 +944,11 @@ local function farmLoop()
                 local kg0 = cur   -- น้ำหนักก่อนเก็บ — ใช้ยืนยันว่าของเข้ากระเป๋าจริง
                 local myp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                 local ppx = c:FindFirstChildOfClass("ProximityPrompt")
-                LG(("🎯 %s %s %.1fkg | ห่าง %dm | %s Max=%d | กระเป๋า %.1f"):format(
+                LG(("🎯 %s %s %.1fkg | ห่าง %dm | %s Max=%d LoS=%s | กระเป๋า %.1f"):format(
                     nm, fmtMoney(v), c:GetAttribute("WeightKg") or 0,
                     myp and math.floor((c.Position - myp.Position).Magnitude) or -1,
-                    ppx and ppx.ActionText or "?", ppx and ppx.MaxActivationDistance or -1, kg0))
+                    ppx and ppx.ActionText or "?", ppx and ppx.MaxActivationDistance or -1,
+                    ppx and tostring(ppx.RequiresLineOfSight) or "?", kg0))
                 status(("⛏ ไปหา %s %s"):format(nm, fmtMoney(v)))
                 setNoFall(true)
                 local dest = c.Position + Vector3.new(0, 6, 0)
@@ -973,8 +1000,8 @@ local function farmLoop()
                     statPick += 1
                     statVal += v
                     -- v2.3: สรุปเวลาที่เสียไปแต่ละขั้น (สปายในตัว — ช้าตรงไหนเห็นเลย)
-                    LG(("  ⏱ รวม %.1f วิ | หามุม %.1f | กดค้าง %.1f | ขวาน %.1f"):format(
-                        os.clock() - tA, TM.scan or 0, TM.hold or 0, TM.mine or 0))
+                    LG(("  ⏱ รวม %.1f วิ | หามุม %.1f | กดค้าง %.1f | ขวาน %.1f | มุมโดนบัง %d"):format(
+                        os.clock() - tA, TM.scan or 0, TM.hold or 0, TM.mine or 0, TM.blocked or 0))
                     TM = {}
                     task.wait(0.25)   -- ค้างอีกนิด ให้ FX/ของเข้าครบก่อนวาปหนี
                 else
