@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.2: ปุ่มเลือกโหมดจัดอันดับเป้า — "แพงสุด" (เดิม) หรือ "คุ้มสุด" (ราคา ÷ ระยะทาง
+--       ไม่วิ่งข้ามแมพ 900m เพื่อก้อนเดียว ถ้าใกล้ๆ มีก้อนราคาใกล้เคียง)
 -- v4.1: (LoadSpy) Max=0 ไม่ใช่ "ฝังดิน" แต่คือ "เรายังไม่เข้าใกล้"! ทั้งแมพ 986 ก้อน Max>0 แค่ 1
 --       เกมติดอาวุธ prompt เฉพาะก้อนใกล้ตัว → วาปถึงแล้วรอสูงสุด 3 วิให้ติด ค่อยกด
 --       (v2.6-v4.0 ตีความผิด เลยส่งก้อนดีๆ ไปฟันขวานเปล่า)
@@ -77,7 +79,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.1"
+local V = "4.2"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -172,8 +174,11 @@ local function getCrystals()
     return out
 end
 
+-- v4.2: โหมดจัดอันดับ — "แพงสุด" (เดิม) | "คุ้มสุด" (ราคาหารระยะทาง — ไม่วิ่งข้ามแมพเพื่อก้อนเดียว)
+local PICK_MODE = "value"       -- "value" = แพงสุด | "smart" = คุ้มสุดต่อระยะทาง
 local function bestCrystal(maxKg)
-    local best, bv
+    local mp = myPos()
+    local best, bscore
     for _, c in ipairs(getCrystals()) do
         local t = c:GetAttribute("Tier")
         if t and t >= MIN_TIER and (not FAILED[c] or os.clock() > FAILED[c]) then
@@ -183,7 +188,13 @@ local function bestCrystal(maxKg)
             local okKg = kg >= KG_MIN and kg <= KG_MAX
             local okVal = VAL_MIN > 0 and v >= VAL_MIN
             if kg <= maxKg and (okKg or okVal) then
-                if not bv or v > bv then best, bv = c, v end
+                local score = v
+                if PICK_MODE == "smart" and mp then
+                    -- คุ้มสุด = ราคา / (เวลาเดินทางโดยประมาณ) — ก้อนใกล้ได้แต้มมากกว่า
+                    local d = (c.Position - mp).Magnitude
+                    score = v / (1 + d / 120)     -- ไกล 120m = แต้มครึ่งเดียว
+                end
+                if not bscore or score > bscore then best, bscore = c, score end
             end
         end
     end
@@ -325,7 +336,7 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.AF75_GUI = gui
 
-local FULL_H, MIN_H = 468, 32
+local FULL_H, MIN_H = 496, 32
 local panel = Instance.new("Frame", gui)
 panel.Size = UDim2.new(0, 210, 0, FULL_H)
 panel.Position = UDim2.new(0.5, -105, 0, 20)
@@ -369,6 +380,19 @@ Instance.new("UICorner", tierB).CornerRadius = UDim.new(0, 5)
 tierB.MouseButton1Click:Connect(function()
     MIN_TIER = MIN_TIER % 6 + 1
     tierB.Text = "เทียร์ ≥ T" .. MIN_TIER
+end)
+
+-- v4.2: ปุ่มสลับโหมดจัดอันดับเป้าหมาย
+local modeB = Instance.new("TextButton", panel)
+modeB.Size = UDim2.new(0, 198, 0, 24); modeB.Position = UDim2.new(0, 6, 0, 176)
+modeB.Text = "เลือกเป้า: แพงสุด"; modeB.Font = Enum.Font.GothamBold; modeB.TextSize = 12
+modeB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); modeB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", modeB).CornerRadius = UDim.new(0, 5)
+modeB.MouseButton1Click:Connect(function()
+    PICK_MODE = (PICK_MODE == "value") and "smart" or "value"
+    modeB.Text = (PICK_MODE == "value") and "เลือกเป้า: แพงสุด" or "เลือกเป้า: คุ้มสุด (÷ระยะ)"
+    modeB.BackgroundColor3 = (PICK_MODE == "value")
+        and Color3.fromRGB(40, 90, 150) or Color3.fromRGB(40, 130, 70)
 end)
 
 -- v3.1: ขายที่ % — ปรับทีละ 5% ด้วยปุ่ม −/+ (เดิมกดวนทีละ 15% ข้ามค่าที่อยากได้)
@@ -464,7 +488,7 @@ hintL.TextXAlignment = Enum.TextXAlignment.Left
 updKgL()
 
 local statusL = Instance.new("TextLabel", panel)
-statusL.Size = UDim2.new(1, -12, 0, 34); statusL.Position = UDim2.new(0, 6, 0, 178)
+statusL.Size = UDim2.new(1, -12, 0, 34); statusL.Position = UDim2.new(0, 6, 0, 206)
 statusL.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 statusL.Text = " พร้อม"
 statusL.Font = Enum.Font.Gotham; statusL.TextSize = 11
@@ -478,7 +502,7 @@ local function status(s) statusL.Text = " " .. s end
 local LOG = {}
 local T0 = os.clock()
 local logBox = Instance.new("TextLabel", panel)
-logBox.Size = UDim2.new(1, -12, 0, 120); logBox.Position = UDim2.new(0, 6, 0, 314)
+logBox.Size = UDim2.new(1, -12, 0, 120); logBox.Position = UDim2.new(0, 6, 0, 342)
 logBox.BackgroundColor3 = Color3.fromRGB(6, 6, 10)
 logBox.Text = ""
 logBox.Font = Enum.Font.Code; logBox.TextSize = 10
@@ -497,7 +521,7 @@ local function LG(s)
 end
 
 local copyB = Instance.new("TextButton", panel)
-copyB.Size = UDim2.new(0, 96, 0, 24); copyB.Position = UDim2.new(0, 6, 0, 438)
+copyB.Size = UDim2.new(0, 96, 0, 24); copyB.Position = UDim2.new(0, 6, 0, 466)
 copyB.Text = "COPY log"; copyB.Font = Enum.Font.GothamBold; copyB.TextSize = 12
 copyB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); copyB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", copyB).CornerRadius = UDim.new(0, 5)
@@ -512,14 +536,14 @@ copyB.MouseButton1Click:Connect(function()
 end)
 
 local clrB = Instance.new("TextButton", panel)
-clrB.Size = UDim2.new(0, 96, 0, 24); clrB.Position = UDim2.new(0, 108, 0, 438)
+clrB.Size = UDim2.new(0, 96, 0, 24); clrB.Position = UDim2.new(0, 108, 0, 466)
 clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 12
 clrB.BackgroundColor3 = Color3.fromRGB(90, 60, 30); clrB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", clrB).CornerRadius = UDim.new(0, 5)
 clrB.MouseButton1Click:Connect(function() LOG = {}; logBox.Text = "" end)
 
 local statL = Instance.new("TextLabel", panel)
-statL.Size = UDim2.new(1, -12, 0, 92); statL.Position = UDim2.new(0, 6, 0, 218)
+statL.Size = UDim2.new(1, -12, 0, 92); statL.Position = UDim2.new(0, 6, 0, 246)
 statL.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 statL.Font = Enum.Font.Code; statL.TextSize = 11
 statL.TextColor3 = Color3.fromRGB(190, 220, 190)
