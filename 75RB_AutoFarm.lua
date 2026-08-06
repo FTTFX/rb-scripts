@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.3: ปุ่ม "SCAN เช็ค" — หาก้อนไม่เจอ? บอกเลยว่าตกตัวกรองขั้นไหน (เทียร์/น้ำหนัก/ราคา/กระเป๋า)
 -- v4.2: ปุ่มเลือกโหมดจัดอันดับเป้า — "แพงสุด" (เดิม) หรือ "คุ้มสุด" (ราคา ÷ ระยะทาง
 --       ไม่วิ่งข้ามแมพ 900m เพื่อก้อนเดียว ถ้าใกล้ๆ มีก้อนราคาใกล้เคียง)
 -- v4.1: (LoadSpy) Max=0 ไม่ใช่ "ฝังดิน" แต่คือ "เรายังไม่เข้าใกล้"! ทั้งแมพ 986 ก้อน Max>0 แค่ 1
@@ -79,7 +80,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.2"
+local V = "4.3"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -382,15 +383,69 @@ tierB.MouseButton1Click:Connect(function()
     tierB.Text = "เทียร์ ≥ T" .. MIN_TIER
 end)
 
+-- v4.3: ปุ่ม SCAN — บอกว่าก้อนหายไปตกตัวกรองขั้นไหน (แก้อาการ "หาไม่เจอเลย")
+local scanB = Instance.new("TextButton", panel)
+scanB.Size = UDim2.new(0, 96, 0, 24); scanB.Position = UDim2.new(0, 6, 0, 176)
+scanB.Text = "SCAN เช็ค"; scanB.Font = Enum.Font.GothamBold; scanB.TextSize = 12
+scanB.BackgroundColor3 = Color3.fromRGB(120, 60, 140); scanB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", scanB).CornerRadius = UDim.new(0, 5)
+scanB.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        local mp = myPos()
+        local raw, plots, noPP, byTier, byKgVal, byBag, pass = 0, 0, 0, 0, 0, 0, 0
+        local cur, cap = bagInfo()
+        local room = cap - cur
+        local nearest, nd
+        for _, c in ipairs(workspace:GetDescendants()) do
+            if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier") then
+                raw += 1
+                if c:FindFirstAncestor("Plots") then plots += 1
+                else
+                    local pp = c:FindFirstChildOfClass("ProximityPrompt")
+                    if not (pp and pp.Enabled) then noPP += 1
+                    else
+                        local t = c:GetAttribute("Tier") or 0
+                        local kg = c:GetAttribute("WeightKg") or 0
+                        local v = c:GetAttribute("Value") or 0
+                        if t < MIN_TIER then byTier += 1
+                        elseif not ((kg >= KG_MIN and kg <= KG_MAX)
+                            or (VAL_MIN > 0 and v >= VAL_MIN)) then byKgVal += 1
+                        elseif kg > room then byBag += 1
+                        else
+                            pass += 1
+                            if mp then
+                                local d = (c.Position - mp).Magnitude
+                                if not nd or d < nd then nearest, nd = c, d end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        LG("🔍 ผลสแกน:")
+        LG(("   ก้อนในแมพทั้งหมด %d | บ้านเพื่อน %d | ไม่มี prompt %d"):format(raw, plots, noPP))
+        LG(("   ตกเพราะเทียร์ <T%d: %d | น้ำหนัก/ราคาไม่ผ่าน: %d | กระเป๋าไม่พอ: %d")
+            :format(MIN_TIER, byTier, byKgVal, byBag))
+        LG(("   ✅ ผ่านทุกด่าน %d ก้อน | ที่ว่างกระเป๋า %.0f kg"):format(pass, room))
+        if nearest then
+            LG(("   ใกล้สุด: %s %s %.1fkg @%dm"):format(
+                nearest:GetAttribute("CrystalName"), fmtMoney(nearest:GetAttribute("Value") or 0),
+                nearest:GetAttribute("WeightKg") or 0, math.floor(nd)))
+        elseif raw == 0 then
+            LG("   ⚠ ไม่เจอก้อนเลย — โซนนี้อาจยังโหลดไม่เสร็จ หรือไม่มีคริสตัล")
+        end
+    end)
+end)
+
 -- v4.2: ปุ่มสลับโหมดจัดอันดับเป้าหมาย
 local modeB = Instance.new("TextButton", panel)
-modeB.Size = UDim2.new(0, 198, 0, 24); modeB.Position = UDim2.new(0, 6, 0, 176)
-modeB.Text = "เลือกเป้า: แพงสุด"; modeB.Font = Enum.Font.GothamBold; modeB.TextSize = 12
+modeB.Size = UDim2.new(0, 98, 0, 24); modeB.Position = UDim2.new(0, 106, 0, 176)
+modeB.Text = "เป้า: แพงสุด"; modeB.Font = Enum.Font.GothamBold; modeB.TextSize = 12
 modeB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); modeB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", modeB).CornerRadius = UDim.new(0, 5)
 modeB.MouseButton1Click:Connect(function()
     PICK_MODE = (PICK_MODE == "value") and "smart" or "value"
-    modeB.Text = (PICK_MODE == "value") and "เลือกเป้า: แพงสุด" or "เลือกเป้า: คุ้มสุด (÷ระยะ)"
+    modeB.Text = (PICK_MODE == "value") and "เป้า: แพงสุด" or "เป้า: คุ้มสุด"
     modeB.BackgroundColor3 = (PICK_MODE == "value")
         and Color3.fromRGB(40, 90, 150) or Color3.fromRGB(40, 130, 70)
 end)
