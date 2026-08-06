@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.1: (LoadSpy) Max=0 ไม่ใช่ "ฝังดิน" แต่คือ "เรายังไม่เข้าใกล้"! ทั้งแมพ 986 ก้อน Max>0 แค่ 1
+--       เกมติดอาวุธ prompt เฉพาะก้อนใกล้ตัว → วาปถึงแล้วรอสูงสุด 3 วิให้ติด ค่อยกด
+--       (v2.6-v4.0 ตีความผิด เลยส่งก้อนดีๆ ไปฟันขวานเปล่า)
 -- v4.0: ไม่ใช่ throttle! log ขึ้น "ห่าง -1m / ไม่เจอขวาน" = ตัวละคร+กระเป๋ายังไม่โหลด
 --       (แถบ 2437/4937 ตอนเข้าเกม/วาร์ปโซน/ตายเกิดใหม่) → รอจนพร้อมจริงก่อนฟาร์ม
 --       + ตรวจตัวหายกลางคัน (ตาย) แล้วรอโหลดใหม่ ไม่ฟาร์มลมเปล่า
@@ -74,7 +77,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.0"
+local V = "4.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -644,7 +647,7 @@ local function attempt(c, kg0, pname, ppos)
     -- เฟสนี้ = "หยิบอย่างเดียว" ขวานเก็บไว้เป็นทางสุดท้ายเท่านั้น
     local t0 = os.clock()
     local ok = false
-    for _ = 1, 4 do
+    for _ = 1, 6 do        -- v4.1: รอ 0.6 วิ (prompt ต้องใช้เวลาติดอาวุธหลังเราวาปถึง)
         pcall(function() cam.CFrame = CFrame.lookAt(cam.CFrame.Position, c.Position) end)
         task.wait(0.1)
         if picked(kg0) then
@@ -820,19 +823,25 @@ function tryPick(c, kg0)
     -- วนหามุมเท่าไหร่ก็เสียเวลาเปล่า → ไปฟันขวานเลย
     -- v2.7: Max=0 เป็นค่า "ชั่วคราว" (ก้อนยังโหลดไม่เสร็จ/คนอื่นขุดอยู่) — รอ 1.5 วิเช็คซ้ำก่อน
     -- (log: Apexarch Max=0 เสียเวลา 30 วิ แต่ 1 นาทีถัดมาก้อนเดียวกันกดเข้าใน 2.1 วิ)
+    -- v4.1 (LoadSpy): Max=0 = "เรายังไม่เข้าใกล้" ไม่ใช่ฝังดิน! (ทั้งแมพ 986 ก้อน Max>0 แค่ 1)
+    -- เกมติดอาวุธ prompt (ตั้ง Max 9-15) เฉพาะก้อนที่เราเข้าไปใกล้ → วาปถึงแล้วต้อง "รอมันติด"
     local pp0 = c:FindFirstChildOfClass("ProximityPrompt")
     if pp0 and pp0.MaxActivationDistance <= 0 then
-        for _ = 1, 10 do
+        local tw = os.clock()
+        for _ = 1, 20 do             -- รอสูงสุด 3 วิ ให้ prompt ติดอาวุธ
             task.wait(0.15)
             if pp0.MaxActivationDistance > 0 then break end
         end
-    end
-    if pp0 and pp0.MaxActivationDistance <= 0 then
-        LG("  ⛏ ก้อนนี้ Max=0 (ปุ่มขึ้นไม่ได้) → ฟันขวานเลย")
-        if mineIt(c, kg0) then return true end
-        if collectDropped(cpos, kg0) then return true end
-        LG("  ❌ ฟันไม่แตก")
-        return false
+        if pp0.MaxActivationDistance > 0 then
+            LG(("  ⏱ prompt ติดอาวุธใน %.1f วิ (Max=%d)"):format(
+                os.clock() - tw, pp0.MaxActivationDistance))
+        else
+            LG("  ⛏ รอ 3 วิแล้ว Max ยัง 0 (ฝังดินจริง) → ฟันขวาน")
+            if mineIt(c, kg0) then return true end
+            if collectDropped(cpos, kg0) then return true end
+            LG("  ❌ ฟันไม่แตก")
+            return false
+        end
     end
     -- v3.8: LoS=false + Max ปกติ → ลองหยิบเร็วๆ แค่ 3 มุมพอ ไม่เข้าก็ไปขวานเลย (ไม่วนครบ 14 มุม)
     local list = posList(c)
@@ -900,6 +909,7 @@ local function waitReady()
         local ok = r and h and h.Health > 0 and bp and inv
             and (not loaded or loaded.Value ~= false or true)   -- loaded=false ตอนโหลด แต่บางทีค้าง
         -- เช็คว่าเกมยังโหลดก้อนอยู่ไหม (มีก้อนในแมพน้อยผิดปกติ = ยังโหลดไม่เสร็จ)
+        -- v4.1: เลิกเช็ค "ก้อนพร้อม" (Max>0 มีแค่ก้อนใกล้ตัวเป็นปกติ) — ดูจำนวนก้อนรวมพอ
         if ok and #getCrystals() < 20 then ok = false end
         if ok then
             if warned then LG("  ✅ โหลดเสร็จ — ฟาร์มต่อ") end
