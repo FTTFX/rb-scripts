@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.4: ระเบิดทำของตกทับกันเป็นสิบ แต่ปุ่ม E ขึ้นให้ก้อนเดียว เก็บไม่ทัน →
+--       ยิง remote CrystalDroppedPickup + CrystalHoldComplete ใส่ทุกก้อนรวดเดียว (ไม่ง้อปุ่ม)
+--       + เจอกองของตก ≥3 ชิ้นใกล้ตัว (รัศมี 250) กวาดก่อนไปหาก้อนไกล
 -- v3.3: ก้อนนึงกินเวลา 40 วิ! (ไล่กดค้างทุกมุม มุมละ 4.5 วิ) → เพดาน 12 วิ/ก้อน +
 --       ยอมกดค้างแค่ 2 ครั้ง ไม่เข้าก็ข้ามไปก้อนอื่นเลย
 -- v3.2: "ขายที่ %" ลงต่ำกว่า 10% ได้ (ต่ำกว่า 10 ปรับทีละ 1% ต่ำสุด 1%)
@@ -57,7 +60,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.3"
+local V = "3.4"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -65,6 +68,8 @@ local LP      = Players.LocalPlayer
 
 local Rem   = RS:FindFirstChild("Remotes")
 local pickR = Rem and Rem:FindFirstChild("CrystalHoldComplete")
+-- v3.4: ของที่ตกจากระเบิด (DroppedCrystals) มี remote เก็บของตัวเอง — ยิงตรงได้ ไม่ต้องกด E
+local dropR = Rem and Rem:FindFirstChild("CrystalDroppedPickup")
 local sellR = Rem and Rem:FindFirstChild("SellRequest")
 
 -- ==================== Config/State ====================
@@ -700,30 +705,51 @@ local function collectDropped(near, kg0)
         end
     end
     if #found == 0 then return false end
-    LG(("  📦 เจอก้อนตกพื้น %d ชิ้น — ตามเก็บ"):format(#found))
     table.sort(found, function(a, b)
         return (a.Position - near).Magnitude < (b.Position - near).Magnitude
     end)
-    for i = 1, math.min(4, #found) do
+    LG(("  📦 ของตกพื้น %d ชิ้น — กวาดเก็บ (ยิงตรง ไม่ง้อปุ่ม E)"):format(#found))
+    local n0 = bagCount()
+    -- v3.4: ระเบิดทำของตกทับกันเป็นสิบ ปุ่ม E ขึ้นให้ก้อนเดียว → ยิง remote ใส่ทีละก้อนแทน
+    -- ยืนกลางกอง แล้วยิง CrystalDroppedPickup + CrystalHoldComplete ให้ครบทุกก้อนรวดเดียว
+    TARGET_POS = near + Vector3.new(0, 3, 0)
+    TARGET_LOOK = near
+    task.wait(0.45)
+    for round = 1, 3 do
+        local left = 0
+        for _, dr in ipairs(found) do
+            if dr.Parent then
+                left += 1
+                if dropR then pcall(function() dropR:FireServer(dr) end) end
+                if pickR then pcall(function() pickR:FireServer(dr) end) end
+                task.wait(0.08)
+            end
+        end
+        if left == 0 then break end
+        task.wait(0.5)
+    end
+    local got = bagCount() - n0
+    if got > 0 then
+        LG(("  ✅ กวาดได้ %d ก้อน (ยิงตรง)"):format(got))
+        return true
+    end
+    -- ยิงตรงไม่เข้า → ถอยไปวิธีเดิม: เดินไปทีละก้อนแล้วกดค้าง
+    LG("  ↩ ยิงตรงไม่เข้า — ไล่เก็บทีละก้อนแทน")
+    for i = 1, math.min(6, #found) do
         local dr = found[i]
-        if not _G.AF75_RUN or not dr.Parent then break end
-        status("📦 เก็บของตก")
-        for _, dd in ipairs({ { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }) do
-            if not dr.Parent then break end
-            TARGET_POS = dr.Position + Vector3.new(dd[1] * 3, 0, dd[2] * 3)
+        if not _G.AF75_RUN then break end
+        if dr.Parent then
+            status("📦 เก็บของตก " .. i)
+            TARGET_POS = dr.Position + Vector3.new(0, 0, -3)
             TARGET_LOOK = dr.Position
-            for _ = 1, 4 do
-                task.wait(0.15)
-                if picked(kg0) then LG("  ✅ เก็บของตกได้") return true end
-                if promptReady(dr) then
-                    doWay(dr, "both", kg0)
-                    task.wait(0.6)
-                    if picked(kg0) then LG("  ✅ เก็บของตกได้") return true end
-                end
+            task.wait(0.4)
+            if promptReady(dr) then
+                doWay(dr, "both", kg0)
+                task.wait(0.4)
             end
         end
     end
-    return picked(kg0)
+    return bagCount() > n0 or picked(kg0)
 end
 
 function tryPick(c, kg0)
@@ -896,6 +922,24 @@ local function farmLoop()
                 task.wait(0.35)   -- ให้ตำแหน่งใหม่ replicate ถึง server
                 status(("⛏ ขุด %s %s"):format(nm, fmtMoney(v)))
                 if closeBlockPopup() then LG("  🪟 ปิดป๊อปอัปที่บังจอ") end
+                -- v3.4: มีกองของตก (จากระเบิด) อยู่ใกล้ๆ → กวาดก่อน คุ้มกว่าไปหาก้อนไกลๆ
+                local myp2 = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                if myp2 then
+                    local pile, pileCount = nil, 0
+                    for _, d in ipairs(workspace:GetDescendants()) do
+                        if d:IsA("BasePart") and d:GetAttribute("CrystalName")
+                            and (d:FindFirstAncestor("DroppedCrystals") or d:GetAttribute("DroppedByUserId"))
+                            and (d.Position - myp2.Position).Magnitude < 250 then
+                            pileCount += 1
+                            pile = pile or d.Position
+                        end
+                    end
+                    if pileCount >= 3 then
+                        LG(("  💣 เจอกองของตก %d ชิ้น — กวาดก่อน"):format(pileCount))
+                        markBase()
+                        collectDropped(pile, bagInfo())
+                    end
+                end
                 local got = tryPick(c, kg0)
                 if got then
                     statPick += 1
