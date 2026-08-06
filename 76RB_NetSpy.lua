@@ -1,4 +1,9 @@
--- 76RB_NetSpy.lua v1.4 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- 76RB_NetSpy.lua v1.5 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- v1.5: เป้าหมายเปลี่ยนเป็น "วัดผลจริง" ไม่ใช่หาสูตรจาก client (เพราะ v1.1-v1.4 พิสูจน์แล้วว่า
+--   ไม่มี attribute/remote ฝั่ง client เผยสูตรรายได้ตรงๆ) — เพิ่มปุ่ม MARK + [RATE] auto-report ทุก 5s
+--   วิธีวัด: ปล่อยนิ่งดู [RATE] baseline 30s → ซื้อ/อัปเกรดของ 1 อย่าง → กด MARK → รอ 30s → เทียบ [RATE]
+--   หมายเหตุ: ร้านอาคารโชว์ "ผู้เยี่ยมชม +X.X/นาที" (คาดว่า=อัตราสร้าง NPC), ร้านมอนสเตอร์โชว์ "xN.NN"
+--   (คาดว่า=ตัวคูณมูลค่า NPC ที่จับได้) — ทั้งคู่ยังไม่ยืนยันด้วย log จริง ต้องใช้ [RATE] เทียบก่อน-หลัง
 -- v1.3 พิสูจน์แล้ว: โมเดลมอนสเตอร์ (PapaFlame21 ฯลฯ) ไม่มี Attribute เลยสักตัว
 --   → v1.4 ไล่ดู "ลูก" ของโมเดลมอนสเตอร์ด้วย (ValueBase/Config/attribute ที่ซ่อนอยู่ในลูก) — ดู [MONSTER-ใน]
 --   → แนะนำ: เปิดเมนูอัปเกรด/ข้อมูลมอนสเตอร์ในเกมระหว่าง spy ทำงาน ให้ remote ข้อมูลจริงถูกยิงออกมา (ดู [REMOTE])
@@ -70,7 +75,8 @@ local listB  = hbtn("LIST", 8, 70, Color3.fromRGB(40, 130, 70))
 local clearB = hbtn("CLEAR", 84, 74, Color3.fromRGB(90, 60, 30))
 local copyB  = hbtn("COPY", 164, 70)
 local pauseB = hbtn("PAUSE", 240, 74, Color3.fromRGB(90, 90, 40))
-local closeB = hbtn("✕", 320, 34, Color3.fromRGB(150, 40, 40))
+local markB  = hbtn("MARK (เริ่มนับใหม่)", 320, 140, Color3.fromRGB(150, 100, 20))
+local closeB = hbtn("✕", 466, 34, Color3.fromRGB(150, 40, 40))
 
 -- ==================== serialize args ====================
 local function ser(v, depth)
@@ -157,6 +163,20 @@ end
 _G.NSPY76_LOG = L
 
 -- ==================== 2) leaderstats / เงินบนตัวผู้เล่น ====================
+-- ==================== RATE — วัดอัตรารายได้จริงต่อนาที (ไว้เทียบก่อน/หลังซื้อของ) ====================
+local rateSum, rateCount, rateStart = 0, 0, tick()
+local function markReset(reason)
+    rateSum, rateCount, rateStart = 0, 0, tick()
+    L("=== 🔖 MARK: " .. (reason or "เริ่มนับรายได้ใหม่") .. " ===")
+end
+local function rateReport()
+    local elapsed = tick() - rateStart
+    if elapsed < 1 then return end
+    local perMin = rateSum / elapsed * 60
+    L(("[RATE] %d ครั้ง / +$%d รวม / เฉลี่ย $%.0f ต่อครั้ง / ~$%.0f ต่อนาที (นับมา %.0fวิ)"):format(
+        rateCount, rateSum, rateCount > 0 and (rateSum / rateCount) or 0, perMin, elapsed))
+end
+
 -- ดักทุก NumberValue/IntValue ใต้ leaderstats (และโฟลเดอร์ค่าเงินอื่นที่มักแอบอยู่นอก leaderstats)
 local function watchValue(v)
     if not (v:IsA("NumberValue") or v:IsA("IntValue")) then return end
@@ -169,6 +189,10 @@ local function watchValue(v)
             v:GetFullName():gsub("^Players%."..LP.Name.."%.", "P."),
             tostring(last), tostring(now),
             diff >= 0 and "+" or "", tostring(diff)))
+        if v.Name == "Cash" and diff > 0 then
+            rateSum += diff
+            rateCount += 1
+        end
         last = now
     end)
     table.insert(_G.NSPY76_CONNS, c)
@@ -420,6 +444,7 @@ pauseB.MouseButton1Click:Connect(function()
     pauseB.Text = PAUSED and "RESUME" or "PAUSE"
     pauseB.BackgroundColor3 = PAUSED and Color3.fromRGB(150, 60, 30) or Color3.fromRGB(90, 90, 40)
 end)
+markB.MouseButton1Click:Connect(function() markReset("ผู้ใช้กด MARK") end)
 closeB.MouseButton1Click:Connect(function()
     _G.NSPY76_LOG = nil
     for _, c in ipairs(_G.NSPY76_CONNS) do pcall(function() c:Disconnect() end) end
@@ -437,6 +462,14 @@ watchNpcRemoval()
 watchPrompts()
 scanMonsters()
 
-L("[NetSpy76 v1.4] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
-L("→ เปิดเมนูอัปเกรด/มอนสเตอร์ในเกมดู 5-10 วิ + ปล่อยจับ NPC ไปด้วย → ดู [MONSTER-ใน]/[REMOTE] → กด LIST → COPY ส่งผล")
+-- รายงานอัตรารายได้ทุก 5 วิ อัตโนมัติ (ไว้เทียบก่อน/หลังซื้อของโดยไม่ต้องนั่งบวกเลขเอง)
+task.spawn(function()
+    while _G.NSPY76_GUI == gui do
+        task.wait(5)
+        if not PAUSED then rateReport() end
+    end
+end)
+
+L("[NetSpy76 v1.5] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
+L("→ วิธีวัดผล: ปล่อยนิ่งๆ 30วิ ดู [RATE] baseline → ซื้อ/อัปเกรดของ 1 อย่าง → กด MARK → รอ 30วิ → เทียบ [RATE] ก่อน-หลัง")
 warn("[NetSpy76] loaded")
