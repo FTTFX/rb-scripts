@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.5: แก้ 💥 ERROR — v4.2 เรียก myPos() แต่ไฟล์นี้ไม่เคยมีฟังก์ชันนี้ (ยกมาจาก ItemESP)
+--       → ลูปฟาร์มพังตั้งแต่รอบแรกทุกครั้ง เลยไม่เจอก้อนเลยสักก้อน
 -- v4.4: กล่อง log ว่างเปล่า = สคริปต์พังเงียบ (task.spawn กลืน error) → หุ้ม pcall โชว์ 💥 ERROR
 -- v4.3: ปุ่ม "SCAN เช็ค" — หาก้อนไม่เจอ? บอกเลยว่าตกตัวกรองขั้นไหน (เทียร์/น้ำหนัก/ราคา/กระเป๋า)
 -- v4.2: ปุ่มเลือกโหมดจัดอันดับเป้า — "แพงสุด" (เดิม) หรือ "คุ้มสุด" (ราคา ÷ ระยะทาง
@@ -81,7 +83,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.4"
+local V = "4.5"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -105,6 +107,12 @@ local TARGET_POS = nil          -- จุดตรึงตัว (nil = ไม�
 local TARGET_LOOK = nil         -- v2.1: จุดที่ให้หันหน้าใส่ (แร่) — ขวานต้องเล็งถึงจะโดน
 local LAST_SWEEP = 0            -- v3.5: กันกวาดกองของตกถี่เกิน (เว้น 20 วิ)
 local FAIL_STREAK = 0           -- v3.9: นับก้อนที่พลาดติดกัน (เยอะ = โดน server หน่วง)
+
+-- v4.5: ตัวนี้หายไป! (v4.2 เรียกใช้แต่ไม่เคยประกาศ → "attempt to call a nil value" ลูปพังทันที)
+local function myPos()
+    local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    return r and r.Position
+end
 
 local function fmtMoney(v)
     if v >= 1e9 then return ("$%.2fB"):format(v / 1e9) end
