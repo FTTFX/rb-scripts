@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v5.4: ก้อนใหญ่มี "หลอดเลือด" (13585/23585) ต้องทุบให้หมดก่อน — SCAN ดัมพ์ attr ก้อนใกล้สุด
+--       เพื่อหาว่าเลือดเก็บที่ไหน (จะได้ข้ามก้อนที่เลือดเยอะเกินคุ้ม)
 -- v5.3: (GrabTest) ยิง CrystalHoldComplete ตรงๆ เข้าทุกก้อนที่ทดสอบ! (T5 Hold=4 วิ ก็เข้าใน 0.7 วิ)
 --       → ยิงตรงก่อนเสมอ ไม่ต้องรอปุ่มติด (เดิมปุ่มไม่ติด = ทิ้งก้อนโดยไม่เคยยิงเลย)
 -- v5.2: (HoldSpy) "โดนบัง" ไม่ได้ขวางการเก็บจริง — เลิกตัดมุมทิ้งเพราะ raycast (v3.7 เข้มเกิน
@@ -97,7 +99,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "5.3"
+local V = "5.4"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -467,6 +469,22 @@ scanB.MouseButton1Click:Connect(function()
                 end
             end
             table.sort(near, function(a, b) return a.d < b.d end)
+            -- v5.4: ดัมพ์ attribute ก้อนใกล้สุด — หา "หลอดเลือด" ของก้อนใหญ่ (13585/23585)
+            if near[1] then
+                local c0 = near[1].c
+                local at = {}
+                for k, v in pairs(c0:GetAttributes()) do
+                    at[#at + 1] = k .. "=" .. tostring(v)
+                end
+                table.sort(at)
+                LG("   — attr ก้อนใกล้สุด (" .. tostring(c0:GetAttribute("CrystalName")) .. ") —")
+                LG("   " .. table.concat(at, " "))
+                for _, ch in ipairs(c0:GetChildren()) do
+                    if ch:IsA("NumberValue") or ch:IsA("IntValue") then
+                        LG(("   value %s = %s"):format(ch.Name, tostring(ch.Value)))
+                    end
+                end
+            end
             LG("   — 5 ก้อนใกล้สุด —")
             for i = 1, math.min(5, #near) do
                 local c, d = near[i].c, near[i].d
