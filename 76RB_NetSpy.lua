@@ -1,11 +1,12 @@
--- 76RB_NetSpy.lua v1.0 — สปายเกมทันคูน เบซิก (Tycoon Basic)
--- เป้าหมาย: หาว่าเลข "+699$" ที่เด้งขึ้นมา คำนวนจากอะไร (rate ต่ออาคาร? ต่อผู้เยี่ยมชม? สุ่ม?)
--- ดัก 3 อย่างพร้อมกัน:
---   1) Remote  — FireServer/InvokeServer ทุกตัว (โดยเฉพาะที่มีคำว่า Cash/Money/Income/Collect/Buy)
---   2) leaderstats / ค่าเงินบนตัวผู้เล่น — GetPropertyChangedSignal("Value") ทุกครั้งที่เปลี่ยน (log ค่าก่อน/หลัง/ผลต่าง)
---   3) ป้ายเลขลอย (+699$) ที่โผล่ใน workspace/PlayerGui — DescendantAdded จับ TextLabel/BillboardGui ที่มี "$" ในข้อความ ทันทีที่ถูกสร้าง (log ตำแหน่ง/พาเรนต์ = รู้ว่าเด้งจากอาคารไหน)
--- วิธีใช้: รัน → ไปยืนใกล้อาคารที่สร้างรายได้ รอให้เลขเด้ง 3-4 ครั้ง (จับเวลาห่างกันด้วยจะได้คำนวน "ต่อวินาที")
---         → ลองซื้ออาคารใหม่ 1 หลัง ดูว่ามี remote ไหนถูกยิง → กด COPY ส่งผลมา
+-- 76RB_NetSpy.lua v1.1 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- v1.0 พิสูจน์แล้ว: เลขลอยไม่ได้มาจากอาคาร แต่มาจาก WS.NpcCaptureCloud.RootPart.RewardText (จับ NPC ได้เงิน)
+--   ค่าเงินไม่คงที่ (322-1095) → v1.1 ขุดต่อ 3 จุด:
+--   1) กันซ้ำ popup (เดิม log 2-3 บรรทัดต่อ 1 ป้ายเพราะ Added+TextChanged ซ้อนกัน)
+--   2) ดัก "ผลลัพธ์" (return value) ของ InvokeServer ด้วย ไม่ใช่แค่ args ที่ยิงไป
+--   3) เฝ้า WS.NpcCaptureCloud ตรงๆ — log ทุก NPC/ลูกที่ถูกเพิ่ม พร้อม attribute ทั้งหมด (หา field มูลค่า/rarity)
+-- เป้าหมาย: หาสูตรว่ามูลค่าต่อ NPC ขึ้นกับอะไร (ชนิด NPC? UpgradeLevel? สุ่ม?)
+-- วิธีใช้: รัน → ไปจับ NPC ที่ NpcCaptureCloud 5-6 ตัว → ดู log ว่า [CLOUD]/[POPUP]/[STAT] ตรงกันไหม
+--         → กด LIST ดู remote เงิน → COPY ส่งผลมา
 -- ปุ่ม: LIST | CLEAR | COPY | PAUSE | ✕
 if _G.NSPY76_GUI then pcall(function() _G.NSPY76_GUI:Destroy() end) end
 if _G.NSPY76_CONNS then
@@ -107,7 +108,7 @@ local function listRemotes()
     L(("=== รวม %d ตัว (ไฮไลต์ %d ตัวที่ชื่อพ้องเงิน) ==="):format(n, hit))
 end
 
--- ==================== 1) HOOK __namecall (ดัก remote ทุกครั้งที่ยิง) ====================
+-- ==================== 1) HOOK __namecall (ดัก remote ทุกครั้งที่ยิง + ผลลัพธ์) ====================
 if not _G.NSPY76_HOOKED and hookmetamethod then
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
@@ -115,6 +116,18 @@ if not _G.NSPY76_HOOKED and hookmetamethod then
         if (method == "FireServer" or method == "InvokeServer")
             and not PAUSED and _G.NSPY76_LOG then
             local args = { ... }
+            if method == "InvokeServer" then
+                -- ต้องเรียกจริงก่อนถึงจะมีผลลัพธ์ (ต่างจาก FireServer ที่ log args แล้วปล่อยผ่านทีหลังได้)
+                local ok, ret = pcall(old, self, ...)
+                pcall(function()
+                    local parts = {}
+                    for i = 1, math.min(#args, 8) do parts[i] = ser(args[i]) end
+                    _G.NSPY76_LOG(("[REMOTE] %s:InvokeServer(%s) → %s"):format(
+                        self.Name, table.concat(parts, ", "), ok and ser(ret) or ("ERROR:" .. tostring(ret))))
+                end)
+                if ok then return ret end
+                error(ret, 0)
+            end
             task.defer(function()
                 pcall(function()
                     local parts = {}
@@ -183,8 +196,14 @@ local function looksLikeMoneyPopup(inst)
     return t:find("%$") ~= nil or t:find("[+%-]%s*%d") ~= nil
 end
 
+-- กันล็อกซ้ำ: ป้ายเดียวกันโดน DescendantAdded (ตอนสร้าง) + TextChanged (ตอน tween ตั้งค่า) ยิงซ้อนกัน
+-- key = instance, value = ข้อความล่าสุดที่ log ไปแล้ว (log ใหม่เฉพาะตอนข้อความเปลี่ยนจริง)
+local loggedPopup = setmetatable({}, { __mode = "k" })
+
 local function hookPopup(inst)
     if not looksLikeMoneyPopup(inst) then return end
+    if loggedPopup[inst] == inst.Text then return end   -- ข้อความเดิม ไม่ log ซ้ำ
+    loggedPopup[inst] = inst.Text
     local parent = inst.Parent
     local anchor = parent
     -- ไล่หา BillboardGui/Part ที่ผูกป้ายนี้อยู่ (จะได้รู้ว่าเด้งจากอาคาร/จุดไหน)
@@ -208,7 +227,7 @@ end
 local function watchContainer(root, label)
     table.insert(_G.NSPY76_CONNS, root.DescendantAdded:Connect(function(inst)
         if PAUSED then return end
-        -- popup มักเปลี่ยน .Text หลัง instance ถูกสร้าง (tween ตัวเลข) — ฟังทั้ง 2 จังหวะ
+        -- popup มักเปลี่ยน .Text หลัง instance ถูกสร้าง (tween ตัวเลข) — ฟังทั้ง 2 จังหวะ (dedupe กันซ้ำแล้ว)
         task.defer(function()
             pcall(hookPopup, inst)
         end)
@@ -222,6 +241,45 @@ local function watchContainer(root, label)
         end
     end))
     L("[SETUP] ดักป้ายเลขลอยใน " .. label)
+end
+
+-- ==================== 4) เฝ้า NpcCaptureCloud ตรงๆ (แหล่งกำเนิด popup เงิน) ====================
+local function dumpAttrs(inst)
+    local parts = {}
+    for k, v in pairs(inst:GetAttributes()) do
+        parts[#parts + 1] = k .. "=" .. ser(v)
+    end
+    return #parts > 0 and table.concat(parts, ", ") or "(ไม่มี attribute)"
+end
+
+local function watchCaptureCloud()
+    local cloud = workspace:FindFirstChild("NpcCaptureCloud")
+    if not cloud then
+        L("[SETUP] ยังไม่เจอ NpcCaptureCloud ใน workspace ตอนนี้ — รอ ChildAdded ของ workspace")
+        table.insert(_G.NSPY76_CONNS, workspace.ChildAdded:Connect(function(c)
+            if c.Name == "NpcCaptureCloud" then
+                task.wait(0.1)
+                watchCaptureCloud()
+            end
+        end))
+        return
+    end
+    L("[SETUP] เจอ NpcCaptureCloud — attr ตัวเอง: " .. dumpAttrs(cloud))
+    local function onChild(c)
+        task.wait()   -- รอ attribute ตั้งค่าเสร็จก่อน (บาง field มาทีหลัง instance ถูกสร้าง)
+        L(("[CLOUD] +เพิ่ม %s [%s] attr={%s}"):format(c.Name, c.ClassName, dumpAttrs(c)))
+        table.insert(_G.NSPY76_CONNS, c.AttributeChanged:Connect(function(attr)
+            if PAUSED then return end
+            L(("[CLOUD] %s.%s เปลี่ยนเป็น %s"):format(c.Name, attr, ser(c:GetAttribute(attr))))
+        end))
+    end
+    for _, c in ipairs(cloud:GetChildren()) do task.spawn(onChild, c) end
+    table.insert(_G.NSPY76_CONNS, cloud.ChildAdded:Connect(function(c)
+        if not PAUSED then task.spawn(onChild, c) end
+    end))
+    table.insert(_G.NSPY76_CONNS, cloud.ChildRemoved:Connect(function(c)
+        if not PAUSED then L(("[CLOUD] -หาย %s [%s]"):format(c.Name, c.ClassName)) end
+    end))
 end
 
 -- ==================== Buttons ====================
@@ -252,7 +310,8 @@ end)
 scanLeaderstats()
 watchContainer(workspace, "Workspace")
 watchContainer(LP:WaitForChild("PlayerGui"), "PlayerGui")
+watchCaptureCloud()
 
-L("[NetSpy76 v1.0] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
-L("→ ไปยืนใกล้อาคารที่ปั๊มเงิน รอเลข +699$ เด้ง 3-4 ครั้ง (จับเวลาห่างด้วย) → กด LIST ดู remote เงิน → COPY ส่งผล")
+L("[NetSpy76 v1.1] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
+L("→ ไปจับ NPC ที่ NpcCaptureCloud 5-6 ตัว → ดู [CLOUD]/[POPUP]/[STAT] ตรงกันไหม → กด LIST ดู remote → COPY ส่งผล")
 warn("[NetSpy76] loaded")
