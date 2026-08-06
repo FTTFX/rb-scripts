@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.4: กล่อง log ว่างเปล่า = สคริปต์พังเงียบ (task.spawn กลืน error) → หุ้ม pcall โชว์ 💥 ERROR
 -- v4.3: ปุ่ม "SCAN เช็ค" — หาก้อนไม่เจอ? บอกเลยว่าตกตัวกรองขั้นไหน (เทียร์/น้ำหนัก/ราคา/กระเป๋า)
 -- v4.2: ปุ่มเลือกโหมดจัดอันดับเป้า — "แพงสุด" (เดิม) หรือ "คุ้มสุด" (ราคา ÷ ระยะทาง
 --       ไม่วิ่งข้ามแมพ 900m เพื่อก้อนเดียว ถ้าใกล้ๆ มีก้อนราคาใกล้เคียง)
@@ -80,7 +81,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.3"
+local V = "4.4"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -391,6 +392,7 @@ scanB.BackgroundColor3 = Color3.fromRGB(120, 60, 140); scanB.TextColor3 = Color3
 Instance.new("UICorner", scanB).CornerRadius = UDim.new(0, 5)
 scanB.MouseButton1Click:Connect(function()
     task.spawn(function()
+      local okS, errS = pcall(function()      -- v4.4: โชว์ error ถ้าสแกนพัง
         local mp = myPos()
         local raw, plots, noPP, byTier, byKgVal, byBag, pass = 0, 0, 0, 0, 0, 0, 0
         local cur, cap = bagInfo()
@@ -434,6 +436,8 @@ scanB.MouseButton1Click:Connect(function()
         elseif raw == 0 then
             LG("   ⚠ ไม่เจอก้อนเลย — โซนนี้อาจยังโหลดไม่เสร็จ หรือไม่มีคริสตัล")
         end
+      end)
+      if not okS then LG("💥 SCAN ERROR: " .. tostring(errS)) end
     end)
 end)
 
@@ -1183,7 +1187,19 @@ runB.MouseButton1Click:Connect(function()
     if _G.AF75_RUN then
         runB.Text = "⏸ หยุดฟาร์ม"
         runB.BackgroundColor3 = Color3.fromRGB(150, 60, 30)
-        task.spawn(farmLoop)
+        -- v4.4: หุ้ม pcall — เดิมพังเงียบ (task.spawn กลืน error) กล่อง log เลยว่างเปล่า
+        task.spawn(function()
+            LG("▶ เริ่มฟาร์ม")
+            local ok, err = pcall(farmLoop)
+            if not ok then
+                LG("💥 ERROR: " .. tostring(err))
+                status("💥 พัง — ดู log")
+                _G.AF75_RUN = false
+                runB.Text = "▶ เริ่มฟาร์ม"
+                runB.BackgroundColor3 = Color3.fromRGB(30, 120, 30)
+                unpin()
+            end
+        end)
     else
         status("หยุดแล้ว")
     end
