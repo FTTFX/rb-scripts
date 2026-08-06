@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.7: SCAN บอกรายก้อน — ไล่ดู 5 ก้อนใกล้สุด บอกทีละก้อนว่าผ่านหรือตกเพราะอะไร
+--       (รวมถึง "พักโทษ" จาก FAILED ที่มองไม่เห็นมาก่อน)
 -- v4.6: ปุ่ม "เก็บหมด (T1+)" ผ่อนตัวกรองรวดเดียว + ช่องกรอกพิมพ์ผิดคืนค่าเดิม (ไม่โชว์ "?")
 -- v4.5: แก้ 💥 ERROR — v4.2 เรียก myPos() แต่ไฟล์นี้ไม่เคยมีฟังก์ชันนี้ (ยกมาจาก ItemESP)
 --       → ลูปฟาร์มพังตั้งแต่รอบแรกทุกครั้ง เลยไม่เจอก้อนเลยสักก้อน
@@ -84,7 +86,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.6"
+local V = "4.7"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -444,6 +446,39 @@ scanB.MouseButton1Click:Connect(function()
                 nearest:GetAttribute("WeightKg") or 0, math.floor(nd)))
         elseif raw == 0 then
             LG("   ⚠ ไม่เจอก้อนเลย — โซนนี้อาจยังโหลดไม่เสร็จ หรือไม่มีคริสตัล")
+        end
+        -- v4.7: ไล่ดู 5 ก้อนใกล้ตัวสุด บอกทีละก้อนว่าผ่าน/ตกเพราะอะไร (แก้อาการ "อยู่ตรงหน้ายังไม่เจอ")
+        if mp then
+            local near = {}
+            for _, c in ipairs(workspace:GetDescendants()) do
+                if c:IsA("BasePart") and c:GetAttribute("CrystalName") and c:GetAttribute("Tier") then
+                    near[#near + 1] = { c = c, d = (c.Position - mp).Magnitude }
+                end
+            end
+            table.sort(near, function(a, b) return a.d < b.d end)
+            LG("   — 5 ก้อนใกล้สุด —")
+            for i = 1, math.min(5, #near) do
+                local c, d = near[i].c, near[i].d
+                local t = c:GetAttribute("Tier") or 0
+                local kg = c:GetAttribute("WeightKg") or 0
+                local v = c:GetAttribute("Value") or 0
+                local pp = c:FindFirstChildOfClass("ProximityPrompt")
+                local why = {}
+                if c:FindFirstAncestor("Plots") then why[#why + 1] = "บ้านเพื่อน" end
+                if not pp then why[#why + 1] = "ไม่มี prompt"
+                elseif not pp.Enabled then why[#why + 1] = "prompt ปิด" end
+                if t < MIN_TIER then why[#why + 1] = ("T%d<T%d"):format(t, MIN_TIER) end
+                if not ((kg >= KG_MIN and kg <= KG_MAX) or (VAL_MIN > 0 and v >= VAL_MIN)) then
+                    why[#why + 1] = "นน./ราคาไม่ผ่าน"
+                end
+                if kg > room then why[#why + 1] = "กระเป๋าไม่พอ" end
+                if FAILED[c] and os.clock() < FAILED[c] then
+                    why[#why + 1] = ("พักโทษอีก %.0f วิ"):format(FAILED[c] - os.clock())
+                end
+                LG(("   %d) %s T%d %.1fkg %s @%dm → %s"):format(i,
+                    c:GetAttribute("CrystalName"), t, kg, fmtMoney(v), math.floor(d),
+                    #why == 0 and "✅ ผ่าน" or ("❌ " .. table.concat(why, ", "))))
+            end
         end
       end)
       if not okS then LG("💥 SCAN ERROR: " .. tostring(errS)) end
