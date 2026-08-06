@@ -103,11 +103,11 @@ local dropR = Rem and Rem:FindFirstChild("CrystalDroppedPickup")
 local sellR = Rem and Rem:FindFirstChild("SellRequest")
 
 -- ==================== Config/State ====================
-local MIN_TIER  = 4
-local SELL_PCT  = 0.85          -- กระเป๋าถึง % นี้ → ไปขาย
-local KG_MIN    = 50            -- v1.6: เอาเฉพาะก้อน 50-1000 kg (ก้อนจิ๋วเสียเวลาวาปเปล่า)
-local KG_MAX    = 1000
-local VAL_MIN   = 1e6           -- v1.9: "หรือ" ราคา ≥ นี้ ก็เก็บ (ก้อนเล็กแต่แพงก็คุ้ม) | 0 = ปิด
+local MIN_TIER  = 1            -- v5.0: ค่าเริ่มต้นใหม่ — เก็บทุกเทียร์
+local SELL_PCT  = 0.10          -- v5.0: ขายเมื่อกระเป๋าถึง 10% (ขายบ่อย ไม่ตันง่าย)
+local KG_MIN    = 0             -- v5.0: ไม่จำกัดน้ำหนักต่ำ
+local KG_MAX    = 10000         -- v5.0: ไม่จำกัดน้ำหนักสูง
+local VAL_MIN   = 0             -- v5.0: ปิดเงื่อนไขราคา (0 = ปิด) | ตั้งได้ที่แผง
 local statPick, statVal, statSell = 0, 0, 0
 local FAILED = {}               -- ก้อนที่เก็บไม่เข้า พัก 30 วิ
 local TARGET_POS = nil          -- จุดตรึงตัว (nil = ไม่ตรึง เดินเองได้)
@@ -391,7 +391,7 @@ Instance.new("UICorner", runB).CornerRadius = UDim.new(0, 6)
 
 local tierB = Instance.new("TextButton", panel)
 tierB.Size = UDim2.new(0, 96, 0, 26); tierB.Position = UDim2.new(0, 6, 0, 72)
-tierB.Text = "เทียร์ ≥ T4"; tierB.Font = Enum.Font.GothamBold; tierB.TextSize = 12
+tierB.Text = "เทียร์ ≥ T1"; tierB.Font = Enum.Font.GothamBold; tierB.TextSize = 12
 tierB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); tierB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", tierB).CornerRadius = UDim.new(0, 5)
 tierB.MouseButton1Click:Connect(function()
@@ -589,7 +589,7 @@ end)
 kgMaxB = inputBox(68, 58, 122, tostring(KG_MAX), "kg สูง", function(n)
     KG_MAX = math.clamp(n, 0, 1e5); kgMaxB.Text = tostring(math.floor(KG_MAX))
 end)
-valB = inputBox(130, 74, 122, "1M", "ราคาต่ำสุด", function(n)
+valB = inputBox(130, 74, 122, "0", "ราคาต่ำสุด", function(n)
     VAL_MIN = math.clamp(n, 0, 1e12)
     valB.Text = VAL_MIN > 0 and fmtMoney(VAL_MIN):gsub("%$", "") or "0"
 end)
