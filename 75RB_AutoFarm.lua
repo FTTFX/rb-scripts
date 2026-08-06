@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.9: เก็บไม่เข้าทุกก้อน = สัญญาณโดน server หน่วง → พลาดติดกัน 5 ก้อนให้พัก 30 วิ
+--       + ลดการยิงกองของตกเหลือ 5 ก้อน/รอบ (เจอกอง 126 ก้อนแล้วยิงรัวจนโดนหน่วง)
 -- v3.8: ใช้ LoS ตัดสินใจแทนเดา — LoS=true (ก้อนโล่ง) = หยิบอย่างเดียว ไม่ฟันขวาน ข้ามไว
 --       LoS=false (ฝังดิน) = ลองหยิบแค่ 3 มุม ไม่เข้าก็ไปฟันขวานเลย ไม่วนครบ 14 มุม
 -- v3.7: ดินบัง = กดไม่ได้! (prompt บางก้อน RequiresLineOfSight=true) → ยิง ray เช็คก่อนทุกมุม
@@ -69,7 +71,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.8"
+local V = "3.9"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -92,6 +94,7 @@ local FAILED = {}               -- ก้อนที่เก็บไม่เ
 local TARGET_POS = nil          -- จุดตรึงตัว (nil = ไม่ตรึง เดินเองได้)
 local TARGET_LOOK = nil         -- v2.1: จุดที่ให้หันหน้าใส่ (แร่) — ขวานต้องเล็งถึงจะโดน
 local LAST_SWEEP = 0            -- v3.5: กันกวาดกองของตกถี่เกิน (เว้น 20 วิ)
+local FAIL_STREAK = 0           -- v3.9: นับก้อนที่พลาดติดกัน (เยอะ = โดน server หน่วง)
 
 local function fmtMoney(v)
     if v >= 1e9 then return ("$%.2fB"):format(v / 1e9) end
@@ -769,7 +772,7 @@ local function collectDropped(near, kg0)
         local myp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
         local fired = 0
         for _, dr in ipairs(found) do
-            if not _G.AF75_RUN or fired >= 10 then break end
+            if not _G.AF75_RUN or fired >= 5 then break end   -- v3.9: ลดเหลือ 5 ก้อน/รอบ กัน throttle
             -- v3.6: ใช้ CrystalHoldComplete ด้วย (พิสูจน์แล้วว่าเข้าจริงกับของตก DroppedCrystal)
             if dr.Parent and myp and (dr.Position - myp.Position).Magnitude <= 12 then
                 pcall(function() dropR:FireServer(dr) end)
@@ -1011,6 +1014,7 @@ local function farmLoop()
                 end
                 local got = tryPick(c, kg0)
                 if got then
+                    FAIL_STREAK = 0
                     statPick += 1
                     statVal += v
                     -- v2.3: สรุปเวลาที่เสียไปแต่ละขั้น (สปายในตัว — ช้าตรงไหนเห็นเลย)
@@ -1020,7 +1024,19 @@ local function farmLoop()
                     task.wait(0.25)   -- ค้างอีกนิด ให้ FX/ของเข้าครบก่อนวาปหนี
                 else
                     FAILED[c] = os.clock() + 30
+                    FAIL_STREAK += 1
                     status("❌ " .. nm .. " เก็บไม่เข้า — ข้าม 30 วิ")
+                    -- v3.9: พลาดติดกัน 5 ก้อน = ผิดปกติ (โดน server throttle) → พัก 30 วิ ลดการยิง
+                    if FAIL_STREAK >= 5 then
+                        LG("  🛑 พลาดติดกัน 5 ก้อน — น่าจะโดน server หน่วง พัก 30 วิ")
+                        LG("     (ถ้าเก็บมือก็ไม่เข้า = ต้องออก-เข้าเกมใหม่)")
+                        status("🛑 พัก 30 วิ (โดนหน่วง)")
+                        for _ = 1, 30 do
+                            if not _G.AF75_RUN then break end
+                            task.wait(1)
+                        end
+                        FAIL_STREAK = 0
+                    end
                 end
                 updStat()
             end
