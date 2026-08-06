@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.9: "แหวนโหลดขึ้นแล้วแต่วาปหนี" — เริ่มกดค้างเมื่อไหร่ = ยกเลิกเพดานเวลาทันที ต่อเวลาให้กดจบ
+--       + รอของเข้าอีก 2 วิหลังปล่อยมือ (ของเข้าช้ากว่า trigger ได้)
 -- v4.8: แก้ 2 บั๊ก — (ก) mineIt เรียก collectDropped ที่ประกาศทีหลัง = 💥 ERROR บรรทัด 880
 --       (ข) ก้อนโดนคนอื่นเก็บตัดหน้าระหว่างบิน → Position เพี้ยนเป็นล้าน ("ห่าง 1000296") ไล่ต่อไม่จบ
 -- v4.7: SCAN บอกรายก้อน — ไล่ดู 5 ก้อนใกล้สุด บอกทีละก้อนว่าผ่านหรือตกเพราะอะไร
@@ -88,7 +90,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.8"
+local V = "4.9"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -737,15 +739,22 @@ local HOLD_TRIES = 0        -- กดค้างไปกี่ครั้ง�
 local MAX_HOLDS = 2         -- กดค้างไม่เข้า 2 ครั้ง = เลิกยุ่ง ไปก้อนอื่น
 local MAX_SECS = 12         -- เกิน 12 วิต่อก้อน = ทิ้ง
 
+-- v4.9: เริ่มกดค้าง (แหวนโหลดขึ้น) แล้ว = "ยกเลิกเพดานเวลา" กดให้ครบเสมอ
+-- (เดิมตัดทิ้งกลางคันเมื่อชนเพดาน 12 วิ → เสียเปล่าทุกครั้ง แหวนขึ้นแล้วแต่วาปหนี)
 local function holdUntil(pp, c, kg0)
     pcall(function() pp:InputHoldBegin() end)
-    -- ไม่กดค้างเกินเวลาที่เหลือของก้อนนี้
-    local dl = math.min(os.clock() + pp.HoldDuration + 0.5, TRY_DEADLINE)
+    TRY_DEADLINE = math.max(TRY_DEADLINE, os.clock() + pp.HoldDuration + 4)  -- ต่อเวลาให้กดจบ
+    local dl = os.clock() + pp.HoldDuration + 0.6
     while os.clock() < dl do
         task.wait(0.1)
         if picked(kg0) or not c.Parent then break end
     end
     pcall(function() pp:InputHoldEnd() end)
+    -- รอของเข้าหลังปล่อย (PickSpy: ของเข้าช้ากว่า trigger ได้ถึง ~2 วิ)
+    for _ = 1, 20 do
+        if picked(kg0) or not c.Parent then break end
+        task.wait(0.1)
+    end
 end
 local function doWay(c, way, kg0)
     local pp = c:FindFirstChildOfClass("ProximityPrompt")
