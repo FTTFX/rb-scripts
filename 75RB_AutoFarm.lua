@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.3: ก้อนนึงกินเวลา 40 วิ! (ไล่กดค้างทุกมุม มุมละ 4.5 วิ) → เพดาน 12 วิ/ก้อน +
+--       ยอมกดค้างแค่ 2 ครั้ง ไม่เข้าก็ข้ามไปก้อนอื่นเลย
 -- v3.2: "ขายที่ %" ลงต่ำกว่า 10% ได้ (ต่ำกว่า 10 ปรับทีละ 1% ต่ำสุด 1%)
 -- v3.1: "ขายที่ %" ปรับทีละ 5% ด้วยปุ่ม − [85%] + (เดิมกดวนทีละ 15% ข้ามค่าที่ต้องการ)
 -- v3.0: ตัวกรองเปลี่ยนเป็น "พิมพ์เอง" 3 ช่อง (kg ต่ำ / kg สูง / ราคาขั้นต่ำ) รับ 30M 500K 1.5m
@@ -55,7 +57,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.2"
+local V = "3.3"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -555,9 +557,16 @@ local function posList(c)
 end
 -- v2.3: "กดค้าง" คือตัวกินเวลาหลัก (T6 Hold=5 วิ!) — กดค้างแบบ "เช็คระหว่างทาง"
 -- ของเข้าเมื่อไหร่ปล่อยทันที ไม่รอครบเวลา (เดิมรอเต็ม HoldDuration+0.4 เสมอ)
+-- v3.3: เพดานเวลาต่อก้อน (เดิมไล่กดค้างทุกมุม มุมละ 4.5 วิ รวม 40 วิ!)
+local TRY_DEADLINE = 0      -- เวลาหมดอายุของก้อนนี้
+local HOLD_TRIES = 0        -- กดค้างไปกี่ครั้งแล้ว
+local MAX_HOLDS = 2         -- กดค้างไม่เข้า 2 ครั้ง = เลิกยุ่ง ไปก้อนอื่น
+local MAX_SECS = 12         -- เกิน 12 วิต่อก้อน = ทิ้ง
+
 local function holdUntil(pp, c, kg0)
     pcall(function() pp:InputHoldBegin() end)
-    local dl = os.clock() + pp.HoldDuration + 0.5
+    -- ไม่กดค้างเกินเวลาที่เหลือของก้อนนี้
+    local dl = math.min(os.clock() + pp.HoldDuration + 0.5, TRY_DEADLINE)
     while os.clock() < dl do
         task.wait(0.1)
         if picked(kg0) or not c.Parent then break end
@@ -604,6 +613,9 @@ local function attempt(c, kg0, pname, ppos)
         TM.scan = (TM.scan or 0) + (os.clock() - t0)   -- เวลาที่เสียไปกับมุมที่ปุ่มไม่ติด
         return false
     end
+    -- v3.3: กดค้างไม่เข้ามาแล้ว 2 ครั้ง / หมดเวลาแล้ว = ไม่กดซ้ำอีก (กันเสีย 4.5 วิต่อมุม)
+    if HOLD_TRIES >= MAX_HOLDS or os.clock() > TRY_DEADLINE then return false end
+    HOLD_TRIES += 1
     -- v2.3: ใช้ "both" อย่างเดียว (มันครอบ prompt อยู่แล้ว) — เดิมลอง 2 รอบเสียเวลาซ้ำซ้อน
     local t1 = os.clock()
     doWay(c, "both", kg0)
@@ -716,6 +728,8 @@ end
 
 function tryPick(c, kg0)
     markBase()           -- v2.5: จำจำนวนก้อนในกระเป๋าตอนเริ่ม (ใช้ยืนยันคู่กับน้ำหนัก)
+    TRY_DEADLINE = os.clock() + MAX_SECS    -- v3.3: เริ่มจับเวลาก้อนนี้
+    HOLD_TRIES = 0
     -- v2.8: ไม่หยิบขวานตั้งแต่แรกแล้ว — ลอง "หยิบเข้ากระเป๋า" ให้ครบก่อน ค่อยใช้ขวานทีหลัง
     local cpos = c.Position   -- จำไว้ เผื่อก้อนหาย (ของตกแถวนี้)
     -- v2.6 (PickSpy v2.0): MaxActivationDistance = 0 → ปุ่ม "ไม่มีวันขึ้น" (ก้อนยังฝังในหิน)
@@ -750,6 +764,10 @@ function tryPick(c, kg0)
     -- 2) วนหามุมที่ "ปุ่มติด" (8 มุมรอบก้อน + ต่ำ/สูง) — ติดแล้วกด ไม่ติดวาปต่อ
     for _, e in ipairs(list) do
         if not _G.AF75_RUN then return false end
+        if os.clock() > TRY_DEADLINE then    -- v3.3: หมดเวลา — ทิ้งก้อนนี้ ไปก้อนถัดไปเลย
+            LG(("  ⏭ เกิน %d วิ ยังไม่เข้า → ข้ามก้อนนี้"):format(MAX_SECS))
+            return false
+        end
         if not c.Parent then
             task.wait(0.5)
             if picked(kg0) then return true end
