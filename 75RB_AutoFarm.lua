@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.6: (PickSpy) "ยิงตรงแบบ 74" ใช้ได้จริง! ยิง CrystalHoldComplete เฉยๆ ของเข้าใน 0.3 วิ
+--       ขอแค่อยู่ในระยะ (4-13 studs) → ทุกมุมลองยิงตรงก่อน ไม่เข้าค่อยกดค้าง (เร็วขึ้น ~4 เท่า)
 -- v3.5: v3.4 ยิง remote รัวเกิน (ทุกก้อน x3 รอบ) → server เมินทุกคำสั่ง เก็บไม่เข้าเลย!
 --       → ยิงทีละก้อน เว้น 0.3 วิ เฉพาะก้อนในระยะ 14 สูงสุด 10 ก้อน + กวาดกองเว้น 20 วิ/ครั้ง
 --       + "บินหนีก่อนขุด": ยืนเยื้องสูง 2 ห่าง 4 และถอยขึ้น 8 ทันทีที่ก้อนแตก (กันเศษดันตัว)
@@ -63,7 +65,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.5"
+local V = "3.6"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -622,6 +624,20 @@ local function attempt(c, kg0, pname, ppos)
         TM.scan = (TM.scan or 0) + (os.clock() - t0)   -- เวลาที่เสียไปกับมุมที่ปุ่มไม่ติด
         return false
     end
+    -- v3.6 (PickSpy): ยิง remote เฉยๆ ก็เข้าได้ ถ้าอยู่ในระยะ! (Diamond เข้าใน 0.28 วิ ไม่ต้องกดค้าง)
+    -- → ลองยิงตรงก่อนเสมอ เร็วกว่ากดค้าง 4-5 วิมาก ไม่เข้าค่อยกดค้าง
+    if pickR then
+        local t2 = os.clock()
+        pcall(function() pickR:FireServer(c) end)
+        for _ = 1, 9 do
+            task.wait(0.1)
+            if picked(kg0) then
+                LG(("  ⚡ เข้า! [%s] ยิงตรง %.1f วิ"):format(pname, os.clock() - t2))
+                WIN_POS, WIN_WAY = pname, "ยิงตรง"
+                return true
+            end
+        end
+    end
     -- v3.3: กดค้างไม่เข้ามาแล้ว 2 ครั้ง / หมดเวลาแล้ว = ไม่กดซ้ำอีก (กันเสีย 4.5 วิต่อมุม)
     if HOLD_TRIES >= MAX_HOLDS or os.clock() > TRY_DEADLINE then return false end
     HOLD_TRIES += 1
@@ -726,10 +742,12 @@ local function collectDropped(near, kg0)
         local fired = 0
         for _, dr in ipairs(found) do
             if not _G.AF75_RUN or fired >= 10 then break end
-            if dr.Parent and myp and (dr.Position - myp.Position).Magnitude <= 14 then
+            -- v3.6: ใช้ CrystalHoldComplete ด้วย (พิสูจน์แล้วว่าเข้าจริงกับของตก DroppedCrystal)
+            if dr.Parent and myp and (dr.Position - myp.Position).Magnitude <= 12 then
                 pcall(function() dropR:FireServer(dr) end)
+                if pickR then pcall(function() pickR:FireServer(dr) end) end
                 fired += 1
-                task.wait(0.3)
+                task.wait(0.35)
             end
         end
         if fired > 0 then
