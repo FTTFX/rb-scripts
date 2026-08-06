@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v5.3: (GrabTest) ยิง CrystalHoldComplete ตรงๆ เข้าทุกก้อนที่ทดสอบ! (T5 Hold=4 วิ ก็เข้าใน 0.7 วิ)
+--       → ยิงตรงก่อนเสมอ ไม่ต้องรอปุ่มติด (เดิมปุ่มไม่ติด = ทิ้งก้อนโดยไม่เคยยิงเลย)
 -- v5.2: (HoldSpy) "โดนบัง" ไม่ได้ขวางการเก็บจริง — เลิกตัดมุมทิ้งเพราะ raycast (v3.7 เข้มเกิน
 --       ข้ามมุมที่ใช้ได้ฟรี) แค่นับสถิติไว้ดู
 -- v5.1: "โหลดแล้วแต่บินหนี" — (ก) ห้ามย้ายที่ขณะแหวนโหลดเดินอยู่ (ดัก PromptButtonHoldBegan)
@@ -95,7 +97,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "5.2"
+local V = "5.3"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -838,6 +840,20 @@ local function attempt(c, kg0, pname, ppos)
     local cam = workspace.CurrentCamera
     -- v2.8: ห้ามฟันขวานตอนนี้! (ขวานทำก้อนแตก ของร่วงลงถ้ำแทนที่จะเข้ากระเป๋าตรงๆ)
     -- เฟสนี้ = "หยิบอย่างเดียว" ขวานเก็บไว้เป็นทางสุดท้ายเท่านั้น
+    -- v5.3 (GrabTest): ยิงตรง "ก่อน" เช็คปุ่มติด — พิสูจน์แล้วเข้าทุกก้อนที่ทดสอบ (T1-T5, 0.5-20.9kg,
+    -- ถึง $204K, Hold 1-4 วิ) เข้าใน 0.2-1.7 วิ | เดิมเช็คปุ่มก่อน ปุ่มไม่ติด = ทิ้งโดยไม่เคยยิง
+    if pickR then
+        local tf = os.clock()
+        pcall(function() pickR:FireServer(c) end)
+        for _ = 1, 12 do
+            task.wait(0.1)
+            if picked(kg0) then
+                LG(("  ⚡ เข้า! [%s] ยิงตรง %.1f วิ"):format(pname, os.clock() - tf))
+                WIN_POS, WIN_WAY = pname, "ยิงตรง"
+                return true
+            end
+        end
+    end
     local t0 = os.clock()
     local ok = false
     for _ = 1, 6 do        -- v4.1: รอ 0.6 วิ (prompt ต้องใช้เวลาติดอาวุธหลังเราวาปถึง)
