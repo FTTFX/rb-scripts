@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v5.0: ค่าเริ่มต้นใหม่ตามที่ใช้จริง — T1+ / 0-10000kg / ปิดเงื่อนไขราคา / ขายที่ 10%
 -- v4.9: "แหวนโหลดขึ้นแล้วแต่วาปหนี" — เริ่มกดค้างเมื่อไหร่ = ยกเลิกเพดานเวลาทันที ต่อเวลาให้กดจบ
 --       + รอของเข้าอีก 2 วิหลังปล่อยมือ (ของเข้าช้ากว่า trigger ได้)
 -- v4.8: แก้ 2 บั๊ก — (ก) mineIt เรียก collectDropped ที่ประกาศทีหลัง = 💥 ERROR บรรทัด 880
@@ -90,7 +91,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.9"
+local V = "5.0"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
