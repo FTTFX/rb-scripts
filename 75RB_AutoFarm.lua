@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.0: ไม่ใช่ throttle! log ขึ้น "ห่าง -1m / ไม่เจอขวาน" = ตัวละคร+กระเป๋ายังไม่โหลด
+--       (แถบ 2437/4937 ตอนเข้าเกม/วาร์ปโซน/ตายเกิดใหม่) → รอจนพร้อมจริงก่อนฟาร์ม
+--       + ตรวจตัวหายกลางคัน (ตาย) แล้วรอโหลดใหม่ ไม่ฟาร์มลมเปล่า
 -- v3.9: เก็บไม่เข้าทุกก้อน = สัญญาณโดน server หน่วง → พลาดติดกัน 5 ก้อนให้พัก 30 วิ
 --       + ลดการยิงกองของตกเหลือ 5 ก้อน/รอบ (เจอกอง 126 ก้อนแล้วยิงรัวจนโดนหน่วง)
 -- v3.8: ใช้ LoS ตัดสินใจแทนเดา — LoS=true (ก้อนโล่ง) = หยิบอย่างเดียว ไม่ฟันขวาน ข้ามไว
@@ -71,7 +74,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.9"
+local V = "4.0"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -881,8 +884,40 @@ function tryPick(c, kg0)
 end
 
 -- ==================== Main farm loop ====================
+-- v4.0: เกมมีจังหวะ "โหลด" (ตายเกิดใหม่ / วาร์ปโซน / แถบ 4/3004 ตอนเข้าเกม)
+-- ช่วงนั้น: ตัวละคร/กระเป๋ายังไม่มา → ทำอะไรก็ไม่เข้า (log ขึ้น "ห่าง -1m", "ไม่เจอขวาน")
+-- → รอจนพร้อมจริงก่อนค่อยฟาร์มต่อ
+local function waitReady()
+    local warned = false
+    while _G.AF75_RUN do
+        local char = LP.Character
+        local r = char and char:FindFirstChild("HumanoidRootPart")
+        local h = char and char:FindFirstChildOfClass("Humanoid")
+        local bp = LP:FindFirstChildOfClass("Backpack")
+        local pd = LP:FindFirstChild("PlayerData")
+        local inv = pd and pd:FindFirstChild("Inventory")
+        local loaded = LP:FindFirstChild("loaded")
+        local ok = r and h and h.Health > 0 and bp and inv
+            and (not loaded or loaded.Value ~= false or true)   -- loaded=false ตอนโหลด แต่บางทีค้าง
+        -- เช็คว่าเกมยังโหลดก้อนอยู่ไหม (มีก้อนในแมพน้อยผิดปกติ = ยังโหลดไม่เสร็จ)
+        if ok and #getCrystals() < 20 then ok = false end
+        if ok then
+            if warned then LG("  ✅ โหลดเสร็จ — ฟาร์มต่อ") end
+            return true
+        end
+        if not warned then
+            warned = true
+            LG("  ⏳ เกมกำลังโหลด/ตัวยังไม่พร้อม — รอก่อน")
+            status("⏳ รอเกมโหลด...")
+        end
+        task.wait(1)
+    end
+    return false
+end
+
 local function farmLoop()
     while _G.AF75_RUN do
+        if not waitReady() then break end
         local cur, cap = bagInfo()
         updStat()
         if cur / cap >= SELL_PCT then
@@ -959,6 +994,12 @@ local function farmLoop()
                 local nm = c:GetAttribute("CrystalName") or "?"
                 local v = c:GetAttribute("Value") or 0
                 local kg0 = cur   -- น้ำหนักก่อนเก็บ — ใช้ยืนยันว่าของเข้ากระเป๋าจริง
+                -- v4.0: ตัวหายกลางคัน (ตาย/เกิดใหม่) → รอโหลดใหม่แล้วเริ่มก้อนนี้ใหม่
+                if not (LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")) then
+                    LG("  💀 ตัวละครหาย (ตาย/เกิดใหม่) — รอโหลด")
+                    unpin()
+                    waitReady()
+                end
                 local myp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
                 local ppx = c:FindFirstChildOfClass("ProximityPrompt")
                 LG(("🎯 %s %s %.1fkg | ห่าง %dm | %s Max=%d LoS=%s | กระเป๋า %.1f"):format(
