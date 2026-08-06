@@ -1,4 +1,5 @@
--- 75RB_SpawnSpy.lua v1.1 — สปาย "การเสกแร่" (เรดาร์/ระเบิด)
+-- 75RB_SpawnSpy.lua v1.2 — สปาย "การเสกแร่" (เรดาร์/ระเบิด)
+-- v1.2: ปุ่ม "ลองยิงระเบิดฟรี" — ทดสอบว่า BombActivate ยิงตรงได้ไหมโดยไม่ต้องซื้อ
 -- v1.1: เจอระบบร้านครบ! RadarShopQuery→RadarBuyRequest→RadarActivate/RadarDropRequest
 --       (ระเบิดก็มีชุดเดียวกัน) + ปุ่ม "ถามร้านเรดาร์" ดูของ/ราคาโดยไม่เสียเงิน
 -- เบาะแสที่มีอยู่แล้ว: RS.Remotes.RadarDropRequest / CrystalDropRequest / BigCrystalShake
@@ -184,7 +185,45 @@ local function askShops()
     L("→ ดูราคา/ของในร้าน แล้วค่อยตัดสินใจว่าจะให้บอทซื้อ+ใช้อัตโนมัติไหม")
 end
 
-local askB   = hbtn("ถามร้านเรดาร์", 8, 104, Color3.fromRGB(120, 60, 140))
+-- v1.2: ทดสอบ "ยิงระเบิดตรงๆ โดยไม่ซื้อ" — server รับไหม?
+-- ถ้ารับ จะมี ← BombArmed(...) ตอบกลับใน ~1 วิ | ไม่รับ = เงียบ (ไม่เสียอะไร)
+local BOMB_NAMES = { "ThunderBomb", "IceBomb", "FireBomb", "BasicBomb", "Bomb" }
+local function testBomb()
+    if not Rem then L("❌ ไม่เจอ RS.Remotes") return end
+    local act = Rem:FindFirstChild("BombActivate")
+    if not act then L("❌ ไม่เจอ BombActivate") return end
+    local armed = false
+    local watch = Rem:FindFirstChild("BombArmed")
+    local conn = watch and watch.OnClientEvent:Connect(function(n, pos)
+        armed = true
+        L(("  🎉 server รับ! BombArmed(%s @ %s) ← ยิงตรงได้ ไม่ต้องซื้อ"):format(
+            tostring(n), ser(pos)))
+    end)
+    for _, nm in ipairs(BOMB_NAMES) do
+        armed = false
+        L(("🧪 ลองยิง BombActivate('%s')..."):format(nm))
+        pcall(function() act:FireServer(nm) end)
+        for _ = 1, 12 do
+            task.wait(0.15)
+            if armed then break end
+        end
+        if not armed then L("   ❌ เงียบ (server ไม่รับ — น่าจะต้องมีของก่อน)") end
+        task.wait(0.4)
+    end
+    if conn then conn:Disconnect() end
+    L("→ ถ้าเงียบหมด แปลว่าต้องซื้อระเบิดก่อน (ดูราคาจากปุ่มถามร้าน)")
+end
+
+local testB  = hbtn("🧪 ลองยิงระเบิดฟรี", 8, 126, Color3.fromRGB(150, 60, 40))
+testB.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        L("")
+        local ok, err = pcall(testBomb)
+        if not ok then L("💥 ERROR: " .. tostring(err)) end
+    end)
+end)
+
+local askB   = hbtn("ถามร้านเรดาร์", 138, 104, Color3.fromRGB(120, 60, 140))
 askB.MouseButton1Click:Connect(function()
     task.spawn(function()
         L("")
@@ -193,11 +232,11 @@ askB.MouseButton1Click:Connect(function()
     end)
 end)
 
-local dumpB  = hbtn("ดูของ/สถิติ", 116, 100, Color3.fromRGB(40, 130, 70))
-local clearB = hbtn("CLEAR", 220, 66, Color3.fromRGB(90, 60, 30))
-local copyB  = hbtn("COPY", 290, 66)
-local hideB  = hbtn("ซ่อน", 360, 56, Color3.fromRGB(50, 50, 70))
-local closeB = hbtn("✕", 420, 34, Color3.fromRGB(150, 40, 40))
+local dumpB  = hbtn("ดูของ/สถิติ", 246, 100, Color3.fromRGB(40, 130, 70))
+local clearB = hbtn("CLEAR", 350, 60, Color3.fromRGB(90, 60, 30))
+local copyB  = hbtn("COPY", 414, 60)
+local hideB  = hbtn("ซ่อน", 478, 52, Color3.fromRGB(50, 50, 70))
+local closeB = hbtn("✕", 534, 34, Color3.fromRGB(150, 40, 40))
 
 dumpB.MouseButton1Click:Connect(function()
     task.spawn(function()
