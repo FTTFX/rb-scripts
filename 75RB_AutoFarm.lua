@@ -7,6 +7,8 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v5.1: "โหลดแล้วแต่บินหนี" — (ก) ห้ามย้ายที่ขณะแหวนโหลดเดินอยู่ (ดัก PromptButtonHoldBegan)
+--       (ข) กดครบจน Triggered แล้วรอของถึง 5 วิ (ค) เพิ่มมุม "ยืนพื้น" เผื่อเกมไม่ให้เก็บตอนลอย
 -- v5.0: ค่าเริ่มต้นใหม่ตามที่ใช้จริง — T1+ / 0-10000kg / ปิดเงื่อนไขราคา / ขายที่ 10%
 -- v4.9: "แหวนโหลดขึ้นแล้วแต่วาปหนี" — เริ่มกดค้างเมื่อไหร่ = ยกเลิกเพดานเวลาทันที ต่อเวลาให้กดจบ
 --       + รอของเข้าอีก 2 วิหลังปล่อยมือ (ของเข้าช้ากว่า trigger ได้)
@@ -91,7 +93,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "5.0"
+local V = "5.1"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -693,6 +695,19 @@ local WIN_POS, WIN_WAY = nil, nil     -- สูตรที่เคยเข้
 -- → วาปวนมุม ถ้าปุ่มติดค่อยกด ถ้าไม่ติดวาปมุมถัดไปเลย ไม่เสียเวลากดลม
 local PROMPT_ON = nil
 local PPS = game:GetService("ProximityPromptService")
+-- v5.1: จำว่า prompt ไหน "กดครบแล้ว" (Triggered) — ถ้าครบแล้วห้ามบินหนี ต้องรอของให้ถึงที่สุด
+local TRIGGERED = setmetatable({}, { __mode = "k" })
+table.insert(_G.AF75_CONNS, PPS.PromptTriggered:Connect(function(pp, plr)
+    if plr == LP then TRIGGERED[pp] = os.clock() end
+end))
+-- v5.1: เริ่มกดค้างเมื่อไหร่ จำไว้ด้วย (แหวนโหลดขึ้น = ห้ามขยับ)
+local HOLDING = nil
+table.insert(_G.AF75_CONNS, PPS.PromptButtonHoldBegan:Connect(function(pp, plr)
+    if plr == LP then HOLDING = pp end
+end))
+table.insert(_G.AF75_CONNS, PPS.PromptButtonHoldEnded:Connect(function(pp, plr)
+    if plr == LP and HOLDING == pp then HOLDING = nil end
+end))
 table.insert(_G.AF75_CONNS, PPS.PromptShown:Connect(function(pp) PROMPT_ON = pp end))
 table.insert(_G.AF75_CONNS, PPS.PromptHidden:Connect(function(pp)
     if PROMPT_ON == pp then PROMPT_ON = nil end
@@ -719,6 +734,19 @@ local function posList(c)
         { "N", 0, -1 }, { "NE", 0.7, -0.7 }, { "E", 1, 0 }, { "SE", 0.7, 0.7 },
         { "S", 0, 1 }, { "SW", -0.7, 0.7 }, { "W", -1, 0 }, { "NW", -0.7, -0.7 },
     }
+    -- v5.1: หา "พื้นยืน" ให้แต่ละมุม — เกมอาจยกเลิกการกดค้างถ้าตัวลอยกลางอากาศ
+    -- ยิง ray ลงจากจุดนั้น เจอพื้นก็ยืนบนพื้น (สูงจากพื้น 3) ไม่เจอก็ลอยระดับเดิม
+    local par = RaycastParams.new()
+    par.FilterType = Enum.RaycastFilterType.Exclude
+    par.FilterDescendantsInstances = { LP.Character, c }
+    local function ground(pos)
+        local hit = workspace:Raycast(pos + Vector3.new(0, 4, 0), Vector3.new(0, -40, 0), par)
+        return hit and (hit.Position + Vector3.new(0, 3, 0)) or pos
+    end
+    for _, dir in ipairs(dirs) do
+        out[#out + 1] = { "ยืนพื้น " .. dir[1],
+            ground(p + Vector3.new(dir[2] * d, 0, dir[3] * d)) }
+    end
     for _, dir in ipairs(dirs) do
         out[#out + 1] = { "ระดับเดียวกัน " .. dir[1],
             p + Vector3.new(dir[2] * d, 0, dir[3] * d) }
@@ -751,8 +779,11 @@ local function holdUntil(pp, c, kg0)
         if picked(kg0) or not c.Parent then break end
     end
     pcall(function() pp:InputHoldEnd() end)
-    -- รอของเข้าหลังปล่อย (PickSpy: ของเข้าช้ากว่า trigger ได้ถึง ~2 วิ)
-    for _ = 1, 20 do
+    -- v5.1: กดครบจน Triggered แล้ว = ห้ามบินหนีเด็ดขาด รอของให้ถึงที่สุด (สูงสุด 5 วิ)
+    local trig = TRIGGERED[pp] and (os.clock() - TRIGGERED[pp] < 8)
+    local waits = trig and 50 or 20
+    if trig then LG("  ⏳ กดครบแล้ว (Triggered) — รอของเข้า ห้ามขยับ") end
+    for _ = 1, waits do
         if picked(kg0) or not c.Parent then break end
         task.wait(0.1)
     end
@@ -790,6 +821,11 @@ local function seesCrystal(fromPos, c)
 end
 
 local function attempt(c, kg0, pname, ppos)
+    -- v5.1: ถ้าแหวนโหลดกำลังเดินอยู่ (กดค้างค้างอยู่) ห้ามย้ายที่ — รอให้จบก่อน
+    while HOLDING and _G.AF75_RUN do
+        task.wait(0.1)
+        if picked(kg0) then return true end
+    end
     -- v3.7: มุมนี้มองเห็นก้อนไหม? โดนดินบัง = ข้ามเลย
     if not seesCrystal(ppos, c) then
         TM.blocked = (TM.blocked or 0) + 1
