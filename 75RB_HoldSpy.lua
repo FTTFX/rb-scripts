@@ -1,4 +1,5 @@
--- 75RB_HoldSpy.lua v1.0 — สปาย "แหวนโหลด" (การกดค้าง) ว่าทำไมบางทีไม่จบ/ของไม่เข้า
+-- 75RB_HoldSpy.lua v1.1 — สปาย "แหวนโหลด" (การกดค้าง) ว่าทำไมบางทีไม่จบ/ของไม่เข้า
+-- v1.1: แก้ป้ายผิด — Roblox ยิง HoldEnded ก่อน Triggered เสี้ยววิ ทำให้ขึ้น "ถูกยกเลิก" ทั้งที่กดครบ
 -- จับตั้งแต่แหวนเริ่มเดิน → ทุก 0.1 วิ เก็บ: ระยะ / ตัวยืนพื้นไหม / ความเร็ว / สถานะ Humanoid /
 --   prompt ยังเปิดอยู่ไหม / มองเห็นก้อนไหม  → พอแหวนจบ (สำเร็จ/ถูกยกเลิก) พิมพ์ไทม์ไลน์ให้ดู
 -- จะได้รู้ว่า "ตอนแหวนขาด" อะไรเปลี่ยนไปกันแน่ (ขยับ? ลอย? หลุดระยะ? โดนบัง?)
@@ -97,9 +98,12 @@ table.insert(_G.HSPY75B_CONNS, PPS.PromptButtonHoldEnded:Connect(function(pp, pl
     if plr ~= LP then return end
     local w = watching
     if not w or w.pp ~= pp then return end
-    watching = nil
     local dt = os.clock() - w.t0
-    local done = w.trig
+    -- v1.1: Roblox ยิง HoldEnded "ก่อน" Triggered เสี้ยววิ → รอดูอีกนิดก่อนตัดสิน
+    -- (เดิมขึ้น ❌ ถูกยกเลิก ทั้งที่กดครบทุกครั้ง = ตัดสินเร็วไป)
+    task.wait(0.25)
+    watching = nil
+    local done = w.trig or dt >= w.hold - 0.15
     L(("%s แหวนจบที่ %.2f/%.1f วิ — %s"):format(done and "✅" or "❌", dt, w.hold,
         done and "ครบ (รอของเข้า)" or "**ถูกยกเลิกก่อนครบ**"))
     -- ไทม์ไลน์: โชว์เฉพาะตอนที่ค่าเปลี่ยน (เห็นว่าอะไรพังตอนไหน)
