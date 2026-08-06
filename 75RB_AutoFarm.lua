@@ -7,6 +7,7 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v4.6: ปุ่ม "เก็บหมด (T1+)" ผ่อนตัวกรองรวดเดียว + ช่องกรอกพิมพ์ผิดคืนค่าเดิม (ไม่โชว์ "?")
 -- v4.5: แก้ 💥 ERROR — v4.2 เรียก myPos() แต่ไฟล์นี้ไม่เคยมีฟังก์ชันนี้ (ยกมาจาก ItemESP)
 --       → ลูปฟาร์มพังตั้งแต่รอบแรกทุกครั้ง เลยไม่เจอก้อนเลยสักก้อน
 -- v4.4: กล่อง log ว่างเปล่า = สคริปต์พังเงียบ (task.spawn กลืน error) → หุ้ม pcall โชว์ 💥 ERROR
@@ -83,7 +84,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "4.5"
+local V = "4.6"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -346,7 +347,7 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.AF75_GUI = gui
 
-local FULL_H, MIN_H = 496, 32
+local FULL_H, MIN_H = 522, 32
 local panel = Instance.new("Frame", gui)
 panel.Size = UDim2.new(0, 210, 0, FULL_H)
 panel.Position = UDim2.new(0.5, -105, 0, 20)
@@ -449,6 +450,13 @@ scanB.MouseButton1Click:Connect(function()
     end)
 end)
 
+-- v4.6: ปุ่ม "เก็บหมด" — ผ่อนตัวกรองทันที (T1, 0-5000kg, ปิดราคา) เวลาโซนนี้ไม่มีก้อนใหญ่
+local allB = Instance.new("TextButton", panel)
+allB.Size = UDim2.new(0, 96, 0, 24); allB.Position = UDim2.new(0, 6, 0, 202)
+allB.Text = "เก็บหมด (T1+)"; allB.Font = Enum.Font.GothamBold; allB.TextSize = 12
+allB.BackgroundColor3 = Color3.fromRGB(150, 110, 30); allB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", allB).CornerRadius = UDim.new(0, 5)
+
 -- v4.2: ปุ่มสลับโหมดจัดอันดับเป้าหมาย
 local modeB = Instance.new("TextButton", panel)
 modeB.Size = UDim2.new(0, 98, 0, 24); modeB.Position = UDim2.new(0, 106, 0, 176)
@@ -527,9 +535,10 @@ local function inputBox(x, w, y, val, tip, apply)
     b.BackgroundColor3 = Color3.fromRGB(28, 28, 40); b.TextColor3 = Color3.new(1, 1, 1)
     b.ClearTextOnFocus = false
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    -- v4.6: พิมพ์ผิดแล้วขึ้น "?" ทำให้งงว่าใช้ค่าอะไรอยู่ → คืนค่าเดิมให้เห็นชัดแทน
     b.FocusLost:Connect(function()
         local n = parseNum(b.Text)
-        if n then apply(n) else b.Text = "?" end
+        if n then apply(n) else b.Text = val end
         updKgL()
     end)
     return b
@@ -545,6 +554,14 @@ valB = inputBox(130, 74, 122, "1M", "ราคาต่ำสุด", function(n
     VAL_MIN = math.clamp(n, 0, 1e12)
     valB.Text = VAL_MIN > 0 and fmtMoney(VAL_MIN):gsub("%$", "") or "0"
 end)
+allB.MouseButton1Click:Connect(function()
+    MIN_TIER, KG_MIN, KG_MAX, VAL_MIN = 1, 0, 5000, 0
+    tierB.Text = "เทียร์ ≥ T1"
+    kgMinB.Text = "0"; kgMaxB.Text = "5000"; valB.Text = "0"
+    updKgL()
+    LG("🧹 ผ่อนตัวกรอง: T1+ / 0-5000kg / ปิดเงื่อนไขราคา — เก็บหมดทุกก้อน")
+end)
+
 local hintL = Instance.new("TextLabel", panel)
 hintL.Size = UDim2.new(1, -12, 0, 16); hintL.Position = UDim2.new(0, 6, 0, 148)
 hintL.BackgroundTransparency = 1
@@ -555,7 +572,7 @@ hintL.TextXAlignment = Enum.TextXAlignment.Left
 updKgL()
 
 local statusL = Instance.new("TextLabel", panel)
-statusL.Size = UDim2.new(1, -12, 0, 34); statusL.Position = UDim2.new(0, 6, 0, 206)
+statusL.Size = UDim2.new(1, -12, 0, 34); statusL.Position = UDim2.new(0, 6, 0, 232)
 statusL.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 statusL.Text = " พร้อม"
 statusL.Font = Enum.Font.Gotham; statusL.TextSize = 11
@@ -569,7 +586,7 @@ local function status(s) statusL.Text = " " .. s end
 local LOG = {}
 local T0 = os.clock()
 local logBox = Instance.new("TextLabel", panel)
-logBox.Size = UDim2.new(1, -12, 0, 120); logBox.Position = UDim2.new(0, 6, 0, 342)
+logBox.Size = UDim2.new(1, -12, 0, 120); logBox.Position = UDim2.new(0, 6, 0, 368)
 logBox.BackgroundColor3 = Color3.fromRGB(6, 6, 10)
 logBox.Text = ""
 logBox.Font = Enum.Font.Code; logBox.TextSize = 10
@@ -588,7 +605,7 @@ local function LG(s)
 end
 
 local copyB = Instance.new("TextButton", panel)
-copyB.Size = UDim2.new(0, 96, 0, 24); copyB.Position = UDim2.new(0, 6, 0, 466)
+copyB.Size = UDim2.new(0, 96, 0, 24); copyB.Position = UDim2.new(0, 6, 0, 492)
 copyB.Text = "COPY log"; copyB.Font = Enum.Font.GothamBold; copyB.TextSize = 12
 copyB.BackgroundColor3 = Color3.fromRGB(40, 90, 150); copyB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", copyB).CornerRadius = UDim.new(0, 5)
@@ -603,14 +620,14 @@ copyB.MouseButton1Click:Connect(function()
 end)
 
 local clrB = Instance.new("TextButton", panel)
-clrB.Size = UDim2.new(0, 96, 0, 24); clrB.Position = UDim2.new(0, 108, 0, 466)
+clrB.Size = UDim2.new(0, 96, 0, 24); clrB.Position = UDim2.new(0, 108, 0, 492)
 clrB.Text = "CLEAR"; clrB.Font = Enum.Font.GothamBold; clrB.TextSize = 12
 clrB.BackgroundColor3 = Color3.fromRGB(90, 60, 30); clrB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", clrB).CornerRadius = UDim.new(0, 5)
 clrB.MouseButton1Click:Connect(function() LOG = {}; logBox.Text = "" end)
 
 local statL = Instance.new("TextLabel", panel)
-statL.Size = UDim2.new(1, -12, 0, 92); statL.Position = UDim2.new(0, 6, 0, 246)
+statL.Size = UDim2.new(1, -12, 0, 92); statL.Position = UDim2.new(0, 6, 0, 272)
 statL.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
 statL.Font = Enum.Font.Code; statL.TextSize = 11
 statL.TextColor3 = Color3.fromRGB(190, 220, 190)
