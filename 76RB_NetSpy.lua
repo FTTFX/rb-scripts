@@ -1,4 +1,10 @@
--- 76RB_NetSpy.lua v1.2 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- 76RB_NetSpy.lua v1.3 — สปายเกมทันคูน เบซิก (Tycoon Basic)
+-- v1.2 พิสูจน์แล้ว: Npc_* ที่ "หาย" ไม่ใช่ถูกจับ — เป็น NPC ผู้เยี่ยมชมเดินเพ่นพ่านทั่วเกาะ (ทุกฐาน ทุกคน)
+--   ถูกสร้างใหม่ทุก ~1.45s ตาม pathfinding (ลบเก่า+สร้างใหม่ทุกก้าว ไม่เกี่ยวกับเงิน)
+--   รายได้จริงน่าจะมาจาก "มอนสเตอร์" ที่วางในฐาน (ชื่อแปลกๆ เช่น PapaFlame21, Bigkun15z) จับ NPC ที่เดินผ่านเอง
+--   attribute ThreatMonsterId="Base1_MonsterSpawn367" บน NPC คือจุดเชื่อมไปมอนสเตอร์ตัวที่จะจับมัน
+-- v1.3 ขุดต่อ: ดัก attribute โมเดลมอนสเตอร์ที่วางในฐาน (กรองชื่อ Npc_/NpcCaptureCloud/Highlight/Terrain/ฯลฯ ออก)
+--   ทั้งตอนโหลดและตอน AttributeChanged — หา field อัตราจับ/ผู้เยี่ยมชมต่อนาที ที่ผูกกับรายได้จริง
 -- v1.1 พิสูจน์แล้ว: NpcCaptureCloud มีลูกแค่ "RootPart" ตัวเดียว (ไม่ใช่ที่เก็บ NPC จริง)
 --   → มันคือ "จุดปักป้ายลอยตัวเลข" ที่ใช้ร่วมกันเฉยๆ ไม่ใช่ folder เก็บ NPC ที่ถูกจับ
 --   → ค่าเงินแต่ละครั้งไม่คงที่ (144-4443) เป็นกลุ่มขั้น (เล็ก/กลาง/ใหญ่/มหาศาล) คล้ายระบบ rarity
@@ -327,6 +333,47 @@ local function watchPrompts()
     L("[SETUP] ดัก ProximityPrompt ที่กด")
 end
 
+-- ==================== 7) มอนสเตอร์ที่วางในฐาน (ตัวจับ NPC ตัวจริง) ====================
+local SKIP_NAME = {
+    Camera = true, Island = true, NpcShop = true, Terrain = true,
+    MonsterPlacementHighlight = true, PersistentTeleportPoints = true, NpcCaptureCloud = true,
+}
+local function isSkippable(name)
+    if SKIP_NAME[name] then return true end
+    if name:match("^Npc_%d") then return true end
+    if name:find("Icon") or name:find("Backpack") then return true end
+    return false
+end
+
+local watchedMonster = {}
+local function watchMonster(m)
+    if watchedMonster[m] then return end
+    watchedMonster[m] = true
+    L(("[MONSTER] %s [%s] attr={%s}"):format(m.Name, m.ClassName, dumpAttrs(m)))
+    table.insert(_G.NSPY76_CONNS, m.AttributeChanged:Connect(function(attr)
+        if PAUSED then return end
+        L(("[MONSTER] %s.%s → %s"):format(m.Name, attr, ser(m:GetAttribute(attr))))
+    end))
+end
+
+local function scanMonsters()
+    local found = 0
+    for _, c in ipairs(workspace:GetChildren()) do
+        if (c:IsA("Model") or c:IsA("Folder")) and not isSkippable(c.Name) then
+            found += 1
+            watchMonster(c)
+        end
+    end
+    table.insert(_G.NSPY76_CONNS, workspace.ChildAdded:Connect(function(c)
+        if PAUSED then return end
+        if (c:IsA("Model") or c:IsA("Folder")) and not isSkippable(c.Name) then
+            task.wait()
+            watchMonster(c)
+        end
+    end))
+    L(("[SETUP] เจอมอนสเตอร์/ของวางในฐาน %d ตัว — ดัก attribute แล้ว"):format(found))
+end
+
 -- ==================== Buttons ====================
 listB.MouseButton1Click:Connect(listRemotes)
 clearB.MouseButton1Click:Connect(function() OUT = {}; redraw() end)
@@ -359,7 +406,8 @@ watchCaptureCloud()
 dumpWorkspaceTop()
 watchNpcRemoval()
 watchPrompts()
+scanMonsters()
 
-L("[NetSpy76 v1.2] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
-L("→ ไปจับ NPC 5-6 ตัว → เทียบ [NPC-หาย]/[PROMPT] กับ [POPUP]/[STAT] → กด LIST ดู remote → COPY ส่งผล")
+L("[NetSpy76 v1.3] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
+L("→ ปล่อยไว้เฉยๆ 20-30 วิ (ไม่ต้องกดอะไร) → ดู [MONSTER] เปลี่ยนพร้อม [POPUP]/[STAT] ไหม → กด LIST → COPY ส่งผล")
 warn("[NetSpy76] loaded")
