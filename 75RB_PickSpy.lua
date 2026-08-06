@@ -1,4 +1,5 @@
--- 75RB_PickSpy.lua v2.1 — สปายการเก็บของแบบแม่นยำ: ดูตั้งแต่กดจนของเข้ากระเป๋าจริง
+-- 75RB_PickSpy.lua v2.2 — สปายการเก็บของแบบแม่นยำ: ดูตั้งแต่กดจนของเข้ากระเป๋าจริง
+-- v2.2: ทดสอบ "ยิงตรงแบบ 74RB" เพิ่ม 3 ท่า — fp(Hold จริง) / Hold=0+fp / firesignal Triggered
 -- v2.1: ปุ่ม "ทดลองเอง" — ไม่ต้องกด E ค้างเอง สคริปต์ไปยืนข้างก้อนใกล้สุด 3 ก้อน แล้วไล่ลอง
 --       ทุกวิธี (InputHold / remote / fireproximityprompt / ฟันขวาน) บอกผลทีละวิธี
 -- ตอบให้ครบ 5 คำถาม:
@@ -212,9 +213,37 @@ local function autoTest()
                 if rr then rr:FireServer(c) end
                 task.wait(1)
             end },
-            { "fireproximityprompt", function()
+            { "fireproximityprompt(1)", function()
                 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
                 if fp and pp then pcall(fp, pp, 1) end
+                task.wait(1)
+            end },
+            -- v2.2: แบบ 74RB — ยิงตรงโดยส่ง "เวลากดค้างที่ก้อนต้องการ" เป็น arg
+            { "fp(Hold จริง)", function()
+                local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+                if fp and pp then pcall(fp, pp, pp.HoldDuration) end
+                task.wait(1.2)
+            end },
+            -- v2.2: ตั้ง Hold=0 แล้ว fp ทันที (ท่ามาตรฐาน 74RB)
+            { "Hold=0 + fp", function()
+                local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+                if pp then
+                    local old = pp.HoldDuration
+                    pcall(function() pp.HoldDuration = 0 end)
+                    if fp then pcall(fp, pp) end
+                    task.wait(0.8)
+                    pcall(function() pp.HoldDuration = old end)   -- คืนค่าเดิม กันก้อนพัง
+                end
+            end },
+            -- v2.2: ยิงเข้า connection ของ Triggered ตรงๆ (ให้โค้ดเกมเองทำงาน)
+            { "firesignal Triggered", function()
+                local gc = getconnections or (getgenv and getgenv().getconnections)
+                if gc and pp then
+                    local ok, conns = pcall(gc, pp.Triggered)
+                    if ok then
+                        for _, cn in ipairs(conns) do pcall(function() cn:Fire(LP) end) end
+                    end
+                end
                 task.wait(1)
             end },
             { "ขวาน Activate x12", function()
