@@ -7,6 +7,9 @@
 --   น้ำหนัก = GUI ExplorerHud.BackpackPanel.Value '656.0 / 1237.0 kg'  (BagSpy)
 --   เพดาน = PlayerData.RealStats.CarryWeight | เงิน = RealStats.Cash
 --   ก้อนบ้าน: ใต้ Plots / ไม่มี prompt → ข้าม (HomeSpy)
+-- v3.5: v3.4 ยิง remote รัวเกิน (ทุกก้อน x3 รอบ) → server เมินทุกคำสั่ง เก็บไม่เข้าเลย!
+--       → ยิงทีละก้อน เว้น 0.3 วิ เฉพาะก้อนในระยะ 14 สูงสุด 10 ก้อน + กวาดกองเว้น 20 วิ/ครั้ง
+--       + "บินหนีก่อนขุด": ยืนเยื้องสูง 2 ห่าง 4 และถอยขึ้น 8 ทันทีที่ก้อนแตก (กันเศษดันตัว)
 -- v3.4: ระเบิดทำของตกทับกันเป็นสิบ แต่ปุ่ม E ขึ้นให้ก้อนเดียว เก็บไม่ทัน →
 --       ยิง remote CrystalDroppedPickup + CrystalHoldComplete ใส่ทุกก้อนรวดเดียว (ไม่ง้อปุ่ม)
 --       + เจอกองของตก ≥3 ชิ้นใกล้ตัว (รัศมี 250) กวาดก่อนไปหาก้อนไกล
@@ -60,7 +63,7 @@ if _G.AF75_GUI then pcall(function() _G.AF75_GUI:Destroy() end) end
 _G.AF75_CONNS = {}
 _G.AF75_RUN = false
 
-local V = "3.4"
+local V = "3.5"
 local Players = game:GetService("Players")
 local RunSvc  = game:GetService("RunService")
 local RS      = game:GetService("ReplicatedStorage")
@@ -82,6 +85,7 @@ local statPick, statVal, statSell = 0, 0, 0
 local FAILED = {}               -- ก้อนที่เก็บไม่เข้า พัก 30 วิ
 local TARGET_POS = nil          -- จุดตรึงตัว (nil = ไม่ตรึง เดินเองได้)
 local TARGET_LOOK = nil         -- v2.1: จุดที่ให้หันหน้าใส่ (แร่) — ขวานต้องเล็งถึงจะโดน
+local LAST_SWEEP = 0            -- v3.5: กันกวาดกองของตกถี่เกิน (เว้น 20 วิ)
 
 local function fmtMoney(v)
     if v >= 1e9 then return ("$%.2fB"):format(v / 1e9) end
@@ -666,15 +670,17 @@ local function mineIt(c, kg0)
     local r = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if not r then return false end
     -- ยืนระดับเดียวกัน ห่าง ~6 แล้วหันหน้า+กล้องใส่ก้อน (สคริปต์เกมยิง ray จากกล้อง/เมาส์)
-    TARGET_POS = c.Position + Vector3.new(0, 0, -3)   -- v2.2: ชิดกว่าเดิม (เกมบอก "ไกลเกินไป")
+    -- v3.5: "บินหนีก่อนขุด" — ยืนเยื้องบนนิดนึง (ห่าง 4, สูง 2) กันเศษหิน/ก้อนที่แตกดันตัว
+    TARGET_POS = c.Position + Vector3.new(0, 2, -4)
     TARGET_LOOK = c.Position
     task.wait(0.4)
     LG("  ⛏ โหมดฟันขวาน (" .. tool.Name .. ")")
     for i = 1, 40 do        -- v2.6: ฟันได้ถึง 40 ที (ก้อนใหญ่ต้องหลายที) ถี่ขึ้นเป็น 0.15 วิ
         if not _G.AF75_RUN then break end
         if not c.Parent then           -- ก้อนแตกแล้ว → ของร่วงเป็นก้อนตกพื้น ตามเก็บทันที
-            LG(("  💥 ก้อนแตกหลังฟัน %d ที → ตามเก็บของตก"):format(i))
-            task.wait(0.4)
+            LG(("  💥 ก้อนแตกหลังฟัน %d ที → ถอยแล้วเก็บของตก"):format(i))
+            TARGET_POS = c.Position + Vector3.new(0, 8, 0)   -- v3.5: บินหนีขึ้นก่อน กันโดนเศษดัน
+            task.wait(0.6)
             return collectDropped(c.Position, kg0)
         end
         local rr = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -710,28 +716,28 @@ local function collectDropped(near, kg0)
     end)
     LG(("  📦 ของตกพื้น %d ชิ้น — กวาดเก็บ (ยิงตรง ไม่ง้อปุ่ม E)"):format(#found))
     local n0 = bagCount()
-    -- v3.4: ระเบิดทำของตกทับกันเป็นสิบ ปุ่ม E ขึ้นให้ก้อนเดียว → ยิง remote ใส่ทีละก้อนแทน
-    -- ยืนกลางกอง แล้วยิง CrystalDroppedPickup + CrystalHoldComplete ให้ครบทุกก้อนรวดเดียว
+    -- v3.5: ห้ามยิงรัว! (v3.4 ยิงทุกก้อน x3 รอบ → server throttle เมินทุกคำสั่ง)
+    -- ยืนกลางกอง ยิง CrystalDroppedPickup ทีละก้อน เว้นจังหวะ 0.3 วิ เฉพาะก้อนที่อยู่ในระยะจริง
     TARGET_POS = near + Vector3.new(0, 3, 0)
     TARGET_LOOK = near
-    task.wait(0.45)
-    for round = 1, 3 do
-        local left = 0
+    task.wait(0.5)
+    if dropR then
+        local myp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        local fired = 0
         for _, dr in ipairs(found) do
-            if dr.Parent then
-                left += 1
-                if dropR then pcall(function() dropR:FireServer(dr) end) end
-                if pickR then pcall(function() pickR:FireServer(dr) end) end
-                task.wait(0.08)
+            if not _G.AF75_RUN or fired >= 10 then break end
+            if dr.Parent and myp and (dr.Position - myp.Position).Magnitude <= 14 then
+                pcall(function() dropR:FireServer(dr) end)
+                fired += 1
+                task.wait(0.3)
             end
         end
-        if left == 0 then break end
-        task.wait(0.5)
-    end
-    local got = bagCount() - n0
-    if got > 0 then
-        LG(("  ✅ กวาดได้ %d ก้อน (ยิงตรง)"):format(got))
-        return true
+        if fired > 0 then
+            task.wait(0.6)
+            local got = bagCount() - n0
+            LG(("  📤 ยิงตรง %d ก้อน → ได้ %d"):format(fired, got))
+            if got > 0 then return true end
+        end
     end
     -- ยิงตรงไม่เข้า → ถอยไปวิธีเดิม: เดินไปทีละก้อนแล้วกดค้าง
     LG("  ↩ ยิงตรงไม่เข้า — ไล่เก็บทีละก้อนแทน")
@@ -934,8 +940,12 @@ local function farmLoop()
                             pile = pile or d.Position
                         end
                     end
-                    if pileCount >= 3 then
-                        LG(("  💣 เจอกองของตก %d ชิ้น — กวาดก่อน"):format(pileCount))
+                    -- v3.5: กวาดเฉพาะกองที่ "อยู่ใกล้จริง" (≤80) และเว้นระยะ 20 วิ/ครั้ง
+                    -- (v3.4 กวาดทุกกองในรัศมี 250 ทุกรอบ = ยิง remote รัวจน server เมิน)
+                    if pileCount >= 3 and pile and (pile - myp2.Position).Magnitude <= 80
+                        and os.clock() > (LAST_SWEEP + 20) then
+                        LAST_SWEEP = os.clock()
+                        LG(("  💣 กองของตก %d ชิ้นใกล้ๆ — กวาดก่อน"):format(pileCount))
                         markBase()
                         collectDropped(pile, bagInfo())
                     end
