@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v3.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v3.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v3.2: เลิกวาป/พุ่ง (ตัวละครล้มตลอด) — AUTO กลับมาบินต่อเนื่อง speed 100 แบบเดิม + NoClip
+--   ระหว่างบิน (ปิด CanCollide ทุกส่วนของตัวทุกเฟรม ทะลุกำแพงได้ ไม่ชนจนล้ม) ถึงแล้วเปิดชนคืน
 -- v3.1: STOP ยังหยุดไม่สนิทเพราะ "สคริปต์รุ่นเก่าค้าง" — โหลดสคริปต์ใหม่ทับ ลูปเก่าที่ spawn ไปแล้ว
 --   ยังวิ่งด้วยตัวแปรชุดเก่า ปุ่มใหม่ปิดไม่ถึง → ใส่เลขรุ่น _G.AF77_GEN ทุกลูป (AUTO/ESP/GUIDE/flyTo)
 --   เช็คเลขรุ่นแล้วตายเองทันทีที่มีการโหลดใหม่ + ตอนโหลดตามลบ Highlight/Beam ชื่อ AF77_* ที่ค้างทิ้ง
@@ -347,30 +349,40 @@ local function guideStart()
 end
 
 -- ==================== บิน (ย้าย HumanoidRootPart ไปจุดหมายแบบนุ่มๆ) ====================
--- v2.7: วาปทีเดียวเกมไม่รับ (v2.5-2.6) → เปลี่ยนเป็น "พุ่ง" ใน DASH_TIME วิ — ยังขยับเป็นสเต็ปต่อเนื่อง
--- ทุก Heartbeat (เซิร์ฟเวอร์เห็นว่าเคลื่อนที่ ไม่ใช่เด้งข้ามแผนที่ทีเดียว) แต่บีบเวลารวมต่อเที่ยวเหลือ 0.1 วิ
-local DASH_TIME = 0.1
+-- v3.2: กลับมาบินแบบเดิม (วาป/พุ่งแล้วตัวละครล้มตลอด) + NoClip ระหว่างบิน — ปิด CanCollide
+-- ทุกส่วนของตัวละครทุกเฟรม จะได้ทะลุกำแพง/เฟอร์นิเจอร์ ไม่ชนอะไรจนล้มหรือติดขอบ
+local function setNoClip(on)
+    local char = LP.Character
+    if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") then p.CanCollide = not on end
+    end
+end
 
 local function flyTo(targetPos, timeoutSec)
     local char = LP.Character
     if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
-    local startPos = hrp.Position
     local t0 = tick()
-    while true do
-        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then return false end
+    while tick() - t0 < (timeoutSec or 6) do
+        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then setNoClip(false) return false end
         hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return false end
-        local a = math.min((tick() - t0) / DASH_TIME, 1)
+        setNoClip(true)
         hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.CFrame = CFrame.new(startPos:Lerp(targetPos + Vector3.new(0, 2, 0), a), targetPos)
-        if a >= 1 then
+        local cur = hrp.Position
+        local dist = (targetPos - cur).Magnitude
+        if dist < 4 then
+            setNoClip(false)
             task.wait(0.1) -- ถึงแล้วนิ่งแป๊บให้ตำแหน่งซิงก์ก่อนคนเรียกยิง remote
             return true
         end
-        RunService.Heartbeat:Wait()
+        local dir = (targetPos - cur).Unit
+        hrp.CFrame = CFrame.new(cur + dir * math.min(FLY_SPEED * RunService.Heartbeat:Wait(), dist), targetPos)
     end
+    setNoClip(false)
+    return true
 end
 
 -- ==================== หาสล็อตเป้าหมายจากชื่อ + PairId/RoomId (กันชื่อซ้ำข้ามห้อง) ====================
