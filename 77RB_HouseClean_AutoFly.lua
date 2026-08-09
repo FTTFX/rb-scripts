@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v2.6 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.7 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.7: วาปทีเดียว (v2.5-2.6) เกมไม่รับ → AUTO เปลี่ยนเป็น "พุ่ง" ถึงเป้าใน 0.1 วิ แบบขยับเป็นสเต็ป
+--   ต่อเนื่องทุก Heartbeat (Lerp จากจุดเดิมไปเป้า) + นิ่ง 0.1 วิ หลังถึงก่อนยิง remote
 -- v2.6: ยอมรับความจริง — ตอน speed 200 วางไม่ผ่านคือบั๊กจับคู่สล็อตของเราเอง ไม่ใช่เรื่องซิงก์ตำแหน่ง
 --   เลยตัดเวลารอที่ใส่กันเหนียวไว้ออกเกือบหมด: TP_SYNC_WAIT 0.3→0.1, ตัด wait 0.15 ก่อนจับ/ก่อนวาง,
 --   รอเช็คเงินหลังวาง 0.4→0.25 — ต่อชิ้นเหลือประมาณครึ่งวิ (ไม่รวมเวลารอไฮไลต์ติดซึ่งออกทันทีที่เจอ)
@@ -318,36 +320,30 @@ local function guideStart()
 end
 
 -- ==================== บิน (ย้าย HumanoidRootPart ไปจุดหมายแบบนุ่มๆ) ====================
--- v2.5: โหมดวาป — เด้งไปเป้าหมายทันที (v2.6: ตอน speed 200 "พัง" จริงๆ คือบั๊กจับคู่สล็อตผิดของเราเอง
--- ไม่ใช่เรื่องซิงก์ตำแหน่ง — ตอนนี้ v2.4 ตามไฮไลต์ที่เกมชี้เองแล้ว เลยเหลือรอสั้นๆ กันเหนียวพอ)
-local TELEPORT_MODE = true
-local TP_SYNC_WAIT = 0.1
+-- v2.7: วาปทีเดียวเกมไม่รับ (v2.5-2.6) → เปลี่ยนเป็น "พุ่ง" ใน DASH_TIME วิ — ยังขยับเป็นสเต็ปต่อเนื่อง
+-- ทุก Heartbeat (เซิร์ฟเวอร์เห็นว่าเคลื่อนที่ ไม่ใช่เด้งข้ามแผนที่ทีเดียว) แต่บีบเวลารวมต่อเที่ยวเหลือ 0.1 วิ
+local DASH_TIME = 0.1
 
 local function flyTo(targetPos, timeoutSec)
     local char = LP.Character
     if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
-
-    if TELEPORT_MODE then
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 2, 0))
-        task.wait(TP_SYNC_WAIT)
-        return true
-    end
-
+    local startPos = hrp.Position
     local t0 = tick()
-    while tick() - t0 < (timeoutSec or 6) do
+    while true do
         if not AUTO_ON then return false end
         hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return false end
-        local cur = hrp.Position
-        local dist = (targetPos - cur).Magnitude
-        if dist < 4 then return true end
-        local dir = (targetPos - cur).Unit
-        hrp.CFrame = CFrame.new(cur + dir * math.min(FLY_SPEED * RunService.Heartbeat:Wait(), dist), targetPos)
+        local a = math.min((tick() - t0) / DASH_TIME, 1)
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.CFrame = CFrame.new(startPos:Lerp(targetPos + Vector3.new(0, 2, 0), a), targetPos)
+        if a >= 1 then
+            task.wait(0.1) -- ถึงแล้วนิ่งแป๊บให้ตำแหน่งซิงก์ก่อนคนเรียกยิง remote
+            return true
+        end
+        RunService.Heartbeat:Wait()
     end
-    return true
 end
 
 -- ==================== หาสล็อตเป้าหมายจากชื่อ + PairId/RoomId (กันชื่อซ้ำข้ามห้อง) ====================
