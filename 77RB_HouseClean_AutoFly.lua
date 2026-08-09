@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.2: เพิ่มปุ่ม GUIDE — เส้น Beam สีเขียวลากจากตัวผู้เล่นไปยัง "ของที่ใกล้ที่สุด" ทีละ 1 เส้น
+--   พอเก็บชิ้นนั้นแล้ว (ของหาย/ถูกวางชิดสล็อต) เส้นจะย้ายไปชี้ชิ้นถัดไปเองอัตโนมัติ
+--   ทั้ง GUIDE และ ESP กรอง "ของที่วางไปแล้ว" ออก (ของที่นั่งชิดสล็อตตัวเอง < 3 stud = วางแล้ว ไม่ชี้ซ้ำ)
 -- v2.1: เพิ่มปุ่ม ESP ไฮไลต์ของที่ยังไม่ถูกจับ (มองทะลุกำแพงได้) ช่วยดูภาพรวมว่าเหลืออะไรบ้าง
 -- v2.0: ของใหม่ในเกม (ร้านค้า/อัปเกรด) ทำให้มี RemoteEvent ชื่อ "RemoteEvent" มากกว่า 1 ตัว หาอัตโนมัติไม่เจอ
 --   เลย timeout ยกเลิก AUTO — แก้เป็นจำ remote ที่เรียนรู้ถูกไว้ใน _G.RB77_REMOTE ข้ามรอบ/ข้ามสคริปต์
@@ -84,9 +87,10 @@ end
 local flyB   = mkbtn("FLY: OFF (บินอิสระ WASD+Space/Ctrl)", 48, Color3.fromRGB(40, 90, 150))
 local autoB  = mkbtn("AUTO: OFF (จับ-วางของทั้งหมด)", 78, Color3.fromRGB(40, 130, 70))
 local espB   = mkbtn("ESP: OFF (ไฮไลต์ของที่ยังไม่จับ)", 108, Color3.fromRGB(150, 100, 20))
-local stopB  = mkbtn("STOP ทั้งหมด", 138, Color3.fromRGB(150, 60, 30))
-local closeB = mkbtn("✕ ปิด", 168, Color3.fromRGB(90, 40, 40))
-frame.Size = UDim2.new(0, 260, 0, 200)
+local guideB = mkbtn("GUIDE: OFF (เส้นนำทางไปของใกล้สุด)", 138, Color3.fromRGB(30, 150, 150))
+local stopB  = mkbtn("STOP ทั้งหมด", 168, Color3.fromRGB(150, 60, 30))
+local closeB = mkbtn("✕ ปิด", 198, Color3.fromRGB(90, 40, 40))
+frame.Size = UDim2.new(0, 260, 0, 230)
 
 setStatus("[AutoFly77] พร้อม — กด FLY เพื่อบินอิสระ หรือ AUTO เพื่อจับ-วางของอัตโนมัติ")
 
@@ -140,6 +144,9 @@ local function findHouses()
     return out
 end
 
+-- ประกาศล่วงหน้า (นิยามจริงอยู่ด้านล่าง) เพื่อให้ ESP/GUIDE เรียกใช้ได้ก่อนถึงจุดนิยามจริง
+local findSlotFor, partPosition, looksAlreadyPlaced
+
 -- ==================== ESP: ไฮไลต์ของที่ยังไม่จับ (มองทะลุกำแพงได้) ====================
 local ESP_ON = false
 local espHighlights = {} -- item -> Highlight instance
@@ -150,8 +157,9 @@ local function espRemoveAll()
     espHighlights = {}
 end
 
-local function espAddItem(item)
+local function espAddItem(item, slotsFolder)
     if espHighlights[item] or not item.Parent then return end
+    if looksAlreadyPlaced and looksAlreadyPlaced(item, slotsFolder) then return end
     local h = Instance.new("Highlight")
     h.FillColor = Color3.fromRGB(60, 255, 90)
     h.FillTransparency = 0.5
@@ -165,10 +173,10 @@ end
 
 local function espScanHouse(house)
     for _, item in ipairs(house.Items:GetChildren()) do
-        espAddItem(item)
+        espAddItem(item, house.Slots)
     end
     table.insert(espConns, house.Items.ChildAdded:Connect(function(item)
-        if ESP_ON then espAddItem(item) end
+        if ESP_ON then espAddItem(item, house.Slots) end
     end))
     table.insert(espConns, house.Items.ChildRemoved:Connect(function(item)
         local h = espHighlights[item]
@@ -187,7 +195,7 @@ local function espStop()
     espRemoveAll()
 end
 
-local function partPosition(inst)
+function partPosition(inst)
     if inst:IsA("BasePart") then return inst.Position end
     if inst:IsA("Model") then
         if inst.PrimaryPart then return inst.PrimaryPart.Position end
@@ -195,6 +203,85 @@ local function partPosition(inst)
         if ok then return cf.Position end
     end
     return nil
+end
+
+-- ==================== GUIDE: เส้นนำทางไปของที่ใกล้ที่สุด ทีละเส้น ====================
+local GUIDE_ON = false
+local guideConn, guideBeam, guideA0, guideA1, guideTarget
+
+-- ของที่วางสำเร็จแล้วไม่หายไปจาก Items folder (ยืนยันจาก AutoFly ก่อนหน้า) แต่มักถูกขยับไปนั่งชิดสล็อตของมันเอง
+-- เพราะงั้นถ้าของอยู่ใกล้สล็อตตัวเองมากๆ (< 3 stud) ให้ถือว่า "วางไปแล้ว" ข้ามไม่ต้องชี้ทางไปซ้ำ
+function looksAlreadyPlaced(item, slotsFolder)
+    local slot = findSlotFor(item, slotsFolder)
+    if not slot then return false end
+    local ipos, spos = partPosition(item), partPosition(slot)
+    if not ipos or not spos then return false end
+    return (ipos - spos).Magnitude < 3
+end
+
+local function findNearestItem()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local best, bestDist = nil, math.huge
+    for _, house in ipairs(findHouses()) do
+        for _, item in ipairs(house.Items:GetChildren()) do
+            if not looksAlreadyPlaced(item, house.Slots) then
+                local pos = partPosition(item)
+                if pos then
+                    local d = (pos - hrp.Position).Magnitude
+                    if d < bestDist then bestDist = d; best = item end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function guideStop()
+    GUIDE_ON = false
+    if guideConn then guideConn:Disconnect() guideConn = nil end
+    if guideBeam then pcall(function() guideBeam:Destroy() end) guideBeam = nil end
+    if guideA0 then pcall(function() guideA0:Destroy() end) guideA0 = nil end
+    if guideA1 then pcall(function() guideA1:Destroy() end) guideA1 = nil end
+    guideTarget = nil
+end
+
+local function guideStart()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    GUIDE_ON = true
+
+    guideA0 = Instance.new("Attachment")
+    guideA0.Parent = hrp
+    guideBeam = Instance.new("Beam")
+    guideBeam.Width0 = 0.4
+    guideBeam.Width1 = 0.1
+    guideBeam.Color = ColorSequence.new(Color3.fromRGB(60, 255, 150))
+    guideBeam.Transparency = NumberSequence.new(0.15)
+    guideBeam.FaceCamera = true
+    guideBeam.Attachment0 = guideA0
+    guideBeam.Parent = guideA0
+
+    guideConn = RunService.Heartbeat:Connect(function()
+        if not GUIDE_ON then return end
+        if not (guideTarget and guideTarget.Parent) then
+            local nearest = findNearestItem()
+            if not nearest then
+                guideBeam.Enabled = false
+                setStatus("[AutoFly77] GUIDE: ไม่พบของที่เหลือแล้ว")
+                return
+            end
+            guideTarget = nearest
+            if guideA1 then pcall(function() guideA1:Destroy() end) end
+            guideA1 = Instance.new("Attachment")
+            guideA1.Parent = guideTarget
+            guideBeam.Attachment1 = guideA1
+            setStatus(("[AutoFly77] GUIDE → %s"):format(guideTarget.Name))
+        end
+        guideBeam.Enabled = true
+    end)
 end
 
 -- ==================== บิน (ย้าย HumanoidRootPart ไปจุดหมายแบบนุ่มๆ) ====================
@@ -221,7 +308,7 @@ end
 -- ยืนยันจาก NetSpy: item มี attribute PairId/RoomName/RoomId (เช่น Book ตัวใน "Office" PairId=66,
 -- ตัวใน "Hallway" PairId=43) แปลว่าของชื่อเดียวกันอาจมีสล็อตชื่อ "<ชื่อของ>Home" ซ้ำกันได้หลายห้อง
 -- ถ้าเจอสล็อตชื่อตรงมากกว่า 1 จุด ต้องเทียบ PairId ก่อน (แม่นสุด) แล้วค่อย RoomId ถ้าไม่มี PairId ตรง
-local function findSlotFor(item, slotsFolder)
+function findSlotFor(item, slotsFolder)
     local wantName = item.Name .. "Home"
     local candidates = {}
     for _, s in ipairs(slotsFolder:GetDescendants()) do
@@ -465,6 +552,15 @@ espB.MouseButton1Click:Connect(function()
         espB.Text = "ESP: ON (มองทะลุกำแพง)"
     end
 end)
+guideB.MouseButton1Click:Connect(function()
+    if GUIDE_ON then
+        guideStop()
+        guideB.Text = "GUIDE: OFF (เส้นนำทางไปของใกล้สุด)"
+    else
+        guideStart()
+        guideB.Text = "GUIDE: ON (กำลังชี้ทาง...)"
+    end
+end)
 stopB.MouseButton1Click:Connect(function()
     FLY_ON, AUTO_ON = false, false
     flyB.Text = "FLY: OFF (บินอิสระ WASD+Space/Ctrl)"
@@ -476,6 +572,7 @@ closeB.MouseButton1Click:Connect(function()
     FLY_ON, AUTO_ON = false, false
     stopFly()
     espStop()
+    guideStop()
     for _, c in ipairs(_G.AF77_CONNS) do pcall(function() c:Disconnect() end) end
     _G.AF77_CONNS = {}
     gui:Destroy(); _G.AF77_GUI = nil
