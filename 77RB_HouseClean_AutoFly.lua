@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v3.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v3.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v3.4: อาการ "จุดเต็ม x8" = จริงๆ วางสำเร็จตั้งแต่รอบแรก แต่เช็คสำเร็จด้วยเงินอย่างเดียว (ด่านหลังๆ
+--   รางวัลไม่เข้า Cash แล้ว) เลยคิดว่าพลาด วนยัดจุดอื่นต่อ → เพิ่มเช็คทางกายภาพ: ของย้ายไปนั่งที่สล็อต
+--   (< 6 stud) = ผ่าน + status โชว์ว่าแต่ละรอบใช้ "ตามไฮไลต์" หรือ "เดาชื่อ" ให้เห็นชัด
 -- v3.3: บั๊กเด็ดขาดที่ทำให้ไม่ยอมไปจุดไฮไลต์ — เดิมรับเฉพาะไฮไลต์ที่ "เพิ่งติดใหม่หลังจับ" แต่ไฮไลต์
 --   จุดวางมักติดค้างอยู่ก่อนจับแล้ว เลยมองไม่เห็น ตกไปเดา PairId ได้สล็อตเต็ม วนตาย → ตัดเงื่อนไข
 --   "เพิ่งติด" ทิ้ง ใช้ "ติดอยู่ตอนนี้ + ชื่อตรง <ชื่อของ>HomeGhost" และถ้าเต็มไล่ลองสล็อตชื่อตรง
@@ -622,13 +625,19 @@ local function runAuto()
                     return
                 end
 
-                setStatus(("[AutoFly77] (%d/%d) วาง: %s → %s (รอบ %d)"):format(i, totalItems, item.Name, slot.Name, attempt))
+                setStatus(("[AutoFly77] (%d/%d) วาง: %s → %s (รอบ %d, %s)"):format(
+                    i, totalItems, item.Name, slot.Name, attempt, ghostTarget and "ตามไฮไลต์" or "เดาชื่อ"))
                 local cashBefore = getCash()
                 local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-                task.wait(0.25) -- รอเงินอัปเดตพอเช็คสำเร็จ/ไม่สำเร็จได้
+                task.wait(0.25) -- รอผลอัปเดตพอเช็คสำเร็จ/ไม่สำเร็จได้
 
-                -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
-                if ok1 and ok2 and (not getCashStat() or getCash() > cashBefore) then
+                -- v3.4 เช็คสำเร็จ 2 ทาง: เงินขึ้น หรือ "ของย้ายไปนั่งที่สล็อตแล้ว" (ด่านหลังๆ รางวัล
+                -- ไม่เข้า Cash แล้ว เช็คเงินอย่างเดียวจะมองวางสำเร็จเป็นพลาด แล้ววนยัดจุดอื่นจนเต็ม x8)
+                local function itemAtSlot()
+                    local ip, sp = partPosition(item), partPosition(slot)
+                    return ip and sp and (ip - sp).Magnitude < 6
+                end
+                if ok1 and ok2 and (not getCashStat() or getCash() > cashBefore or itemAtSlot()) then
                     processed += 1
                     placed = true
                     break
