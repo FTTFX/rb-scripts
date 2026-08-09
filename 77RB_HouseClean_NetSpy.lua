@@ -186,6 +186,53 @@ local function watchTools()
     L("[SETUP] ดัก Tool equip/unequip บนตัวละคร")
 end
 
+-- ==================== 3.5) ลูกศร/ตัวชี้ตำแหน่งวาง (Beam/Highlight/BillboardGui) ====================
+local ARROW_KEY = { "arrow", "compass", "pointer", "indicator", "guide", "target", "beam", "hint" }
+local function looksLikeArrowName(name)
+    local l = name:lower()
+    for _, k in ipairs(ARROW_KEY) do
+        if l:find(k, 1, true) then return true end
+    end
+    return false
+end
+local function dumpBeam(b)
+    local a0, a1 = b.Attachment0, b.Attachment1
+    local function describeAttach(a)
+        if not a then return "nil" end
+        local parent = a.Parent
+        return (parent and parent:GetFullName():gsub("^Workspace%.", "WS.") or "?") .. " (Attachment)"
+    end
+    return ("Attachment0=%s Attachment1=%s"):format(describeAttach(a0), describeAttach(a1))
+end
+local loggedArrow = setmetatable({}, { __mode = "k" })
+local function checkArrowInst(inst)
+    if loggedArrow[inst] then return end
+    if inst:IsA("Beam") then
+        loggedArrow[inst] = true
+        L(("[ARROW] Beam %s %s"):format(inst:GetFullName():gsub("^Workspace%.", "WS."), dumpBeam(inst)))
+    elseif inst:IsA("Highlight") or inst:IsA("SelectionBox") then
+        loggedArrow[inst] = true
+        local target = inst.Adornee or inst.Parent
+        L(("[ARROW] %s ชี้ที่ %s"):format(inst.ClassName,
+            target and target:GetFullName():gsub("^Workspace%.", "WS.") or "?"))
+    elseif looksLikeArrowName(inst.Name) then
+        loggedArrow[inst] = true
+        L(("[ARROW] พบ instance ชื่อพ้องลูกศร: %s [%s] parent=%s"):format(
+            inst.Name, inst.ClassName, inst.Parent and inst.Parent:GetFullName():gsub("^Workspace%.", "WS.") or "?"))
+    end
+end
+local function watchArrow()
+    for _, d in ipairs(workspace:GetDescendants()) do checkArrowInst(d) end
+    for _, d in ipairs(LP.PlayerGui:GetDescendants()) do checkArrowInst(d) end
+    table.insert(_G.NSPY77_CONNS, workspace.DescendantAdded:Connect(function(d)
+        if not PAUSED then checkArrowInst(d) end
+    end))
+    table.insert(_G.NSPY77_CONNS, LP.PlayerGui.DescendantAdded:Connect(function(d)
+        if not PAUSED then checkArrowInst(d) end
+    end))
+    L("[SETUP] ดักลูกศร/ตัวชี้ตำแหน่งวาง (Beam/Highlight/SelectionBox/ชื่อพ้อง arrow-compass-pointer)")
+end
+
 -- ==================== 4) ClickDetector / mouse drag (เผื่อวางของด้วยเมาส์ ไม่ใช่ปุ่ม E) ====================
 local function watchClickDetectors()
     local function hook(cd)
@@ -313,11 +360,13 @@ end)
 scanLeaderstats()
 watchPrompts()
 watchTools()
+watchArrow()
 watchClickDetectors()
 watchItems()
 dumpWorkspaceTop()
 
-L("[NetSpy77 v1.0] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
-L("→ วิธีทดสอบ: จับของ 1 ชิ้น (ดู [PROMPT]/[EQUIP]/[CLICK]) → เอาไปวางที่ถูกจุด (ดู [REMOTE]/[ITEM-]/[STAT])")
+L("[NetSpy77 v1.1] hookmetamethod=" .. (hookmetamethod and "✅มี" or "❌ไม่มี (ดัก remote ไม่ได้!)"))
+L("→ วิธีทดสอบ: จับของ 1 ชิ้น (ดู [PROMPT]/[EQUIP]/[CLICK]/[ARROW]) → เอาไปวางที่ถูกจุด (ดู [REMOTE]/[ITEM-]/[STAT])")
+L("→ v1.1: เพิ่มดัก [ARROW] เพื่อหาว่าลูกศรชี้ตำแหน่งวางสร้างจาก Instance อะไร (Beam/Highlight/ชื่อพ้อง)")
 L("→ ถ้ายังไม่เห็น log ตอนจับ/วาง ให้กด LIST ดู remote ทั้งหมด แล้วลองจับ-วางอีกที ดูว่า [REMOTE] ตัวไหนยิงตรงจังหวะนั้น")
 warn("[NetSpy77] loaded")
