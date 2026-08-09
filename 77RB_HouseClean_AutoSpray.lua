@@ -1,4 +1,5 @@
--- 77RB_HouseClean_AutoSpray.lua v1.1 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.2 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.2: เพิ่มความเร็วบิน FLY_SPEED 60 → 200 ตามที่ขอ
 -- v1.1: จำจุดที่ล้างครบแล้ว (ยิง reportSurfaceComplete สำเร็จ) ไว้ใน _G ข้ามรอบ SPRAY ได้ — กด SPRAY ใหม่
 --   จะข้ามจุด/ด้านที่ทำเสร็จไปแล้วอัตโนมัติ ไปต่อจากจุดที่ยังไม่เสร็จเลย ไม่ต้องเริ่มใหม่ทั้งหมด
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua v1.0 ที่ยืนยันแล้ว (การฉีดล้างคราบสกปรก):
@@ -24,7 +25,7 @@ local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 
 local SPRAY_ON = false
-local FLY_SPEED = 60
+local FLY_SPEED = 200
 local learnedRemote = nil
 
 -- ==================== GUI ====================
