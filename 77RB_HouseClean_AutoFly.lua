@@ -1,4 +1,5 @@
--- 77RB_HouseClean_AutoFly.lua v1.6 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.7 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.7: เพิ่มความเร็วบิน FLY_SPEED 60 → 200 ตามที่ขอ
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
@@ -42,7 +43,7 @@ local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 local FLY_ON, AUTO_ON = false, false
-local FLY_SPEED = 60
+local FLY_SPEED = 200
 local learnedRemote = nil
 local statusText = "รอเริ่ม..."
 
