@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v4.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.2: ยังตกแผนที่เป็นบางครั้ง — เพราะของบางชิ้นฟิสิกส์พาร่วง/ลอยหลุดนอกบ้าน แล้วสคริปต์บินตาม
+--   → จำจุดเริ่ม (homePos) ไว้ ของที่อยู่ห่างเกิน 600 หรือสูง/ต่ำเกิน 120 จากจุดเริ่ม = หลุดโลก ไม่ไล่
+--   และถ้าตัวเราเองหลุดโซน วาร์ปกลับ homePos อัตโนมัติก่อนทำชิ้นถัดไป
 -- v4.1: v4.0 NoClip ตลอดทำให้ตอนยืนวางของไม่มีพื้นเหยียบ ร่วงทะลุตกแผนที่ → ระหว่าง AUTO
 --   ล็อคความเร็วเป็นศูนย์ทุกเฟรม ตัวลอยนิ่งค้างที่เดิมแทนการร่วง (ขยับจริงด้วย CFrame อยู่แล้ว)
 -- v4.0: ยกเครื่องลูป AUTO ใหม่หมดตามสูตรผู้ใช้ 5 ข้อ: จับของใกล้สุด → ดูไฮไลต์ → บินไป → วาง →
@@ -551,6 +554,17 @@ local function runAuto()
     end)
     table.insert(_G.AF77_CONNS, noclipConn)
 
+    -- v4.2: จุดอ้างอิงกันหลุดแผนที่ — ของบางชิ้นฟิสิกส์พาร่วง/ลอยหลุดออกนอกบ้าน สคริปต์เคยบินตาม
+    -- จนตกแผนที่ → (1) ไม่ไล่ของที่ตำแหน่งหลุดโลก (2) ตัวเราหลุดโซนเมื่อไหร่ วาร์ปกลับจุดเริ่มเอง
+    local homePos do
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        homePos = hrp and hrp.Position or Vector3.zero
+    end
+    local function positionSane(p)
+        return p and math.abs(p.Y - homePos.Y) < 120 and (p - homePos).Magnitude < 600
+    end
+
     local function nearestUnplacedItem()
         local char = LP.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -560,7 +574,7 @@ local function runAuto()
             for _, it in ipairs(house.Items:GetChildren()) do
                 if not skipItems[it] and not looksAlreadyPlaced(it, house.Slots) then
                     local p = partPosition(it)
-                    if p then
+                    if p and positionSane(p) then
                         local d = (p - hrp.Position).Magnitude
                         if d < bestD then best, bestD, bestHouse = it, d, house end
                     end
@@ -574,6 +588,17 @@ local function runAuto()
         if HAND_FULL_FLAG then
             setStatus(ABORT_HANDFULL)
             break
+        end
+
+        -- ตัวเราหลุดโซนบ้าน (ตกแผนที่/ลอยหลุดฟ้า) → วาร์ปกลับจุดเริ่มก่อนทำงานต่อ
+        do
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp and not positionSane(hrp.Position) then
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.CFrame = CFrame.new(homePos)
+                task.wait(0.2)
+            end
         end
 
         -- (1) ของชิ้นใกล้สุดที่ยังไม่ได้วาง
