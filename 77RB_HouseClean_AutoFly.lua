@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v3.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.0: ยกเครื่องลูป AUTO ใหม่หมดตามสูตรผู้ใช้ 5 ข้อ: จับของใกล้สุด → ดูไฮไลต์ → บินไป → วาง →
+--   วนใหม่ทันที + NoClip เปิดตลอดเวลาที่ AUTO ทำงาน เช็คสำเร็จทางเดียว: ของย้ายมานั่งที่สล็อต
+--   วางไม่เข้า = ข้ามชิ้นนั้นถาวร (กันวนตาย) เลิกนับรอบ/เลิกไล่สล็อตสำรอง/เลิกเช็คเงิน
 -- v3.4: อาการ "จุดเต็ม x8" = จริงๆ วางสำเร็จตั้งแต่รอบแรก แต่เช็คสำเร็จด้วยเงินอย่างเดียว (ด่านหลังๆ
 --   รางวัลไม่เข้า Cash แล้ว) เลยคิดว่าพลาด วนยัดจุดอื่นต่อ → เพิ่มเช็คทางกายภาพ: ของย้ายไปนั่งที่สล็อต
 --   (< 6 stud) = ผ่าน + status โชว์ว่าแต่ละรอบใช้ "ตามไฮไลต์" หรือ "เดาชื่อ" ให้เห็นชัด
@@ -524,133 +527,100 @@ local function runAuto()
         return c and c.Value or 0
     end
 
-    -- สร้างรายการของทั้งหมดไว้แค่ "รู้ว่ามีอะไรบ้าง/มีกี่ชิ้น" — สล็อตเป้าหมายจริงจะอ่านจากไฟไฮไลต์
-    -- สดๆ ทีละชิ้นหลังจับ (ไม่ใช้คู่ที่เดาไว้ล่วงหน้า เพราะของหลายชิ้นตั้งชื่อ Part ซ้ำกันแบบ generic)
-    local totalItems = 0
-    local houseOfItem = {}
-    for _, house in ipairs(findHouses()) do
-        for _, item in ipairs(house.Items:GetChildren()) do
-            totalItems += 1
-            houseOfItem[item] = house
-        end
-    end
-    if totalItems == 0 then
-        setStatus("[AutoFly77] ไม่พบของที่ต้องเก็บ (อาจวางครบแล้ว) — จบ")
-        AUTO_ON = false
-        autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
-        return
-    end
-    setStatus(("[AutoFly77] พบของ %d ชิ้น — เริ่มบินเก็บ-วางทีละชิ้น"):format(totalItems))
-
+    -- ==================== v4.0 ยกเครื่องลูป AUTO — สูตรเรียบง่าย 5 ข้อ ====================
+    -- 1) จับของใกล้สุด 2) ดูไฮไลต์อยู่ตรงไหน 3) บินไปตรงนั้น 4) วาง 5) วนข้อ 1 — NoClip ตลอด
     HAND_FULL_FLAG = false
     watchHandFull()
     local ABORT_HANDFULL = "[AutoFly77] ⛔ หยุด AUTO เพราะเกมแจ้ง \"มือเต็ม\" — ไปวาง/ทิ้งของที่ถืออยู่เองก่อน แล้วค่อยกด AUTO ใหม่"
 
-    local processed, failed, noSlot = 0, 0, 0
-    local i = 0
-    for item, house in pairs(houseOfItem) do
-        i += 1
-        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
+    local processed, failed = 0, 0
+    local skipItems = {} -- ชิ้นที่วางไม่ผ่าน/วางแล้ว — ไม่หยิบซ้ำในรอบรันนี้ กันวนชิ้นเดิมไม่จบ
+
+    -- NoClip ตลอดเวลาที่ AUTO ทำงาน (Stepped ยิงก่อนฟิสิกส์ทุกเฟรม — เปิดซ้ำตลอดกันเกมรีเซ็ตคืน)
+    local noclipConn = RunService.Stepped:Connect(function()
+        if AUTO_ON and _G.AF77_GEN == MY_GEN then setNoClip(true) end
+    end)
+    table.insert(_G.AF77_CONNS, noclipConn)
+
+    local function nearestUnplacedItem()
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return nil end
+        local best, bestD, bestHouse = nil, math.huge, nil
+        for _, house in ipairs(findHouses()) do
+            for _, it in ipairs(house.Items:GetChildren()) do
+                if not skipItems[it] and not looksAlreadyPlaced(it, house.Slots) then
+                    local p = partPosition(it)
+                    if p then
+                        local d = (p - hrp.Position).Magnitude
+                        if d < bestD then best, bestD, bestHouse = it, d, house end
+                    end
+                end
+            end
+        end
+        return best, bestHouse
+    end
+
+    while AUTO_ON and _G.AF77_GEN == MY_GEN do
         if HAND_FULL_FLAG then
             setStatus(ABORT_HANDFULL)
-            AUTO_ON = false
-            autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
-            return
+            break
         end
-        if item.Parent then
-            setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
-            local ipos = partPosition(item)
-            if ipos then flyTo(ipos, 6) end
-            if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end -- กด STOP ระหว่างบิน — ห้ามยิงจับต่อ
-            local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
-            -- v3.3 บั๊กเด็ดขาดที่เจอ: เดิมเอาเฉพาะไฮไลต์ที่ "เพิ่งติดใหม่หลังจับ" — แต่ไฮไลต์จุดวางมัก
-            -- ติดค้างอยู่ก่อนจับแล้ว (เกมจุดไว้ล่วงหน้าหลายจุด) เลยมองไม่เห็น ตกไปเดาชื่อ+PairId ได้สล็อต
-            -- ที่เต็ม วนตาย ไม่เคยไปจุดไฮไลต์จริง → ตัดเงื่อนไข "เพิ่งติด" ทิ้ง ใช้แค่ "ติดอยู่ตอนนี้ +
-            -- ชื่อตรง <ชื่อของ>HomeGhost" (ชื่อตรง = จุดของชิ้นนี้แน่นอน) และถ้าเต็มก็ไล่ลองสล็อต
-            -- ชื่อตรงทุกตัวในแผนที่จนกว่าจะผ่าน (เกมเช็คให้เองว่าจุดไหนว่าง — เงินขึ้น = ผ่าน)
-            local wantGhostName = item.Name .. "HomeGhost"
-            local placed, triedSlots = false, {}
+        -- (1) ของชิ้นใกล้สุดที่ยังไม่ได้วาง
+        local item, house = nearestUnplacedItem()
+        if not item then
+            setStatus(("[AutoFly77] ✅ ไม่เหลือของให้เก็บแล้ว — จบ (สำเร็จ %d, ข้าม %d)"):format(processed, failed))
+            break
+        end
 
-            -- รายชื่อสล็อตชื่อตรงทั้งหมด เรียงความน่าจะใช่: PairId ตรง → RoomId ตรง → ที่เหลือ
-            local allSlots = {}
-            for _, s in ipairs(house.Slots:GetDescendants()) do
-                if s.Name == item.Name .. "Home" then allSlots[#allSlots + 1] = s end
+        setStatus(("[AutoFly77] เก็บ: %s (วางแล้ว %d)"):format(item.Name, processed))
+        local ipos = partPosition(item)
+        if ipos then flyTo(ipos, 6) end
+        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
+        pcall(function() learnedRemote:FireServer("pickupItem", item) end)
+
+        -- (2) ดูไฮไลต์: ghost ชื่อ <ชื่อของ>HomeGhost ที่ติดไฟอยู่ตอนนี้
+        local wantGhostName = item.Name .. "HomeGhost"
+        local ghost
+        local t0 = tick()
+        while AUTO_ON and _G.AF77_GEN == MY_GEN and not ghost and tick() - t0 < 1.0 do
+            for g in pairs(getLitGhosts()) do
+                if g.Name == wantGhostName then ghost = g; break end
             end
-            local pairId, roomId = item:GetAttribute("PairId"), item:GetAttribute("RoomId")
-            table.sort(allSlots, function(a, b)
-                local sa = (a:GetAttribute("PairId") == pairId and 2) or (a:GetAttribute("RoomId") == roomId and 1) or 0
-                local sb = (b:GetAttribute("PairId") == pairId and 2) or (b:GetAttribute("RoomId") == roomId and 1) or 0
-                return sa > sb
-            end)
+            if not ghost then task.wait(0.05) end
+        end
 
-            for attempt = 1, math.max(4, #allSlots) do
-                if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
+        local slot = (ghost and slotFromGhost(ghost, house.Slots)) or findSlotFor(item, house.Slots)
+        if not slot or not slot.Parent then
+            skipItems[item] = true
+            failed += 1
+            setStatus(("[AutoFly77] ⚠️ %s ไม่เจอทั้งไฮไลต์และสล็อต — ข้าม"):format(item.Name))
+        else
+            -- (3) บินไปจุดไฮไลต์
+            local spos = (ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
+            if spos then flyTo(spos, 6) end
+            if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
 
-                -- อันดับ 1: ghost ชื่อตรงที่ติดไฟอยู่ตอนนี้ (ไม่สนว่าติดตั้งแต่เมื่อไหร่) และยังไม่เคยลอง
-                local slot, ghostTarget
-                local t0 = tick()
-                while AUTO_ON and _G.AF77_GEN == MY_GEN and tick() - t0 < 1.0 and not slot do
-                    for g in pairs(getLitGhosts()) do
-                        if g.Name == wantGhostName then
-                            local s = slotFromGhost(g, house.Slots)
-                            if s and not triedSlots[s] then ghostTarget, slot = g, s; break end
-                        end
-                    end
-                    if not slot then task.wait(0.1) end
-                end
-                -- อันดับ 2: ไม่มีไฮไลต์ชื่อตรงเลย → ไล่ตามรายชื่อสล็อตชื่อตรงตัวถัดไปที่ยังไม่ลอง
-                if not slot then
-                    for _, s in ipairs(allSlots) do
-                        if not triedSlots[s] and s.Parent then slot = s; break end
-                    end
-                end
-                if not slot or not slot.Parent then
-                    if attempt == 1 then
-                        noSlot += 1
-                        setStatus(("[AutoFly77] ⚠️ %s หาจุดวางไม่เจอ — ข้าม"):format(item.Name))
-                    end
-                    break
-                end
-                triedSlots[slot] = true
+            -- (4) วาง
+            pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
+            task.wait(0.2)
 
-                local spos = (ghostTarget and partPosition(ghostTarget)) or getGhostPosition(slot) or partPosition(slot)
-                if spos then flyTo(spos, 6) end
-                if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end -- กด STOP ระหว่างบิน — ห้ามยิงวางต่อ
-
-                if HAND_FULL_FLAG then
-                    setStatus(ABORT_HANDFULL)
-                    AUTO_ON = false
-                    autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
-                    return
-                end
-
-                setStatus(("[AutoFly77] (%d/%d) วาง: %s → %s (รอบ %d, %s)"):format(
-                    i, totalItems, item.Name, slot.Name, attempt, ghostTarget and "ตามไฮไลต์" or "เดาชื่อ"))
-                local cashBefore = getCash()
-                local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-                task.wait(0.25) -- รอผลอัปเดตพอเช็คสำเร็จ/ไม่สำเร็จได้
-
-                -- v3.4 เช็คสำเร็จ 2 ทาง: เงินขึ้น หรือ "ของย้ายไปนั่งที่สล็อตแล้ว" (ด่านหลังๆ รางวัล
-                -- ไม่เข้า Cash แล้ว เช็คเงินอย่างเดียวจะมองวางสำเร็จเป็นพลาด แล้ววนยัดจุดอื่นจนเต็ม x8)
-                local function itemAtSlot()
-                    local ip, sp = partPosition(item), partPosition(slot)
-                    return ip and sp and (ip - sp).Magnitude < 6
-                end
-                if ok1 and ok2 and (not getCashStat() or getCash() > cashBefore or itemAtSlot()) then
-                    processed += 1
-                    placed = true
-                    break
-                end
-                -- วางไม่ผ่าน (เช่น "จุดนั้นเต็มแล้ว") — รอเกมย้ายไฮไลต์ไปจุดใหม่แล้ววนไปลองจุดนั้น
-                setStatus(("[AutoFly77] ⚠️ %s จุดเต็ม/ไม่ผ่าน — หาจุดไฮไลต์ใหม่ (รอบ %d)"):format(item.Name, attempt))
-                task.wait(0.3)
+            -- วางติดจริงไหม: ของย้ายมานั่งใกล้สล็อตที่เพิ่งวาง — ติดก็ (5) วนต่อ ไม่ติดก็ข้ามชิ้นนี้
+            local ip, sp = partPosition(item), partPosition(slot)
+            if ip and sp and (ip - sp).Magnitude < 6 then
+                processed += 1
+                skipItems[item] = true -- วางแล้ว ไม่ต้องกลับมามองชิ้นนี้อีก
+            else
+                skipItems[item] = true
+                failed += 1
+                setStatus(("[AutoFly77] ⚠️ %s วางไม่เข้า (จุดอาจเต็ม) — ข้ามไปชิ้นถัดไป"):format(item.Name))
             end
-            if not placed and next(triedSlots) then failed += 1 end
         end
     end
 
-    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ไม่มีสล็อต %d"):format(processed, failed, noSlot))
+    setNoClip(false)
+    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, ข้าม/พลาด %d"):format(processed, failed))
     AUTO_ON = false
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
 end
