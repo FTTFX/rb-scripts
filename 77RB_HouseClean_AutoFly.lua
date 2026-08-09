@@ -1,4 +1,5 @@
--- 77RB_HouseClean_AutoFly.lua v2.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.1: เพิ่มปุ่ม ESP ไฮไลต์ของที่ยังไม่ถูกจับ (มองทะลุกำแพงได้) ช่วยดูภาพรวมว่าเหลืออะไรบ้าง
 -- v2.0: ของใหม่ในเกม (ร้านค้า/อัปเกรด) ทำให้มี RemoteEvent ชื่อ "RemoteEvent" มากกว่า 1 ตัว หาอัตโนมัติไม่เจอ
 --   เลย timeout ยกเลิก AUTO — แก้เป็นจำ remote ที่เรียนรู้ถูกไว้ใน _G.RB77_REMOTE ข้ามรอบ/ข้ามสคริปต์
 --   (ใช้ร่วมกับ AutoSpray77) ไม่ต้องหาใหม่ทุกครั้งที่กด AUTO ถ้าเคยรู้แล้วในเซสชันนี้
@@ -36,7 +37,7 @@
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
 --      "pickupItem"/"placeCarried" เอง (ผู้ใช้จับ-วางของเอง 1 ครั้งก่อน) แล้วจำ instance ไว้อัตโนมัติ
--- ปุ่ม: FLY (บินอิสระ WASD+Space/Ctrl) | AUTO (บิน+จับ+วางของทั้งหมดอัตโนมัติ) | STOP | ✕
+-- ปุ่ม: FLY (บินอิสระ WASD+Space/Ctrl) | AUTO (บิน+จับ+วางของทั้งหมดอัตโนมัติ) | ESP (ไฮไลต์ของที่ยังไม่จับ) | STOP | ✕
 if _G.AF77_GUI then pcall(function() _G.AF77_GUI:Destroy() end) end
 if _G.AF77_CONNS then
     for _, c in ipairs(_G.AF77_CONNS) do pcall(function() c:Disconnect() end) end
@@ -82,9 +83,10 @@ local function mkbtn(txt, y, col)
 end
 local flyB   = mkbtn("FLY: OFF (บินอิสระ WASD+Space/Ctrl)", 48, Color3.fromRGB(40, 90, 150))
 local autoB  = mkbtn("AUTO: OFF (จับ-วางของทั้งหมด)", 78, Color3.fromRGB(40, 130, 70))
-local stopB  = mkbtn("STOP ทั้งหมด", 108, Color3.fromRGB(150, 60, 30))
-local closeB = mkbtn("✕ ปิด", 138, Color3.fromRGB(90, 40, 40))
-frame.Size = UDim2.new(0, 260, 0, 170)
+local espB   = mkbtn("ESP: OFF (ไฮไลต์ของที่ยังไม่จับ)", 108, Color3.fromRGB(150, 100, 20))
+local stopB  = mkbtn("STOP ทั้งหมด", 138, Color3.fromRGB(150, 60, 30))
+local closeB = mkbtn("✕ ปิด", 168, Color3.fromRGB(90, 40, 40))
+frame.Size = UDim2.new(0, 260, 0, 200)
 
 setStatus("[AutoFly77] พร้อม — กด FLY เพื่อบินอิสระ หรือ AUTO เพื่อจับ-วางของอัตโนมัติ")
 
@@ -136,6 +138,53 @@ local function findHouses()
         end
     end
     return out
+end
+
+-- ==================== ESP: ไฮไลต์ของที่ยังไม่จับ (มองทะลุกำแพงได้) ====================
+local ESP_ON = false
+local espHighlights = {} -- item -> Highlight instance
+local espConns = {}
+
+local function espRemoveAll()
+    for _, h in pairs(espHighlights) do pcall(function() h:Destroy() end) end
+    espHighlights = {}
+end
+
+local function espAddItem(item)
+    if espHighlights[item] or not item.Parent then return end
+    local h = Instance.new("Highlight")
+    h.FillColor = Color3.fromRGB(60, 255, 90)
+    h.FillTransparency = 0.5
+    h.OutlineColor = Color3.fromRGB(120, 255, 140)
+    h.OutlineTransparency = 0
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    h.Adornee = item
+    h.Parent = item
+    espHighlights[item] = h
+end
+
+local function espScanHouse(house)
+    for _, item in ipairs(house.Items:GetChildren()) do
+        espAddItem(item)
+    end
+    table.insert(espConns, house.Items.ChildAdded:Connect(function(item)
+        if ESP_ON then espAddItem(item) end
+    end))
+    table.insert(espConns, house.Items.ChildRemoved:Connect(function(item)
+        local h = espHighlights[item]
+        if h then pcall(function() h:Destroy() end) espHighlights[item] = nil end
+    end))
+end
+
+local function espStart()
+    ESP_ON = true
+    for _, house in ipairs(findHouses()) do espScanHouse(house) end
+end
+local function espStop()
+    ESP_ON = false
+    for _, c in ipairs(espConns) do pcall(function() c:Disconnect() end) end
+    espConns = {}
+    espRemoveAll()
 end
 
 local function partPosition(inst)
@@ -407,6 +456,15 @@ autoB.MouseButton1Click:Connect(function()
     autoB.Text = AUTO_ON and "AUTO: ON (กำลังทำงาน...)" or "AUTO: OFF (จับ-วางของทั้งหมด)"
     if AUTO_ON then task.spawn(runAuto) end
 end)
+espB.MouseButton1Click:Connect(function()
+    if ESP_ON then
+        espStop()
+        espB.Text = "ESP: OFF (ไฮไลต์ของที่ยังไม่จับ)"
+    else
+        espStart()
+        espB.Text = "ESP: ON (มองทะลุกำแพง)"
+    end
+end)
 stopB.MouseButton1Click:Connect(function()
     FLY_ON, AUTO_ON = false, false
     flyB.Text = "FLY: OFF (บินอิสระ WASD+Space/Ctrl)"
@@ -417,6 +475,7 @@ end)
 closeB.MouseButton1Click:Connect(function()
     FLY_ON, AUTO_ON = false, false
     stopFly()
+    espStop()
     for _, c in ipairs(_G.AF77_CONNS) do pcall(function() c:Disconnect() end) end
     _G.AF77_CONNS = {}
     gui:Destroy(); _G.AF77_GUI = nil
