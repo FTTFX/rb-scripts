@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v1.7 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.8 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.8: ความเร็ว 200 เร็วไปจนวางของไม่ผ่าน (ตำแหน่งอาจยังไม่ซิงก์ขึ้นเซิร์ฟเวอร์ตอนยิง remote) — ลดเหลือ 100
+--   และเพิ่ม task.wait(0.15) หลังบินถึงก่อนยิง remote ทุกครั้ง ให้ตำแหน่งนิ่ง/ซิงก์ก่อน
 -- v1.7: เพิ่มความเร็วบิน FLY_SPEED 60 → 200 ตามที่ขอ
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
@@ -43,7 +45,7 @@ local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 local FLY_ON, AUTO_ON = false, false
-local FLY_SPEED = 200
+local FLY_SPEED = 100
 local learnedRemote = nil
 local statusText = "รอเริ่ม..."
 
@@ -293,6 +295,7 @@ local function runAuto()
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
+            task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
             task.wait(0.35) -- รอไฟไฮไลต์อัปเดตให้ตรงกับของที่เพิ่งจับ
 
@@ -314,6 +317,7 @@ local function runAuto()
                 -- บินไปตามตำแหน่งจุดเรืองแสง (Ghost) ที่เห็นจริงบนจอก่อน ถ้าไม่เจอค่อย fallback ไปตำแหน่ง Slot
                 local spos = getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
+                task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote
                 local cashBefore = getCash()
                 local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
                 task.wait(0.4)
