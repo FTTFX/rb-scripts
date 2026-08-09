@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v4.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.1: v4.0 NoClip ตลอดทำให้ตอนยืนวางของไม่มีพื้นเหยียบ ร่วงทะลุตกแผนที่ → ระหว่าง AUTO
+--   ล็อคความเร็วเป็นศูนย์ทุกเฟรม ตัวลอยนิ่งค้างที่เดิมแทนการร่วง (ขยับจริงด้วย CFrame อยู่แล้ว)
 -- v4.0: ยกเครื่องลูป AUTO ใหม่หมดตามสูตรผู้ใช้ 5 ข้อ: จับของใกล้สุด → ดูไฮไลต์ → บินไป → วาง →
 --   วนใหม่ทันที + NoClip เปิดตลอดเวลาที่ AUTO ทำงาน เช็คสำเร็จทางเดียว: ของย้ายมานั่งที่สล็อต
 --   วางไม่เข้า = ข้ามชิ้นนั้นถาวร (กันวนตาย) เลิกนับรอบ/เลิกไล่สล็อตสำรอง/เลิกเช็คเงิน
@@ -537,8 +539,15 @@ local function runAuto()
     local skipItems = {} -- ชิ้นที่วางไม่ผ่าน/วางแล้ว — ไม่หยิบซ้ำในรอบรันนี้ กันวนชิ้นเดิมไม่จบ
 
     -- NoClip ตลอดเวลาที่ AUTO ทำงาน (Stepped ยิงก่อนฟิสิกส์ทุกเฟรม — เปิดซ้ำตลอดกันเกมรีเซ็ตคืน)
+    -- v4.1: NoClip ตลอด = ไม่มีพื้นให้เหยียบ ตอนยืนวางของเลยร่วงทะลุแผนที่ → ล็อคความเร็วเป็นศูนย์
+    -- ทุกเฟรมด้วย (ตัวลอยนิ่งค้างที่เดิม ไม่ตกลงไปเรื่อยๆ) การขยับจริงใช้ CFrame ใน flyTo อยู่แล้ว
     local noclipConn = RunService.Stepped:Connect(function()
-        if AUTO_ON and _G.AF77_GEN == MY_GEN then setNoClip(true) end
+        if AUTO_ON and _G.AF77_GEN == MY_GEN then
+            setNoClip(true)
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.AssemblyLinearVelocity = Vector3.zero end
+        end
     end)
     table.insert(_G.AF77_CONNS, noclipConn)
 
