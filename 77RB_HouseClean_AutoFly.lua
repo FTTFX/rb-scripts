@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.9 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v3.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v3.0: ปุ่ม STOP ใช้ไม่ได้จริง — เดิมแค่ตั้งธง แต่ไม่ปิด ESP/GUIDE และลูป AUTO ที่กำลังบิน/รอไฮไลต์
+--   ไม่เช็คธงก่อนยิง remote เลยจับ-วางต่ออีกพัก → เพิ่มเช็ค AUTO_ON หลังบินถึงทุกจุดก่อนยิง remote
+--   และ STOP ปิด ESP + GUIDE พร้อมรีเซ็ตข้อความปุ่มให้ครบ
 -- v2.9: เจอวางผิดสล็อต ("this spot wants Bear Plush!") — เกมจุดไฮไลต์ได้หลายจุดพร้อมกัน การคว้า
 --   "ตัวแรกที่เพิ่งติด" เลยได้สล็อตของชิ้นอื่นได้ → เพิ่มเงื่อนไขชื่อ: ghost ต้องชื่อ <ชื่อของ>HomeGhost
 --   (ชื่อตรง = ของถูก, เพิ่งติด = ห้องถูก) ตัวชื่อไม่ตรงเป็นได้แค่แผนสำรองหลังรอ 0.6 วิ
@@ -521,6 +524,7 @@ local function runAuto()
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
+            if not AUTO_ON then break end -- กด STOP ระหว่างบิน — ห้ามยิงจับต่อ
             local litBefore = getLitGhosts()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -537,7 +541,7 @@ local function runAuto()
                 local wantGhostName = item.Name .. "HomeGhost"
                 local slot, ghostTarget
                 local t0 = tick()
-                while tick() - t0 < 1.2 and not slot do
+                while AUTO_ON and tick() - t0 < 1.2 and not slot do
                     local newLit, newLitNamed = nil, nil
                     for g in pairs(getLitGhosts()) do
                         if not litBefore[g] then
@@ -571,6 +575,7 @@ local function runAuto()
 
                 local spos = (ghostTarget and partPosition(ghostTarget)) or getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
+                if not AUTO_ON then break end -- กด STOP ระหว่างบิน — ห้ามยิงวางต่อ
 
                 if HAND_FULL_FLAG then
                     setStatus(ABORT_HANDFULL)
@@ -680,6 +685,10 @@ stopB.MouseButton1Click:Connect(function()
     flyB.Text = "FLY: OFF (บินอิสระ WASD+Space/Ctrl)"
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
     stopFly()
+    espStop()
+    espB.Text = "ESP: OFF (ไฮไลต์ของที่ยังไม่จับ)"
+    guideStop()
+    guideB.Text = "GUIDE: OFF (เส้นนำทางไปของใกล้สุด)"
     setStatus("[AutoFly77] หยุดทั้งหมดแล้ว")
 end)
 closeB.MouseButton1Click:Connect(function()
