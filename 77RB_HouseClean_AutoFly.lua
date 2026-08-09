@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.8 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.9 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.9: เจอวางผิดสล็อต ("this spot wants Bear Plush!") — เกมจุดไฮไลต์ได้หลายจุดพร้อมกัน การคว้า
+--   "ตัวแรกที่เพิ่งติด" เลยได้สล็อตของชิ้นอื่นได้ → เพิ่มเงื่อนไขชื่อ: ghost ต้องชื่อ <ชื่อของ>HomeGhost
+--   (ชื่อตรง = ของถูก, เพิ่งติด = ห้องถูก) ตัวชื่อไม่ตรงเป็นได้แค่แผนสำรองหลังรอ 0.6 วิ
 -- v2.8: "จุดนั้นเต็มแล้ว!" ไม่ใช่จุดจบ — เกมย้ายไฮไลต์ไปชี้จุดว่างใหม่ให้เอง แต่โค้ดเดิมนับพลาด
 --   แล้วข้ามทั้งที่ของค้างมือ → แก้เป็นวนลองใหม่สูงสุด 4 รอบ: สแกนไฮไลต์ล่าสุด (ข้ามสล็อตที่เพิ่ง
 --   ลองแล้วเต็ม) → บินไปจุดใหม่ที่เกมชี้ → วางซ้ำ จนกว่าจะผ่านหรือครบ 4 รอบ
@@ -528,14 +531,27 @@ local function runAuto()
                 if not AUTO_ON then break end
 
                 -- หา ghost ที่เพิ่งติดใหม่ (ไม่นับตัวที่ติดค้างก่อนจับ และไม่เอาสล็อตที่เพิ่งลองแล้วเต็ม)
+                -- v2.9: ghost ที่เอาต้อง "ชื่อตรงกับของที่ถือ" ด้วย (<ชื่อของ>HomeGhost) ไม่ใช่แค่เพิ่งติด
+                -- เพราะเกมจุดไฮไลต์หลายจุดพร้อมกันได้ คว้าตัวแรกที่ติดเฉยๆ อาจได้สล็อตของชิ้นอื่น
+                -- ("this spot wants Bear Plush!") — ชื่อตรง = ของถูก, เพิ่งติด = ห้อง/จุดถูก
+                local wantGhostName = item.Name .. "HomeGhost"
                 local slot, ghostTarget
                 local t0 = tick()
                 while tick() - t0 < 1.2 and not slot do
+                    local newLit, newLitNamed = nil, nil
                     for g in pairs(getLitGhosts()) do
                         if not litBefore[g] then
                             local s = slotFromGhost(g, house.Slots)
-                            if s and not triedSlots[s] then ghostTarget, slot = g, s; break end
+                            if s and not triedSlots[s] then
+                                if g.Name == wantGhostName then newLitNamed = { g, s } break end
+                                newLit = newLit or { g, s }
+                            end
                         end
+                    end
+                    local pick = newLitNamed or newLit -- ชื่อตรงมาก่อนเสมอ ตัวอื่นเป็นแผนสำรอง
+                    if pick and (newLitNamed or tick() - t0 > 0.6) then
+                        -- ถ้ายังไม่เจอตัวชื่อตรง รออีกหน่อย (0.6 วิ) ก่อนยอมใช้ตัวสำรอง
+                        ghostTarget, slot = pick[1], pick[2]
                     end
                     if not slot then task.wait(0.1) end
                 end
