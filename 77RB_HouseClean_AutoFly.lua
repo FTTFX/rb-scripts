@@ -1,9 +1,13 @@
--- 77RB_HouseClean_AutoFly.lua v1.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
--- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua v1.0 ที่ยืนยันแล้ว:
+-- 77RB_HouseClean_AutoFly.lua v1.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
---   คู่ item/slot จับคู่ด้วยชื่อ: item="PictureFrame" ↔ slot="PictureFrameHome" (slot ชื่อขึ้นต้นด้วยชื่อ item)
 --   โครงสร้าง: workspace.House_<N>.Items (ของกระจาย) / workspace.House_<N>.Slots (จุดวาง)
+-- v1.1: v1.0 เดาสล็อตจากชื่อของล่วงหน้าทั้งชุด (scan ครั้งเดียว) แล้วพบว่าหยิบ/วางผิดจุดบ่อย เพราะของหลายชิ้น
+--   ตั้งชื่อ Part ซ้ำกันแบบ generic (เช่น "Model") ทำให้จับคู่ชื่อผิด — เกมเองก็รู้ปัญหานี้เลยมีไฟไฮไลต์สีฟ้า
+--   (Highlight) ชี้ Ghost ใน workspace.Camera.SortingGhosts.<สล็อต>Ghost บอกจุดที่ถูกต้องของที่ถืออยู่ ณ ขณะนั้น
+--   v1.1 เปลี่ยนมาจับของทีละชิ้นสดๆ แล้วอ่านไฟไฮไลต์นั้นหลังจับของ เพื่อรู้สล็อตที่ถูกต้องจริง (ตรงกับที่เกมชี้เป๊ะ)
+--   ถ้าหาไฮไลต์ไม่เจอ (เผื่อเกมอัปเดต/ช้า) จะ fallback กลับไปเดาจากชื่อแบบเดิม
 -- เพราะ RemoteEvent ที่ใช้จริงชื่อซ้ำกันได้หลายจุด (พาธเต็มไม่ยืนยัน) สคริปต์นี้ "เรียนรู้" ตัวจริงเอง 2 ทาง:
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
@@ -147,19 +151,21 @@ local function flyTo(targetPos, timeoutSec)
     return true
 end
 
--- ==================== AUTO: สแกนของทั้งหมดก่อน แล้วบินเก็บ-วางทีละชิ้นจนครบ แล้วจบ ====================
-local function scanAllItems()
-    local list = {}
-    for _, house in ipairs(findHouses()) do
-        local itemsF, slotsF = house.Items, house.Slots
-        for _, item in ipairs(itemsF:GetChildren()) do
-            local slot = findSlotFor(item, slotsF)
-            if slot then
-                list[#list + 1] = { item = item, slot = slot }
+-- ==================== อ่านไฟไฮไลต์สีฟ้า (Ghost) เพื่อรู้สล็อตที่ถูกต้องจริงของที่กำลังถืออยู่ ====================
+-- ยืนยันจาก NetSpy: [ARROW] Highlight ชี้ที่ WS.Camera.SortingGhosts.<สล็อต>Ghost
+local function getHighlightSlot(slotsFolder)
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("Highlight") and d.Adornee then
+            local ghost = d.Adornee
+            local gname = ghost.Name
+            if gname:sub(-5) == "Ghost" then
+                local slotName = gname:sub(1, -6) -- ตัดคำว่า "Ghost" ท้ายชื่อออก
+                local slot = slotsFolder:FindFirstChild(slotName)
+                if slot then return slot end
             end
         end
     end
-    return list
+    return nil
 end
 
 local function runAuto()
@@ -184,59 +190,74 @@ local function runAuto()
         return
     end
 
-    setStatus("[AutoFly77] 🔍 กำลังสแกนหาของทั้งหมด...")
-    local queue = scanAllItems()
-    if #queue == 0 then
-        setStatus("[AutoFly77] ไม่พบของที่ต้องเก็บ (อาจวางครบแล้ว) — จบ")
-        AUTO_ON = false
-        autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
-        return
-    end
-    setStatus(("[AutoFly77] พบของ %d ชิ้น — เริ่มบินเก็บ-วางทีละชิ้น"):format(#queue))
-
     local ls = LP:FindFirstChild("leaderstats")
     local cashStat = ls and ls:FindFirstChild("Cash")
     local function getCash()
         return cashStat and cashStat.Value or 0
     end
 
-    local processed, failed, skippedFull = 0, 0, 0
+    -- สร้างรายการของทั้งหมดไว้แค่ "รู้ว่ามีอะไรบ้าง/มีกี่ชิ้น" — สล็อตเป้าหมายจริงจะอ่านจากไฟไฮไลต์
+    -- สดๆ ทีละชิ้นหลังจับ (ไม่ใช้คู่ที่เดาไว้ล่วงหน้า เพราะของหลายชิ้นตั้งชื่อ Part ซ้ำกันแบบ generic)
+    local totalItems = 0
+    local houseOfItem = {}
+    for _, house in ipairs(findHouses()) do
+        for _, item in ipairs(house.Items:GetChildren()) do
+            totalItems += 1
+            houseOfItem[item] = house
+        end
+    end
+    if totalItems == 0 then
+        setStatus("[AutoFly77] ไม่พบของที่ต้องเก็บ (อาจวางครบแล้ว) — จบ")
+        AUTO_ON = false
+        autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
+        return
+    end
+    setStatus(("[AutoFly77] พบของ %d ชิ้น — เริ่มบินเก็บ-วางทีละชิ้น"):format(totalItems))
+
+    local processed, failed, skippedFull, noSlot = 0, 0, 0, 0
     local fullSlots = {}   -- slot instance ที่วางแล้วเงินไม่ขึ้น (คาดว่าเต็ม) — ข้ามที่เหลือของสล็อตนี้
-    for i, pair in ipairs(queue) do
+    local i = 0
+    for item, house in pairs(houseOfItem) do
+        i += 1
         if not AUTO_ON then break end
-        local item, slot = pair.item, pair.slot
-        if fullSlots[slot] then
-            skippedFull += 1
-        elseif item.Parent and slot.Parent then
-            setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, #queue, item.Name))
+        if item.Parent then
+            setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
-            task.wait(0.3)
+            task.wait(0.35) -- รอไฟไฮไลต์อัปเดตให้ตรงกับของที่เพิ่งจับ
 
-            setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s"):format(i, #queue, item.Name))
-            local spos = partPosition(slot)
-            if spos then flyTo(spos, 6) end
-            local cashBefore = getCash()
-            local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-            task.wait(0.4)
+            -- อ่านสล็อตเป้าหมายจริงจากไฟไฮไลต์ก่อน ถ้าไม่เจอค่อย fallback ไปเดาจากชื่อ
+            local slot = getHighlightSlot(house.Slots) or findSlotFor(item, house.Slots)
 
-            -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
-            -- ถ้าหา leaderstats.Cash ไม่เจอเลย ไม่มีทางเช็คได้ ก็ถือว่าสำเร็จตาม remote call แทน
-            if ok1 and ok2 and (not cashStat or getCash() > cashBefore) then
-                processed += 1
+            if not slot or not slot.Parent then
+                noSlot += 1
+                setStatus(("[AutoFly77] ⚠️ %s หาสล็อตเป้าหมายไม่เจอ — ข้าม"):format(item.Name))
+            elseif fullSlots[slot] then
+                skippedFull += 1
             else
-                failed += 1
-                fullSlots[slot] = true
-                setStatus(("[AutoFly77] ⚠️ %s วางไม่สำเร็จ (จุดอาจเต็มแล้ว) — ข้ามจุดนี้ที่เหลือ"):format(item.Name))
-                task.wait(0.5)
+                setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
+                local spos = partPosition(slot)
+                if spos then flyTo(spos, 6) end
+                local cashBefore = getCash()
+                local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
+                task.wait(0.4)
+
+                -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
+                -- ถ้าหา leaderstats.Cash ไม่เจอเลย ไม่มีทางเช็คได้ ก็ถือว่าสำเร็จตาม remote call แทน
+                if ok1 and ok2 and (not cashStat or getCash() > cashBefore) then
+                    processed += 1
+                else
+                    failed += 1
+                    fullSlots[slot] = true
+                    setStatus(("[AutoFly77] ⚠️ %s วางไม่สำเร็จ (จุดอาจเต็มแล้ว) — ข้ามจุดนี้ที่เหลือ"):format(item.Name))
+                    task.wait(0.5)
+                end
             end
-        else
-            failed += 1
         end
     end
 
-    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ข้ามเพราะจุดเต็ม %d"):format(processed, failed, skippedFull))
+    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ข้ามเพราะจุดเต็ม %d, หาสล็อตไม่เจอ %d"):format(processed, failed, skippedFull, noSlot))
     AUTO_ON = false
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
 end
