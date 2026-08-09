@@ -101,9 +101,6 @@ end
 local function findHouses()
     local out = {}
     for _, c in ipairs(workspace:GetChildren()) do
-        if c:Name:match then end
-    end
-    for _, c in ipairs(workspace:GetChildren()) do
         if c:IsA("Model") and c:FindFirstChild("Items") and c:FindFirstChild("Slots") then
             out[#out + 1] = c
         end
@@ -150,7 +147,21 @@ local function flyTo(targetPos, timeoutSec)
     return true
 end
 
--- ==================== AUTO: จับ-วางของทั้งหมด ====================
+-- ==================== AUTO: สแกนของทั้งหมดก่อน แล้วบินเก็บ-วางทีละชิ้นจนครบ แล้วจบ ====================
+local function scanAllItems()
+    local list = {}
+    for _, house in ipairs(findHouses()) do
+        local itemsF, slotsF = house.Items, house.Slots
+        for _, item in ipairs(itemsF:GetChildren()) do
+            local slot = findSlotFor(item, slotsF)
+            if slot then
+                list[#list + 1] = { item = item, slot = slot }
+            end
+        end
+    end
+    return list
+end
+
 local function runAuto()
     if not learnedRemote then
         if not tryAutoFindRemote() then
@@ -166,42 +177,49 @@ local function runAuto()
         end
     end
 
-    local processed, failed = 0, 0
-    while AUTO_ON do
-        local houses = findHouses()
-        if #houses == 0 then
-            setStatus("[AutoFly77] ไม่เจอ House ที่มี Items/Slots ใน workspace — หยุด")
-            break
-        end
-        local anyLeft = false
-        for _, house in ipairs(houses) do
-            local itemsF, slotsF = house.Items, house.Slots
-            for _, item in ipairs(itemsF:GetChildren()) do
-                if not AUTO_ON then break end
-                anyLeft = true
-                local slot = findSlotFor(item, slotsF)
-                local ipos = partPosition(item)
-                if slot and ipos then
-                    setStatus(("[AutoFly77] กำลังไป: %s (#%d สำเร็จ, %d พลาด)"):format(item.Name, processed, failed))
-                    flyTo(ipos, 6)
-                    local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
-                    task.wait(0.3)
-                    local spos = partPosition(slot)
-                    if spos then flyTo(spos, 6) end
-                    local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-                    task.wait(0.3)
-                    if ok1 and ok2 then processed += 1 else failed += 1 end
-                else
-                    failed += 1
-                end
-            end
-        end
-        if not anyLeft then
-            setStatus(("[AutoFly77] ของหมด/วางครบแล้ว — สำเร็จ %d, พลาด %d — รอของใหม่ทุก 3 วิ"):format(processed, failed))
-        end
-        task.wait(3)
+    if #findHouses() == 0 then
+        setStatus("[AutoFly77] ❌ ไม่เจอ House ที่มี Items/Slots ใน workspace — ยกเลิก")
+        AUTO_ON = false
+        autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
+        return
     end
-    setStatus(("[AutoFly77] AUTO หยุดแล้ว — รวมสำเร็จ %d, พลาด %d"):format(processed, failed))
+
+    setStatus("[AutoFly77] 🔍 กำลังสแกนหาของทั้งหมด...")
+    local queue = scanAllItems()
+    if #queue == 0 then
+        setStatus("[AutoFly77] ไม่พบของที่ต้องเก็บ (อาจวางครบแล้ว) — จบ")
+        AUTO_ON = false
+        autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
+        return
+    end
+    setStatus(("[AutoFly77] พบของ %d ชิ้น — เริ่มบินเก็บ-วางทีละชิ้น"):format(#queue))
+
+    local processed, failed = 0, 0
+    for i, pair in ipairs(queue) do
+        if not AUTO_ON then break end
+        local item, slot = pair.item, pair.slot
+        if item.Parent and slot.Parent then
+            setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, #queue, item.Name))
+            local ipos = partPosition(item)
+            if ipos then flyTo(ipos, 6) end
+            local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
+            task.wait(0.3)
+
+            setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s"):format(i, #queue, item.Name))
+            local spos = partPosition(slot)
+            if spos then flyTo(spos, 6) end
+            local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
+            task.wait(0.3)
+
+            if ok1 and ok2 then processed += 1 else failed += 1 end
+        else
+            failed += 1
+        end
+    end
+
+    setStatus(("[AutoFly77] ✅ จบแล้ว! เก็บ-วางสำเร็จ %d ชิ้น, พลาด %d ชิ้น"):format(processed, failed))
+    AUTO_ON = false
+    autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
 end
 
 -- ==================== FLY: บินอิสระด้วย WASD + Space/Ctrl ====================
