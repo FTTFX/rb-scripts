@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v4.7 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.8 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.8: หลุดกรอบบ้าน = วาปกลับกลางบ้านทันทีเฟรมนั้น (เดิมแค่กดความสูงคืน โดนแรงอื่นดันสู้ได้)
+--   + กด AUTO แล้วปิด FLY อัตโนมัติ — BodyVelocity ของ FLY คือแรงที่ดันตัวหลุดกรอบมาตลอด
 -- v4.7: ยังหลุดฟ้าได้เพราะกรอบสูงจาก GetBoundingBox บ้านกว้างเกินจริง (มีชิ้นประดับลอยสูงปน)
 --   → คำนวณกรอบจากตำแหน่งสล็อตวางของจริงทุกจุดแทน (min/max Y ของสล็อต -10/+20) แคบตรงตัวบ้านเป๊ะ
 -- v4.6: "โดนของผลัก" กระเด็นขึ้นฟ้า — flyTo เคยปิด NoClip ทันทีที่ถึงเป้า ทั้งที่ตัวจมอยู่ในเฟอร์นิเจอร์
@@ -622,10 +624,9 @@ local function runAuto()
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
                 hrp.AssemblyLinearVelocity = Vector3.zero
-                local p = hrp.Position
-                local cp = clampY(p)
-                if (cp - p).Magnitude > 0.01 then
-                    hrp.CFrame = CFrame.new(cp) * hrp.CFrame.Rotation
+                -- v4.8: หลุดกรอบบ้านเมื่อไหร่ วาปกลับกลางบ้านทันทีเฟรมนั้นเลย (ตามที่ผู้ใช้ขอ)
+                if not positionSane(hrp.Position) then
+                    hrp.CFrame = CFrame.new(homePos)
                 end
             end
         end
@@ -787,7 +788,15 @@ end)
 autoB.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
     autoB.Text = AUTO_ON and "AUTO: ON (กำลังทำงาน...)" or "AUTO: OFF (จับ-วางของทั้งหมด)"
-    if AUTO_ON then task.spawn(runAuto) end
+    if AUTO_ON then
+        -- FLY เปิดพร้อม AUTO ไม่ได้ — BodyVelocity ของ FLY จะดันสู้ระบบบิน AUTO จนตัวหลุดกรอบ
+        if FLY_ON then
+            FLY_ON = false
+            stopFly()
+            flyB.Text = "FLY: OFF (บินอิสระ WASD+Space/Ctrl)"
+        end
+        task.spawn(runAuto)
+    end
 end)
 espB.MouseButton1Click:Connect(function()
     if ESP_ON then
