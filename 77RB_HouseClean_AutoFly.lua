@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.3: แก้ ESP ไม่ขึ้น — Roblox เรนเดอร์ Highlight ได้สูงสุด 31 อันพร้อมกัน การสร้างให้ของทุกชิ้น
+--   (หลายร้อยชิ้น) ทำให้เกินโควตาแล้วไม่แสดงเลย → เปลี่ยนเป็นไฮไลต์เฉพาะของยังไม่วาง 20 ชิ้น
+--   ใกล้ตัวสุด รีเฟรชทุก 1 วิ พร้อมโชว์จำนวนของที่เหลือบน status bar
 -- v2.2: เพิ่มปุ่ม GUIDE — เส้น Beam สีเขียวลากจากตัวผู้เล่นไปยัง "ของที่ใกล้ที่สุด" ทีละ 1 เส้น
 --   พอเก็บชิ้นนั้นแล้ว (ของหาย/ถูกวางชิดสล็อต) เส้นจะย้ายไปชี้ชิ้นถัดไปเองอัตโนมัติ
 --   ทั้ง GUIDE และ ESP กรอง "ของที่วางไปแล้ว" ออก (ของที่นั่งชิดสล็อตตัวเอง < 3 stud = วางแล้ว ไม่ชี้ซ้ำ)
@@ -148,50 +151,71 @@ end
 local findSlotFor, partPosition, looksAlreadyPlaced
 
 -- ==================== ESP: ไฮไลต์ของที่ยังไม่จับ (มองทะลุกำแพงได้) ====================
+-- Roblox เรนเดอร์ Highlight พร้อมกันได้สูงสุด 31 อัน — ถ้าสร้างให้ของทุกชิ้น (หลายร้อย)
+-- อันที่เกินโควตาจะไม่ขึ้นเลย เพราะงั้นจำกัดเฉพาะของที่ยังไม่วาง 20 ชิ้นใกล้ตัวสุด รีเฟรชทุก 1 วิ
 local ESP_ON = false
+local ESP_MAX = 20
 local espHighlights = {} -- item -> Highlight instance
-local espConns = {}
+local espLoop
 
 local function espRemoveAll()
     for _, h in pairs(espHighlights) do pcall(function() h:Destroy() end) end
     espHighlights = {}
 end
 
-local function espAddItem(item, slotsFolder)
-    if espHighlights[item] or not item.Parent then return end
-    if looksAlreadyPlaced and looksAlreadyPlaced(item, slotsFolder) then return end
-    local h = Instance.new("Highlight")
-    h.FillColor = Color3.fromRGB(60, 255, 90)
-    h.FillTransparency = 0.5
-    h.OutlineColor = Color3.fromRGB(120, 255, 140)
-    h.OutlineTransparency = 0
-    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    h.Adornee = item
-    h.Parent = item
-    espHighlights[item] = h
-end
-
-local function espScanHouse(house)
-    for _, item in ipairs(house.Items:GetChildren()) do
-        espAddItem(item, house.Slots)
+local function espRefresh()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local cands = {}
+    for _, house in ipairs(findHouses()) do
+        for _, item in ipairs(house.Items:GetChildren()) do
+            if not (looksAlreadyPlaced and looksAlreadyPlaced(item, house.Slots)) then
+                local pos = partPosition(item)
+                if pos then
+                    cands[#cands + 1] = { item = item, d = (pos - hrp.Position).Magnitude }
+                end
+            end
+        end
     end
-    table.insert(espConns, house.Items.ChildAdded:Connect(function(item)
-        if ESP_ON then espAddItem(item, house.Slots) end
-    end))
-    table.insert(espConns, house.Items.ChildRemoved:Connect(function(item)
-        local h = espHighlights[item]
-        if h then pcall(function() h:Destroy() end) espHighlights[item] = nil end
-    end))
+    table.sort(cands, function(a, b) return a.d < b.d end)
+    local keep = {}
+    for i = 1, math.min(ESP_MAX, #cands) do keep[cands[i].item] = true end
+    for item, h in pairs(espHighlights) do
+        if not keep[item] or not item.Parent then
+            pcall(function() h:Destroy() end)
+            espHighlights[item] = nil
+        end
+    end
+    for item in pairs(keep) do
+        if not espHighlights[item] and item.Parent then
+            local h = Instance.new("Highlight")
+            h.FillColor = Color3.fromRGB(60, 255, 90)
+            h.FillTransparency = 0.5
+            h.OutlineColor = Color3.fromRGB(120, 255, 140)
+            h.OutlineTransparency = 0
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.Adornee = item
+            h.Parent = item
+            espHighlights[item] = h
+        end
+    end
+    setStatus(("[AutoFly77] ESP: เหลือของยังไม่วาง %d ชิ้น (ไฮไลต์ %d ชิ้นใกล้สุด)")
+        :format(#cands, math.min(ESP_MAX, #cands)))
 end
 
 local function espStart()
     ESP_ON = true
-    for _, house in ipairs(findHouses()) do espScanHouse(house) end
+    espLoop = task.spawn(function()
+        while ESP_ON do
+            pcall(espRefresh)
+            task.wait(1)
+        end
+    end)
 end
 local function espStop()
     ESP_ON = false
-    for _, c in ipairs(espConns) do pcall(function() c:Disconnect() end) end
-    espConns = {}
+    if espLoop then pcall(function() task.cancel(espLoop) end) espLoop = nil end
     espRemoveAll()
 end
 
