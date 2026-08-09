@@ -1,4 +1,4 @@
--- 77RB_HouseClean_AutoFly.lua v1.5 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.6 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
@@ -21,6 +21,9 @@
 --   หลายจุดคนละห้อง — ถ้าใช้ FindFirstChild ตัวเดียวจะได้จุดแรกที่เจอเสมอ ผิดห้องได้ถ้าของมาจากห้องอื่น
 --   แก้เป็นหาโดย GetDescendants ทั้งหมดที่ชื่อตรง แล้วถ้าเจอมากกว่า 1 จุด เทียบ PairId ก่อน (แม่นสุด)
 --   ตกไป RoomId ถ้าไม่มี PairId ตรง ก่อนจะ fallback ไปจุดแรกที่เจอ
+-- v1.6: ผู้ใช้ขอให้บินไปตาม "จุดเรืองแสง" (Ghost) ที่เห็นจริงบนจอ แทนตำแหน่ง Slot ที่คำนวณเอง
+--   เพิ่ม getGhostPosition() ดึงตำแหน่งจริงจาก workspace.Camera.SortingGhosts.<ชื่อสล็อต>Ghost มาบินไปแทน
+--   remote ยังคงยิงด้วย Slot instance ที่จับคู่ถูกจาก v1.5 เหมือนเดิม (แค่เปลี่ยนจุดที่บินไปให้ตรงตาเห็น)
 -- เพราะ RemoteEvent ที่ใช้จริงชื่อซ้ำกันได้หลายจุด (พาธเต็มไม่ยืนยัน) สคริปต์นี้ "เรียนรู้" ตัวจริงเอง 2 ทาง:
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
@@ -185,6 +188,23 @@ local function findSlotFor(item, slotsFolder)
     return candidates[1]
 end
 
+-- ==================== ตำแหน่งจริงของจุดเรืองแสง (Ghost) — บินไปตามที่ตาเห็นจริงบนจอ ====================
+-- ยืนยันจาก NetSpy [ARROW]: workspace.Camera.SortingGhosts มี Ghost ชื่อ "<ชื่อสล็อต>Ghost" ต่อสล็อต 1 จุด
+local function getGhostPosition(slot)
+    local ghostFolder = workspace:FindFirstChild("Camera")
+    ghostFolder = ghostFolder and ghostFolder:FindFirstChild("SortingGhosts")
+    if not ghostFolder then return nil end
+    local ghost = ghostFolder:FindFirstChild(slot.Name .. "Ghost")
+    if not ghost then return nil end
+    if ghost:IsA("BasePart") then return ghost.Position end
+    if ghost:IsA("Model") then
+        if ghost.PrimaryPart then return ghost.PrimaryPart.Position end
+        local ok, cf = pcall(function() return ghost:GetPivot() end)
+        if ok then return cf.Position end
+    end
+    return nil
+end
+
 -- ==================== ดักข้อความ "มือเต็ม!" ตรงๆ จาก popup ในเกม ====================
 local HAND_FULL_FLAG = false
 local function looksLikeHandFullText(t)
@@ -290,7 +310,8 @@ local function runAuto()
                 setStatus(("[AutoFly77] ⚠️ %s ไม่มีสล็อต %sHome ในแผนที่ — ข้าม"):format(item.Name, item.Name))
             else
                 setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
-                local spos = partPosition(slot)
+                -- บินไปตามตำแหน่งจุดเรืองแสง (Ghost) ที่เห็นจริงบนจอก่อน ถ้าไม่เจอค่อย fallback ไปตำแหน่ง Slot
+                local spos = getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
                 local cashBefore = getCash()
                 local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
