@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v1.9 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.0: ของใหม่ในเกม (ร้านค้า/อัปเกรด) ทำให้มี RemoteEvent ชื่อ "RemoteEvent" มากกว่า 1 ตัว หาอัตโนมัติไม่เจอ
+--   เลย timeout ยกเลิก AUTO — แก้เป็นจำ remote ที่เรียนรู้ถูกไว้ใน _G.RB77_REMOTE ข้ามรอบ/ข้ามสคริปต์
+--   (ใช้ร่วมกับ AutoSpray77) ไม่ต้องหาใหม่ทุกครั้งที่กด AUTO ถ้าเคยรู้แล้วในเซสชันนี้
 -- v1.9: หาสล็อตเป้าหมายไว้ก่อนจับของเลย (ไม่ต้องรอจับก่อนค่อยหา) แล้วตัดเวลารอ 0.35s เปล่าๆ หลังจับออก
 --   (ให้ระยะทางบินไปสล็อตกินเวลาแทน ไม่ต้องหยุดรอเฉยๆ) ทำให้แต่ละชิ้นเร็วขึ้นโดยยังปลอดภัยเท่าเดิม
 -- v1.8: ความเร็ว 200 เร็วไปจนวางของไม่ผ่าน (ตำแหน่งอาจยังไม่ซิงก์ขึ้นเซิร์ฟเวอร์ตอนยิง remote) — ลดเหลือ 100
@@ -48,7 +51,7 @@ local LP = Players.LocalPlayer
 
 local FLY_ON, AUTO_ON = false, false
 local FLY_SPEED = 100
-local learnedRemote = nil
+local learnedRemote = _G.RB77_REMOTE -- จำ remote ที่เรียนรู้ถูกไว้แล้วข้ามรอบ (กันหาไม่เจอตอนของใหม่โผล่ในเกม)
 local statusText = "รอเริ่ม..."
 
 -- ==================== GUI ====================
@@ -95,6 +98,7 @@ local function tryAutoFindRemote()
     end
     if #candidates == 1 then
         learnedRemote = candidates[1]
+        _G.RB77_REMOTE = learnedRemote
         setStatus("[AutoFly77] เจอ RemoteEvent อัตโนมัติ: " .. learnedRemote:GetFullName())
         return true
     end
@@ -114,6 +118,7 @@ local function hookLearn()
                 local args = { ... }
                 if args[1] == "pickupItem" or args[1] == "placeCarried" then
                     learnedRemote = self
+                    _G.RB77_REMOTE = learnedRemote
                     setStatus("[AutoFly77] ✅ เรียนรู้ remote จากการเล่นจริง: " .. self:GetFullName())
                 end
             end
@@ -229,6 +234,9 @@ local function watchHandFull()
 end
 
 local function runAuto()
+    if learnedRemote and not learnedRemote.Parent then
+        learnedRemote = nil -- remote ที่จำไว้โดนทำลายไปแล้ว (เช่น เข้าเซิร์ฟเวอร์ใหม่) ต้องหาใหม่
+    end
     if not learnedRemote then
         if not tryAutoFindRemote() then
             setStatus("[AutoFly77] ⚠️ ยังไม่รู้ remote — ลองจับ-วางของเอง 1 ครั้งก่อน (สคริปต์กำลังดักเรียนรู้อยู่)")
