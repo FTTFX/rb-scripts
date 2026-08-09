@@ -1,4 +1,4 @@
--- 77RB_HouseClean_AutoFly.lua v1.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
@@ -6,8 +6,9 @@
 -- v1.1: v1.0 เดาสล็อตจากชื่อของล่วงหน้าทั้งชุด (scan ครั้งเดียว) แล้วพบว่าหยิบ/วางผิดจุดบ่อย เพราะของหลายชิ้น
 --   ตั้งชื่อ Part ซ้ำกันแบบ generic (เช่น "Model") ทำให้จับคู่ชื่อผิด — เกมเองก็รู้ปัญหานี้เลยมีไฟไฮไลต์สีฟ้า
 --   (Highlight) ชี้ Ghost ใน workspace.Camera.SortingGhosts.<สล็อต>Ghost บอกจุดที่ถูกต้องของที่ถืออยู่ ณ ขณะนั้น
---   v1.1 เปลี่ยนมาจับของทีละชิ้นสดๆ แล้วอ่านไฟไฮไลต์นั้นหลังจับของ เพื่อรู้สล็อตที่ถูกต้องจริง (ตรงกับที่เกมชี้เป๊ะ)
---   ถ้าหาไฮไลต์ไม่เจอ (เผื่อเกมอัปเดต/ช้า) จะ fallback กลับไปเดาจากชื่อแบบเดิม
+-- v1.2: ตัดการ "เดา" จากชื่อออกทั้งหมดตอนตัดสินใจวางจริง — ใช้ไฟไฮไลต์ (ของจริงในแผนที่) เป็นตัวตัดสินอย่างเดียว
+--   ถ้าหาไฮไลต์ไม่เจอ = ไม่วาง (ข้ามไปเลย ไม่เดา) กันปัญหาวางผิดจุด/ของค้างมือจากการเดาผิด
+--   เพิ่มดักข้อความ "มือเต็ม" ตรงๆ จาก popup ในเกม เพื่อหยุด AUTO ทันทีแทนการเดาจากจำนวนครั้งที่พลาด
 -- เพราะ RemoteEvent ที่ใช้จริงชื่อซ้ำกันได้หลายจุด (พาธเต็มไม่ยืนยัน) สคริปต์นี้ "เรียนรู้" ตัวจริงเอง 2 ทาง:
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
@@ -112,15 +113,6 @@ local function findHouses()
     return out
 end
 
-local function findSlotFor(item, slotsFolder)
-    for _, s in ipairs(slotsFolder:GetChildren()) do
-        if s.Name:sub(1, #item.Name) == item.Name then
-            return s
-        end
-    end
-    return nil
-end
-
 local function partPosition(inst)
     if inst:IsA("BasePart") then return inst.Position end
     if inst:IsA("Model") then
@@ -166,6 +158,24 @@ local function getHighlightSlot(slotsFolder)
         end
     end
     return nil
+end
+
+-- ==================== ดักข้อความ "มือเต็ม!" ตรงๆ จาก popup ในเกม ====================
+local HAND_FULL_FLAG = false
+local function looksLikeHandFullText(t)
+    return t and (t:find("มือเต็ม") ~= nil)
+end
+local function watchHandFull()
+    local function hook(inst)
+        if not (inst:IsA("TextLabel") or inst:IsA("TextButton")) then return end
+        local function check()
+            if looksLikeHandFullText(inst.Text) then HAND_FULL_FLAG = true end
+        end
+        check()
+        table.insert(_G.AF77_CONNS, inst:GetPropertyChangedSignal("Text"):Connect(check))
+    end
+    for _, d in ipairs(LP.PlayerGui:GetDescendants()) do hook(d) end
+    table.insert(_G.AF77_CONNS, LP.PlayerGui.DescendantAdded:Connect(hook))
 end
 
 local function runAuto()
@@ -214,12 +224,21 @@ local function runAuto()
     end
     setStatus(("[AutoFly77] พบของ %d ชิ้น — เริ่มบินเก็บ-วางทีละชิ้น"):format(totalItems))
 
-    local processed, failed, skippedFull, noSlot = 0, 0, 0, 0
-    local fullSlots = {}   -- slot instance ที่วางแล้วเงินไม่ขึ้น (คาดว่าเต็ม) — ข้ามที่เหลือของสล็อตนี้
+    HAND_FULL_FLAG = false
+    watchHandFull()
+    local ABORT_HANDFULL = "[AutoFly77] ⛔ หยุด AUTO เพราะเกมแจ้ง \"มือเต็ม\" — ไปวาง/ทิ้งของที่ถืออยู่เองก่อน แล้วค่อยกด AUTO ใหม่"
+
+    local processed, failed, noSlot = 0, 0, 0
     local i = 0
     for item, house in pairs(houseOfItem) do
         i += 1
         if not AUTO_ON then break end
+        if HAND_FULL_FLAG then
+            setStatus(ABORT_HANDFULL)
+            AUTO_ON = false
+            autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
+            return
+        end
         if item.Parent then
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
@@ -227,14 +246,19 @@ local function runAuto()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
             task.wait(0.35) -- รอไฟไฮไลต์อัปเดตให้ตรงกับของที่เพิ่งจับ
 
-            -- อ่านสล็อตเป้าหมายจริงจากไฟไฮไลต์ก่อน ถ้าไม่เจอค่อย fallback ไปเดาจากชื่อ
-            local slot = getHighlightSlot(house.Slots) or findSlotFor(item, house.Slots)
+            if HAND_FULL_FLAG then
+                setStatus(ABORT_HANDFULL)
+                AUTO_ON = false
+                autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
+                return
+            end
+
+            -- ใช้ไฟไฮไลต์ (ของจริงในแผนที่) เป็นตัวตัดสินอย่างเดียว ไม่เดาจากชื่อ — ไม่เจอ = ไม่วาง ข้ามเลย
+            local slot = getHighlightSlot(house.Slots)
 
             if not slot or not slot.Parent then
                 noSlot += 1
-                setStatus(("[AutoFly77] ⚠️ %s หาสล็อตเป้าหมายไม่เจอ — ข้าม"):format(item.Name))
-            elseif fullSlots[slot] then
-                skippedFull += 1
+                setStatus(("[AutoFly77] ⚠️ %s ไม่มีไฟไฮไลต์ชี้ทาง — ข้าม (ไม่เดา)"):format(item.Name))
             else
                 setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
                 local spos = partPosition(slot)
@@ -249,15 +273,14 @@ local function runAuto()
                     processed += 1
                 else
                     failed += 1
-                    fullSlots[slot] = true
-                    setStatus(("[AutoFly77] ⚠️ %s วางไม่สำเร็จ (จุดอาจเต็มแล้ว) — ข้ามจุดนี้ที่เหลือ"):format(item.Name))
+                    setStatus(("[AutoFly77] ⚠️ %s วางไม่สำเร็จ"):format(item.Name))
                     task.wait(0.5)
                 end
             end
         end
     end
 
-    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ข้ามเพราะจุดเต็ม %d, หาสล็อตไม่เจอ %d"):format(processed, failed, skippedFull, noSlot))
+    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ไม่มีไฟไฮไลต์ %d"):format(processed, failed, noSlot))
     AUTO_ON = false
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
 end
