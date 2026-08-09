@@ -1,14 +1,18 @@
--- 77RB_HouseClean_AutoFly.lua v1.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
 --   โครงสร้าง: workspace.House_<N>.Items (ของกระจาย) / workspace.House_<N>.Slots (จุดวาง)
--- v1.1: v1.0 เดาสล็อตจากชื่อของล่วงหน้าทั้งชุด (scan ครั้งเดียว) แล้วพบว่าหยิบ/วางผิดจุดบ่อย เพราะของหลายชิ้น
---   ตั้งชื่อ Part ซ้ำกันแบบ generic (เช่น "Model") ทำให้จับคู่ชื่อผิด — เกมเองก็รู้ปัญหานี้เลยมีไฟไฮไลต์สีฟ้า
---   (Highlight) ชี้ Ghost ใน workspace.Camera.SortingGhosts.<สล็อต>Ghost บอกจุดที่ถูกต้องของที่ถืออยู่ ณ ขณะนั้น
--- v1.2: ตัดการ "เดา" จากชื่อออกทั้งหมดตอนตัดสินใจวางจริง — ใช้ไฟไฮไลต์ (ของจริงในแผนที่) เป็นตัวตัดสินอย่างเดียว
---   ถ้าหาไฮไลต์ไม่เจอ = ไม่วาง (ข้ามไปเลย ไม่เดา) กันปัญหาวางผิดจุด/ของค้างมือจากการเดาผิด
---   เพิ่มดักข้อความ "มือเต็ม" ตรงๆ จาก popup ในเกม เพื่อหยุด AUTO ทันทีแทนการเดาจากจำนวนครั้งที่พลาด
+-- v1.1: v1.0 เดาสล็อตแบบ "ชื่อขึ้นต้นด้วย" (prefix match) แล้วพบว่าหยิบ/วางผิดจุดบ่อย เพราะของหลายชิ้น
+--   ตั้งชื่อ Part ซ้ำกันแบบ generic (เช่น "Model") ทำให้ prefix match จับคู่มั่ว
+-- v1.2: ลองอ่านไฟไฮไลต์สีฟ้า (Highlight → Ghost ใน workspace.Camera.SortingGhosts) แทนการเดาชื่อ
+--   แต่จาก NetSpy log ล่าสุดพบว่า Ghost หลายอันไฮไลต์ค้างพร้อมกันได้ (ไม่ได้ผูกกับของที่ถืออยู่ตัวเดียว)
+--   ทำให้ "หยิบไฮไลต์ตัวแรกที่เจอ" ยังคงสุ่มผิดได้เหมือนเดิม
+-- v1.3: กลับมาใช้ชื่อ แต่เปลี่ยนจาก prefix match เป็น**เทียบชื่อตรงตัวเป๊ะ** — ชื่อ Ghost ที่ NetSpy ดักได้
+--   ("CouchHomeGhost", "BookHomeGhost", "Hanging Lights VarHomeGhost") ยืนยันแพทเทิร์นสล็อตชัดเจนว่า =
+--   <ชื่อของ>Home เป๊ะทุกตัว ไม่มีข้อยกเว้น เพราะงั้นใช้ slotsFolder:FindFirstChild(item.Name.."Home")
+--   ตรงๆ แม่นกว่าทั้ง prefix-guess (v1.0) และการอ่านไฮไลต์ที่กำกวม (v1.2)
+--   เพิ่มดักข้อความ "มือเต็ม" ตรงๆ จาก popup ในเกม เพื่อหยุด AUTO ทันทีถ้าของค้างมือ
 -- เพราะ RemoteEvent ที่ใช้จริงชื่อซ้ำกันได้หลายจุด (พาธเต็มไม่ยืนยัน) สคริปต์นี้ "เรียนรู้" ตัวจริงเอง 2 ทาง:
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
@@ -143,21 +147,12 @@ local function flyTo(targetPos, timeoutSec)
     return true
 end
 
--- ==================== อ่านไฟไฮไลต์สีฟ้า (Ghost) เพื่อรู้สล็อตที่ถูกต้องจริงของที่กำลังถืออยู่ ====================
--- ยืนยันจาก NetSpy: [ARROW] Highlight ชี้ที่ WS.Camera.SortingGhosts.<สล็อต>Ghost
-local function getHighlightSlot(slotsFolder)
-    for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("Highlight") and d.Adornee then
-            local ghost = d.Adornee
-            local gname = ghost.Name
-            if gname:sub(-5) == "Ghost" then
-                local slotName = gname:sub(1, -6) -- ตัดคำว่า "Ghost" ท้ายชื่อออก
-                local slot = slotsFolder:FindFirstChild(slotName)
-                if slot then return slot end
-            end
-        end
-    end
-    return nil
+-- ==================== หาสล็อตเป้าหมายจากชื่อ Ghost/แผนที่ (เทียบตรงตัวเป๊ะ) ====================
+-- ยืนยันจาก NetSpy [ARROW]: workspace.Camera.SortingGhosts มี Ghost ชื่อ "<ชื่อของ>HomeGhost" ต่อของ 1 ชนิด
+-- อยู่พร้อมกันได้หลายอัน (ไม่ได้ผูกกับของที่ถืออยู่ตัวเดียว) เพราะงั้นห้าม "หยิบไฮไลต์ตัวแรกที่เจอ" (สุ่มผิดได้)
+-- ต้องเทียบชื่อของกับ Ghost/Slot แบบตรงตัวเป๊ะเท่านั้น: slot ที่ถูกต้อง = <ชื่อของ>Home
+local function findSlotFor(item, slotsFolder)
+    return slotsFolder:FindFirstChild(item.Name .. "Home")
 end
 
 -- ==================== ดักข้อความ "มือเต็ม!" ตรงๆ จาก popup ในเกม ====================
@@ -253,12 +248,12 @@ local function runAuto()
                 return
             end
 
-            -- ใช้ไฟไฮไลต์ (ของจริงในแผนที่) เป็นตัวตัดสินอย่างเดียว ไม่เดาจากชื่อ — ไม่เจอ = ไม่วาง ข้ามเลย
-            local slot = getHighlightSlot(house.Slots)
+            -- สล็อตเป้าหมาย = <ชื่อของ>Home เป๊ะ (ยืนยันจากชื่อ Ghost ในแผนที่ผ่าน NetSpy [ARROW])
+            local slot = findSlotFor(item, house.Slots)
 
             if not slot or not slot.Parent then
                 noSlot += 1
-                setStatus(("[AutoFly77] ⚠️ %s ไม่มีไฟไฮไลต์ชี้ทาง — ข้าม (ไม่เดา)"):format(item.Name))
+                setStatus(("[AutoFly77] ⚠️ %s ไม่มีสล็อต %sHome ในแผนที่ — ข้าม"):format(item.Name, item.Name))
             else
                 setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
                 local spos = partPosition(slot)
@@ -280,7 +275,7 @@ local function runAuto()
         end
     end
 
-    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ไม่มีไฟไฮไลต์ %d"):format(processed, failed, noSlot))
+    setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, พลาด %d, ไม่มีสล็อต %d"):format(processed, failed, noSlot))
     AUTO_ON = false
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
 end
