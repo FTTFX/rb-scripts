@@ -1,4 +1,5 @@
--- 77RB_HouseClean_AutoSpray.lua v1.5 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.6 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.6: จำ remote ที่เรียนรู้ถูกไว้ใน _G.RB77_REMOTE ข้ามรอบ/ข้ามสคริปต์ (ใช้ร่วมกับ AutoFly77) เหมือนกัน
 -- v1.5: เจอ popup "คุณไม่ได้พักเลย!" จากการฉีดต่อเนื่องไม่มีหยุดเลย — เพิ่มระบบพักสั้นๆ (2.5s) ทุก 25 ครั้งที่ยิง reportSpray
 -- v1.4: ความเร็ว 200 เร็วไปจนอาจยิง remote ก่อนตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ — ลดเหลือ 100 + รอ 0.15s ก่อนยิงทุกครั้ง
 -- v1.3: เจอว่า House_1.Dirt.Part เป็น Part ตัวเดียวที่เกม "รียูส" แทนคราบใหม่ไปเรื่อยๆ (ตำแหน่งขยับทุกรอบงาน)
@@ -30,7 +31,7 @@ local LP = Players.LocalPlayer
 
 local SPRAY_ON = false
 local FLY_SPEED = 100
-local learnedRemote = nil
+local learnedRemote = _G.RB77_REMOTE -- จำ remote ที่เรียนรู้ถูกไว้แล้วข้ามรอบ (ตัวเดียวกับ AutoFly77)
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -74,6 +75,7 @@ local function tryAutoFindRemote()
     end
     if #candidates == 1 then
         learnedRemote = candidates[1]
+        _G.RB77_REMOTE = learnedRemote
         setStatus("[AutoSpray77] เจอ RemoteEvent อัตโนมัติ: " .. learnedRemote:GetFullName())
         return true
     end
@@ -93,6 +95,7 @@ local function hookLearn()
                 local args = { ... }
                 if args[1] == "reportSpray" or args[1] == "pickupItem" or args[1] == "placeCarried" then
                     learnedRemote = self
+                    _G.RB77_REMOTE = learnedRemote
                     setStatus("[AutoSpray77] ✅ เรียนรู้ remote จากการเล่นจริง: " .. self:GetFullName())
                 end
             end
@@ -233,6 +236,9 @@ end
 
 -- ==================== SPRAY: ไล่ล้างคราบทั้งหมด ====================
 local function runSpray()
+    if learnedRemote and not learnedRemote.Parent then
+        learnedRemote = nil -- remote ที่จำไว้โดนทำลายไปแล้ว (เช่น เข้าเซิร์ฟเวอร์ใหม่) ต้องหาใหม่
+    end
     if not learnedRemote then
         if not tryAutoFindRemote() then
             setStatus("[AutoSpray77] ⚠️ ยังไม่รู้ remote — ลองฉีด/จับของเองก่อน 1 ครั้ง (กำลังดักเรียนรู้อยู่)")
