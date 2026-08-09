@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v4.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.5 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.5: GUIDE ชี้ข้ามทะเลไปเกาะคนอื่น — เซิร์ฟเวอร์มีหลายบ้าน/เกาะ แต่โค้ดกวาดทุกบ้าน/หยิบตัวแรก
+--   → เพิ่ม nearestHouseList() ล็อคเฉพาะบ้านที่ใกล้เราสุด ใช้กับ AUTO / ESP / GUIDE / homePos ทั้งหมด
 -- v4.4: v4.3 ยังหลุดฟ้า+ไม่วาร์ปกลับ เพราะ homePos อิงตำแหน่งตัวเราตอนกด AUTO (กดตอนลอยบนฟ้า =
 --   เพดานเพี้ยนทั้งระบบ) → ยึดกล่องขอบเขตตัวบ้านจริง (GetBoundingBox) แทน เพดาน/พื้น = ขอบบ้าน ±15
 --   วาร์ปกลับ = กลางบ้านเสมอ ไม่อิงตัวเราอีกต่อไป
@@ -191,6 +193,29 @@ local function hookLearn()
 end
 
 -- ==================== หาห้อง/ของ/สล็อต ====================
+-- v4.5: เซิร์ฟเวอร์มีหลายบ้าน/หลายเกาะ (ของผู้เล่นคนอื่น) — ทุกระบบต้องมองเฉพาะ "บ้านที่ใกล้เราสุด"
+-- ไม่งั้น GUIDE/ESP/AUTO จะชี้ข้ามทะเลไปเกาะคนอื่น
+local function nearestHouseList()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local all = {}
+    for _, c in ipairs(workspace:GetChildren()) do
+        if c:IsA("Model") and c:FindFirstChild("Items") and c:FindFirstChild("Slots") then
+            all[#all + 1] = c
+        end
+    end
+    if not hrp or #all <= 1 then return all end
+    local best, bestD = nil, math.huge
+    for _, h in ipairs(all) do
+        local ok, pv = pcall(function() return h:GetPivot() end)
+        if ok then
+            local d = (pv.Position - hrp.Position).Magnitude
+            if d < bestD then best, bestD = h, d end
+        end
+    end
+    return best and { best } or all
+end
+
 local function findHouses()
     local out = {}
     for _, c in ipairs(workspace:GetChildren()) do
@@ -222,7 +247,7 @@ local function espRefresh()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
     local cands = {}
-    for _, house in ipairs(findHouses()) do
+    for _, house in ipairs(nearestHouseList()) do
         for _, item in ipairs(house.Items:GetChildren()) do
             if not (looksAlreadyPlaced and looksAlreadyPlaced(item, house.Slots)) then
                 local pos = partPosition(item)
@@ -304,7 +329,7 @@ local function findNearestItem()
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
     local best, bestDist = nil, math.huge
-    for _, house in ipairs(findHouses()) do
+    for _, house in ipairs(nearestHouseList()) do
         for _, item in ipairs(house.Items:GetChildren()) do
             if not looksAlreadyPlaced(item, house.Slots) then
                 local pos = partPosition(item)
@@ -552,7 +577,7 @@ local function runAuto()
     -- และ "วาร์ปกลับ" ก็พากลับไปกลางฟ้า → เปลี่ยนมายึดกล่องขอบเขตของตัวบ้านจริง (GetBoundingBox)
     local homePos, homeHalfY = Vector3.zero, 60
     do
-        local h1 = findHouses()[1]
+        local h1 = nearestHouseList()[1]
         local ok, cf, size = pcall(function() return h1:GetBoundingBox() end)
         if ok and cf then
             homePos = cf.Position
@@ -597,7 +622,7 @@ local function runAuto()
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return nil end
         local best, bestD, bestHouse = nil, math.huge, nil
-        for _, house in ipairs(findHouses()) do
+        for _, house in ipairs(nearestHouseList()) do
             for _, it in ipairs(house.Items:GetChildren()) do
                 if not skipItems[it] and not looksAlreadyPlaced(it, house.Slots) then
                     local p = partPosition(it)
