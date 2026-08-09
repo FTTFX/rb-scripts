@@ -1,7 +1,10 @@
--- 77RB_HouseClean_AutoSpray.lua v1.2 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.3 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.3: เจอว่า House_1.Dirt.Part เป็น Part ตัวเดียวที่เกม "รียูส" แทนคราบใหม่ไปเรื่อยๆ (ตำแหน่งขยับทุกรอบงาน)
+--   ไม่ใช่มีคราบสกปรกหลายก้อนวางอยู่ในโลกให้ไล่หา — ระบบจำ "ล้างเสร็จแล้ว" แบบ v1.1/v1.2 (จำตาม Instance)
+--   เลยผิดตั้งแต่ต้น เพราะ Instance เดิมถูกเอามาใช้กับคราบใหม่ตลอด ทำให้ข้ามคราบใหม่ทั้งที่ยังไม่เคยล้าง
+--   รื้อใหม่: วนฉีดตามตำแหน่งปัจจุบันของ Part ไปเรื่อยๆไม่จำกัดรอบ (ไม่จำ instance อีกต่อไป) แล้วอ่านความ
+--   คืบหน้าจริงจาก HUD เกม ("วัตถุที่ล้างแล้ว: X/Y") มาโชว์ + หยุดอัตโนมัติเมื่อ X ถึง Y (ล้างครบจริงตามเกม)
 -- v1.2: เพิ่มความเร็วบิน FLY_SPEED 60 → 200 ตามที่ขอ
--- v1.1: จำจุดที่ล้างครบแล้ว (ยิง reportSurfaceComplete สำเร็จ) ไว้ใน _G ข้ามรอบ SPRAY ได้ — กด SPRAY ใหม่
---   จะข้ามจุด/ด้านที่ทำเสร็จไปแล้วอัตโนมัติ ไปต่อจากจุดที่ยังไม่เสร็จเลย ไม่ต้องเริ่มใหม่ทั้งหมด
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua v1.0 ที่ยืนยันแล้ว (การฉีดล้างคราบสกปรก):
 --   RemoteEvent:FireServer("reportSpray", {รายการจุดที่โดนสเปรย์ {p=Part, pos=V3, f="ชื่อด้าน"}, ...}, ทิศทางฉีด)
 --   RemoteEvent:FireServer("reportWashProgress", <Part>, "ชื่อด้าน", ความคืบหน้า 0..1)
@@ -17,7 +20,6 @@ if _G.SPR77_CONNS then
     for _, c in ipairs(_G.SPR77_CONNS) do pcall(function() c:Disconnect() end) end
 end
 _G.SPR77_CONNS = {}
-_G.SPR77_DONE = _G.SPR77_DONE or setmetatable({}, { __mode = "k" }) -- [part][faceName] = true (จำข้ามรอบ SPRAY)
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -197,9 +199,20 @@ local function sprayFace(part, faceName)
     task.wait(0.15)
     pcall(function() learnedRemote:FireServer("reportSurfaceComplete", part, faceName) end)
     task.wait(0.2)
+end
 
-    _G.SPR77_DONE[part] = _G.SPR77_DONE[part] or {}
-    _G.SPR77_DONE[part][faceName] = true
+-- ==================== อ่านความคืบหน้าจริงจาก HUD เกม ("วัตถุที่ล้างแล้ว: X/Y") ====================
+local function getGameProgress()
+    for _, d in ipairs(LP.PlayerGui:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local t = d.Text
+            if t:find("ล้างแล้ว") then
+                local done, total = t:match("(%d+)%s*/%s*(%d+)")
+                if done and total then return tonumber(done), tonumber(total) end
+            end
+        end
+    end
+    return nil, nil
 end
 
 -- ==================== SPRAY: ไล่ล้างคราบทั้งหมด ====================
@@ -218,45 +231,39 @@ local function runSpray()
         end
     end
 
-    setStatus("[AutoSpray77] 🔍 กำลังสแกนหาคราบสกปรกทั้งหมด...")
-    local dirtParts = findDirtParts()
-    if #dirtParts == 0 then
-        setStatus("[AutoSpray77] ไม่พบคราบสกปรก (House_*.Dirt) — จบ")
-        SPRAY_ON = false
-        sprayB.Text = "SPRAY: OFF (ฉีดล้างคราบทั้งหมด)"
-        return
-    end
-    setStatus(("[AutoSpray77] พบคราบสกปรก %d จุด — เริ่มฉีดล้างทีละจุด (ข้ามจุดที่เคยล้างเสร็จแล้ว)"):format(#dirtParts))
-
-    local processed, skipped = 0, 0
-    for i, part in ipairs(dirtParts) do
-        if not SPRAY_ON then break end
-        if part.Parent then
-            -- เช็คว่าทุกด้านของจุดนี้ล้างเสร็จไปแล้วหรือยัง (จำไว้จากรอบก่อนหน้าใน _G) — ถ้าเสร็จหมดแล้วข้ามไปเลย
-            local doneFaces = _G.SPR77_DONE[part]
-            local allDone = true
-            for _, faceName in ipairs(ACTIVE_FACES) do
-                if not (doneFaces and doneFaces[faceName]) then allDone = false break end
-            end
-            if allDone then
-                skipped += 1
-            else
-                setStatus(("[AutoSpray77] (%d/%d) กำลังบินไปที่: %s"):format(i, #dirtParts, part.Name))
-                flyTo(part.Position, 6)
-                for _, faceName in ipairs(ACTIVE_FACES) do
-                    if not SPRAY_ON then break end
-                    if doneFaces and doneFaces[faceName] then
-                        -- ด้านนี้ล้างเสร็จแล้ว ข้ามเฉพาะด้านนี้
-                    else
+    -- Dirt.Part เป็น Part ที่เกม "รียูส" แทนคราบใหม่ไปเรื่อยๆ (ตำแหน่งขยับทุกงาน) ไม่ใช่ลิสต์ตายตัว
+    -- เพราะงั้นวนฉีดตามตำแหน่งปัจจุบันของมันไปเรื่อยๆ ไม่จำกัดรอบ จนกว่าเกมจะรายงานว่าล้างครบ หรือผู้ใช้กด STOP
+    local rounds = 0
+    while SPRAY_ON do
+        local dirtParts = findDirtParts()
+        if #dirtParts == 0 then
+            setStatus("[AutoSpray77] ไม่พบจุดสกปรกตอนนี้ — รอสักครู่...")
+            task.wait(1)
+        else
+            for _, part in ipairs(dirtParts) do
+                if not SPRAY_ON then break end
+                if part.Parent then
+                    setStatus(("[AutoSpray77] กำลังบินไปที่: %s (รอบที่ %d)"):format(part.Name, rounds + 1))
+                    flyTo(part.Position, 6)
+                    for _, faceName in ipairs(ACTIVE_FACES) do
+                        if not SPRAY_ON then break end
                         sprayFace(part, faceName)
                     end
                 end
-                processed += 1
+            end
+            rounds += 1
+        end
+
+        local doneN, totalN = getGameProgress()
+        if doneN and totalN then
+            setStatus(("[AutoSpray77] ล้างไปแล้ว %d/%d ตามที่เกมนับ (รอบที่ %d)"):format(doneN, totalN, rounds))
+            if doneN >= totalN then
+                setStatus(("[AutoSpray77] ✅ ล้างครบ %d/%d แล้ว! จบงาน"):format(doneN, totalN))
+                break
             end
         end
+        task.wait(0.3)
     end
-
-    setStatus(("[AutoSpray77] ✅ จบแล้ว! ล้างคราบไป %d จุด, ข้ามที่เสร็จแล้ว %d จุด (รวม %d)"):format(processed, skipped, #dirtParts))
     SPRAY_ON = false
     sprayB.Text = "SPRAY: OFF (ฉีดล้างคราบทั้งหมด)"
 end
