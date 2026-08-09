@@ -1,4 +1,4 @@
--- 77RB_HouseClean_AutoFly.lua v1.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
@@ -13,6 +13,9 @@
 --   <ชื่อของ>Home เป๊ะทุกตัว ไม่มีข้อยกเว้น เพราะงั้นใช้ slotsFolder:FindFirstChild(item.Name.."Home")
 --   ตรงๆ แม่นกว่าทั้ง prefix-guess (v1.0) และการอ่านไฮไลต์ที่กำกวม (v1.2)
 --   เพิ่มดักข้อความ "มือเต็ม" ตรงๆ จาก popup ในเกม เพื่อหยุด AUTO ทันทีถ้าของค้างมือ
+-- v1.4: เจอบั๊ก "สำเร็จ 0 ทั้งที่จับคู่ถูกทุกตัว" เพราะ cache instance Cash ไว้ตัวเดียวตอนเริ่ม ถ้า leaderstats
+--   โดนสร้างใหม่ระหว่างรัน (เช่น respawn) reference จะค้าง เช็คเงินไม่ขึ้นตลอด ทั้งที่วางสำเร็จจริง
+--   แก้เป็นค้นหา leaderstats.Cash ใหม่สดๆ ทุกครั้งที่เช็ค แทนการ cache ไว้ล่วงหน้า
 -- เพราะ RemoteEvent ที่ใช้จริงชื่อซ้ำกันได้หลายจุด (พาธเต็มไม่ยืนยัน) สคริปต์นี้ "เรียนรู้" ตัวจริงเอง 2 ทาง:
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
@@ -195,10 +198,14 @@ local function runAuto()
         return
     end
 
-    local ls = LP:FindFirstChild("leaderstats")
-    local cashStat = ls and ls:FindFirstChild("Cash")
+    -- ค้นหา Cash ใหม่ทุกครั้ง (ไม่ cache instance ไว้) กัน reference ค้างถ้า leaderstats โดนสร้างใหม่ระหว่างรัน (เช่น respawn)
+    local function getCashStat()
+        local ls = LP:FindFirstChild("leaderstats")
+        return ls and ls:FindFirstChild("Cash")
+    end
     local function getCash()
-        return cashStat and cashStat.Value or 0
+        local c = getCashStat()
+        return c and c.Value or 0
     end
 
     -- สร้างรายการของทั้งหมดไว้แค่ "รู้ว่ามีอะไรบ้าง/มีกี่ชิ้น" — สล็อตเป้าหมายจริงจะอ่านจากไฟไฮไลต์
@@ -264,7 +271,7 @@ local function runAuto()
 
                 -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
                 -- ถ้าหา leaderstats.Cash ไม่เจอเลย ไม่มีทางเช็คได้ ก็ถือว่าสำเร็จตาม remote call แทน
-                if ok1 and ok2 and (not cashStat or getCash() > cashBefore) then
+                if ok1 and ok2 and (not getCashStat() or getCash() > cashBefore) then
                     processed += 1
                 else
                     failed += 1
