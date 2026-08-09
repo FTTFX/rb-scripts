@@ -1,4 +1,4 @@
--- 77RB_HouseClean_AutoFly.lua v1.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.5 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua ที่ยืนยันแล้ว:
 --   จับของ:  RemoteEvent:FireServer("pickupItem", <Part ของที่จะจับ>)
 --   วางของ:  RemoteEvent:FireServer("placeCarried", <Part สล็อตที่จะวาง>, <Part ของที่ถือ>)
@@ -16,6 +16,11 @@
 -- v1.4: เจอบั๊ก "สำเร็จ 0 ทั้งที่จับคู่ถูกทุกตัว" เพราะ cache instance Cash ไว้ตัวเดียวตอนเริ่ม ถ้า leaderstats
 --   โดนสร้างใหม่ระหว่างรัน (เช่น respawn) reference จะค้าง เช็คเงินไม่ขึ้นตลอด ทั้งที่วางสำเร็จจริง
 --   แก้เป็นค้นหา leaderstats.Cash ใหม่สดๆ ทุกครั้งที่เช็ค แทนการ cache ไว้ล่วงหน้า
+-- v1.5: เจอว่าของชื่อเดียวกัน (เช่น "Book") มี attribute PairId/RoomName/RoomId ต่างกันตามห้องที่อยู่
+--   (Book ห้อง Office PairId=66, ห้อง Hallway PairId=43) แปลว่าสล็อตชื่อ "<ชื่อของ>Home" อาจมีซ้ำกันได้
+--   หลายจุดคนละห้อง — ถ้าใช้ FindFirstChild ตัวเดียวจะได้จุดแรกที่เจอเสมอ ผิดห้องได้ถ้าของมาจากห้องอื่น
+--   แก้เป็นหาโดย GetDescendants ทั้งหมดที่ชื่อตรง แล้วถ้าเจอมากกว่า 1 จุด เทียบ PairId ก่อน (แม่นสุด)
+--   ตกไป RoomId ถ้าไม่มี PairId ตรง ก่อนจะ fallback ไปจุดแรกที่เจอ
 -- เพราะ RemoteEvent ที่ใช้จริงชื่อซ้ำกันได้หลายจุด (พาธเต็มไม่ยืนยัน) สคริปต์นี้ "เรียนรู้" ตัวจริงเอง 2 ทาง:
 --   1) หาเอง: ถ้าเจอ RemoteEvent ชื่อ "RemoteEvent" ใน ReplicatedStorage แค่ตัวเดียว → ใช้ตัวนั้นเลย
 --   2) เรียนรู้จากการเล่นจริง: ถ้าเจอมากกว่า 1 ตัว/หาไม่เจอ →ดัก __namecall รอจนกว่าเกมยิง
@@ -150,12 +155,34 @@ local function flyTo(targetPos, timeoutSec)
     return true
 end
 
--- ==================== หาสล็อตเป้าหมายจากชื่อ Ghost/แผนที่ (เทียบตรงตัวเป๊ะ) ====================
--- ยืนยันจาก NetSpy [ARROW]: workspace.Camera.SortingGhosts มี Ghost ชื่อ "<ชื่อของ>HomeGhost" ต่อของ 1 ชนิด
--- อยู่พร้อมกันได้หลายอัน (ไม่ได้ผูกกับของที่ถืออยู่ตัวเดียว) เพราะงั้นห้าม "หยิบไฮไลต์ตัวแรกที่เจอ" (สุ่มผิดได้)
--- ต้องเทียบชื่อของกับ Ghost/Slot แบบตรงตัวเป๊ะเท่านั้น: slot ที่ถูกต้อง = <ชื่อของ>Home
+-- ==================== หาสล็อตเป้าหมายจากชื่อ + PairId/RoomId (กันชื่อซ้ำข้ามห้อง) ====================
+-- ยืนยันจาก NetSpy: item มี attribute PairId/RoomName/RoomId (เช่น Book ตัวใน "Office" PairId=66,
+-- ตัวใน "Hallway" PairId=43) แปลว่าของชื่อเดียวกันอาจมีสล็อตชื่อ "<ชื่อของ>Home" ซ้ำกันได้หลายห้อง
+-- ถ้าเจอสล็อตชื่อตรงมากกว่า 1 จุด ต้องเทียบ PairId ก่อน (แม่นสุด) แล้วค่อย RoomId ถ้าไม่มี PairId ตรง
 local function findSlotFor(item, slotsFolder)
-    return slotsFolder:FindFirstChild(item.Name .. "Home")
+    local wantName = item.Name .. "Home"
+    local candidates = {}
+    for _, s in ipairs(slotsFolder:GetDescendants()) do
+        if s.Name == wantName then
+            candidates[#candidates + 1] = s
+        end
+    end
+    if #candidates == 0 then return nil end
+    if #candidates == 1 then return candidates[1] end
+
+    local pairId = item:GetAttribute("PairId")
+    if pairId ~= nil then
+        for _, s in ipairs(candidates) do
+            if s:GetAttribute("PairId") == pairId then return s end
+        end
+    end
+    local roomId = item:GetAttribute("RoomId")
+    if roomId ~= nil then
+        for _, s in ipairs(candidates) do
+            if s:GetAttribute("RoomId") == roomId then return s end
+        end
+    end
+    return candidates[1]
 end
 
 -- ==================== ดักข้อความ "มือเต็ม!" ตรงๆ จาก popup ในเกม ====================
