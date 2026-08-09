@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v4.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.4: v4.3 ยังหลุดฟ้า+ไม่วาร์ปกลับ เพราะ homePos อิงตำแหน่งตัวเราตอนกด AUTO (กดตอนลอยบนฟ้า =
+--   เพดานเพี้ยนทั้งระบบ) → ยึดกล่องขอบเขตตัวบ้านจริง (GetBoundingBox) แทน เพดาน/พื้น = ขอบบ้าน ±15
+--   วาร์ปกลับ = กลางบ้านเสมอ ไม่อิงตัวเราอีกต่อไป
 -- v4.3: ล็อคความสูงเด็ดขาด — เพดานจุดเริ่ม +60 / พื้นจุดเริ่ม -30 บังคับทุกเฟรม (Stepped)
 --   หลุดเมื่อไหร่กดกลับทันที + เป้าบินทุกจุด (ของ/จุดวาง) ถูก clamp ความสูงก่อนบินเสมอ
 -- v4.2: ยังตกแผนที่เป็นบางครั้ง — เพราะของบางชิ้นฟิสิกส์พาร่วง/ลอยหลุดนอกบ้าน แล้วสคริปต์บินตาม
@@ -545,18 +548,27 @@ local function runAuto()
 
     -- v4.2: จุดอ้างอิงกันหลุดแผนที่ — ของบางชิ้นฟิสิกส์พาร่วง/ลอยหลุดออกนอกบ้าน สคริปต์เคยบินตาม
     -- จนตกแผนที่ → (1) ไม่ไล่ของที่ตำแหน่งหลุดโลก (2) ตัวเราหลุดโซนเมื่อไหร่ วาร์ปกลับจุดเริ่มเอง
-    local homePos do
-        local char = LP.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        homePos = hrp and hrp.Position or Vector3.zero
+    -- v4.4: homePos เคยอิงตำแหน่งตัวเราตอนกด AUTO — ถ้ากดตอนลอยบนฟ้า เพดานทั้งระบบเพี้ยนตาม
+    -- และ "วาร์ปกลับ" ก็พากลับไปกลางฟ้า → เปลี่ยนมายึดกล่องขอบเขตของตัวบ้านจริง (GetBoundingBox)
+    local homePos, homeHalfY = Vector3.zero, 60
+    do
+        local h1 = findHouses()[1]
+        local ok, cf, size = pcall(function() return h1:GetBoundingBox() end)
+        if ok and cf then
+            homePos = cf.Position
+            homeHalfY = size.Y / 2
+        else
+            local ok2, pv = pcall(function() return h1:GetPivot() end)
+            if ok2 then homePos = pv.Position end
+        end
     end
-    -- v4.3: เพดานความสูงเด็ดขาด — ห้ามสูงเกินจุดเริ่ม +60 / ต่ำกว่า -30 ไม่ว่ากรณีไหน
-    local MAX_UP, MAX_DOWN = 60, 30
+    -- เพดานเด็ดขาด: อยู่ได้แค่ในช่วงความสูงของตัวบ้าน +15 บน/ล่าง เท่านั้น
+    local Y_MIN, Y_MAX = homePos.Y - homeHalfY - 15, homePos.Y + homeHalfY + 15
     local function clampY(p)
-        return Vector3.new(p.X, math.clamp(p.Y, homePos.Y - MAX_DOWN, homePos.Y + MAX_UP), p.Z)
+        return Vector3.new(p.X, math.clamp(p.Y, Y_MIN, Y_MAX), p.Z)
     end
     local function positionSane(p)
-        return p and math.abs(p.Y - homePos.Y) < 120 and (p - homePos).Magnitude < 600
+        return p and p.Y > Y_MIN - 30 and p.Y < Y_MAX + 30 and (p - homePos).Magnitude < 600
     end
 
     -- NoClip ตลอดเวลาที่ AUTO ทำงาน (Stepped ยิงก่อนฟิสิกส์ทุกเฟรม — เปิดซ้ำตลอดกันเกมรีเซ็ตคืน)
