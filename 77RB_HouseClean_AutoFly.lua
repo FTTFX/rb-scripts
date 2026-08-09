@@ -1,4 +1,8 @@
--- 77RB_HouseClean_AutoFly.lua v3.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v3.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v3.3: บั๊กเด็ดขาดที่ทำให้ไม่ยอมไปจุดไฮไลต์ — เดิมรับเฉพาะไฮไลต์ที่ "เพิ่งติดใหม่หลังจับ" แต่ไฮไลต์
+--   จุดวางมักติดค้างอยู่ก่อนจับแล้ว เลยมองไม่เห็น ตกไปเดา PairId ได้สล็อตเต็ม วนตาย → ตัดเงื่อนไข
+--   "เพิ่งติด" ทิ้ง ใช้ "ติดอยู่ตอนนี้ + ชื่อตรง <ชื่อของ>HomeGhost" และถ้าเต็มไล่ลองสล็อตชื่อตรง
+--   ทุกตัวในแผนที่ (เรียง PairId → RoomId → ที่เหลือ) จนกว่าเงินขึ้น = วางผ่านจริง
 -- v3.2: เลิกวาป/พุ่ง (ตัวละครล้มตลอด) — AUTO กลับมาบินต่อเนื่อง speed 100 แบบเดิม + NoClip
 --   ระหว่างบิน (ปิด CanCollide ทุกส่วนของตัวทุกเฟรม ทะลุกำแพงได้ ไม่ชนจนล้ม) ถึงแล้วเปิดชนคืน
 -- v3.1: STOP ยังหยุดไม่สนิทเพราะ "สคริปต์รุ่นเก่าค้าง" — โหลดสคริปต์ใหม่ทับ ลูปเก่าที่ spawn ไปแล้ว
@@ -555,44 +559,48 @@ local function runAuto()
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
             if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end -- กด STOP ระหว่างบิน — ห้ามยิงจับต่อ
-            local litBefore = getLitGhosts()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
-            -- หลังจับ เกมจะจุดไฮไลต์ Ghost ของจุดวางชิ้นนี้ขึ้นมาใหม่ — และถ้าวางแล้ว "จุดนั้นเต็ม"
-            -- เกมจะย้ายไฮไลต์ไปชี้จุดใหม่ให้ เพราะงั้นวางไม่ผ่านต้องสแกนไฮไลต์ใหม่แล้วตามไปวางซ้ำ
+            -- v3.3 บั๊กเด็ดขาดที่เจอ: เดิมเอาเฉพาะไฮไลต์ที่ "เพิ่งติดใหม่หลังจับ" — แต่ไฮไลต์จุดวางมัก
+            -- ติดค้างอยู่ก่อนจับแล้ว (เกมจุดไว้ล่วงหน้าหลายจุด) เลยมองไม่เห็น ตกไปเดาชื่อ+PairId ได้สล็อต
+            -- ที่เต็ม วนตาย ไม่เคยไปจุดไฮไลต์จริง → ตัดเงื่อนไข "เพิ่งติด" ทิ้ง ใช้แค่ "ติดอยู่ตอนนี้ +
+            -- ชื่อตรง <ชื่อของ>HomeGhost" (ชื่อตรง = จุดของชิ้นนี้แน่นอน) และถ้าเต็มก็ไล่ลองสล็อต
+            -- ชื่อตรงทุกตัวในแผนที่จนกว่าจะผ่าน (เกมเช็คให้เองว่าจุดไหนว่าง — เงินขึ้น = ผ่าน)
+            local wantGhostName = item.Name .. "HomeGhost"
             local placed, triedSlots = false, {}
-            for attempt = 1, 4 do
+
+            -- รายชื่อสล็อตชื่อตรงทั้งหมด เรียงความน่าจะใช่: PairId ตรง → RoomId ตรง → ที่เหลือ
+            local allSlots = {}
+            for _, s in ipairs(house.Slots:GetDescendants()) do
+                if s.Name == item.Name .. "Home" then allSlots[#allSlots + 1] = s end
+            end
+            local pairId, roomId = item:GetAttribute("PairId"), item:GetAttribute("RoomId")
+            table.sort(allSlots, function(a, b)
+                local sa = (a:GetAttribute("PairId") == pairId and 2) or (a:GetAttribute("RoomId") == roomId and 1) or 0
+                local sb = (b:GetAttribute("PairId") == pairId and 2) or (b:GetAttribute("RoomId") == roomId and 1) or 0
+                return sa > sb
+            end)
+
+            for attempt = 1, math.max(4, #allSlots) do
                 if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
 
-                -- หา ghost ที่เพิ่งติดใหม่ (ไม่นับตัวที่ติดค้างก่อนจับ และไม่เอาสล็อตที่เพิ่งลองแล้วเต็ม)
-                -- v2.9: ghost ที่เอาต้อง "ชื่อตรงกับของที่ถือ" ด้วย (<ชื่อของ>HomeGhost) ไม่ใช่แค่เพิ่งติด
-                -- เพราะเกมจุดไฮไลต์หลายจุดพร้อมกันได้ คว้าตัวแรกที่ติดเฉยๆ อาจได้สล็อตของชิ้นอื่น
-                -- ("this spot wants Bear Plush!") — ชื่อตรง = ของถูก, เพิ่งติด = ห้อง/จุดถูก
-                local wantGhostName = item.Name .. "HomeGhost"
+                -- อันดับ 1: ghost ชื่อตรงที่ติดไฟอยู่ตอนนี้ (ไม่สนว่าติดตั้งแต่เมื่อไหร่) และยังไม่เคยลอง
                 local slot, ghostTarget
                 local t0 = tick()
-                while AUTO_ON and _G.AF77_GEN == MY_GEN and tick() - t0 < 1.2 and not slot do
-                    local newLit, newLitNamed = nil, nil
+                while AUTO_ON and _G.AF77_GEN == MY_GEN and tick() - t0 < 1.0 and not slot do
                     for g in pairs(getLitGhosts()) do
-                        if not litBefore[g] then
+                        if g.Name == wantGhostName then
                             local s = slotFromGhost(g, house.Slots)
-                            if s and not triedSlots[s] then
-                                if g.Name == wantGhostName then newLitNamed = { g, s } break end
-                                newLit = newLit or { g, s }
-                            end
+                            if s and not triedSlots[s] then ghostTarget, slot = g, s; break end
                         end
-                    end
-                    local pick = newLitNamed or newLit -- ชื่อตรงมาก่อนเสมอ ตัวอื่นเป็นแผนสำรอง
-                    if pick and (newLitNamed or tick() - t0 > 0.6) then
-                        -- ถ้ายังไม่เจอตัวชื่อตรง รออีกหน่อย (0.6 วิ) ก่อนยอมใช้ตัวสำรอง
-                        ghostTarget, slot = pick[1], pick[2]
                     end
                     if not slot then task.wait(0.1) end
                 end
+                -- อันดับ 2: ไม่มีไฮไลต์ชื่อตรงเลย → ไล่ตามรายชื่อสล็อตชื่อตรงตัวถัดไปที่ยังไม่ลอง
                 if not slot then
-                    -- ไม่เห็นไฮไลต์ใหม่ → fallback เทียบชื่อ + PairId แบบเดิม (เฉพาะรอบแรก)
-                    local s = findSlotFor(item, house.Slots)
-                    if s and not triedSlots[s] then slot = s end
+                    for _, s in ipairs(allSlots) do
+                        if not triedSlots[s] and s.Parent then slot = s; break end
+                    end
                 end
                 if not slot or not slot.Parent then
                     if attempt == 1 then
