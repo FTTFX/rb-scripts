@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v4.8 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.9 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.9: เพิ่มกล่อง log ใต้ปุ่ม (8 บรรทัดล่าสุด + print ลง console F9) — โชว์บ้าน/กรอบสูงที่คำนวณได้,
+--   เหตุการณ์วาปกลับ (ตำแหน่งที่หลุด+กรอบ), ของนอกกรอบ, ผลวางแต่ละชิ้น (ไฮไลต์/เดาชื่อ) ไว้ไล่หาสาเหตุ
 -- v4.8: หลุดกรอบบ้าน = วาปกลับกลางบ้านทันทีเฟรมนั้น (เดิมแค่กดความสูงคืน โดนแรงอื่นดันสู้ได้)
 --   + กด AUTO แล้วปิด FLY อัตโนมัติ — BodyVelocity ของ FLY คือแรงที่ดันตัวหลุดกรอบมาตลอด
 -- v4.7: ยังหลุดฟ้าได้เพราะกรอบสูงจาก GetBoundingBox บ้านกว้างเกินจริง (มีชิ้นประดับลอยสูงปน)
@@ -156,7 +158,30 @@ local espB   = mkbtn("ESP: OFF (ไฮไลต์ของที่ยังไ
 local guideB = mkbtn("GUIDE: OFF (เส้นนำทางไปของใกล้สุด)", 138, Color3.fromRGB(30, 150, 150))
 local stopB  = mkbtn("STOP ทั้งหมด", 168, Color3.fromRGB(150, 60, 30))
 local closeB = mkbtn("✕ ปิด", 198, Color3.fromRGB(90, 40, 40))
-frame.Size = UDim2.new(0, 260, 0, 230)
+
+-- v4.9: กล่อง log — โชว์เหตุการณ์ล่าสุด 8 บรรทัด (วาปเพราะอะไร กรอบอยู่ไหน เป้าคืออะไร)
+-- และ print ลง console (F9) ด้วยทุกบรรทัด
+local logLbl = Instance.new("TextLabel", frame)
+logLbl.Size = UDim2.new(1, -8, 0, 104); logLbl.Position = UDim2.new(0, 4, 0, 228)
+logLbl.BackgroundColor3 = Color3.new(0, 0, 0); logLbl.BackgroundTransparency = 0.5
+logLbl.TextColor3 = Color3.fromRGB(255, 230, 150); logLbl.TextSize = 11
+logLbl.Font = Enum.Font.Code; logLbl.TextWrapped = true
+logLbl.TextXAlignment = Enum.TextXAlignment.Left; logLbl.TextYAlignment = Enum.TextYAlignment.Top
+logLbl.Text = ""
+frame.Size = UDim2.new(0, 260, 0, 338)
+
+local logLines = {}
+local function alog(msg)
+    msg = os.date("%H:%M:%S ") .. msg
+    print("[AF77] " .. msg)
+    table.insert(logLines, msg)
+    while #logLines > 8 do table.remove(logLines, 1) end
+    logLbl.Text = table.concat(logLines, "\n")
+end
+
+local function v3s(p) -- Vector3 → สตริงสั้นๆ ไว้ log
+    return p and ("(%.0f,%.0f,%.0f)"):format(p.X, p.Y, p.Z) or "nil"
+end
 
 setStatus("[AutoFly77] พร้อม — กด FLY เพื่อบินอิสระ หรือ AUTO เพื่อจับ-วางของอัตโนมัติ")
 
@@ -605,6 +630,7 @@ local function runAuto()
             homePos = ok and pv.Position or Vector3.zero
             Y_MIN, Y_MAX = homePos.Y - 30, homePos.Y + 40
         end
+        alog(("บ้าน=%s สล็อต %d จุด กลาง=%s สูง %.0f..%.0f"):format(h1.Name, n, v3s(homePos), Y_MIN, Y_MAX))
     end
     local function clampY(p)
         return Vector3.new(p.X, math.clamp(p.Y, Y_MIN, Y_MAX), p.Z)
@@ -617,6 +643,7 @@ local function runAuto()
     -- v4.1: NoClip ตลอด = ไม่มีพื้นให้เหยียบ ตอนยืนวางของเลยร่วงทะลุแผนที่ → ล็อคความเร็วเป็นศูนย์
     -- ทุกเฟรมด้วย (ตัวลอยนิ่งค้างที่เดิม ไม่ตกลงไปเรื่อยๆ) การขยับจริงใช้ CFrame ใน flyTo อยู่แล้ว
     -- v4.3: + บังคับเพดานความสูงทุกเฟรม — โผล่เกินเพดาน/ทะลุพื้นเมื่อไหร่กดกลับทันที
+    local lastWarpLog = 0
     local noclipConn = RunService.Stepped:Connect(function()
         if AUTO_ON and _G.AF77_GEN == MY_GEN then
             setNoClip(true)
@@ -625,7 +652,12 @@ local function runAuto()
             if hrp then
                 hrp.AssemblyLinearVelocity = Vector3.zero
                 -- v4.8: หลุดกรอบบ้านเมื่อไหร่ วาปกลับกลางบ้านทันทีเฟรมนั้นเลย (ตามที่ผู้ใช้ขอ)
-                if not positionSane(hrp.Position) then
+                local p = hrp.Position
+                if not positionSane(p) then
+                    if tick() - lastWarpLog > 1 then
+                        lastWarpLog = tick()
+                        alog(("หลุดกรอบที่ %s (กรอบ Y %.0f..%.0f) → วาปกลับ"):format(v3s(p), Y_MIN, Y_MAX))
+                    end
                     hrp.CFrame = CFrame.new(homePos)
                 end
             end
@@ -678,7 +710,13 @@ local function runAuto()
 
         setStatus(("[AutoFly77] เก็บ: %s (วางแล้ว %d)"):format(item.Name, processed))
         local ipos = partPosition(item)
-        if ipos then flyTo(clampY(ipos), 6) end
+        if ipos then
+            local cp = clampY(ipos)
+            if (cp - ipos).Magnitude > 1 then
+                alog(("%s อยู่นอกกรอบสูง %s → บินไปแค่ %s"):format(item.Name, v3s(ipos), v3s(cp)))
+            end
+            flyTo(cp, 6)
+        end
         if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -713,9 +751,11 @@ local function runAuto()
             if ip and sp and (ip - sp).Magnitude < 6 then
                 processed += 1
                 skipItems[item] = true -- วางแล้ว ไม่ต้องกลับมามองชิ้นนี้อีก
+                alog(("✅ %s → %s %s"):format(item.Name, slot.Name, ghost and "(ไฮไลต์)" or "(เดาชื่อ)"))
             else
                 skipItems[item] = true
                 failed += 1
+                alog(("❌ %s วางไม่เข้า ของอยู่ %s สล็อต %s"):format(item.Name, v3s(ip), v3s(sp)))
                 setStatus(("[AutoFly77] ⚠️ %s วางไม่เข้า (จุดอาจเต็ม) — ข้ามไปชิ้นถัดไป"):format(item.Name))
             end
         end
