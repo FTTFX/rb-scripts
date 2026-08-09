@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v4.6 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.7 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.7: ยังหลุดฟ้าได้เพราะกรอบสูงจาก GetBoundingBox บ้านกว้างเกินจริง (มีชิ้นประดับลอยสูงปน)
+--   → คำนวณกรอบจากตำแหน่งสล็อตวางของจริงทุกจุดแทน (min/max Y ของสล็อต -10/+20) แคบตรงตัวบ้านเป๊ะ
 -- v4.6: "โดนของผลัก" กระเด็นขึ้นฟ้า — flyTo เคยปิด NoClip ทันทีที่ถึงเป้า ทั้งที่ตัวจมอยู่ในเฟอร์นิเจอร์
 --   เปิดการชนตอนซ้อนกับของ = ฟิสิกส์ดีดออกแรงมาก → ระหว่าง AUTO ไม่ปิด NoClip เลย จบงาน/STOP
 --   ค่อยวาร์ปขึ้นกลางอากาศเหนือหลังคา (ไม่ซ้อนกับอะไร) แล้วค่อยเปิดการชนคืน
@@ -578,20 +580,30 @@ local function runAuto()
     -- จนตกแผนที่ → (1) ไม่ไล่ของที่ตำแหน่งหลุดโลก (2) ตัวเราหลุดโซนเมื่อไหร่ วาร์ปกลับจุดเริ่มเอง
     -- v4.4: homePos เคยอิงตำแหน่งตัวเราตอนกด AUTO — ถ้ากดตอนลอยบนฟ้า เพดานทั้งระบบเพี้ยนตาม
     -- และ "วาร์ปกลับ" ก็พากลับไปกลางฟ้า → เปลี่ยนมายึดกล่องขอบเขตของตัวบ้านจริง (GetBoundingBox)
-    local homePos, homeHalfY = Vector3.zero, 60
+    -- v4.7: GetBoundingBox ของโมเดลบ้านกว้างเกินจริง (มีชิ้นประดับ/เอฟเฟกต์ลอยสูงปน เพดานเลยอยู่บนฟ้า)
+    -- → คำนวณกรอบจากตำแหน่ง "สล็อตวางของจริงทุกจุด" แทน — สล็อตอยู่ในตัวบ้านแน่นอน ได้กรอบแคบตรงจริง
+    local homePos, Y_MIN, Y_MAX
     do
         local h1 = nearestHouseList()[1]
-        local ok, cf, size = pcall(function() return h1:GetBoundingBox() end)
-        if ok and cf then
-            homePos = cf.Position
-            homeHalfY = size.Y / 2
+        local minY, maxY = math.huge, -math.huge
+        local sumX, sumY, sumZ, n = 0, 0, 0, 0
+        for _, s in ipairs(h1.Slots:GetDescendants()) do
+            if s:IsA("BasePart") then
+                local y = s.Position.Y
+                if y < minY then minY = y end
+                if y > maxY then maxY = y end
+                sumX += s.Position.X; sumY += y; sumZ += s.Position.Z; n += 1
+            end
+        end
+        if n > 0 then
+            homePos = Vector3.new(sumX / n, sumY / n, sumZ / n)
+            Y_MIN, Y_MAX = minY - 10, maxY + 20
         else
-            local ok2, pv = pcall(function() return h1:GetPivot() end)
-            if ok2 then homePos = pv.Position end
+            local ok, pv = pcall(function() return h1:GetPivot() end)
+            homePos = ok and pv.Position or Vector3.zero
+            Y_MIN, Y_MAX = homePos.Y - 30, homePos.Y + 40
         end
     end
-    -- เพดานเด็ดขาด: อยู่ได้แค่ในช่วงความสูงของตัวบ้าน +15 บน/ล่าง เท่านั้น
-    local Y_MIN, Y_MAX = homePos.Y - homeHalfY - 15, homePos.Y + homeHalfY + 15
     local function clampY(p)
         return Vector3.new(p.X, math.clamp(p.Y, Y_MIN, Y_MAX), p.Z)
     end
