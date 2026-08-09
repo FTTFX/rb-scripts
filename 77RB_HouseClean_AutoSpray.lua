@@ -1,4 +1,5 @@
--- 77RB_HouseClean_AutoSpray.lua v1.3 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.4 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.4: ความเร็ว 200 เร็วไปจนอาจยิง remote ก่อนตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ — ลดเหลือ 100 + รอ 0.15s ก่อนยิงทุกครั้ง
 -- v1.3: เจอว่า House_1.Dirt.Part เป็น Part ตัวเดียวที่เกม "รียูส" แทนคราบใหม่ไปเรื่อยๆ (ตำแหน่งขยับทุกรอบงาน)
 --   ไม่ใช่มีคราบสกปรกหลายก้อนวางอยู่ในโลกให้ไล่หา — ระบบจำ "ล้างเสร็จแล้ว" แบบ v1.1/v1.2 (จำตาม Instance)
 --   เลยผิดตั้งแต่ต้น เพราะ Instance เดิมถูกเอามาใช้กับคราบใหม่ตลอด ทำให้ข้ามคราบใหม่ทั้งที่ยังไม่เคยล้าง
@@ -27,7 +28,7 @@ local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 
 local SPRAY_ON = false
-local FLY_SPEED = 200
+local FLY_SPEED = 100
 local learnedRemote = nil
 
 -- ==================== GUI ====================
@@ -245,6 +246,7 @@ local function runSpray()
                 if part.Parent then
                     setStatus(("[AutoSpray77] กำลังบินไปที่: %s (รอบที่ %d)"):format(part.Name, rounds + 1))
                     flyTo(part.Position, 6)
+                    task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
                     for _, faceName in ipairs(ACTIVE_FACES) do
                         if not SPRAY_ON then break end
                         sprayFace(part, faceName)
