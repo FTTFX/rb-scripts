@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v3.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v3.1 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v3.1: STOP ยังหยุดไม่สนิทเพราะ "สคริปต์รุ่นเก่าค้าง" — โหลดสคริปต์ใหม่ทับ ลูปเก่าที่ spawn ไปแล้ว
+--   ยังวิ่งด้วยตัวแปรชุดเก่า ปุ่มใหม่ปิดไม่ถึง → ใส่เลขรุ่น _G.AF77_GEN ทุกลูป (AUTO/ESP/GUIDE/flyTo)
+--   เช็คเลขรุ่นแล้วตายเองทันทีที่มีการโหลดใหม่ + ตอนโหลดตามลบ Highlight/Beam ชื่อ AF77_* ที่ค้างทิ้ง
 -- v3.0: ปุ่ม STOP ใช้ไม่ได้จริง — เดิมแค่ตั้งธง แต่ไม่ปิด ESP/GUIDE และลูป AUTO ที่กำลังบิน/รอไฮไลต์
 --   ไม่เช็คธงก่อนยิง remote เลยจับ-วางต่ออีกพัก → เพิ่มเช็ค AUTO_ON หลังบินถึงทุกจุดก่อนยิง remote
 --   และ STOP ปิด ESP + GUIDE พร้อมรีเซ็ตข้อความปุ่มให้ครบ
@@ -69,6 +72,15 @@ if _G.AF77_CONNS then
     for _, c in ipairs(_G.AF77_CONNS) do pcall(function() c:Disconnect() end) end
 end
 _G.AF77_CONNS = {}
+-- v3.1: เลขรุ่น — โหลดสคริปต์ใหม่ทับ ลูป AUTO/ESP/GUIDE ของตัวเก่า (coroutine ที่ spawn ไปแล้ว)
+-- ยังวิ่งต่อด้วยตัวแปรของมันเอง ปุ่ม STOP อันใหม่ปิดไม่ถึง → ทุกลูปเช็คว่าเลขรุ่นยังเป็นของตัวเอง
+-- ถ้าไม่ใช่ (มีการโหลดใหม่แล้ว) ให้ตายเองทันที
+_G.AF77_GEN = (_G.AF77_GEN or 0) + 1
+local MY_GEN = _G.AF77_GEN
+-- เก็บกวาดไฮไลต์ ESP / เส้น GUIDE ที่รุ่นเก่าทิ้งค้างไว้ (ตั้งชื่อเฉพาะไว้ให้ตามลบได้)
+for _, d in ipairs(workspace:GetDescendants()) do
+    if d.Name == "AF77_ESP" or d.Name == "AF77_GUIDE" then pcall(function() d:Destroy() end) end
+end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -210,6 +222,7 @@ local function espRefresh()
     for item in pairs(keep) do
         if not espHighlights[item] and item.Parent then
             local h = Instance.new("Highlight")
+            h.Name = "AF77_ESP"
             h.FillColor = Color3.fromRGB(60, 255, 90)
             h.FillTransparency = 0.5
             h.OutlineColor = Color3.fromRGB(120, 255, 140)
@@ -227,10 +240,11 @@ end
 local function espStart()
     ESP_ON = true
     espLoop = task.spawn(function()
-        while ESP_ON do
+        while ESP_ON and _G.AF77_GEN == MY_GEN do
             pcall(espRefresh)
             task.wait(1)
         end
+        if _G.AF77_GEN ~= MY_GEN then espRemoveAll() end
     end)
 end
 local function espStop()
@@ -298,8 +312,10 @@ local function guideStart()
     GUIDE_ON = true
 
     guideA0 = Instance.new("Attachment")
+    guideA0.Name = "AF77_GUIDE"
     guideA0.Parent = hrp
     guideBeam = Instance.new("Beam")
+    guideBeam.Name = "AF77_GUIDE"
     guideBeam.Width0 = 0.4
     guideBeam.Width1 = 0.1
     guideBeam.Color = ColorSequence.new(Color3.fromRGB(60, 255, 150))
@@ -309,6 +325,7 @@ local function guideStart()
     guideBeam.Parent = guideA0
 
     guideConn = RunService.Heartbeat:Connect(function()
+        if _G.AF77_GEN ~= MY_GEN then guideStop() return end -- โหลดสคริปต์ใหม่ทับแล้ว — ปิดตัวเองทิ้ง
         if not GUIDE_ON then return end
         if not (guideTarget and guideTarget.Parent) then
             local nearest = findNearestItem()
@@ -320,6 +337,7 @@ local function guideStart()
             guideTarget = nearest
             if guideA1 then pcall(function() guideA1:Destroy() end) end
             guideA1 = Instance.new("Attachment")
+            guideA1.Name = "AF77_GUIDE"
             guideA1.Parent = guideTarget
             guideBeam.Attachment1 = guideA1
             setStatus(("[AutoFly77] GUIDE → %s"):format(guideTarget.Name))
@@ -341,7 +359,7 @@ local function flyTo(targetPos, timeoutSec)
     local startPos = hrp.Position
     local t0 = tick()
     while true do
-        if not AUTO_ON then return false end
+        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then return false end
         hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return false end
         local a = math.min((tick() - t0) / DASH_TIME, 1)
@@ -460,7 +478,7 @@ local function runAuto()
         if not tryAutoFindRemote() then
             setStatus("[AutoFly77] ⚠️ ยังไม่รู้ remote — ลองจับ-วางของเอง 1 ครั้งก่อน (สคริปต์กำลังดักเรียนรู้อยู่)")
             local t0 = tick()
-            while AUTO_ON and not learnedRemote and tick() - t0 < 30 do task.wait(0.5) end
+            while AUTO_ON and _G.AF77_GEN == MY_GEN and not learnedRemote and tick() - t0 < 30 do task.wait(0.5) end
             if not learnedRemote then
                 setStatus("[AutoFly77] ❌ หา remote ไม่เจอ ยกเลิก AUTO")
                 AUTO_ON = false
@@ -513,7 +531,7 @@ local function runAuto()
     local i = 0
     for item, house in pairs(houseOfItem) do
         i += 1
-        if not AUTO_ON then break end
+        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         if HAND_FULL_FLAG then
             setStatus(ABORT_HANDFULL)
             AUTO_ON = false
@@ -524,7 +542,7 @@ local function runAuto()
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
-            if not AUTO_ON then break end -- กด STOP ระหว่างบิน — ห้ามยิงจับต่อ
+            if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end -- กด STOP ระหว่างบิน — ห้ามยิงจับต่อ
             local litBefore = getLitGhosts()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -532,7 +550,7 @@ local function runAuto()
             -- เกมจะย้ายไฮไลต์ไปชี้จุดใหม่ให้ เพราะงั้นวางไม่ผ่านต้องสแกนไฮไลต์ใหม่แล้วตามไปวางซ้ำ
             local placed, triedSlots = false, {}
             for attempt = 1, 4 do
-                if not AUTO_ON then break end
+                if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
 
                 -- หา ghost ที่เพิ่งติดใหม่ (ไม่นับตัวที่ติดค้างก่อนจับ และไม่เอาสล็อตที่เพิ่งลองแล้วเต็ม)
                 -- v2.9: ghost ที่เอาต้อง "ชื่อตรงกับของที่ถือ" ด้วย (<ชื่อของ>HomeGhost) ไม่ใช่แค่เพิ่งติด
@@ -541,7 +559,7 @@ local function runAuto()
                 local wantGhostName = item.Name .. "HomeGhost"
                 local slot, ghostTarget
                 local t0 = tick()
-                while AUTO_ON and tick() - t0 < 1.2 and not slot do
+                while AUTO_ON and _G.AF77_GEN == MY_GEN and tick() - t0 < 1.2 and not slot do
                     local newLit, newLitNamed = nil, nil
                     for g in pairs(getLitGhosts()) do
                         if not litBefore[g] then
@@ -575,7 +593,7 @@ local function runAuto()
 
                 local spos = (ghostTarget and partPosition(ghostTarget)) or getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
-                if not AUTO_ON then break end -- กด STOP ระหว่างบิน — ห้ามยิงวางต่อ
+                if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end -- กด STOP ระหว่างบิน — ห้ามยิงวางต่อ
 
                 if HAND_FULL_FLAG then
                     setStatus(ABORT_HANDFULL)
