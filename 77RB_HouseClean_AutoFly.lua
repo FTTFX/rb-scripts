@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v4.2 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.3: ล็อคความสูงเด็ดขาด — เพดานจุดเริ่ม +60 / พื้นจุดเริ่ม -30 บังคับทุกเฟรม (Stepped)
+--   หลุดเมื่อไหร่กดกลับทันที + เป้าบินทุกจุด (ของ/จุดวาง) ถูก clamp ความสูงก่อนบินเสมอ
 -- v4.2: ยังตกแผนที่เป็นบางครั้ง — เพราะของบางชิ้นฟิสิกส์พาร่วง/ลอยหลุดนอกบ้าน แล้วสคริปต์บินตาม
 --   → จำจุดเริ่ม (homePos) ไว้ ของที่อยู่ห่างเกิน 600 หรือสูง/ต่ำเกิน 120 จากจุดเริ่ม = หลุดโลก ไม่ไล่
 --   และถ้าตัวเราเองหลุดโซน วาร์ปกลับ homePos อัตโนมัติก่อนทำชิ้นถัดไป
@@ -541,19 +543,6 @@ local function runAuto()
     local processed, failed = 0, 0
     local skipItems = {} -- ชิ้นที่วางไม่ผ่าน/วางแล้ว — ไม่หยิบซ้ำในรอบรันนี้ กันวนชิ้นเดิมไม่จบ
 
-    -- NoClip ตลอดเวลาที่ AUTO ทำงาน (Stepped ยิงก่อนฟิสิกส์ทุกเฟรม — เปิดซ้ำตลอดกันเกมรีเซ็ตคืน)
-    -- v4.1: NoClip ตลอด = ไม่มีพื้นให้เหยียบ ตอนยืนวางของเลยร่วงทะลุแผนที่ → ล็อคความเร็วเป็นศูนย์
-    -- ทุกเฟรมด้วย (ตัวลอยนิ่งค้างที่เดิม ไม่ตกลงไปเรื่อยๆ) การขยับจริงใช้ CFrame ใน flyTo อยู่แล้ว
-    local noclipConn = RunService.Stepped:Connect(function()
-        if AUTO_ON and _G.AF77_GEN == MY_GEN then
-            setNoClip(true)
-            local char = LP.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then hrp.AssemblyLinearVelocity = Vector3.zero end
-        end
-    end)
-    table.insert(_G.AF77_CONNS, noclipConn)
-
     -- v4.2: จุดอ้างอิงกันหลุดแผนที่ — ของบางชิ้นฟิสิกส์พาร่วง/ลอยหลุดออกนอกบ้าน สคริปต์เคยบินตาม
     -- จนตกแผนที่ → (1) ไม่ไล่ของที่ตำแหน่งหลุดโลก (2) ตัวเราหลุดโซนเมื่อไหร่ วาร์ปกลับจุดเริ่มเอง
     local homePos do
@@ -561,9 +550,35 @@ local function runAuto()
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         homePos = hrp and hrp.Position or Vector3.zero
     end
+    -- v4.3: เพดานความสูงเด็ดขาด — ห้ามสูงเกินจุดเริ่ม +60 / ต่ำกว่า -30 ไม่ว่ากรณีไหน
+    local MAX_UP, MAX_DOWN = 60, 30
+    local function clampY(p)
+        return Vector3.new(p.X, math.clamp(p.Y, homePos.Y - MAX_DOWN, homePos.Y + MAX_UP), p.Z)
+    end
     local function positionSane(p)
         return p and math.abs(p.Y - homePos.Y) < 120 and (p - homePos).Magnitude < 600
     end
+
+    -- NoClip ตลอดเวลาที่ AUTO ทำงาน (Stepped ยิงก่อนฟิสิกส์ทุกเฟรม — เปิดซ้ำตลอดกันเกมรีเซ็ตคืน)
+    -- v4.1: NoClip ตลอด = ไม่มีพื้นให้เหยียบ ตอนยืนวางของเลยร่วงทะลุแผนที่ → ล็อคความเร็วเป็นศูนย์
+    -- ทุกเฟรมด้วย (ตัวลอยนิ่งค้างที่เดิม ไม่ตกลงไปเรื่อยๆ) การขยับจริงใช้ CFrame ใน flyTo อยู่แล้ว
+    -- v4.3: + บังคับเพดานความสูงทุกเฟรม — โผล่เกินเพดาน/ทะลุพื้นเมื่อไหร่กดกลับทันที
+    local noclipConn = RunService.Stepped:Connect(function()
+        if AUTO_ON and _G.AF77_GEN == MY_GEN then
+            setNoClip(true)
+            local char = LP.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                local p = hrp.Position
+                local cp = clampY(p)
+                if (cp - p).Magnitude > 0.01 then
+                    hrp.CFrame = CFrame.new(cp) * hrp.CFrame.Rotation
+                end
+            end
+        end
+    end)
+    table.insert(_G.AF77_CONNS, noclipConn)
 
     local function nearestUnplacedItem()
         local char = LP.Character
@@ -610,7 +625,7 @@ local function runAuto()
 
         setStatus(("[AutoFly77] เก็บ: %s (วางแล้ว %d)"):format(item.Name, processed))
         local ipos = partPosition(item)
-        if ipos then flyTo(ipos, 6) end
+        if ipos then flyTo(clampY(ipos), 6) end
         if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -633,7 +648,7 @@ local function runAuto()
         else
             -- (3) บินไปจุดไฮไลต์
             local spos = (ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
-            if spos then flyTo(spos, 6) end
+            if spos then flyTo(clampY(spos), 6) end
             if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
 
             -- (4) วาง
