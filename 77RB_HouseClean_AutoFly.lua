@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.3 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.4: AUTO เปลี่ยนเป็น "จับก่อน แล้วตามไฮไลต์" — snapshot Ghost ที่ติดไฟไว้ก่อนจับ พอจับแล้วเกม
+--   จะจุดไฮไลต์จุดวางของชิ้นนั้นขึ้นใหม่ 1 อัน → เอาตัวที่เพิ่งติดเป็นเป้าบิน+วางตรงๆ (แม่นกว่าเดาชื่อ
+--   เพราะเกมชี้เอง) ถ้าจับไฮไลต์ใหม่ไม่ได้ใน 1.2 วิ ค่อย fallback เทียบชื่อ+PairId แบบเดิม
 -- v2.3: แก้ ESP ไม่ขึ้น — Roblox เรนเดอร์ Highlight ได้สูงสุด 31 อันพร้อมกัน การสร้างให้ของทุกชิ้น
 --   (หลายร้อยชิ้น) ทำให้เกินโควตาแล้วไม่แสดงเลย → เปลี่ยนเป็นไฮไลต์เฉพาะของยังไม่วาง 20 ชิ้น
 --   ใกล้ตัวสุด รีเฟรชทุก 1 วิ พร้อมโชว์จำนวนของที่เหลือบน status bar
@@ -375,6 +378,38 @@ local function getGhostPosition(slot)
     return nil
 end
 
+-- ==================== อ่านไฮไลต์ที่ "เพิ่งติด" หลังจับของ — เกมชี้จุดวางให้เองตรงๆ ====================
+-- Ghost หลายอันไฮไลต์ค้างพร้อมกันได้ (v1.2 พังเพราะงี้) แต่ "อันที่เพิ่งติดใหม่หลังจับของ" มีอันเดียว
+-- คือจุดวางของชิ้นที่ถืออยู่แน่นอน → snapshot ก่อนจับ เทียบกับหลังจับ เอาตัวที่โผล่ใหม่
+local function getLitGhosts()
+    local set = {}
+    local cam = workspace:FindFirstChild("Camera")
+    local folder = cam and cam:FindFirstChild("SortingGhosts")
+    if not folder then return set end
+    for _, g in ipairs(folder:GetChildren()) do
+        for _, d in ipairs(g:GetDescendants()) do
+            if d:IsA("Highlight") and d.Enabled then set[g] = true; break end
+        end
+    end
+    return set
+end
+
+-- แปลง Ghost ที่ติดไฟ → Slot instance จริงสำหรับยิง remote (ชื่อสล็อต = ชื่อ Ghost ตัด "Ghost" ท้ายออก
+-- ถ้าชื่อซ้ำหลายห้อง เลือกตัวที่ตำแหน่งใกล้ Ghost ที่สุด — ชี้ห้องถูกแน่นอนเพราะ Ghost อยู่ตรงจุดวางจริง)
+local function slotFromGhost(ghost, slotsFolder)
+    local slotName = ghost.Name:gsub("Ghost$", "")
+    local gpos = partPosition(ghost)
+    local best, bestD = nil, math.huge
+    for _, s in ipairs(slotsFolder:GetDescendants()) do
+        if s.Name == slotName then
+            local p = partPosition(s)
+            local d = (p and gpos) and (p - gpos).Magnitude or math.huge
+            if d < bestD or not best then best, bestD = s, d end
+        end
+    end
+    return best
+end
+
 -- ==================== ดักข้อความ "มือเต็ม!" ตรงๆ จาก popup ในเกม ====================
 local HAND_FULL_FLAG = false
 local function looksLikeHandFullText(t)
@@ -462,15 +497,29 @@ local function runAuto()
             return
         end
         if item.Parent then
-            -- สล็อตเป้าหมาย = <ชื่อของ>Home เป๊ะ (ยืนยันจากชื่อ Ghost ในแผนที่ผ่าน NetSpy [ARROW])
-            -- หาไว้ก่อนจับ เพื่อบินตรงไปจุดเดียว (item → slot ในเที่ยวเดียว) แทนที่จะบินไปของก่อนแล้วค่อยบินไปสล็อต
-            local slot = findSlotFor(item, house.Slots)
-
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
             task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
+            local litBefore = getLitGhosts()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
+
+            -- หลังจับ เกมจะจุดไฮไลต์ Ghost ของจุดวางชิ้นนี้ขึ้นมาใหม่ — รอแล้วหาตัวที่ "เพิ่งติด"
+            local slot, ghostTarget
+            local t0 = tick()
+            while tick() - t0 < 1.2 and not ghostTarget do
+                task.wait(0.1)
+                for g in pairs(getLitGhosts()) do
+                    if not litBefore[g] then ghostTarget = g; break end
+                end
+            end
+            if ghostTarget then
+                slot = slotFromGhost(ghostTarget, house.Slots)
+            end
+            if not slot then
+                -- ไม่เห็นไฮไลต์ใหม่ (เช่น ติดค้างอยู่ก่อนแล้ว) → fallback วิธีเทียบชื่อ + PairId แบบเดิม
+                slot = findSlotFor(item, house.Slots)
+            end
 
             if not slot or not slot.Parent then
                 noSlot += 1
@@ -479,7 +528,7 @@ local function runAuto()
             else
                 -- บินไปตามตำแหน่งจุดเรืองแสง (Ghost) ที่เห็นจริงบนจอทันที ระหว่างบินก็ถือว่ารอไฟไฮไลต์อัปเดตไปด้วยในตัว
                 -- (ไม่ต้องหยุดรอเฉยๆ 0.35s แบบเดิม เพราะระยะทางบินเองก็กินเวลาพอที่ไฮไลต์จะอัปเดตทันอยู่แล้ว)
-                local spos = getGhostPosition(slot) or partPosition(slot)
+                local spos = (ghostTarget and partPosition(ghostTarget)) or getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
 
                 if HAND_FULL_FLAG then
