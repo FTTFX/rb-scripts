@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v4.5 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v4.6 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v4.6: "โดนของผลัก" กระเด็นขึ้นฟ้า — flyTo เคยปิด NoClip ทันทีที่ถึงเป้า ทั้งที่ตัวจมอยู่ในเฟอร์นิเจอร์
+--   เปิดการชนตอนซ้อนกับของ = ฟิสิกส์ดีดออกแรงมาก → ระหว่าง AUTO ไม่ปิด NoClip เลย จบงาน/STOP
+--   ค่อยวาร์ปขึ้นกลางอากาศเหนือหลังคา (ไม่ซ้อนกับอะไร) แล้วค่อยเปิดการชนคืน
 -- v4.5: GUIDE ชี้ข้ามทะเลไปเกาะคนอื่น — เซิร์ฟเวอร์มีหลายบ้าน/เกาะ แต่โค้ดกวาดทุกบ้าน/หยิบตัวแรก
 --   → เพิ่ม nearestHouseList() ล็อคเฉพาะบ้านที่ใกล้เราสุด ใช้กับ AUTO / ESP / GUIDE / homePos ทั้งหมด
 -- v4.4: v4.3 ยังหลุดฟ้า+ไม่วาร์ปกลับ เพราะ homePos อิงตำแหน่งตัวเราตอนกด AUTO (กดตอนลอยบนฟ้า =
@@ -411,7 +414,7 @@ local function flyTo(targetPos, timeoutSec)
     if not hrp then return false end
     local t0 = tick()
     while tick() - t0 < (timeoutSec or 6) do
-        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then setNoClip(false) return false end
+        if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then return false end
         hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return false end
         setNoClip(true)
@@ -419,14 +422,14 @@ local function flyTo(targetPos, timeoutSec)
         local cur = hrp.Position
         local dist = (targetPos - cur).Magnitude
         if dist < 4 then
-            setNoClip(false)
+            -- v4.6: ห้ามปิด NoClip ตรงนี้เด็ดขาด — ตัวมักจมอยู่ในเฟอร์นิเจอร์พอดี เปิดการชนกลับ
+            -- ตอนซ้อนกับของ = ฟิสิกส์ดีดตัวกระเด็นขึ้นฟ้า ("โดนของผลัก") ให้ AUTO จบก่อนค่อยปิดที่จุดปลอดภัย
             task.wait(0.1) -- ถึงแล้วนิ่งแป๊บให้ตำแหน่งซิงก์ก่อนคนเรียกยิง remote
             return true
         end
         local dir = (targetPos - cur).Unit
         hrp.CFrame = CFrame.new(cur + dir * math.min(FLY_SPEED * RunService.Heartbeat:Wait(), dist), targetPos)
     end
-    setNoClip(false)
     return true
 end
 
@@ -705,6 +708,15 @@ local function runAuto()
         end
     end
 
+    -- จบงาน: วาร์ปขึ้นกลางอากาศเหนือหลังคาก่อนเปิดการชนคืน — เปิดตอนตัวซ้อนกับเฟอร์นิเจอร์จะโดนดีดกระเด็น
+    do
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = CFrame.new(homePos.X, Y_MAX + 5, homePos.Z)
+        end
+    end
     setNoClip(false)
     setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, ข้าม/พลาด %d"):format(processed, failed))
     AUTO_ON = false
