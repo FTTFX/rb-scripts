@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v1.8 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v1.9 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.9: หาสล็อตเป้าหมายไว้ก่อนจับของเลย (ไม่ต้องรอจับก่อนค่อยหา) แล้วตัดเวลารอ 0.35s เปล่าๆ หลังจับออก
+--   (ให้ระยะทางบินไปสล็อตกินเวลาแทน ไม่ต้องหยุดรอเฉยๆ) ทำให้แต่ละชิ้นเร็วขึ้นโดยยังปลอดภัยเท่าเดิม
 -- v1.8: ความเร็ว 200 เร็วไปจนวางของไม่ผ่าน (ตำแหน่งอาจยังไม่ซิงก์ขึ้นเซิร์ฟเวอร์ตอนยิง remote) — ลดเหลือ 100
 --   และเพิ่ม task.wait(0.15) หลังบินถึงก่อนยิง remote ทุกครั้ง ให้ตำแหน่งนิ่ง/ซิงก์ก่อน
 -- v1.7: เพิ่มความเร็วบิน FLY_SPEED 60 → 200 ตามที่ขอ
@@ -292,31 +294,34 @@ local function runAuto()
             return
         end
         if item.Parent then
+            -- สล็อตเป้าหมาย = <ชื่อของ>Home เป๊ะ (ยืนยันจากชื่อ Ghost ในแผนที่ผ่าน NetSpy [ARROW])
+            -- หาไว้ก่อนจับ เพื่อบินตรงไปจุดเดียว (item → slot ในเที่ยวเดียว) แทนที่จะบินไปของก่อนแล้วค่อยบินไปสล็อต
+            local slot = findSlotFor(item, house.Slots)
+
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
             task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
-            task.wait(0.35) -- รอไฟไฮไลต์อัปเดตให้ตรงกับของที่เพิ่งจับ
-
-            if HAND_FULL_FLAG then
-                setStatus(ABORT_HANDFULL)
-                AUTO_ON = false
-                autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
-                return
-            end
-
-            -- สล็อตเป้าหมาย = <ชื่อของ>Home เป๊ะ (ยืนยันจากชื่อ Ghost ในแผนที่ผ่าน NetSpy [ARROW])
-            local slot = findSlotFor(item, house.Slots)
 
             if not slot or not slot.Parent then
                 noSlot += 1
+                task.wait(0.1)
                 setStatus(("[AutoFly77] ⚠️ %s ไม่มีสล็อต %sHome ในแผนที่ — ข้าม"):format(item.Name, item.Name))
             else
-                setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
-                -- บินไปตามตำแหน่งจุดเรืองแสง (Ghost) ที่เห็นจริงบนจอก่อน ถ้าไม่เจอค่อย fallback ไปตำแหน่ง Slot
+                -- บินไปตามตำแหน่งจุดเรืองแสง (Ghost) ที่เห็นจริงบนจอทันที ระหว่างบินก็ถือว่ารอไฟไฮไลต์อัปเดตไปด้วยในตัว
+                -- (ไม่ต้องหยุดรอเฉยๆ 0.35s แบบเดิม เพราะระยะทางบินเองก็กินเวลาพอที่ไฮไลต์จะอัปเดตทันอยู่แล้ว)
                 local spos = getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
+
+                if HAND_FULL_FLAG then
+                    setStatus(ABORT_HANDFULL)
+                    AUTO_ON = false
+                    autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
+                    return
+                end
+
+                setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
                 task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote
                 local cashBefore = getCash()
                 local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
