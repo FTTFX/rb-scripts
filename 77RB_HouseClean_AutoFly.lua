@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.7 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.8 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.8: "จุดนั้นเต็มแล้ว!" ไม่ใช่จุดจบ — เกมย้ายไฮไลต์ไปชี้จุดว่างใหม่ให้เอง แต่โค้ดเดิมนับพลาด
+--   แล้วข้ามทั้งที่ของค้างมือ → แก้เป็นวนลองใหม่สูงสุด 4 รอบ: สแกนไฮไลต์ล่าสุด (ข้ามสล็อตที่เพิ่ง
+--   ลองแล้วเต็ม) → บินไปจุดใหม่ที่เกมชี้ → วางซ้ำ จนกว่าจะผ่านหรือครบ 4 รอบ
 -- v2.7: วาปทีเดียว (v2.5-2.6) เกมไม่รับ → AUTO เปลี่ยนเป็น "พุ่ง" ถึงเป้าใน 0.1 วิ แบบขยับเป็นสเต็ป
 --   ต่อเนื่องทุก Heartbeat (Lerp จากจุดเดิมไปเป้า) + นิ่ง 0.1 วิ หลังถึงก่อนยิง remote
 -- v2.6: ยอมรับความจริง — ตอน speed 200 วางไม่ผ่านคือบั๊กจับคู่สล็อตของเราเอง ไม่ใช่เรื่องซิงก์ตำแหน่ง
@@ -518,30 +521,38 @@ local function runAuto()
             local litBefore = getLitGhosts()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
-            -- หลังจับ เกมจะจุดไฮไลต์ Ghost ของจุดวางชิ้นนี้ขึ้นมาใหม่ — รอแล้วหาตัวที่ "เพิ่งติด"
-            local slot, ghostTarget
-            local t0 = tick()
-            while tick() - t0 < 1.2 and not ghostTarget do
-                task.wait(0.1)
-                for g in pairs(getLitGhosts()) do
-                    if not litBefore[g] then ghostTarget = g; break end
-                end
-            end
-            if ghostTarget then
-                slot = slotFromGhost(ghostTarget, house.Slots)
-            end
-            if not slot then
-                -- ไม่เห็นไฮไลต์ใหม่ (เช่น ติดค้างอยู่ก่อนแล้ว) → fallback วิธีเทียบชื่อ + PairId แบบเดิม
-                slot = findSlotFor(item, house.Slots)
-            end
+            -- หลังจับ เกมจะจุดไฮไลต์ Ghost ของจุดวางชิ้นนี้ขึ้นมาใหม่ — และถ้าวางแล้ว "จุดนั้นเต็ม"
+            -- เกมจะย้ายไฮไลต์ไปชี้จุดใหม่ให้ เพราะงั้นวางไม่ผ่านต้องสแกนไฮไลต์ใหม่แล้วตามไปวางซ้ำ
+            local placed, triedSlots = false, {}
+            for attempt = 1, 4 do
+                if not AUTO_ON then break end
 
-            if not slot or not slot.Parent then
-                noSlot += 1
-                task.wait(0.1)
-                setStatus(("[AutoFly77] ⚠️ %s ไม่มีสล็อต %sHome ในแผนที่ — ข้าม"):format(item.Name, item.Name))
-            else
-                -- บินไปตามตำแหน่งจุดเรืองแสง (Ghost) ที่เห็นจริงบนจอทันที ระหว่างบินก็ถือว่ารอไฟไฮไลต์อัปเดตไปด้วยในตัว
-                -- (ไม่ต้องหยุดรอเฉยๆ 0.35s แบบเดิม เพราะระยะทางบินเองก็กินเวลาพอที่ไฮไลต์จะอัปเดตทันอยู่แล้ว)
+                -- หา ghost ที่เพิ่งติดใหม่ (ไม่นับตัวที่ติดค้างก่อนจับ และไม่เอาสล็อตที่เพิ่งลองแล้วเต็ม)
+                local slot, ghostTarget
+                local t0 = tick()
+                while tick() - t0 < 1.2 and not slot do
+                    for g in pairs(getLitGhosts()) do
+                        if not litBefore[g] then
+                            local s = slotFromGhost(g, house.Slots)
+                            if s and not triedSlots[s] then ghostTarget, slot = g, s; break end
+                        end
+                    end
+                    if not slot then task.wait(0.1) end
+                end
+                if not slot then
+                    -- ไม่เห็นไฮไลต์ใหม่ → fallback เทียบชื่อ + PairId แบบเดิม (เฉพาะรอบแรก)
+                    local s = findSlotFor(item, house.Slots)
+                    if s and not triedSlots[s] then slot = s end
+                end
+                if not slot or not slot.Parent then
+                    if attempt == 1 then
+                        noSlot += 1
+                        setStatus(("[AutoFly77] ⚠️ %s หาจุดวางไม่เจอ — ข้าม"):format(item.Name))
+                    end
+                    break
+                end
+                triedSlots[slot] = true
+
                 local spos = (ghostTarget and partPosition(ghostTarget)) or getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(spos, 6) end
 
@@ -552,21 +563,22 @@ local function runAuto()
                     return
                 end
 
-                setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
+                setStatus(("[AutoFly77] (%d/%d) วาง: %s → %s (รอบ %d)"):format(i, totalItems, item.Name, slot.Name, attempt))
                 local cashBefore = getCash()
                 local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
                 task.wait(0.25) -- รอเงินอัปเดตพอเช็คสำเร็จ/ไม่สำเร็จได้
 
                 -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
-                -- ถ้าหา leaderstats.Cash ไม่เจอเลย ไม่มีทางเช็คได้ ก็ถือว่าสำเร็จตาม remote call แทน
                 if ok1 and ok2 and (not getCashStat() or getCash() > cashBefore) then
                     processed += 1
-                else
-                    failed += 1
-                    setStatus(("[AutoFly77] ⚠️ %s วางไม่สำเร็จ"):format(item.Name))
-                    task.wait(0.5)
+                    placed = true
+                    break
                 end
+                -- วางไม่ผ่าน (เช่น "จุดนั้นเต็มแล้ว") — รอเกมย้ายไฮไลต์ไปจุดใหม่แล้ววนไปลองจุดนั้น
+                setStatus(("[AutoFly77] ⚠️ %s จุดเต็ม/ไม่ผ่าน — หาจุดไฮไลต์ใหม่ (รอบ %d)"):format(item.Name, attempt))
+                task.wait(0.3)
             end
+            if not placed and next(triedSlots) then failed += 1 end
         end
     end
 
