@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.1 — จับ+วางของอัตโนมัติแบบไม่ต้องขยับตัว (เกม "ล้างบ้านขำๆ")
+-- v5.1: log v5.0 พิสูจน์: (0,-1e6,0) คือเกมจงใจส่งตัวไปเหวระหว่างถือของ (hp=100 root=HRP) และการ
+--   จับ-วางสำเร็จตลอดแม้ตัวอยู่เหว/ฟ้า = เกมไม่เช็คระยะ → AUTO เลิกบิน เลิก NoClip เลิกล็อคตำแหน่ง
+--   ทั้งหมด ยืนเฉยๆ ยิง remote จับ-วางรัวๆ อย่างเดียว เหลือ rescue เดียว: ค้างนอกกรอบ >3 วิ วาปกลับ
 -- v5.0: log จับได้ว่าเกมส่งตัวไป (0,-1000000,0) เป๊ะ (จุดเหวที่เกมกำหนด) แล้ววาปกลับของเราไม่ติด
 --   เฟรมถัดมาโดนส่งซ้ำ — เพราะเซ็ต CFrame แค่ HRP ไม่พอถ้าโดน weld กับของที่ถือ (ของเป็น assembly
 --   root) → เปลี่ยนเป็น PivotTo ทั้งโมเดล + ล้างความเร็วทุกชิ้น + log hp/assembly root หาตัวการ
@@ -646,36 +649,36 @@ local function runAuto()
     -- v4.1: NoClip ตลอด = ไม่มีพื้นให้เหยียบ ตอนยืนวางของเลยร่วงทะลุแผนที่ → ล็อคความเร็วเป็นศูนย์
     -- ทุกเฟรมด้วย (ตัวลอยนิ่งค้างที่เดิม ไม่ตกลงไปเรื่อยๆ) การขยับจริงใช้ CFrame ใน flyTo อยู่แล้ว
     -- v4.3: + บังคับเพดานความสูงทุกเฟรม — โผล่เกินเพดาน/ทะลุพื้นเมื่อไหร่กดกลับทันที
-    local lastWarpLog = 0
-    local noclipConn = RunService.Stepped:Connect(function()
+    -- v5.1: log พิสูจน์แล้วว่า (0,-1e6,0) คือเกม "จงใจ" ส่งตัวไปเหวเองระหว่างถือของ (hp=100,
+    -- root=HRP ปกติ) และการจับ-วางสำเร็จตลอดแม้ตัวอยู่เหว/ฟ้า = เกมไม่เช็คระยะ → เลิกบิน เลิก NoClip
+    -- เลิกสู้เรื่องตำแหน่งทั้งหมด ยืนเฉยๆ ยิง remote อย่างเดียว เหลือแค่ตัวช่วยเดียว: ถ้าหลุดกรอบ
+    -- ค้างนานเกิน 3 วิ (เกมลืมดึงกลับ) ค่อยวาปกลับกลางบ้านให้
+    local oobSince, lastWarpLog = nil, 0
+    local rescueConn = RunService.Stepped:Connect(function()
         if AUTO_ON and _G.AF77_GEN == MY_GEN then
-            setNoClip(true)
             local char = LP.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                -- v4.8: หลุดกรอบบ้านเมื่อไหร่ วาปกลับกลางบ้านทันทีเฟรมนั้นเลย (ตามที่ผู้ใช้ขอ)
-                local p = hrp.Position
-                if not positionSane(p) then
-                    if tick() - lastWarpLog > 1 then
-                        lastWarpLog = tick()
-                        -- v5.0 log เพิ่ม: hp + หัวหน้ากลุ่มฟิสิกส์ (ถ้าไม่ใช่ HRP = โดนของที่ถือลากไป)
-                        local hum = char:FindFirstChildOfClass("Humanoid")
-                        local root = hrp.AssemblyRootPart
-                        alog(("หลุดกรอบที่ %s → วาปกลับ (hp=%d root=%s)"):format(
-                            v3s(p), hum and hum.Health or -1, root and root.Name or "?"))
+                if not positionSane(hrp.Position) then
+                    oobSince = oobSince or tick()
+                    if tick() - oobSince > 3 then
+                        oobSince = nil
+                        if tick() - lastWarpLog > 1 then
+                            lastWarpLog = tick()
+                            alog(("ค้างนอกกรอบเกิน 3 วิ ที่ %s → วาปกลับ"):format(v3s(hrp.Position)))
+                        end
+                        for _, part in ipairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") then part.AssemblyLinearVelocity = Vector3.zero end
+                        end
+                        char:PivotTo(CFrame.new(homePos))
                     end
-                    -- v5.0: ย้ายทั้งโมเดล (PivotTo) + ล้างความเร็วทุกชิ้นในกลุ่มฟิสิกส์ — การเซ็ต
-                    -- CFrame แค่ HRP ไม่ติดถ้าเกม weld ตัวเรากับของที่ถือแล้วของเป็น root แทน
-                    for _, part in ipairs(char:GetDescendants()) do
-                        if part:IsA("BasePart") then part.AssemblyLinearVelocity = Vector3.zero end
-                    end
-                    char:PivotTo(CFrame.new(homePos))
+                else
+                    oobSince = nil
                 end
             end
         end
     end)
-    table.insert(_G.AF77_CONNS, noclipConn)
+    table.insert(_G.AF77_CONNS, rescueConn)
 
     local function nearestUnplacedItem()
         local char = LP.Character
@@ -702,18 +705,7 @@ local function runAuto()
             break
         end
 
-        -- ตัวเราหลุดโซนบ้าน (ตกแผนที่/ลอยหลุดฟ้า) → วาร์ปกลับจุดเริ่มก่อนทำงานต่อ
-        do
-            local char = LP.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp and not positionSane(hrp.Position) then
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.CFrame = CFrame.new(homePos)
-                task.wait(0.2)
-            end
-        end
-
-        -- (1) ของชิ้นใกล้สุดที่ยังไม่ได้วาง
+        -- (1) ของชิ้นใกล้สุดที่ยังไม่ได้วาง — v5.1: ไม่บินไปหาแล้ว ยิงจับจากที่ยืนเลย
         local item, house = nearestUnplacedItem()
         if not item then
             setStatus(("[AutoFly77] ✅ ไม่เหลือของให้เก็บแล้ว — จบ (สำเร็จ %d, ข้าม %d)"):format(processed, failed))
@@ -721,14 +713,6 @@ local function runAuto()
         end
 
         setStatus(("[AutoFly77] เก็บ: %s (วางแล้ว %d)"):format(item.Name, processed))
-        local ipos = partPosition(item)
-        if ipos then
-            local cp = clampY(ipos)
-            if (cp - ipos).Magnitude > 1 then
-                alog(("%s อยู่นอกกรอบสูง %s → บินไปแค่ %s"):format(item.Name, v3s(ipos), v3s(cp)))
-            end
-            flyTo(cp, 6)
-        end
         if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -749,12 +733,8 @@ local function runAuto()
             failed += 1
             setStatus(("[AutoFly77] ⚠️ %s ไม่เจอทั้งไฮไลต์และสล็อต — ข้าม"):format(item.Name))
         else
-            -- (3) บินไปจุดไฮไลต์
-            local spos = (ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
-            if spos then flyTo(clampY(spos), 6) end
+            -- (3)+(4) วางจากที่ยืนเลย — พิสูจน์จาก log แล้วว่าเกมไม่เช็คระยะ
             if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
-
-            -- (4) วาง
             pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
             task.wait(0.2)
 
@@ -773,16 +753,7 @@ local function runAuto()
         end
     end
 
-    -- จบงาน: วาร์ปขึ้นกลางอากาศเหนือหลังคาก่อนเปิดการชนคืน — เปิดตอนตัวซ้อนกับเฟอร์นิเจอร์จะโดนดีดกระเด็น
-    do
-        local char = LP.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.CFrame = CFrame.new(homePos.X, Y_MAX + 5, homePos.Z)
-        end
-    end
-    setNoClip(false)
+    setNoClip(false) -- เผื่อค้างจากรุ่นก่อน (v5.1 ไม่เปิด NoClip แล้ว)
     setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, ข้าม/พลาด %d"):format(processed, failed))
     AUTO_ON = false
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
