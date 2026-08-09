@@ -194,8 +194,14 @@ local function runAuto()
     end
     setStatus(("[AutoFly77] พบของ %d ชิ้น — เริ่มบินเก็บ-วางทีละชิ้น"):format(#queue))
 
+    local ls = LP:FindFirstChild("leaderstats")
+    local cashStat = ls and ls:FindFirstChild("Cash")
+    local function getCash()
+        return cashStat and cashStat.Value or 0
+    end
+
     local processed, failed, skippedFull = 0, 0, 0
-    local fullSlots = {}   -- slot instance ที่เคยวางแล้วของไม่หาย (คาดว่าเต็ม) — ข้ามที่เหลือของสล็อตนี้
+    local fullSlots = {}   -- slot instance ที่วางแล้วเงินไม่ขึ้น (คาดว่าเต็ม) — ข้ามที่เหลือของสล็อตนี้
     for i, pair in ipairs(queue) do
         if not AUTO_ON then break end
         local item, slot = pair.item, pair.slot
@@ -211,11 +217,13 @@ local function runAuto()
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s"):format(i, #queue, item.Name))
             local spos = partPosition(slot)
             if spos then flyTo(spos, 6) end
+            local cashBefore = getCash()
             local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
             task.wait(0.4)
 
-            -- เช็คว่าของหายไปจริงไหม — ถ้ายังอยู่ที่เดิม แปลว่าจุดนั้นเต็ม/วางไม่สำเร็จ ข้ามสล็อตนี้ที่เหลือทั้งหมด
-            if ok1 and ok2 and not item.Parent then
+            -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
+            -- ถ้าหา leaderstats.Cash ไม่เจอเลย ไม่มีทางเช็คได้ ก็ถือว่าสำเร็จตาม remote call แทน
+            if ok1 and ok2 and (not cashStat or getCash() > cashBefore) then
                 processed += 1
             else
                 failed += 1
