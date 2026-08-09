@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.4 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.5 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.5: AUTO เปลี่ยนเป็นโหมดวาป (TELEPORT_MODE) — เด้งไปเป้าหมายทันทีแล้วยืนนิ่งรอ 0.3 วิ
+--   ให้ตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (เร็วกว่าบิน speed 100 มาก และปลอดภัยกว่า
+--   speed 200 ที่เคยพังเพราะยิง remote ก่อนซิงก์) — ปุ่ม FLY บินเองยังใช้ speed ปกติเหมือนเดิม
 -- v2.4: AUTO เปลี่ยนเป็น "จับก่อน แล้วตามไฮไลต์" — snapshot Ghost ที่ติดไฟไว้ก่อนจับ พอจับแล้วเกม
 --   จะจุดไฮไลต์จุดวางของชิ้นนั้นขึ้นใหม่ 1 อัน → เอาตัวที่เพิ่งติดเป็นเป้าบิน+วางตรงๆ (แม่นกว่าเดาชื่อ
 --   เพราะเกมชี้เอง) ถ้าจับไฮไลต์ใหม่ไม่ได้ใน 1.2 วิ ค่อย fallback เทียบชื่อ+PairId แบบเดิม
@@ -312,11 +315,25 @@ local function guideStart()
 end
 
 -- ==================== บิน (ย้าย HumanoidRootPart ไปจุดหมายแบบนุ่มๆ) ====================
+-- v2.5: โหมดวาป — เด้งไปเป้าหมายทันทีแล้ว "ยืนนิ่ง" รอให้ตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนคืนค่า
+-- (บทเรียนจาก v1.8: ที่ speed 200 พังไม่ใช่เพราะเร็ว แต่เพราะยิง remote ตอนตำแหน่งยังไม่ซิงก์
+--  วาปแล้วรอนิ่ง 0.3 วิ ให้ replication ตามทันจึงปลอดภัยกว่าบินเร็วแล้วยิงทันที)
+local TELEPORT_MODE = true
+local TP_SYNC_WAIT = 0.3
+
 local function flyTo(targetPos, timeoutSec)
     local char = LP.Character
     if not char then return false end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
+
+    if TELEPORT_MODE then
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.CFrame = CFrame.new(targetPos + Vector3.new(0, 2, 0))
+        task.wait(TP_SYNC_WAIT)
+        return true
+    end
+
     local t0 = tick()
     while tick() - t0 < (timeoutSec or 6) do
         if not AUTO_ON then return false end
