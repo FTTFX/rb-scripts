@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v2.5 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v2.6 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v2.6: ยอมรับความจริง — ตอน speed 200 วางไม่ผ่านคือบั๊กจับคู่สล็อตของเราเอง ไม่ใช่เรื่องซิงก์ตำแหน่ง
+--   เลยตัดเวลารอที่ใส่กันเหนียวไว้ออกเกือบหมด: TP_SYNC_WAIT 0.3→0.1, ตัด wait 0.15 ก่อนจับ/ก่อนวาง,
+--   รอเช็คเงินหลังวาง 0.4→0.25 — ต่อชิ้นเหลือประมาณครึ่งวิ (ไม่รวมเวลารอไฮไลต์ติดซึ่งออกทันทีที่เจอ)
 -- v2.5: AUTO เปลี่ยนเป็นโหมดวาป (TELEPORT_MODE) — เด้งไปเป้าหมายทันทีแล้วยืนนิ่งรอ 0.3 วิ
 --   ให้ตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (เร็วกว่าบิน speed 100 มาก และปลอดภัยกว่า
 --   speed 200 ที่เคยพังเพราะยิง remote ก่อนซิงก์) — ปุ่ม FLY บินเองยังใช้ speed ปกติเหมือนเดิม
@@ -315,11 +318,10 @@ local function guideStart()
 end
 
 -- ==================== บิน (ย้าย HumanoidRootPart ไปจุดหมายแบบนุ่มๆ) ====================
--- v2.5: โหมดวาป — เด้งไปเป้าหมายทันทีแล้ว "ยืนนิ่ง" รอให้ตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนคืนค่า
--- (บทเรียนจาก v1.8: ที่ speed 200 พังไม่ใช่เพราะเร็ว แต่เพราะยิง remote ตอนตำแหน่งยังไม่ซิงก์
---  วาปแล้วรอนิ่ง 0.3 วิ ให้ replication ตามทันจึงปลอดภัยกว่าบินเร็วแล้วยิงทันที)
+-- v2.5: โหมดวาป — เด้งไปเป้าหมายทันที (v2.6: ตอน speed 200 "พัง" จริงๆ คือบั๊กจับคู่สล็อตผิดของเราเอง
+-- ไม่ใช่เรื่องซิงก์ตำแหน่ง — ตอนนี้ v2.4 ตามไฮไลต์ที่เกมชี้เองแล้ว เลยเหลือรอสั้นๆ กันเหนียวพอ)
 local TELEPORT_MODE = true
-local TP_SYNC_WAIT = 0.3
+local TP_SYNC_WAIT = 0.1
 
 local function flyTo(targetPos, timeoutSec)
     local char = LP.Character
@@ -517,7 +519,6 @@ local function runAuto()
             setStatus(("[AutoFly77] (%d/%d) กำลังบินไปเก็บ: %s"):format(i, totalItems, item.Name))
             local ipos = partPosition(item)
             if ipos then flyTo(ipos, 6) end
-            task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
             local litBefore = getLitGhosts()
             local ok1 = pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -556,10 +557,9 @@ local function runAuto()
                 end
 
                 setStatus(("[AutoFly77] (%d/%d) กำลังบินไปวาง: %s → %s"):format(i, totalItems, item.Name, slot.Name))
-                task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote
                 local cashBefore = getCash()
                 local ok2 = pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-                task.wait(0.4)
+                task.wait(0.25) -- รอเงินอัปเดตพอเช็คสำเร็จ/ไม่สำเร็จได้
 
                 -- เช็คความสำเร็จจากเงินที่เพิ่มขึ้นจริง (แม่นกว่าเช็ค Parent ของ item เพราะบางเกมไม่ลบ item ทิ้ง)
                 -- ถ้าหา leaderstats.Cash ไม่เจอเลย ไม่มีทางเช็คได้ ก็ถือว่าสำเร็จตาม remote call แทน
