@@ -1,4 +1,5 @@
--- 77RB_HouseClean_AutoSpray.lua v1.4 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.5 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.5: เจอ popup "คุณไม่ได้พักเลย!" จากการฉีดต่อเนื่องไม่มีหยุดเลย — เพิ่มระบบพักสั้นๆ (2.5s) ทุก 25 ครั้งที่ยิง reportSpray
 -- v1.4: ความเร็ว 200 เร็วไปจนอาจยิง remote ก่อนตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ — ลดเหลือ 100 + รอ 0.15s ก่อนยิงทุกครั้ง
 -- v1.3: เจอว่า House_1.Dirt.Part เป็น Part ตัวเดียวที่เกม "รียูส" แทนคราบใหม่ไปเรื่อยๆ (ตำแหน่งขยับทุกรอบงาน)
 --   ไม่ใช่มีคราบสกปรกหลายก้อนวางอยู่ในโลกให้ไล่หา — ระบบจำ "ล้างเสร็จแล้ว" แบบ v1.1/v1.2 (จำตาม Instance)
@@ -169,6 +170,19 @@ local function flyTo(targetPos, timeoutSec)
     return true
 end
 
+-- ==================== ระบบพัก (กันข้อความ "คุณไม่ได้พักเลย!" จากการฉีดต่อเนื่องไม่หยุด) ====================
+local sprayBurstCount = 0
+local SPRAY_BURSTS_BEFORE_REST = 25 -- ยิง reportSpray ติดกันกี่ครั้งแล้วพัก
+local REST_DURATION = 2.5
+local function maybeRest()
+    sprayBurstCount += 1
+    if sprayBurstCount >= SPRAY_BURSTS_BEFORE_REST then
+        sprayBurstCount = 0
+        setStatus("[AutoSpray77] 💤 พักสักครู่ (กันเกมเตือน 'ไม่ได้พักเลย')...")
+        task.wait(REST_DURATION)
+    end
+end
+
 -- ==================== ฉีดล้าง 1 ด้านของ Part ให้ครบ ====================
 local function sprayFace(part, faceName)
     if not part.Parent then return end
@@ -195,6 +209,7 @@ local function sprayFace(part, faceName)
             setStatus(("[AutoSpray77] ฉีด %s (%s): %d%%"):format(part.Name, faceName, math.floor(progress * 100)))
         end
         task.wait(0.12)
+        maybeRest()
     end
     pcall(function() learnedRemote:FireServer("reportWashProgress", part, faceName, 1) end)
     task.wait(0.15)
