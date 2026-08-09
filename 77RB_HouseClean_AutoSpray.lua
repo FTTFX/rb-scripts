@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoSpray.lua v1.0 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.1 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.1: จำจุดที่ล้างครบแล้ว (ยิง reportSurfaceComplete สำเร็จ) ไว้ใน _G ข้ามรอบ SPRAY ได้ — กด SPRAY ใหม่
+--   จะข้ามจุด/ด้านที่ทำเสร็จไปแล้วอัตโนมัติ ไปต่อจากจุดที่ยังไม่เสร็จเลย ไม่ต้องเริ่มใหม่ทั้งหมด
 -- อ้างอิงผลจาก 77RB_HouseClean_NetSpy.lua v1.0 ที่ยืนยันแล้ว (การฉีดล้างคราบสกปรก):
 --   RemoteEvent:FireServer("reportSpray", {รายการจุดที่โดนสเปรย์ {p=Part, pos=V3, f="ชื่อด้าน"}, ...}, ทิศทางฉีด)
 --   RemoteEvent:FireServer("reportWashProgress", <Part>, "ชื่อด้าน", ความคืบหน้า 0..1)
@@ -14,6 +16,7 @@ if _G.SPR77_CONNS then
     for _, c in ipairs(_G.SPR77_CONNS) do pcall(function() c:Disconnect() end) end
 end
 _G.SPR77_CONNS = {}
+_G.SPR77_DONE = _G.SPR77_DONE or setmetatable({}, { __mode = "k" }) -- [part][faceName] = true (จำข้ามรอบ SPRAY)
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
@@ -193,6 +196,9 @@ local function sprayFace(part, faceName)
     task.wait(0.15)
     pcall(function() learnedRemote:FireServer("reportSurfaceComplete", part, faceName) end)
     task.wait(0.2)
+
+    _G.SPR77_DONE[part] = _G.SPR77_DONE[part] or {}
+    _G.SPR77_DONE[part][faceName] = true
 end
 
 -- ==================== SPRAY: ไล่ล้างคราบทั้งหมด ====================
@@ -219,23 +225,37 @@ local function runSpray()
         sprayB.Text = "SPRAY: OFF (ฉีดล้างคราบทั้งหมด)"
         return
     end
-    setStatus(("[AutoSpray77] พบคราบสกปรก %d จุด — เริ่มฉีดล้างทีละจุด"):format(#dirtParts))
+    setStatus(("[AutoSpray77] พบคราบสกปรก %d จุด — เริ่มฉีดล้างทีละจุด (ข้ามจุดที่เคยล้างเสร็จแล้ว)"):format(#dirtParts))
 
-    local processed = 0
+    local processed, skipped = 0, 0
     for i, part in ipairs(dirtParts) do
         if not SPRAY_ON then break end
         if part.Parent then
-            setStatus(("[AutoSpray77] (%d/%d) กำลังบินไปที่: %s"):format(i, #dirtParts, part.Name))
-            flyTo(part.Position, 6)
+            -- เช็คว่าทุกด้านของจุดนี้ล้างเสร็จไปแล้วหรือยัง (จำไว้จากรอบก่อนหน้าใน _G) — ถ้าเสร็จหมดแล้วข้ามไปเลย
+            local doneFaces = _G.SPR77_DONE[part]
+            local allDone = true
             for _, faceName in ipairs(ACTIVE_FACES) do
-                if not SPRAY_ON then break end
-                sprayFace(part, faceName)
+                if not (doneFaces and doneFaces[faceName]) then allDone = false break end
             end
-            processed += 1
+            if allDone then
+                skipped += 1
+            else
+                setStatus(("[AutoSpray77] (%d/%d) กำลังบินไปที่: %s"):format(i, #dirtParts, part.Name))
+                flyTo(part.Position, 6)
+                for _, faceName in ipairs(ACTIVE_FACES) do
+                    if not SPRAY_ON then break end
+                    if doneFaces and doneFaces[faceName] then
+                        -- ด้านนี้ล้างเสร็จแล้ว ข้ามเฉพาะด้านนี้
+                    else
+                        sprayFace(part, faceName)
+                    end
+                end
+                processed += 1
+            end
         end
     end
 
-    setStatus(("[AutoSpray77] ✅ จบแล้ว! ล้างคราบไป %d/%d จุด"):format(processed, #dirtParts))
+    setStatus(("[AutoSpray77] ✅ จบแล้ว! ล้างคราบไป %d จุด, ข้ามที่เสร็จแล้ว %d จุด (รวม %d)"):format(processed, skipped, #dirtParts))
     SPRAY_ON = false
     sprayB.Text = "SPRAY: OFF (ฉีดล้างคราบทั้งหมด)"
 end
