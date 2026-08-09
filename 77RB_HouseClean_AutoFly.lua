@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v4.9 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.0 — บิน+จับ+วางของอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v5.0: log จับได้ว่าเกมส่งตัวไป (0,-1000000,0) เป๊ะ (จุดเหวที่เกมกำหนด) แล้ววาปกลับของเราไม่ติด
+--   เฟรมถัดมาโดนส่งซ้ำ — เพราะเซ็ต CFrame แค่ HRP ไม่พอถ้าโดน weld กับของที่ถือ (ของเป็น assembly
+--   root) → เปลี่ยนเป็น PivotTo ทั้งโมเดล + ล้างความเร็วทุกชิ้น + log hp/assembly root หาตัวการ
 -- v4.9: เพิ่มกล่อง log ใต้ปุ่ม (8 บรรทัดล่าสุด + print ลง console F9) — โชว์บ้าน/กรอบสูงที่คำนวณได้,
 --   เหตุการณ์วาปกลับ (ตำแหน่งที่หลุด+กรอบ), ของนอกกรอบ, ผลวางแต่ละชิ้น (ไฮไลต์/เดาชื่อ) ไว้ไล่หาสาเหตุ
 -- v4.8: หลุดกรอบบ้าน = วาปกลับกลางบ้านทันทีเฟรมนั้น (เดิมแค่กดความสูงคืน โดนแรงอื่นดันสู้ได้)
@@ -656,9 +659,18 @@ local function runAuto()
                 if not positionSane(p) then
                     if tick() - lastWarpLog > 1 then
                         lastWarpLog = tick()
-                        alog(("หลุดกรอบที่ %s (กรอบ Y %.0f..%.0f) → วาปกลับ"):format(v3s(p), Y_MIN, Y_MAX))
+                        -- v5.0 log เพิ่ม: hp + หัวหน้ากลุ่มฟิสิกส์ (ถ้าไม่ใช่ HRP = โดนของที่ถือลากไป)
+                        local hum = char:FindFirstChildOfClass("Humanoid")
+                        local root = hrp.AssemblyRootPart
+                        alog(("หลุดกรอบที่ %s → วาปกลับ (hp=%d root=%s)"):format(
+                            v3s(p), hum and hum.Health or -1, root and root.Name or "?"))
                     end
-                    hrp.CFrame = CFrame.new(homePos)
+                    -- v5.0: ย้ายทั้งโมเดล (PivotTo) + ล้างความเร็วทุกชิ้นในกลุ่มฟิสิกส์ — การเซ็ต
+                    -- CFrame แค่ HRP ไม่ติดถ้าเกม weld ตัวเรากับของที่ถือแล้วของเป็น root แทน
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then part.AssemblyLinearVelocity = Vector3.zero end
+                    end
+                    char:PivotTo(CFrame.new(homePos))
                 end
             end
         end
