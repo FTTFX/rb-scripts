@@ -1,0 +1,173 @@
+-- 78RB_DuckSpy.lua v1.0 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- ดัก 4 อย่าง:
+--   [REMOTE] FireServer/InvokeServer ทุกตัว พร้อม args ย่อ (ยิงปืน/โดนเป็ด/เก็บแต้ม จะโผล่ตรงนี้)
+--   [MDL+]/[MDL-] โมเดลเกิด/หายใน workspace (เป็ด spawn/ตาย — ได้ชื่อจริงของเป้า)
+--   [STAT] leaderstats/ค่าบนตัวผู้เล่นเปลี่ยน (คะแนน/เงิน ก่อน→หลัง)
+--   ปุ่ม LIST = สรุปโมเดลใน workspace ตามชื่อ+จำนวน / COPY = ก๊อป log ทั้งหมด
+if _G.DS78_GUI then pcall(function() _G.DS78_GUI:Destroy() end) end
+if _G.DS78_CONNS then
+    for _, c in ipairs(_G.DS78_CONNS) do pcall(function() c:Disconnect() end) end
+end
+_G.DS78_CONNS = {}
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+local PAUSED = false
+local LOG = {}
+local function stamp() return os.date("%H:%M:%S") end
+
+-- ==================== GUI ====================
+local gui = Instance.new("ScreenGui")
+gui.Name = "DuckSpy78"; gui.ResetOnSpawn = false
+pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
+if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
+_G.DS78_GUI = gui
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 340, 0, 300); frame.Position = UDim2.new(0, 8, 0.18, 0)
+frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.15
+frame.Active = true; frame.Draggable = true
+
+local out = Instance.new("TextLabel", frame)
+out.Size = UDim2.new(1, -8, 1, -40); out.Position = UDim2.new(0, 4, 0, 36)
+out.BackgroundTransparency = 1; out.TextColor3 = Color3.fromRGB(180, 255, 180)
+out.TextSize = 11; out.Font = Enum.Font.Code; out.TextWrapped = true
+out.TextXAlignment = Enum.TextXAlignment.Left; out.TextYAlignment = Enum.TextYAlignment.Top
+
+local function render()
+    local n = #LOG
+    local lines = {}
+    for i = math.max(1, n - 18), n do lines[#lines + 1] = LOG[i] end
+    out.Text = table.concat(lines, "\n")
+end
+local function log(s)
+    if PAUSED then return end
+    LOG[#LOG + 1] = stamp() .. " " .. s
+    if #LOG > 3000 then table.remove(LOG, 1) end
+    render()
+end
+
+local function mkbtn(txt, x, col)
+    local b = Instance.new("TextButton", frame)
+    b.Size = UDim2.new(0, 60, 0, 24); b.Position = UDim2.new(0, x, 0, 6)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
+    return b
+end
+local listB  = mkbtn("LIST", 4, Color3.fromRGB(60, 110, 180))
+local clearB = mkbtn("CLEAR", 70, Color3.fromRGB(110, 110, 40))
+local copyB  = mkbtn("COPY", 136, Color3.fromRGB(40, 130, 70))
+local pauseB = mkbtn("PAUSE", 202, Color3.fromRGB(140, 80, 30))
+local closeB = mkbtn("✕", 268, Color3.fromRGB(120, 40, 40))
+
+-- ==================== helper: ย่อ args ====================
+local function short(v, depth)
+    depth = depth or 0
+    local t = typeof(v)
+    if t == "Instance" then return v.ClassName .. ":" .. v.Name
+    elseif t == "Vector3" then return ("(%.0f,%.0f,%.0f)"):format(v.X, v.Y, v.Z)
+    elseif t == "CFrame" then return "CF" .. ("(%.0f,%.0f,%.0f)"):format(v.Position.X, v.Position.Y, v.Position.Z)
+    elseif t == "table" then
+        if depth > 1 then return "{...}" end
+        local parts = {}
+        local cnt = 0
+        for k, x in pairs(v) do
+            cnt += 1
+            if cnt > 4 then parts[#parts + 1] = "..." break end
+            parts[#parts + 1] = tostring(k) .. "=" .. short(x, depth + 1)
+        end
+        return "{" .. table.concat(parts, ",") .. "}"
+    elseif t == "string" then return #v > 40 and ('"' .. v:sub(1, 40) .. '..."') or ('"' .. v .. '"')
+    else return tostring(v) end
+end
+
+-- ==================== [REMOTE] ดัก __namecall ====================
+if hookmetamethod then
+    local old
+    old = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        if (method == "FireServer" or method == "InvokeServer")
+            and typeof(self) == "Instance" then
+            local args = { ... }
+            local s = {}
+            for i = 1, math.min(#args, 6) do s[#s + 1] = short(args[i]) end
+            log(("[REMOTE] %s:%s(%s)"):format(self.Name, method, table.concat(s, ", ")))
+        end
+        return old(self, ...)
+    end)
+else
+    log("⚠️ ไม่มี hookmetamethod — ดัก remote ไม่ได้")
+end
+
+-- ==================== [MDL+/-] โมเดลเกิด/หาย ====================
+table.insert(_G.DS78_CONNS, workspace.DescendantAdded:Connect(function(d)
+    if d:IsA("Model") then
+        task.defer(function()
+            local pv = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart")
+            log(("[MDL+] %s ที่ %s"):format(d:GetFullName(), pv and short(pv.Position) or "?"))
+        end)
+    end
+end))
+table.insert(_G.DS78_CONNS, workspace.DescendantRemoving:Connect(function(d)
+    if d:IsA("Model") then
+        log(("[MDL-] %s"):format(d:GetFullName()))
+    end
+end))
+
+-- ==================== [STAT] คะแนน/เงินเปลี่ยน ====================
+local function watchValue(v)
+    if not (v:IsA("IntValue") or v:IsA("NumberValue") or v:IsA("StringValue")) then return end
+    local prev = v.Value
+    table.insert(_G.DS78_CONNS, v:GetPropertyChangedSignal("Value"):Connect(function()
+        log(("[STAT] %s: %s → %s"):format(v:GetFullName(), tostring(prev), tostring(v.Value)))
+        prev = v.Value
+    end))
+end
+local function watchContainer(c)
+    for _, v in ipairs(c:GetDescendants()) do watchValue(v) end
+    table.insert(_G.DS78_CONNS, c.DescendantAdded:Connect(watchValue))
+end
+if LP:FindFirstChild("leaderstats") then watchContainer(LP.leaderstats) end
+table.insert(_G.DS78_CONNS, LP.ChildAdded:Connect(function(c)
+    if c.Name == "leaderstats" then watchContainer(c) end
+end))
+
+-- ==================== Buttons ====================
+listB.MouseButton1Click:Connect(function()
+    local counts = {}
+    for _, m in ipairs(workspace:GetDescendants()) do
+        if m:IsA("Model") then counts[m.Name] = (counts[m.Name] or 0) + 1 end
+    end
+    local arr = {}
+    for name, n in pairs(counts) do arr[#arr + 1] = { name, n } end
+    table.sort(arr, function(a, b) return a[2] > b[2] end)
+    log("===== [LIST] โมเดลใน workspace =====")
+    for i = 1, math.min(#arr, 25) do
+        log(("  %s x%d"):format(arr[i][1], arr[i][2]))
+    end
+    log("===== จบ LIST =====")
+end)
+clearB.MouseButton1Click:Connect(function() LOG = {} render() end)
+copyB.MouseButton1Click:Connect(function()
+    local all = table.concat(LOG, "\n")
+    if setclipboard then
+        setclipboard(all)
+        log("📋 ก๊อปลงคลิปบอร์ดแล้ว (" .. #LOG .. " บรรทัด)")
+    elseif writefile then
+        writefile("78RB_duck_log.txt", all)
+        log("💾 เซฟไฟล์ 78RB_duck_log.txt แล้ว")
+    end
+end)
+pauseB.MouseButton1Click:Connect(function()
+    PAUSED = not PAUSED
+    pauseB.Text = PAUSED and "RESUME" or "PAUSE"
+end)
+closeB.MouseButton1Click:Connect(function()
+    for _, c in ipairs(_G.DS78_CONNS) do pcall(function() c:Disconnect() end) end
+    _G.DS78_CONNS = {}
+    gui:Destroy(); _G.DS78_GUI = nil
+end)
+
+log("[DuckSpy78] เริ่มดักแล้ว — ยิงเป็ดสัก 2-3 ตัว แล้วกด LIST + COPY ส่ง log มา")
+warn("[DuckSpy78] loaded")
