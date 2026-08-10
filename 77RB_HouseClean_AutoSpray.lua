@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoSpray.lua v1.6 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.7 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v1.7: เพิ่มปุ่ม GUIDE — เส้น Beam 3 เส้นชี้ไปจุดสกปรกที่ใกล้ที่สุด 3 จุด (เขียว=ใกล้สุด,
+--   เหลือง=รอง, ฟ้า=ที่สาม) รีเฟรชเป้าทุก 0.5 วิ + status โชว์จำนวนจุดสกปรกที่เหลือ
 -- v1.6: จำ remote ที่เรียนรู้ถูกไว้ใน _G.RB77_REMOTE ข้ามรอบ/ข้ามสคริปต์ (ใช้ร่วมกับ AutoFly77) เหมือนกัน
 -- v1.5: เจอ popup "คุณไม่ได้พักเลย!" จากการฉีดต่อเนื่องไม่มีหยุดเลย — เพิ่มระบบพักสั้นๆ (2.5s) ทุก 25 ครั้งที่ยิง reportSpray
 -- v1.4: ความเร็ว 200 เร็วไปจนอาจยิง remote ก่อนตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ — ลดเหลือ 100 + รอ 0.15s ก่อนยิงทุกครั้ง
@@ -60,8 +62,10 @@ local function mkbtn(txt, y, col)
     return b
 end
 local sprayB = mkbtn("SPRAY: OFF (ฉีดล้างคราบทั้งหมด)", 48, Color3.fromRGB(40, 130, 190))
-local stopB  = mkbtn("STOP", 78, Color3.fromRGB(150, 60, 30))
-local closeB = mkbtn("✕ ปิด", 108, Color3.fromRGB(90, 40, 40))
+local guideB = mkbtn("GUIDE: OFF (เส้นชี้จุดสกปรก 3 จุด)", 78, Color3.fromRGB(30, 150, 150))
+local stopB  = mkbtn("STOP", 108, Color3.fromRGB(150, 60, 30))
+local closeB = mkbtn("✕ ปิด", 138, Color3.fromRGB(90, 40, 40))
+frame.Size = UDim2.new(0, 260, 0, 170)
 
 setStatus("[AutoSpray77] พร้อม — กด SPRAY เพื่อไล่ล้างคราบสกปรกทั้งหมด")
 
@@ -119,6 +123,85 @@ local function findDirtParts()
     end
     return out
 end
+
+-- ==================== GUIDE: เส้นชี้จุดสกปรกใกล้สุด 3 จุด ====================
+-- 3 เส้น 3 สี (เขียว=ใกล้สุด เหลือง=รอง ฟ้า=ที่สาม) รีเฟรชเป้าทุก 0.5 วิ ตามจุดที่เหลือจริง
+local GUIDE_ON = false
+local guideA0, guideConn = nil, nil
+local guideBeams = {}
+
+local function guideStop()
+    GUIDE_ON = false
+    if guideConn then guideConn:Disconnect() guideConn = nil end
+    for _, t in ipairs(guideBeams) do
+        pcall(function() t.beam:Destroy() end)
+        if t.a1 then pcall(function() t.a1:Destroy() end) end
+    end
+    guideBeams = {}
+    if guideA0 then pcall(function() guideA0:Destroy() end) guideA0 = nil end
+end
+
+local function guideStart()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    GUIDE_ON = true
+    guideA0 = Instance.new("Attachment")
+    guideA0.Name = "SPR77_GUIDE"
+    guideA0.Parent = hrp
+    local colors = { Color3.fromRGB(60, 255, 150), Color3.fromRGB(255, 220, 60), Color3.fromRGB(90, 170, 255) }
+    for i = 1, 3 do
+        local beam = Instance.new("Beam")
+        beam.Name = "SPR77_GUIDE"
+        beam.Width0 = 0.35; beam.Width1 = 0.1
+        beam.Color = ColorSequence.new(colors[i])
+        beam.Transparency = NumberSequence.new(0.15)
+        beam.FaceCamera = true
+        beam.Attachment0 = guideA0
+        beam.Enabled = false
+        beam.Parent = guideA0
+        guideBeams[i] = { beam = beam, a1 = nil }
+    end
+    local last = 0
+    guideConn = RunService.Heartbeat:Connect(function()
+        if not GUIDE_ON then return end
+        if tick() - last < 0.5 then return end
+        last = tick()
+        local h = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+        if not h then return end
+        local parts = findDirtParts()
+        table.sort(parts, function(a, b)
+            return (a.Position - h.Position).Magnitude < (b.Position - h.Position).Magnitude
+        end)
+        for i = 1, 3 do
+            local t = guideBeams[i]
+            local p = parts[i]
+            if p then
+                if t.a1 then pcall(function() t.a1:Destroy() end) end
+                local a1 = Instance.new("Attachment")
+                a1.Name = "SPR77_GUIDE"
+                a1.Parent = p
+                t.a1 = a1
+                t.beam.Attachment1 = a1
+                t.beam.Enabled = true
+            else
+                t.beam.Enabled = false
+            end
+        end
+        setStatus(("[AutoSpray77] GUIDE: เหลือจุดสกปรก %d จุด (ชี้ %d จุดใกล้สุด)"):format(#parts, math.min(3, #parts)))
+    end)
+    table.insert(_G.SPR77_CONNS, guideConn)
+end
+
+guideB.MouseButton1Click:Connect(function()
+    if GUIDE_ON then
+        guideStop()
+        guideB.Text = "GUIDE: OFF (เส้นชี้จุดสกปรก 3 จุด)"
+    else
+        guideStart()
+        guideB.Text = "GUIDE: ON (เขียว/เหลือง/ฟ้า = ใกล้สุด 3 จุด)"
+    end
+end)
 
 -- ==================== นิยามด้านของ Part (local offset + แกนตาราง) ====================
 local FACES = {
@@ -300,10 +383,13 @@ end)
 stopB.MouseButton1Click:Connect(function()
     SPRAY_ON = false
     sprayB.Text = "SPRAY: OFF (ฉีดล้างคราบทั้งหมด)"
+    guideStop()
+    guideB.Text = "GUIDE: OFF (เส้นชี้จุดสกปรก 3 จุด)"
     setStatus("[AutoSpray77] หยุดแล้ว")
 end)
 closeB.MouseButton1Click:Connect(function()
     SPRAY_ON = false
+    guideStop()
     for _, c in ipairs(_G.SPR77_CONNS) do pcall(function() c:Disconnect() end) end
     _G.SPR77_CONNS = {}
     gui:Destroy(); _G.SPR77_GUI = nil
