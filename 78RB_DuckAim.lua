@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v8.0 — โชว์ระยะห่างจริงระหว่างนัด (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v8.0: เพิ่ม _G.DA78_DELTA (วิ ที่ห่างจากนัดก่อนจริงๆ) โชว์ในบรรทัดปืน "นัด X ห่าง Y วิ" พิสูจน์ว่า
+--   สคริปต์คุมจังหวะได้จริงไหม (ตัดข้อสงสัยเรื่องอนิเมชั่น/รีโหลดออกจากสมการ)
 -- 78RB_DuckAim.lua v7.9 — หน่วง 2 ชั้น (ตัวยิง + ลูป) (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v7.9: หน่วงยิง 0.1 = 10 นัด/วิ (เร็วสุด ถูกต้อง) ต้องตั้งเลขมากถึงช้า + เสริมให้ลูปหน่วง rate หลังยิง
 --   สำเร็จด้วย (2 ชั้น: throttle ใน fireShotAt + wait ในลูป) กันลูปซ้อนแน่นอน
@@ -143,9 +146,11 @@ gunLbl.TextSize = 11; gunLbl.Font = Enum.Font.Code
 gunLbl.TextXAlignment = Enum.TextXAlignment.Left
 gunLbl.Text = "ปืน: ยังไม่รู้ — ยิงเอง 1 นัด"
 -- อ่านสถานะปืนจาก _G (hook เขียนไว้ — ใช้ร่วมทุก gen)
+-- v8.0: โชว์ "ห่างจากนัดก่อน X วิ" ด้วย — พิสูจน์ว่าสคริปต์ยิงห่างจริงเท่าไหร่ (ตัดเรื่องอนิเมชั่นทิ้ง)
 local function setGun()
-    gunLbl.Text = ("ปืน: เล็ง%s ยิง%s  นัดล่าสุด %d"):format(
-        _G.DA78_AIM and "✓" or "✗", _G.DA78_FIRE and "✓" or "✗", _G.DA78_CTR or 0)
+    gunLbl.Text = ("ปืน: เล็ง%s ยิง%s นัด %d ห่าง %.2fวิ"):format(
+        _G.DA78_AIM and "✓" or "✗", _G.DA78_FIRE and "✓" or "✗",
+        _G.DA78_CTR or 0, _G.DA78_DELTA or 0)
 end
 
 local function mkbtn(txt, y, col)
@@ -454,6 +459,7 @@ local function fireShotAt(targetPos)
     if not (aR and fR) then return false end
     local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
     if os.clock() - (_G.DA78_LASTFIRE or 0) < rate then return false end -- ยังไม่ถึงจังหวะ → ไม่ยิง
+    _G.DA78_DELTA = os.clock() - (_G.DA78_LASTFIRE or os.clock())
     _G.DA78_LASTFIRE = os.clock()
     _G.DA78_CTR = (_G.DA78_CTR or 0) + 1
     local n = _G.DA78_CTR
