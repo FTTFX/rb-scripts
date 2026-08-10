@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoSpray.lua v2.0 — เร่งความเร็วทั้งระบบ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v2.1 — ฉีดด้านที่มีคราบจริงจาก Decal.Face (เกม "ล้างบ้านขำๆ")
+-- v2.1: หลายจุดฉีดครบแต่คะแนนไม่ขึ้น เพราะฉีด Front/Top ตายตัว คราบอยู่ด้านอื่น → อ่าน Decal.Face
+--   ของคราบที่ยังไม่โปร่งใส แล้วฉีดเฉพาะด้านนั้นเป๊ะๆ (ไม่เจอ Decal ค่อย fallback Front/Top)
 -- v2.0: batch 8→20 จุด/ชุด, ช่วงยิง 0.12→0.05 วิ, บิน 100→180, ตัดเวลารอหลังบิน/จบด้านลงเกือบหมด
 --   รวมแล้วต่อด้านเร็วขึ้น ~4-5 เท่า (พักกันเตือนยังมี: ทุก 60 ชุด พัก 1.5 วิ)
 -- v1.9: SPRAY เช็ค dirtVisible ซ้ำก่อนฉีดทุกจุด (จุดที่สะอาดระหว่างรอบถูกข้ามทันที) — ไม่วนจาก 0
@@ -228,8 +230,25 @@ local FACES = {
     Left   = { normal = Vector3.new(-1, 0, 0), axisA = Vector3.new(0, 0, 1), axisB = Vector3.new(0, 1, 0), sizeA = "Z", sizeB = "Y" },
     Right  = { normal = Vector3.new(1, 0, 0),  axisA = Vector3.new(0, 0, 1), axisB = Vector3.new(0, 1, 0), sizeA = "Z", sizeB = "Y" },
 }
--- ด้านหลักที่พบจริงจากการทดสอบ (ล้างเฉพาะด้านนี้ก่อนพอ ลด false-positive กับด้านที่ไม่มีคราบ)
+-- ด้านหลักที่พบจริงจากการทดสอบ (ใช้เป็น fallback เมื่ออ่านด้านจาก Decal ไม่ได้)
 local ACTIVE_FACES = { "Front", "Top" }
+
+-- v2.1: คราบเป็น Decal/Texture ซึ่งมี .Face บอกด้านที่แปะอยู่ตรงๆ — ฉีดเฉพาะด้านที่มีคราบจริง
+-- (เดิมฉีด Front/Top ตายตัว คราบด้านอื่นเลยฉีดครบแต่คะแนนไม่ขึ้น) ไม่เจอ Decal ค่อยใช้ fallback
+local function dirtFacesOf(part)
+    local seen = {}
+    for _, d in ipairs(part:GetDescendants()) do
+        if (d:IsA("Decal") or d:IsA("Texture")) and d.Transparency < 0.99 then
+            seen[d.Face.Name] = true
+        end
+    end
+    local out = {}
+    for f in pairs(seen) do
+        if FACES[f] then out[#out + 1] = f end
+    end
+    if #out == 0 then return ACTIVE_FACES end
+    return out
+end
 
 local function faceGridPoints(part, faceName)
     local f = FACES[faceName]
@@ -370,7 +389,7 @@ local function runSpray()
                     setStatus(("[AutoSpray77] ฉีด: %s (ล้างแล้ว %s)"):format(part.Name, doneNow or "?"))
                     flyTo(part.Position, 6)
                     task.wait(0.05) -- v2.0: 0.15→0.05
-                    for _, faceName in ipairs(ACTIVE_FACES) do
+                    for _, faceName in ipairs(dirtFacesOf(part)) do
                         if not SPRAY_ON then break end
                         sprayFace(part, faceName)
                     end
