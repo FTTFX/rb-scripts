@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v6.0 — 1 ตัวยิงนัดเดียว ไม่ถล่มตัวเดิม (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.0: เดิมจ่อยิงตัวเดิม 7 นัด (SHOT_SKIP 2 วิสั้นไป + fallback ไปตัวที่ยิงแล้ว) → ยิดตัวละนัดเดียว
+--   ข้ามยาว 6 วิ (ล้างเมื่อตาย) + เลิก fallback ไปตัวที่ยิงแล้ว = ประหยัดกระสุน ฆ่าได้หลายตัวกว่า
 -- 78RB_DuckAim.lua v5.9 — เก็บปืนใน _G ทุก gen + ข้ามเป็ดที่ยิงแล้ว (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v5.9: โหลดซ้ำแล้ว executor ไม่ยอม hook __namecall ซ้ำ → hook เก่า (gen เก่า) เป็นตัว active แต่เดิม
 --   เช็ค gen เลยข้ามการจับปืนทิ้ง = จับปืนไม่ได้เลย → เก็บ remote ใน _G ไม่เช็ค gen ตอนจับ ทุก gen
@@ -108,11 +111,13 @@ local function duckPos(m)
     return p and p.Position
 end
 
--- v5.8: จำเป็ดที่ "เพิ่งยิงไปแล้ว" — ข้ามไม่เล็งซ้ำ 2 วิ (ให้เวลามันร่วง/ตาย) ถ้ายังไม่ตายค่อยกลับมายิง
+-- v6.0: จำเป็ดที่ "ยิงไปแล้ว" — 1 ตัวยิงนัดเดียวพอ ข้ามยาว (ให้ตาย/ร่วง) ถ้ายังอยู่เกิน SHOT_SKIP
+-- ค่อยกลับมายิงซ้ำ (เผื่อยิงพลาดจริง) — ตั้งไว้นานพอไม่ให้ถล่มตัวเดิมรัวๆ เปลืองกระสุน
 local shotDucks = {}          -- model -> os.clock() ตอนยิง
-local SHOT_SKIP = 2.0
+local SHOT_SKIP = 6.0
 local function markShot(model) if model then shotDucks[model] = os.clock() end end
 local function recentlyShot(model)
+    if not model.Parent then shotDucks[model] = nil return false end -- ตายไปแล้ว ล้างทิ้ง
     local t = shotDucks[model]
     return t ~= nil and (os.clock() - t) < SHOT_SKIP
 end
@@ -169,9 +174,9 @@ local function duckScore(d)
 end
 
 local function pickDuck(origin)
+    -- v6.0: เอาเฉพาะตัวที่ยังไม่ได้ยิง (ไม่ fallback ไปตัวที่ยิงแล้ว — กันถล่มตัวเดิมรัวๆ)
+    -- เป็ดมีเยอะพอ มักมีตัวใหม่ให้ยิงเสมอ ถ้าไม่มีจริงๆ ก็รอแป๊บ (คืน nil)
     local ducks = allDucks()
-    -- ถ้าตัวที่ยังไม่ได้ยิงหมดแล้ว (เพิ่งยิงทุกตัว) → กลับมาพิจารณาทุกตัว กันค้างไม่มีเป้า
-    if #ducks == 0 then ducks = allDucks(true) end
     if #ducks == 0 then return nil end
     local mode = TARGET_MODES[targetModeIdx]
 
@@ -341,7 +346,7 @@ local function shootStart()
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
                         if ang < 10 then
                             fireShot()
-                            markShot(d.model) -- ขึ้นบัญชี "ยิงแล้ว" ข้ามไม่เล็งซ้ำ 2 วิ
+                            markShot(d.model) -- ยิงแล้ว 1 นัด → ข้ามไปตัวใหม่ทันที ไม่ถล่มตัวเดิม
                             setStatus(("[DuckAim78] 🔫 ยิง: %s (นัด %d)"):format(d.model.Name, _G.DA78_CTR or 0))
                         else
                             setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
