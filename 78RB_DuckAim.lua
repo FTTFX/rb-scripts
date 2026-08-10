@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v8.1 — ยิงชุดกระจายหลายตัว (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v8.1: ช่องใหม่ "เป้าต่อชุด(ตัว)" — ตั้ง N แล้ว 1 ชุดยิงกระจายใส่เป็ด N ตัวใกล้สุด คนละนัด ไม่ซ้ำ
+--   ตัวเดิม (ยิงต่อเนื่องในชุด แล้วพักตามหน่วงยิงค่อยชุดถัดไป) ตั้ง 1 = โหมดทีละตัวแบบเดิม
 -- 78RB_DuckAim.lua v8.0 — โชว์ระยะห่างจริงระหว่างนัด (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v8.0: เพิ่ม _G.DA78_DELTA (วิ ที่ห่างจากนัดก่อนจริงๆ) โชว์ในบรรทัดปืน "นัด X ห่าง Y วิ" พิสูจน์ว่า
 --   สคริปต์คุมจังหวะได้จริงไหม (ตัดข้อสงสัยเรื่องอนิเมชั่น/รีโหลดออกจากสมการ)
@@ -205,10 +208,13 @@ local rateBox = mkStepper(150, "หน่วงยิง(วิ):", FIRE_RATE, 0
     function(v) setStatus(("[DuckAim78] หน่วงยิง %.1f วิ/นัด"):format(v)) end)
 local maxBox = mkStepper(180, "กระสุน(นัด):", MAX_SHOTS, 1, 1, 200, function(v) return tostring(math.floor(v)) end,
     function(v) setStatus(("[DuckAim78] ยิงต่อตัว %d นัด (บอสไม่จำกัด)"):format(math.floor(v))) end)
+-- v8.1: "เป้าต่อชุด" — 1 ชุดยิงกระจายโดนเป็ดกี่ตัว (คนละตัว ไม่ซ้ำ) ตั้ง 1 = โหมดเดิม
+local multiBox = mkStepper(210, "เป้าต่อชุด(ตัว):", 1, 1, 1, 20, function(v) return tostring(math.floor(v)) end,
+    function(v) setStatus(("[DuckAim78] 1 ชุดกระจายยิง %d ตัว (ไม่ซ้ำตัวเดิม)"):format(math.floor(v))) end)
 
-local stopB   = mkbtn("STOP", 210, Color3.fromRGB(150, 60, 30))
-local closeB  = mkbtn("✕ ปิด", 240, Color3.fromRGB(90, 40, 40))
-frame.Size = UDim2.new(0, 250, 0, 274)
+local stopB   = mkbtn("STOP", 240, Color3.fromRGB(150, 60, 30))
+local closeB  = mkbtn("✕ ปิด", 270, Color3.fromRGB(90, 40, 40))
+frame.Size = UDim2.new(0, 250, 0, 304)
 
 setStatus("[DuckAim78] พร้อม — ยิงเอง 1 นัดให้จำปืน แล้วกด K ยิงออโต้")
 
@@ -454,11 +460,12 @@ end)
 -- ไม่เช็คว่ากล้องตรงเป๊ะ) → เล็งใกล้ยิงได้ทันที ไม่ค้าง
 -- v7.8: คุมจังหวะยิงไว้ที่ "ตัวยิงเอง" ด้วย _G.DA78_LASTFIRE (แชร์ทุกลูป/ทุก gen) — ต่อให้มีลูปยิงซ้อน
 -- กี่ตัว การยิงจริงก็ห่างกันตามหน่วงที่ตั้งเป๊ะ (อ่านจากช่อง rateBox สดๆ) นี่คือตัวแก้ "ยิงถี่จากลูปซ้อน"
-local function fireShotAt(targetPos)
+local function fireShotAt(targetPos, skipThrottle)
     local aR, fR = _G.DA78_AIM, _G.DA78_FIRE
     if not (aR and fR) then return false end
     local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
-    if os.clock() - (_G.DA78_LASTFIRE or 0) < rate then return false end -- ยังไม่ถึงจังหวะ → ไม่ยิง
+    -- skipThrottle = ยิงชุดกระจายหลายตัว (v8.1) — นัดในชุดเดียวกันไม่ต้องรอจังหวะ
+    if not skipThrottle and os.clock() - (_G.DA78_LASTFIRE or 0) < rate then return false end
     _G.DA78_DELTA = os.clock() - (_G.DA78_LASTFIRE or os.clock())
     _G.DA78_LASTFIRE = os.clock()
     _G.DA78_CTR = (_G.DA78_CTR or 0) + 1
@@ -498,6 +505,34 @@ local function shootStart()
             -- v7.5: อ่านค่าจากช่องพิมพ์สดๆ ทุกนัด (executor บางตัว FocusLost ไม่ทำงาน ค่าเลยไม่อัปเดต)
             local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
             local maxShots = math.floor(math.clamp(tonumber(maxBox.Text) or MAX_SHOTS, 1, 200))
+            local multi = math.floor(math.clamp(tonumber(multiBox.Text) or 1, 1, 20))
+
+            -- v8.1 โหมดยิงกระจาย (เป้าต่อชุด > 1): 1 ชุด = ยิง N ตัวใกล้สุด คนละนัด ไม่ซ้ำตัว
+            -- แล้วพัก rate ค่อยชุดถัดไป (บอสยังแทรกมาก่อนเสมอผ่าน pickDuck ของโหมดเดิม)
+            if multi > 1 then
+                local ducks = allDucks() -- กรองตัวที่เพิ่งยิงออกแล้ว (ไม่ซ้ำตัวเดิม)
+                local camP = Camera.CFrame.Position
+                table.sort(ducks, function(a, b)
+                    return (a.pos - camP).Magnitude < (b.pos - camP).Magnitude
+                end)
+                local hit = 0
+                for i = 1, math.min(multi, #ducks) do
+                    if not (SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop) then break end
+                    local t = ducks[i]
+                    if t.model.Parent then
+                        local p = duckPos(t.model)
+                        if p and fireShotAt(p, true) then -- skipThrottle: นัดในชุดเดียวกันยิงต่อเนื่อง
+                            hit += 1
+                            markShot(t.model)
+                            task.wait(0.06) -- เว้นนิดให้ counter/เซิร์ฟเวอร์เรียงนัดทัน
+                        end
+                    end
+                end
+                setStatus(("[DuckAim78] 💥 ชุดกระจาย %d ตัว @%.1fวิ/ชุด"):format(hit, rate))
+                _G.DA78_LASTFIRE = os.clock() -- ตั้งจังหวะชุดถัดไป
+                task.wait(rate)
+            else
+
             local d = pickDuck(Camera.CFrame.Position)
             local target = d and d.model
             if not target then task.wait(0.05)
@@ -523,6 +558,7 @@ local function shootStart()
                 end
                 if not isBoss then markShot(target) end
             end
+            end -- ปิด if multi > 1 ... else (v8.1)
         end
         _G.DA78_LOOPS = math.max(0, (_G.DA78_LOOPS or 1) - 1) -- ลูปนี้จบแล้ว
     end)
