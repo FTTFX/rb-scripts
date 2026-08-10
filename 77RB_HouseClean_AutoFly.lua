@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.1 — จับ+วางของอัตโนมัติแบบไม่ต้องขยับตัว (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.2 — บินไปจับ + วางจากที่ยืน (เกม "ล้างบ้านขำๆ")
+-- v5.2: v5.1 (ยืนเฉยยิงรัว) วางไม่เข้าเลย = "จับ" ต้องอยู่ใกล้ของจริง มีแต่ "วาง" ที่ไม่เช็คระยะ
+--   → สูตรผสม: บินไปหาของ (NoClip+ลอยนิ่งระหว่าง AUTO) → จับ → วางทันทีจากตรงนั้น ไม่บินไปสล็อต
+--   (ตัดช่วงถือของบินไกลๆ ที่โดนเกมส่งลงเหวทิ้งไปเลย) + จบงานวาปเหนือหลังคาก่อนเปิดการชนคืน
 -- v5.1: log v5.0 พิสูจน์: (0,-1e6,0) คือเกมจงใจส่งตัวไปเหวระหว่างถือของ (hp=100 root=HRP) และการ
 --   จับ-วางสำเร็จตลอดแม้ตัวอยู่เหว/ฟ้า = เกมไม่เช็คระยะ → AUTO เลิกบิน เลิก NoClip เลิกล็อคตำแหน่ง
 --   ทั้งหมด ยืนเฉยๆ ยิง remote จับ-วางรัวๆ อย่างเดียว เหลือ rescue เดียว: ค้างนอกกรอบ >3 วิ วาปกลับ
@@ -659,6 +662,10 @@ local function runAuto()
             local char = LP.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
+                -- v5.2: กลับมาใช้ NoClip+ลอยนิ่งระหว่าง AUTO (ต้องบินไปจับของ — v5.1 พิสูจน์ว่า
+                -- "จับ" ต้องอยู่ใกล้ของ มีแต่ "วาง" ที่ยิงจากที่ไหนก็ได้)
+                setNoClip(true)
+                hrp.AssemblyLinearVelocity = Vector3.zero
                 if not positionSane(hrp.Position) then
                     oobSince = oobSince or tick()
                     if tick() - oobSince > 3 then
@@ -713,6 +720,9 @@ local function runAuto()
         end
 
         setStatus(("[AutoFly77] เก็บ: %s (วางแล้ว %d)"):format(item.Name, processed))
+        -- v5.2: บินไปหาของก่อนจับ — v5.1 พิสูจน์แล้วว่ายิงจับจากไกลไม่ติด (วางเท่านั้นที่ไม่เช็คระยะ)
+        local ipos = partPosition(item)
+        if ipos then flyTo(clampY(ipos), 6) end
         if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
@@ -753,7 +763,16 @@ local function runAuto()
         end
     end
 
-    setNoClip(false) -- เผื่อค้างจากรุ่นก่อน (v5.1 ไม่เปิด NoClip แล้ว)
+    -- จบงาน: วาปขึ้นเหนือหลังคาก่อนเปิดการชนคืน (เปิดตอนตัวซ้อนเฟอร์นิเจอร์ = โดนฟิสิกส์ดีดกระเด็น)
+    do
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.CFrame = CFrame.new(homePos.X, Y_MAX + 5, homePos.Z)
+        end
+    end
+    setNoClip(false)
     setStatus(("[AutoFly77] ✅ จบแล้ว! สำเร็จ %d, ข้าม/พลาด %d"):format(processed, failed))
     AUTO_ON = false
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
