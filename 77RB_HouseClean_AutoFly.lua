@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.8 — เจอจุดวางจริงแล้ว: ghost ชื่อตรง = จุดจริง (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.9 — เร่งความเร็ว + จัดการของไม่มีจุดว่าง (เกม "ล้างบ้านขำๆ")
+-- v5.9: FLY_SPEED 100→180, หั่นเวลารอวางลงครึ่ง + ชิ้นที่จับแล้ว "ghost ไม่ขึ้น" = เกมไม่มีจุดว่าง
+--   เหลือ (ของซ้ำ/บ้านรับเต็ม) ไม่บินลอง 3 จุดให้เสียเวลา ยิงวางเผื่อฟลุค 1 ทีแล้วข้าม พร้อมเตือน
+--   ให้กด "ทิ้ง" ถ้าของค้างมือ (รอชื่อ remote ปุ่มทิ้งจาก NetSpy มาทำทิ้งอัตโนมัติ)
 -- v5.8: log 🔍 v5.7 ให้คำตอบ — ghost ชื่อ <ของ>HomeGhost "มีอยู่" แต่ "ติดไฟ=0 ตลอด" (เกมเลิกใช้
 --   Highlight.Enabled) และ SortingGhosts มี ghost แค่จุดที่เกี่ยวข้อง → เลิกเช็คติดไฟ ใช้
 --   FindFirstChild ชื่อตรงตรงๆ = ได้จุดวางจริงทุกครั้ง (บิน+กด E ที่จุดนั้นได้เลย)
@@ -141,7 +144,7 @@ local UIS = game:GetService("UserInputService")
 local LP = Players.LocalPlayer
 
 local FLY_ON, AUTO_ON = false, false
-local FLY_SPEED = 100
+local FLY_SPEED = 180 -- v5.9: ระบบหาจุดนิ่งแล้ว เร่งได้ (ของเดิม 100)
 local learnedRemote = _G.RB77_REMOTE -- จำ remote ที่เรียนรู้ถูกไว้แล้วข้ามรอบ (กันหาไม่เจอตอนของใหม่โผล่ในเกม)
 local statusText = "รอเริ่ม..."
 
@@ -806,7 +809,24 @@ local function runAuto()
             for _, s in ipairs(rest) do candidates[#candidates + 1] = s end
         end
 
-        if #candidates == 0 then
+        if not ghost then
+            -- v5.9: ไม่มี ghost = เกมไม่มีจุดว่างเหลือสำหรับของชิ้นนี้ (ของซ้ำ/บ้านรับเต็ม) — อย่าเสีย
+            -- เวลาบินลอง 3 จุด ยิงวางเร็วๆ 1 ครั้งเผื่อฟลุค แล้วข้ามเลย ระวังของค้างมือสะสม
+            skipItems[item] = true
+            local s1 = candidates[1]
+            if s1 then
+                pcall(function() learnedRemote:FireServer("placeCarried", s1, item) end)
+                task.wait(0.1)
+            end
+            local ip1, sp1 = partPosition(item), s1 and partPosition(s1)
+            if ip1 and sp1 and (ip1 - sp1).Magnitude < 6 then
+                processed += 1
+                alog(("✅ %s → %s (ฟลุค)"):format(item.Name, s1.Name))
+            else
+                failed += 1
+                alog(("⏭️ %s ไม่มีจุดว่าง (ghost ไม่ขึ้น) — ข้าม ถ้าค้างมือกด \"ทิ้ง\" เอง"):format(item.Name))
+            end
+        elseif #candidates == 0 then
             skipItems[item] = true
             failed += 1
             setStatus(("[AutoFly77] ⚠️ %s ไม่เจอทั้งไฮไลต์และสล็อต — ข้าม"):format(item.Name))
@@ -831,12 +851,12 @@ local function runAuto()
                         task.wait(0.05)
                         VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
                     end)
-                    task.wait(0.25)
+                    task.wait(0.12)
                 end
                 local ipE, spE = partPosition(item), partPosition(slot)
                 if not (ipE and spE and (ipE - spE).Magnitude < 6) then
                     pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-                    task.wait(0.2)
+                    task.wait(0.15)
                 end
 
                 local ip, sp = partPosition(item), partPosition(slot)
