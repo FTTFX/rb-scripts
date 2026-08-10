@@ -1,4 +1,6 @@
--- 78RB_DuckSpy.lua v1.0 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- 78RB_DuckSpy.lua v1.2 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- v1.2: จับคู่นัดยิงกับเป็ดที่ตาย — เป็ดใน Ume หายภายใน 0.6 วิ หลังยิง → tag [KILL?] พร้อม args
+--   ของนัดนั้นเต็มๆ (8 ตัวแรก) เพื่อรู้ว่า "นัดที่ฆ่าได้" หน้าตา args เป็นยังไง
 -- ดัก 4 อย่าง:
 --   [REMOTE] FireServer/InvokeServer ทุกตัว พร้อม args ย่อ (ยิงปืน/โดนเป็ด/เก็บแต้ม จะโผล่ตรงนี้)
 --   [MDL+]/[MDL-] โมเดลเกิด/หายใน workspace (เป็ด spawn/ตาย — ได้ชื่อจริงของเป้า)
@@ -92,8 +94,13 @@ if hookmetamethod then
             and typeof(self) == "Instance" then
             local args = { ... }
             local s = {}
-            for i = 1, math.min(#args, 6) do s[#s + 1] = short(args[i]) end
-            log(("[REMOTE] %s:%s(%s)"):format(self.Name, method, table.concat(s, ", ")))
+            for i = 1, math.min(#args, 8) do s[#s + 1] = short(args[i]) end
+            local line = ("[REMOTE] %s:%s(%s)"):format(self.Name, method, table.concat(s, ", "))
+            log(line)
+            -- v1.2: จำนัดยิงล่าสุด (Vector3,Vector3,num,...) ไว้จับคู่กับเป็ดที่ตายภายใน 0.6 วิ
+            if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
+                _G.DS78_LASTSHOT = { t = os.clock(), line = line }
+            end
         end
         return old(self, ...)
     end)
@@ -112,7 +119,13 @@ table.insert(_G.DS78_CONNS, workspace.DescendantAdded:Connect(function(d)
 end))
 table.insert(_G.DS78_CONNS, workspace.DescendantRemoving:Connect(function(d)
     if d:IsA("Model") then
-        log(("[MDL-] %s"):format(d:GetFullName()))
+        -- v1.2: ตายภายใน 0.6 วิ หลังยิง = นัดนั้นน่าจะเป็นนัดที่ฆ่า → tag ให้ชัด
+        local ls = _G.DS78_LASTSHOT
+        if ls and os.clock() - ls.t < 0.6 and d:IsDescendantOf(workspace:FindFirstChild("Ume") or workspace) then
+            log(("[KILL?] %s ตาย หลังนัด: %s"):format(d.Name, ls.line))
+        else
+            log(("[MDL-] %s"):format(d:GetFullName()))
+        end
     end
 end))
 
