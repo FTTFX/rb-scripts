@@ -1,4 +1,7 @@
--- 78RB_DuckAim.lua v3.1 — เพิ่มโหมดเป้า "เลือดเยอะสุด" (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- 78RB_DuckAim.lua v4.0 — AUTO SHOOT ยิงออโต้ (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v4.0: เพิ่ม AUTO SHOOT (คีย์ K) — เรียนปืนแบบ "แอบดูไม่แก้ไข": hook __namecall อ่าน args ตอนผู้เล่น
+--   ยิงเองจริง 1 นัด เพื่อจำ remote + รูปแบบคำสั่ง (ไม่แก้ค่า ไม่พังการรีโหลดแบบ SILENT เดิม) แล้วยิง
+--   ซ้ำเองใส่เป็ดตามโหมด TARGET ทุก 0.12 วิ (อัปเดต timestamp ด้วย GetServerTimeNow กันโดนปฏิเสธ)
 -- v3.1: TARGET เพิ่มโหมดที่ 4 เลือดเยอะสุด — อ่าน Humanoid.Health ก่อน ไม่มีค่อยหา attribute/Value
 --   ชื่อพ้อง hp/health บนโมเดลเป็ด (บอสเลือดหนา = โดนล็อคก่อน)
 -- v3.0: ถอด SILENT ออกทั้งระบบ — ตัวดัก FireServer ไปโดนคำสั่งรีโหลดกระสุนด้วย (ลายเซ็น args ชนกัน)
@@ -49,12 +52,13 @@ local function mkbtn(txt, y, col)
     return b
 end
 local aimB    = mkbtn("AIM: OFF (คีย์ลัด L)", 48, Color3.fromRGB(190, 60, 60))
-local targetB = mkbtn("TARGET: ไม่มีอะไรบัง", 78, Color3.fromRGB(60, 110, 180))
-local stopB   = mkbtn("STOP", 108, Color3.fromRGB(150, 60, 30))
-local closeB  = mkbtn("✕ ปิด", 138, Color3.fromRGB(90, 40, 40))
-frame.Size = UDim2.new(0, 250, 0, 170)
+local shootB  = mkbtn("AUTO SHOOT: OFF (คีย์ K)", 78, Color3.fromRGB(60, 170, 90))
+local targetB = mkbtn("TARGET: ไม่มีอะไรบัง", 108, Color3.fromRGB(60, 110, 180))
+local stopB   = mkbtn("STOP", 138, Color3.fromRGB(150, 60, 30))
+local closeB  = mkbtn("✕ ปิด", 168, Color3.fromRGB(90, 40, 40))
+frame.Size = UDim2.new(0, 250, 0, 200)
 
-setStatus("[DuckAim78] พร้อม — กด L หรือปุ่ม AIM เพื่อล็อคกล้องที่เป็ด")
+setStatus("[DuckAim78] พร้อม — ยิงเอง 1 นัดให้จำปืน แล้วกด K ยิงออโต้")
 
 -- ==================== หาเป็ด ====================
 local function duckFolder()
@@ -189,26 +193,95 @@ local function aimToggle()
     if AIM_ON then aimStop() else aimStart() end
 end
 
--- คีย์ลัด L
+-- ==================== AUTO SHOOT — เรียนปืนแบบ "แอบดูไม่แก้ไข" (ไม่พังการรีโหลด) ====================
+-- ต่างจาก SILENT เดิม: hook นี้แค่ "อ่าน" args ตอนผู้เล่นยิงจริง เพื่อจำ remote + รูปแบบคำสั่ง
+-- ไม่แก้ค่าใดๆ (return old(self, ...) เดิมทุกครั้ง) → คำสั่งรีโหลด/อื่นๆ ไม่ถูกแตะเลย
+local SHOOT_ON = false
+local shootRemote, shootTemplate  -- template = args ตัวอย่างจากนัดจริง { origin, dir, num, ts }
+local FIRE_INTERVAL = 0.12
+
+if hookmetamethod then
+    local old
+    old = hookmetamethod(game, "__namecall", function(self, ...)
+        if _G.DA78_GEN == MY_GEN and not shootRemote and getnamecallmethod() == "FireServer" then
+            local a = { ... }
+            -- ลายเซ็นคำสั่งยิงจาก DuckSpy: (Vector3 origin, Vector3 dir, number, number)
+            if #a >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
+                and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
+                shootRemote = self
+                shootTemplate = a
+                setStatus("[DuckAim78] ✅ จำปืนแล้ว — กด K เปิด AUTO SHOOT ได้เลย")
+            end
+        end
+        return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
+    end)
+end
+
+local function fireAt(duckPos3)
+    if not (shootRemote and shootTemplate) then return false end
+    local origin = Camera.CFrame.Position
+    local dir = (duckPos3 - origin).Unit
+    local a = { origin, dir, shootTemplate[3], shootTemplate[4] }
+    -- อาร์กที่ 4 เป็น timestamp — อัปเดตให้สดถ้าเกมใช้เวลาเซิร์ฟเวอร์ (กันโดนปฏิเสธว่าเก่า)
+    local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
+    if ok and type(now) == "number" then a[4] = now end
+    for i = 5, #shootTemplate do a[i] = shootTemplate[i] end
+    pcall(function() shootRemote:FireServer(unpack(a)) end)
+    return true
+end
+
+local function shootStop()
+    SHOOT_ON = false -- ลูปเป็น task.spawn เช็คธงนี้แล้วจบเอง
+    shootB.Text = "AUTO SHOOT: OFF (คีย์ K)"
+end
+local function shootStart()
+    if not shootRemote then
+        setStatus("[DuckAim78] ⚠️ ยังไม่รู้ปืน — ยิงเอง 1 นัดก่อน แล้วค่อยกด K")
+        return
+    end
+    SHOOT_ON = true
+    shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
+    task.spawn(function()
+        while SHOOT_ON and _G.DA78_GEN == MY_GEN do
+            local d = pickDuck(Camera.CFrame.Position)
+            if d and d.model.Parent then
+                local p = duckPos(d.model)
+                if p then
+                    fireAt(p)
+                    setStatus(("[DuckAim78] 🔫 ยิงออโต้: %s"):format(d.model.Name))
+                end
+            end
+            task.wait(FIRE_INTERVAL)
+        end
+    end)
+end
+local function shootToggle()
+    if SHOOT_ON then shootStop() else shootStart() end
+end
+
+-- คีย์ลัด L (AIM) / K (AUTO SHOOT)
 table.insert(_G.DA78_CONNS, UIS.InputBegan:Connect(function(input, processed)
     if processed then return end
-    if input.KeyCode == Enum.KeyCode.L and _G.DA78_GEN == MY_GEN then
-        aimToggle()
-    end
+    if _G.DA78_GEN ~= MY_GEN then return end
+    if input.KeyCode == Enum.KeyCode.L then aimToggle()
+    elseif input.KeyCode == Enum.KeyCode.K then shootToggle() end
 end))
 
 -- ==================== Buttons ====================
 aimB.MouseButton1Click:Connect(aimToggle)
+shootB.MouseButton1Click:Connect(shootToggle)
 targetB.MouseButton1Click:Connect(function()
     targetModeIdx = targetModeIdx % #TARGET_MODES + 1
     targetB.Text = "TARGET: " .. TARGET_MODES[targetModeIdx]
 end)
 stopB.MouseButton1Click:Connect(function()
     aimStop()
+    shootStop()
     setStatus("[DuckAim78] หยุดแล้ว")
 end)
 closeB.MouseButton1Click:Connect(function()
     aimStop()
+    shootStop()
     for _, c in ipairs(_G.DA78_CONNS) do pcall(function() c:Disconnect() end) end
     _G.DA78_CONNS = {}
     gui:Destroy(); _G.DA78_GUI = nil
