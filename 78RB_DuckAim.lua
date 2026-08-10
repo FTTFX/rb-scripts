@@ -1,6 +1,7 @@
--- 78RB_DuckAim.lua v4.1 — AUTO SHOOT ยิงตามทิศกล้อง (เกม "ยิงเป็ด" โปรเจ็ก 78)
--- v4.1: v4.0 ยิงออกแต่เป็ดไม่ตาย — น่าจะเซิร์ฟเวอร์เช็คว่า dir ต้องตรงทิศกล้อง (กันโกง) →
---   AUTO SHOOT เปิดล็อคกล้องอัตโนมัติ ยิง dir = Camera.LookVector และยิงเฉพาะตอนกล้องเข้าเป้า <8°
+-- 78RB_DuckAim.lua v5.1 — AUTO SHOOT ยิงครบ 2 remote + counter (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.0: DuckSpy พิสูจน์ว่า 1 นัด = 2 remote — A(origin,dir,counter,ts) + B(counter) counter เดินหน้า
+--   ทุกนัด (4,5,6,...) v4.0 ยิง remote เดียว+เลขคงที่เลยไม่ติด → เรียนทั้ง 2 remote, counter เดินหน้า
+-- v5.1: log ยืนยัน origin ขยับตามตัวผู้เล่นตอนเดิน (831→832→814...) → ใช้ตำแหน่งกล้องปัจจุบันเป็น origin
 -- v4.0: เพิ่ม AUTO SHOOT (คีย์ K) — เรียนปืนแบบ "แอบดูไม่แก้ไข": hook __namecall อ่าน args ตอนผู้เล่น
 --   ยิงเองจริง 1 นัด เพื่อจำ remote + รูปแบบคำสั่ง (ไม่แก้ค่า ไม่พังการรีโหลดแบบ SILENT เดิม) แล้วยิง
 --   ซ้ำเองใส่เป็ดตามโหมด TARGET ทุก 0.12 วิ (อัปเดต timestamp ด้วย GetServerTimeNow กันโดนปฏิเสธ)
@@ -198,39 +199,51 @@ end
 -- ==================== AUTO SHOOT — เรียนปืนแบบ "แอบดูไม่แก้ไข" (ไม่พังการรีโหลด) ====================
 -- ต่างจาก SILENT เดิม: hook นี้แค่ "อ่าน" args ตอนผู้เล่นยิงจริง เพื่อจำ remote + รูปแบบคำสั่ง
 -- ไม่แก้ค่าใดๆ (return old(self, ...) เดิมทุกครั้ง) → คำสั่งรีโหลด/อื่นๆ ไม่ถูกแตะเลย
+-- v5.0 จาก DuckSpy log: ยิง 1 นัด = 2 remote
+--   A(aimRemote):  FireServer(Vector3 origin(คงที่ 780,68,104), Vector3 dir(ตามกล้อง), counter, timestamp)
+--   B(fireRemote): FireServer(counter)   ← counter เดียวกัน เดินหน้าทุกนัด (4,5,6,...)
 local SHOOT_ON = false
-local shootRemote, shootTemplate  -- template = args ตัวอย่างจากนัดจริง { origin, dir, num, ts }
-local FIRE_INTERVAL = 0.12
+local aimRemote, fireRemote          -- 2 remote
+local shotOrigin                     -- origin คงที่จากนัดจริง (780,68,104)
+local shotCounter = 0                -- ตัวนับนัด — เดินหน้าต่อจากที่เห็นล่าสุด
+local FIRE_INTERVAL = 0.5
 
 if hookmetamethod then
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
-        if _G.DA78_GEN == MY_GEN and not shootRemote and getnamecallmethod() == "FireServer" then
-            local a = { ... }
-            -- ลายเซ็นคำสั่งยิงจาก DuckSpy: (Vector3 origin, Vector3 dir, number, number)
-            if #a >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
+        pcall(function()
+            if _G.DA78_GEN ~= MY_GEN or getnamecallmethod() ~= "FireServer" then return end
+            local a = table.pack(...)
+            -- A: (Vector3, Vector3, number, number) = คำสั่งเล็ง
+            if a.n >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
                 and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
-                shootRemote = self
-                shootTemplate = a
-                setStatus("[DuckAim78] ✅ จำปืนแล้ว — กด K เปิด AUTO SHOOT ได้เลย")
+                aimRemote = self
+                shotOrigin = a[1]
+                if a[3] > shotCounter then shotCounter = a[3] end
+                setStatus("[DuckAim78] ✅ จำปืน(เล็ง)แล้ว")
+            -- B: (number เดียว) = คำสั่งยืนยันนัด
+            elseif a.n == 1 and typeof(a[1]) == "number" then
+                fireRemote = self
+                if a[1] > shotCounter then shotCounter = a[1] end
             end
-        end
+        end)
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
     end)
 end
 
-local function fireAt(duckPos3)
-    if not (shootRemote and shootTemplate) then return false end
+-- ยิง 1 นัดสมบูรณ์: A(origin, dir, counter, serverTime) แล้ว B(counter) — counter เดินหน้า
+local function fireShot()
+    if not (aimRemote and fireRemote) then return false end
+    shotCounter += 1
+    local n = shotCounter
+    -- v5.1: origin ขยับตามตัวผู้เล่น (log ยืนยัน 831→832→814...) → ใช้ตำแหน่งกล้องปัจจุบัน ไม่ใช่ค่าที่จำ
     local origin = Camera.CFrame.Position
-    -- v4.1: ยิงตาม "ทิศที่กล้องมองจริง" ไม่ใช่ทิศไปเป้าตรงๆ — เผื่อเซิร์ฟเวอร์เช็คว่า dir ต้องตรงกล้อง
-    -- (กันโกง) กล้องถูก AIM ล็อคที่เป็ดอยู่แล้ว LookVector จึงชี้เป้าพอดี
-    local dir = Camera.CFrame.LookVector
-    local a = { origin, dir, shootTemplate[3], shootTemplate[4] }
-    -- อาร์กที่ 4 เป็น timestamp — อัปเดตให้สดถ้าเกมใช้เวลาเซิร์ฟเวอร์ (กันโดนปฏิเสธว่าเก่า)
+    local dir = Camera.CFrame.LookVector -- ทิศตามกล้อง (AIM ล็อคที่เป็ดแล้ว)
+    local ts = os.time()
     local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
-    if ok and type(now) == "number" then a[4] = now end
-    for i = 5, #shootTemplate do a[i] = shootTemplate[i] end
-    pcall(function() shootRemote:FireServer(unpack(a)) end)
+    if ok and type(now) == "number" then ts = now end
+    pcall(function() aimRemote:FireServer(origin, dir, n, ts) end)
+    pcall(function() fireRemote:FireServer(n) end)
     return true
 end
 
@@ -239,27 +252,27 @@ local function shootStop()
     shootB.Text = "AUTO SHOOT: OFF (คีย์ K)"
 end
 local function shootStart()
-    if not shootRemote then
-        setStatus("[DuckAim78] ⚠️ ยังไม่รู้ปืน — ยิงเอง 1 นัดก่อน แล้วค่อยกด K")
+    if not (aimRemote and fireRemote) then
+        setStatus("[DuckAim78] ⚠️ ยังไม่รู้ปืนครบ — ยิงเอง 1 นัดก่อน แล้วค่อยกด K")
         return
     end
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
-    if not AIM_ON then aimStart() end -- v4.1: เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
+    if not AIM_ON then aimStart() end -- เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
     task.spawn(function()
         while SHOOT_ON and _G.DA78_GEN == MY_GEN do
             local d = pickDuck(Camera.CFrame.Position)
             if d and d.model.Parent then
                 local p = duckPos(d.model)
                 if p then
-                    -- ยิงเมื่อกล้องหันเข้าเป้าใกล้พอแล้ว (< 8°) — กัน dir เพี้ยนตอนกล้องยังหมุนเข้าเป้า
+                    -- ยิงเมื่อกล้องหันเข้าเป้าใกล้พอแล้ว (< 10°) — กัน dir เพี้ยนตอนกล้องยังหมุน
                     local toD = (p - Camera.CFrame.Position)
                     if toD.Magnitude > 1 then
                         local ang = math.deg(math.acos(math.clamp(
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
-                        if ang < 8 then
-                            fireAt(p)
-                            setStatus(("[DuckAim78] 🔫 ยิง: %s"):format(d.model.Name))
+                        if ang < 10 then
+                            fireShot()
+                            setStatus(("[DuckAim78] 🔫 ยิง: %s (นัด %d)"):format(d.model.Name, shotCounter))
                         else
                             setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
                         end
