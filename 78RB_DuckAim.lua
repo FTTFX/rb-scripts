@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v5.5 — รายงานผลติดตั้ง hook + ตัด reload มั่ว (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.5: DuckSpy พบว่าไม่มี remote รีโหลด (รีโหลด=อนิเมชั่นฝั่งจอ) → ตัดโค้ดจับ/ยิงรีโหลดออก ยิง 2
+--   remote รัวๆ พอ + pcall เดิมกลืน error ตอนติดตั้ง hook เงียบ ทำให้จับปืนไม่ได้แบบไม่รู้สาเหตุ →
+--   เปลี่ยนเป็นรายงานสถานะ hook ชัดๆ (✅ พร้อม / ❌ ไม่ติด+เหตุผล) ตอนโหลด
 -- 78RB_DuckAim.lua v5.4 — debug โชว์ remote ที่เห็น (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v5.4: ยิงเองแล้วยังจับปืนไม่ได้ → ตอนยังเรียนไม่ครบ โชว์ทุก FireServer ที่ hook เห็น (ชื่อ+จำนวน+
 --   ชนิด args) บน status เพื่อดูว่าลายเซ็นจริงเป็นแบบไหน (เผื่อเกมเปลี่ยน/hook ไม่เห็น)
@@ -219,9 +223,11 @@ local shotCounter = 0                -- ตัวนับนัด — เด�
 local FIRE_INTERVAL = 0.18           -- v5.3: ยิงถี่ขึ้น (มีรีโหลดทันทีคั่นแล้ว)
 local lastShotClock = 0
 
--- ห่อ pcall กัน executor ที่ hook __namecall ซ้ำแล้ว error จน GUI ไม่ขึ้น
-pcall(function()
-if hookmetamethod and getnamecallmethod then
+-- v5.5: รายงานผลติดตั้ง hook — เดิม pcall กลืน error เงียบ ทำให้ไม่รู้ว่า hook ไม่ติด (เลยจับปืนไม่ได้)
+local hookOK, hookErr = pcall(function()
+if not (hookmetamethod and getnamecallmethod) then
+    error("executor ไม่มี hookmetamethod/getnamecallmethod")
+end
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
         -- ดึง varargs ที่ชั้นนอก (vararg function) ก่อน — ห้ามใช้ ... ในฟังก์ชันซ้อนของ pcall
@@ -247,18 +253,16 @@ if hookmetamethod and getnamecallmethod then
             elseif a.n == 1 and typeof(a[1]) == "number" then
                 fireRemote = method
                 if a[1] > shotCounter then shotCounter = a[1] end
-            -- v5.3: remote อื่นที่ยิงภายใน 2 วิ หลังยิง (ไม่ใช่ aim/fire) = น่าจะ "รีโหลด" ที่เกม auto ทำ
-            elseif not reloadRemote and aimRemote and fireRemote
-                and os.clock() - lastShotClock < 2 and os.clock() - lastShotClock > 0.01 then
-                reloadRemote = method
-                reloadTemplate = a
-                setStatus(("[DuckAim78] ✅ จำรีโหลดแล้ว: %s (%d args)"):format(method.Name, a.n))
             end
         end)
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
     end)
-end
 end)
+if hookOK then
+    setStatus("[DuckAim78] ✅ hook พร้อม — ยิงเอง 1 นัดให้จำปืน แล้วกด K")
+else
+    setStatus("[DuckAim78] ❌ hook ไม่ติด: " .. tostring(hookErr))
+end
 
 -- ยิง 1 นัดสมบูรณ์: A(origin, dir, counter, serverTime) แล้ว B(counter) — counter เดินหน้า
 local function fireShot()
@@ -274,10 +278,7 @@ local function fireShot()
     pcall(function() aimRemote:FireServer(origin, dir, n, ts) end)
     pcall(function() fireRemote:FireServer(n) end)
     lastShotClock = os.clock()
-    -- v5.3: รีโหลดทันทีหลังยิง (ข้ามอนิเมชั่นรีโหลดที่ทำให้ช้า) — ยิง remote รีโหลดด้วย args เดิม
-    if reloadRemote and reloadTemplate then
-        pcall(function() reloadRemote:FireServer(table.unpack(reloadTemplate, 1, reloadTemplate.n)) end)
-    end
+    -- v5.5: ไม่มี remote รีโหลด (รีโหลดเป็นอนิเมชั่นฝั่งจอเท่านั้น) — ยิง 2 remote รัวๆ ข้ามรีโหลดไปเลย
     return true
 end
 
