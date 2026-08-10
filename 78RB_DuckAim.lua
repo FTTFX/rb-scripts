@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v6.8 — เจอบอสจริง BossController_Client (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.8: Spy (สแกนโมเดลที่ขยับ) เจอบอสชื่อ "BossController_Client_N" ใน Ume (ตัวใหญ่ 75x50x50) →
+--   findBoss หาชื่อนี้ตรงตัว (เลิกเดา Shrek/HP-bar) เล็ง+รัวจนตาย
 -- 78RB_DuckAim.lua v6.7 — ล็อคยิงจนตาย + จับบอส Shrek (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.7: เป็ดด่านหลัง+บอสทนหลายนัด (Spy: บอส="Shrek" ใน workspace, ป้าย HP อยู่ PlayerGui) → เลิก
 --   "ยิงนัดเดียวข้าม" เปลี่ยนเป็นล็อคตัวเดิมรัวจนหายไป(ตาย)แล้วค่อยเปลี่ยน (กันติดตายด้วย MAX_SHOTS
@@ -166,22 +169,13 @@ local function findBoss()
     end
     bossCacheAt = os.clock()
     bossCache = nil
-    -- บอสอยู่ workspace ชั้นบน ชื่อพ้อง Shrek/Boss (Spy LIST เจอ "Shrek x1") — เล็งเฉพาะตอนบอสแอ็กทีฟ
-    -- (มีป้าย BossHealthBar_1 ใน PlayerGui = บอสยังไม่ตาย)
-    local bossActive = false
-    pcall(function()
-        local bar = LP.PlayerGui:FindFirstChild("DuckBossHealthBar", true)
-        if bar and bar:FindFirstChild("BossHealthBar_1", true) then bossActive = true end
-    end)
-    if bossActive then
-        for _, m in ipairs(workspace:GetChildren()) do
-            if m:IsA("Model") then
-                local n = m.Name:lower()
-                if n:find("shrek") or n:find("boss") then
-                    local p = duckPos(m)
-                    if p then bossCache = { model = m, pos = p, boss = true }; return bossCache end
-                end
-            end
+    -- Spy ยืนยัน: บอสชื่อ "BossController_Client_N" อยู่ในโฟลเดอร์ Ume (ตัวใหญ่ 75x50x50)
+    local f = duckFolder()
+    if not f then return nil end
+    for _, m in ipairs(f:GetChildren()) do
+        if m:IsA("Model") and m.Name:find("BossController") then
+            local p = duckPos(m)
+            if p then bossCache = { model = m, pos = p, boss = true }; return bossCache end
         end
     end
     return nil
