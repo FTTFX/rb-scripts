@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v5.3 — รีโหลดทันที ยิงรัวไม่สะดุด (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.3: ปืนแม็กน้อย/รีโหลดหลังยิงเลยช้า → แอบเรียน remote รีโหลด (remote ที่เกมยิงเองภายใน 2 วิ
+--   หลังยิง ไม่ใช่ aim/fire) แล้วยิงรีโหลดทันทีหลังทุกนัด ข้ามอนิเมชั่น + ลด FIRE_INTERVAL 0.5→0.18
 -- 78RB_DuckAim.lua v5.2 — แก้ compile error "..." (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v5.2: บั๊กตั้งแต่ v5.0 ทำ GUI ไม่ขึ้นเลย — เอา table.pack(...) ไปไว้ใน pcall(function()...) ซึ่งเป็น
 --   ฟังก์ชันซ้อนไม่มี vararg → "Cannot use '...' outside of a vararg function" → ย้าย table.pack(...)
@@ -206,10 +209,12 @@ end
 --   A(aimRemote):  FireServer(Vector3 origin(คงที่ 780,68,104), Vector3 dir(ตามกล้อง), counter, timestamp)
 --   B(fireRemote): FireServer(counter)   ← counter เดียวกัน เดินหน้าทุกนัด (4,5,6,...)
 local SHOOT_ON = false
-local aimRemote, fireRemote          -- 2 remote
-local shotOrigin                     -- origin คงที่จากนัดจริง (780,68,104)
+local aimRemote, fireRemote          -- 2 remote ยิง
+local reloadRemote, reloadTemplate   -- v5.3: remote รีโหลด (เรียนตอนเกม auto-reload)
+local shotOrigin                     -- origin จากนัดจริง
 local shotCounter = 0                -- ตัวนับนัด — เดินหน้าต่อจากที่เห็นล่าสุด
-local FIRE_INTERVAL = 0.5
+local FIRE_INTERVAL = 0.18           -- v5.3: ยิงถี่ขึ้น (มีรีโหลดทันทีคั่นแล้ว)
+local lastShotClock = 0
 
 -- ห่อ pcall กัน executor ที่ hook __namecall ซ้ำแล้ว error จน GUI ไม่ขึ้น
 pcall(function()
@@ -232,6 +237,12 @@ if hookmetamethod and getnamecallmethod then
             elseif a.n == 1 and typeof(a[1]) == "number" then
                 fireRemote = method
                 if a[1] > shotCounter then shotCounter = a[1] end
+            -- v5.3: remote อื่นที่ยิงภายใน 2 วิ หลังยิง (ไม่ใช่ aim/fire) = น่าจะ "รีโหลด" ที่เกม auto ทำ
+            elseif not reloadRemote and aimRemote and fireRemote
+                and os.clock() - lastShotClock < 2 and os.clock() - lastShotClock > 0.01 then
+                reloadRemote = method
+                reloadTemplate = a
+                setStatus(("[DuckAim78] ✅ จำรีโหลดแล้ว: %s (%d args)"):format(method.Name, a.n))
             end
         end)
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
@@ -252,6 +263,11 @@ local function fireShot()
     if ok and type(now) == "number" then ts = now end
     pcall(function() aimRemote:FireServer(origin, dir, n, ts) end)
     pcall(function() fireRemote:FireServer(n) end)
+    lastShotClock = os.clock()
+    -- v5.3: รีโหลดทันทีหลังยิง (ข้ามอนิเมชั่นรีโหลดที่ทำให้ช้า) — ยิง remote รีโหลดด้วย args เดิม
+    if reloadRemote and reloadTemplate then
+        pcall(function() reloadRemote:FireServer(table.unpack(reloadTemplate, 1, reloadTemplate.n)) end)
+    end
     return true
 end
 
