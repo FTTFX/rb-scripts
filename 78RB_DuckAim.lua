@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v5.4 — debug โชว์ remote ที่เห็น (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.4: ยิงเองแล้วยังจับปืนไม่ได้ → ตอนยังเรียนไม่ครบ โชว์ทุก FireServer ที่ hook เห็น (ชื่อ+จำนวน+
+--   ชนิด args) บน status เพื่อดูว่าลายเซ็นจริงเป็นแบบไหน (เผื่อเกมเปลี่ยน/hook ไม่เห็น)
 -- 78RB_DuckAim.lua v5.3 — รีโหลดทันที ยิงรัวไม่สะดุด (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v5.3: ปืนแม็กน้อย/รีโหลดหลังยิงเลยช้า → แอบเรียน remote รีโหลด (remote ที่เกมยิงเองภายใน 2 วิ
 --   หลังยิง ไม่ใช่ aim/fire) แล้วยิงรีโหลดทันทีหลังทุกนัด ข้ามอนิเมชั่น + ลด FIRE_INTERVAL 0.5→0.18
@@ -226,6 +229,13 @@ if hookmetamethod and getnamecallmethod then
         local method = self
         pcall(function()
             if _G.DA78_GEN ~= MY_GEN or getnamecallmethod() ~= "FireServer" then return end
+            -- v5.4 debug: ยังเรียนปืนไม่ครบ → โชว์ทุก FireServer ที่เห็น (ชื่อ+จำนวน+ชนิด args)
+            -- เพื่อดูว่าลายเซ็นจริงตอนนี้เป็นแบบไหน (เผื่อเกมเปลี่ยน)
+            if not (aimRemote and fireRemote) then
+                local ts = {}
+                for i = 1, math.min(a.n, 5) do ts[i] = typeof(a[i]) end
+                setStatus(("[DuckAim78] เห็น %s (%d: %s)"):format(method.Name, a.n, table.concat(ts, ",")))
+            end
             -- A: (Vector3, Vector3, number, number) = คำสั่งเล็ง
             if a.n >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
                 and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
