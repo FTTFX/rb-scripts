@@ -208,7 +208,9 @@ local shotOrigin                     -- origin คงที่จากนัด
 local shotCounter = 0                -- ตัวนับนัด — เดินหน้าต่อจากที่เห็นล่าสุด
 local FIRE_INTERVAL = 0.5
 
-if hookmetamethod then
+-- ห่อ pcall กัน executor ที่ hook __namecall ซ้ำแล้ว error จน GUI ไม่ขึ้น
+pcall(function()
+if hookmetamethod and getnamecallmethod then
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
         pcall(function()
@@ -230,6 +232,7 @@ if hookmetamethod then
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
     end)
 end
+end)
 
 -- ยิง 1 นัดสมบูรณ์: A(origin, dir, counter, serverTime) แล้ว B(counter) — counter เดินหน้า
 local function fireShot()
