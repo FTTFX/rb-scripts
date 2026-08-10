@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoSpray.lua v1.8 — กรองเฉพาะคราบที่ยังมองเห็นจริง (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.9 — เริ่มจากจุดที่ยังไม่สะอาดเสมอ (เกม "ล้างบ้านขำๆ")
+-- v1.9: SPRAY เช็ค dirtVisible ซ้ำก่อนฉีดทุกจุด (จุดที่สะอาดระหว่างรอบถูกข้ามทันที) — ไม่วนจาก 0
+--   + status โชว์ตัวเลข "ล้างแล้ว" จริงจาก HUD แทนเลขรอบ
 -- v1.8: GUIDE บอกเหลือ 291 จุดทั้งที่จริงเหลือ 2 — โฟลเดอร์ Dirt มี Part ที่ล้างแล้ว/สำรอง (โปร่งใส)
 --   ค้างเป็นร้อย → กรอง dirtVisible: นับเฉพาะ Part/Decal ที่ยังไม่โปร่งใส (ทั้ง GUIDE และ SPRAY)
 -- v1.7: เพิ่มปุ่ม GUIDE — เส้น Beam 3 เส้นชี้ไปจุดสกปรกที่ใกล้ที่สุด 3 จุด (เขียว=ใกล้สุด,
@@ -359,8 +361,11 @@ local function runSpray()
         else
             for _, part in ipairs(dirtParts) do
                 if not SPRAY_ON then break end
-                if part.Parent then
-                    setStatus(("[AutoSpray77] กำลังบินไปที่: %s (รอบที่ %d)"):format(part.Name, rounds + 1))
+                -- v1.9: เช็คซ้ำก่อนฉีดทุกจุด — จุดที่สะอาดไปแล้วระหว่างรอบ (โปร่งใสแล้ว) ข้ามเลย
+                -- ทำให้ SPRAY "เริ่มจากจุดที่ยังไม่สะอาด" เสมอ ไม่วนนับจาก 0 ใหม่
+                if part.Parent and dirtVisible(part) then
+                    local doneNow = getGameProgress()
+                    setStatus(("[AutoSpray77] ฉีด: %s (ล้างแล้ว %s)"):format(part.Name, doneNow or "?"))
                     flyTo(part.Position, 6)
                     task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
                     for _, faceName in ipairs(ACTIVE_FACES) do
