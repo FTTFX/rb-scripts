@@ -1,3 +1,9 @@
+-- 78RB_DuckAim.lua v7.4 — ยิงตามจำนวนที่ตั้งเป๊ะ ไม่เช็คตาย (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v7.4 (แบบ C): เลิกเช็คตายทั้งหมด — เป็ดปกติยิงครบ MAX_SHOTS นัดตามที่ตั้งแล้วไปตัวถัดไปเลย (ผู้ใช้
+--   จูนเอง: ไม่ตายก็เพิ่มนัด/อัปปืน) บอสยังยิงไม่จำกัดจนหายไป
+-- 78RB_DuckAim.lua v7.3 — แก้ยิงถี่ผิดปกติ (ลูปซ้อน) (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v7.3: ตั้งหน่วงยิง 2 วิ แต่ยังรัว — เพราะกดเปิด/ปิด/เปิด AUTO SHOOT สะสมหลายลูปยิงพร้อมกัน (ตัวเก่า
+--   ค้างใน task.wait พอเปิดใหม่วิ่งต่อ) → ใส่ _G.DA78_SHOOTID ให้เหลือลูปยิงตัวเดียวเสมอ ตัวเก่าตายทันที
 -- 78RB_DuckAim.lua v7.2 — ตั้งความถี่ + จำนวนนัดต่อตัวเองได้ (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v7.2: เช็คตายช้า → เลิกรอเช็คตาย เปลี่ยนเป็นยิงครบ "จำนวนนัดต่อตัว" ที่ตั้ง แล้วไปตัวถัดไปเลย
 --   + ช่องพิมพ์ 2 ช่อง: หน่วงยิง (วิ/นัด) และ ยิงต่อตัว (นัด) — บอสยกเว้น ยิงไม่จำกัดจนตาย
@@ -461,31 +467,33 @@ local function shootStart()
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
     if not AIM_ON then aimStart() end -- ล็อคกล้องไว้ให้ดูสวย (ไม่ได้ใช้เป็นเงื่อนไขยิงแล้ว)
-    -- v7.2: เล็งตัวใกล้สุด → ยิงครบ MAX_SHOTS นัด (ตามที่ตั้ง) → ไปตัวถัดไปเลย (ไม่รอเช็คตายที่ช้า)
-    -- บอสยกเว้น: ยิงไม่จำกัดจนหายไป (MAX_SHOTS เป็นตัวแปรที่ช่องพิมพ์คุม)
+    -- v7.3: ตัวล็อกให้เหลือ "ลูปยิงตัวเดียว" เสมอ — เดิมกดเปิด/ปิด/เปิด สะสมหลายลูป ยิงถี่รวมกัน
+    _G.DA78_SHOOTID = (_G.DA78_SHOOTID or 0) + 1
+    local myLoop = _G.DA78_SHOOTID
+    -- v7.4 (แบบ C): ยิงตามจำนวนนัดที่ตั้งเป๊ะๆ แล้วไปตัวถัดไปเลย — ไม่เช็คตายใดๆ (ผู้ใช้จูนเอง:
+    -- ไม่ตายก็เพิ่มจำนวนนัด/อัปเกรดปืนเอง) บอสยกเว้น: ยิงไม่จำกัดจนหายไป (ตาย)
     task.spawn(function()
-        while SHOOT_ON and _G.DA78_GEN == MY_GEN do
-            -- (0) เลือกเป้าใกล้สุด (บอสมาก่อน)
+        while SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop do
             local d = pickDuck(Camera.CFrame.Position)
             local target = d and d.model
             if not target then task.wait(0.05)
             else
                 local isBoss = target.Name:find("BossController") ~= nil
                 local shots = 0
-                -- ยิงซ้ำจนตาย/หาย หรือยิงเกิน MAX (เป็ดปกติ) — เช็คตายจาก target.Parent หายไป
-                while SHOOT_ON and _G.DA78_GEN == MY_GEN and target.Parent
-                    and (isBoss or shots < MAX_SHOTS) do
+                -- เป็ดปกติ: ยิงครบ MAX_SHOTS นัด (ไม่สนว่าตายไหม) / บอส: ยิงจนหายไป
+                while SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop
+                    and (isBoss and target.Parent or (not isBoss and shots < MAX_SHOTS)) do
                     local p = duckPos(target)
                     if not p then break end
-                    fireShotAt(p)                 -- (1) ยิง 1 นัด ที่ตัวเป้าตรงๆ
+                    fireShotAt(p)
                     shots = shots + 1
                     setStatus(("[DuckAim78] 🔫 %s%s (%d/%s นัด, รวม %d)"):format(
                         isBoss and "บอส " or "", target.Name, shots,
                         isBoss and "∞" or tostring(MAX_SHOTS), _G.DA78_CTR or 0))
                     task.wait(FIRE_RATE)
                 end
-                -- ยิงครบโควตา → พักตัวนี้สั้นๆ กันวนกลับตัวเดิม แล้วไปตัวถัดไป
-                if target.Parent and not isBoss then markShot(target) end
+                -- ยิงครบโควตาแล้ว → กันเล็งตัวเดิมซ้ำทันที ไปตัวถัดไป
+                if not isBoss then markShot(target) end
             end
         end
     end)
