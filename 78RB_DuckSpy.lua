@@ -1,4 +1,6 @@
--- 78RB_DuckSpy.lua v1.2 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- 78RB_DuckSpy.lua v1.3 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- v1.3: เปิด spy แล้วกดยิง/รีโหลด/ปุ่มไม่ได้เลย — เพราะ __namecall hook ดักการเรียกเมธอดทุกอย่าง
+--   ถ้า logic ข้างในพลาดจะทำให้การเรียกเดิมพังหมด → ห่อ pcall ทั้งก้อน + table.pack กัน error เด็ดขาด
 -- v1.2: จับคู่นัดยิงกับเป็ดที่ตาย — เป็ดใน Ume หายภายใน 0.6 วิ หลังยิง → tag [KILL?] พร้อม args
 --   ของนัดนั้นเต็มๆ (8 ตัวแรก) เพื่อรู้ว่า "นัดที่ฆ่าได้" หน้าตา args เป็นยังไง
 -- ดัก 4 อย่าง:
@@ -89,19 +91,22 @@ end
 if hookmetamethod then
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        if (method == "FireServer" or method == "InvokeServer")
-            and typeof(self) == "Instance" then
-            local args = { ... }
-            local s = {}
-            for i = 1, math.min(#args, 8) do s[#s + 1] = short(args[i]) end
-            local line = ("[REMOTE] %s:%s(%s)"):format(self.Name, method, table.concat(s, ", "))
-            log(line)
-            -- v1.2: จำนัดยิงล่าสุด (Vector3,Vector3,num,...) ไว้จับคู่กับเป็ดที่ตายภายใน 0.6 วิ
-            if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                _G.DS78_LASTSHOT = { t = os.clock(), line = line }
+        -- v1.3 สำคัญ: hook นี้ดักการเรียกเมธอด "ทุกอย่าง" ในเกม ถ้า logic ข้างในพลาด/ช้า จะทำให้
+        -- การเรียกเดิม (ยิง/รีโหลด/ปุ่ม UI) พังหมด → ห่อ pcall + จับเฉพาะ method เป้าหมายก่อนทำอะไร
+        -- และห้าม yield/error เด็ดขาด ส่งของเดิมต่อเสมอไม่ว่าเกิดอะไร
+        local args = table.pack(...)
+        pcall(function()
+            local method = getnamecallmethod()
+            if (method == "FireServer" or method == "InvokeServer") and typeof(self) == "Instance" then
+                local s = {}
+                for i = 1, math.min(args.n, 8) do s[#s + 1] = short(args[i]) end
+                local line = ("[REMOTE] %s:%s(%s)"):format(self.Name, method, table.concat(s, ", "))
+                log(line)
+                if args.n >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
+                    _G.DS78_LASTSHOT = { t = os.clock(), line = line }
+                end
             end
-        end
+        end)
         return old(self, ...)
     end)
 else
