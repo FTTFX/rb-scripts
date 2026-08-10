@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v6.5 — เกี่ยวของที่ลอยบนฟ้าได้ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v6.6 — ปุ่ม NOCLIP เดินทะลุกำแพง (เกม "ล้างบ้านขำๆ")
+-- v6.6: เพิ่มปุ่ม NOCLIP — ปิดการชนทุกส่วนของตัวทุกเฟรมระหว่างเปิด เดิน/บินทะลุกำแพงได้
+--   ปิดปุ่มหรือกด STOP = เปิดการชนคืนปกติ
 -- v6.5: ของที่เกมเหวี่ยงลอยนอกกรอบเคยเกี่ยวไม่ได้ (clamp ตัดเป้า + rescue วาปกลับกลางคัน) →
 --   ของลอยสูงถึง +200 ยังนับเป็นเป้า บินไปหาตัวจริงไม่ clamp พร้อมช่วงผ่อนผัน 8 วิ ให้ rescue
 --   ไม่ยุ่ง เกี่ยวเสร็จกลับเข้ากรอบปกติทันที
@@ -190,19 +192,20 @@ local flyB   = mkbtn("FLY: OFF (บินอิสระ WASD+Space/Ctrl)", 48, 
 local autoB  = mkbtn("AUTO: OFF (จับ-วางของทั้งหมด)", 78, Color3.fromRGB(40, 130, 70))
 local espB   = mkbtn("ESP: OFF (ไฮไลต์ของที่ยังไม่จับ)", 108, Color3.fromRGB(150, 100, 20))
 local guideB = mkbtn("GUIDE: OFF (เส้นนำทางไปของใกล้สุด)", 138, Color3.fromRGB(30, 150, 150))
-local stopB  = mkbtn("STOP ทั้งหมด", 168, Color3.fromRGB(150, 60, 30))
-local closeB = mkbtn("✕ ปิด", 198, Color3.fromRGB(90, 40, 40))
+local noclipB = mkbtn("NOCLIP: OFF (เดินทะลุกำแพง)", 168, Color3.fromRGB(120, 80, 170))
+local stopB  = mkbtn("STOP ทั้งหมด", 198, Color3.fromRGB(150, 60, 30))
+local closeB = mkbtn("✕ ปิด", 228, Color3.fromRGB(90, 40, 40))
 
 -- v4.9: กล่อง log — โชว์เหตุการณ์ล่าสุด 8 บรรทัด (วาปเพราะอะไร กรอบอยู่ไหน เป้าคืออะไร)
 -- และ print ลง console (F9) ด้วยทุกบรรทัด
 local logLbl = Instance.new("TextLabel", frame)
-logLbl.Size = UDim2.new(1, -8, 0, 104); logLbl.Position = UDim2.new(0, 4, 0, 228)
+logLbl.Size = UDim2.new(1, -8, 0, 104); logLbl.Position = UDim2.new(0, 4, 0, 258)
 logLbl.BackgroundColor3 = Color3.new(0, 0, 0); logLbl.BackgroundTransparency = 0.5
 logLbl.TextColor3 = Color3.fromRGB(255, 230, 150); logLbl.TextSize = 11
 logLbl.Font = Enum.Font.Code; logLbl.TextWrapped = true
 logLbl.TextXAlignment = Enum.TextXAlignment.Left; logLbl.TextYAlignment = Enum.TextYAlignment.Top
 logLbl.Text = ""
-frame.Size = UDim2.new(0, 260, 0, 338)
+frame.Size = UDim2.new(0, 260, 0, 368)
 
 local logLines = {}
 local function alog(msg)
@@ -1108,11 +1111,34 @@ guideB.MouseButton1Click:Connect(function()
         guideB.Text = "GUIDE: ON (กำลังชี้ทาง...)"
     end
 end)
+-- ==================== NOCLIP: เดินทะลุกำแพง ====================
+local NOCLIP_ON = false
+local noclipWalkConn
+local function noclipWalkStop()
+    NOCLIP_ON = false
+    if noclipWalkConn then noclipWalkConn:Disconnect() noclipWalkConn = nil end
+    setNoClip(false)
+    noclipB.Text = "NOCLIP: OFF (เดินทะลุกำแพง)"
+end
+noclipB.MouseButton1Click:Connect(function()
+    if NOCLIP_ON then
+        noclipWalkStop()
+    else
+        NOCLIP_ON = true
+        noclipB.Text = "NOCLIP: ON (ทะลุกำแพงได้)"
+        noclipWalkConn = RunService.Stepped:Connect(function()
+            if NOCLIP_ON and _G.AF77_GEN == MY_GEN then setNoClip(true) end
+        end)
+        table.insert(_G.AF77_CONNS, noclipWalkConn)
+    end
+end)
+
 stopB.MouseButton1Click:Connect(function()
     FLY_ON, AUTO_ON = false, false
     flyB.Text = "FLY: OFF (บินอิสระ WASD+Space/Ctrl)"
     autoB.Text = "AUTO: OFF (จับ-วางของทั้งหมด)"
     stopFly()
+    noclipWalkStop()
     espStop()
     espB.Text = "ESP: OFF (ไฮไลต์ของที่ยังไม่จับ)"
     guideStop()
