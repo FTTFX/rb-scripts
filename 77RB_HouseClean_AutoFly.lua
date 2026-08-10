@@ -1,6 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.6 — วางด้วยการกดปุ่ม E จริง (เกม "ล้างบ้านขำๆ")
--- v5.6: ตอนวาง เปลี่ยนเป็นจำลองกด E (VirtualInputManager) ให้เดินผ่านระบบหยิบ/วางของเกมเอง
---   ถ้ากดแล้วของยังไม่เข้าสล็อต ค่อย fallback ยิง remote placeCarried ตรงแบบเดิม
+-- 77RB_HouseClean_AutoFly.lua v5.7 — วินิจฉัยไฮไลต์ + กด E เฉพาะจุดชัวร์ (เกม "ล้างบ้านขำๆ")
+-- v5.7: "this spot wants Seat!" = ยังหาจุดวางจริงไม่เจอ (อ่านไฮไลต์ไม่เจอเลย ขึ้น "เดาชื่อ" ตลอด)
+--   → เพิ่ม log วินิจฉัย: ghost ทั้งหมดกี่ตัว/ติดไฟกี่ตัว/ชื่อที่ต้องการมีจริงไหม จะได้รู้ว่าพังตรงไหน
+--   + กด E เฉพาะตอนเจอ ghost จริง (กดตอนยืนผิดจุด เกมหยิบของอื่นซ้อนจนมือเต็ม)
 -- v5.5: ❌ ส่วนใหญ่คือจุดแรกที่เลือกเต็ม — เพิ่มลองสล็อตชื่อเดียวกันจุดถัดไปสูงสุด 3 จุด/ชิ้น
 --   (เรียง: จุดที่ไฮไลต์ชี้ → PairId ตรง → RoomId ตรง → ที่เหลือ) บินไปวางทีละจุดจนกว่าจะเข้า
 -- v5.4: หาสาเหตุขั้นเด็ดขาด — ดัก __newindex ทุกการเซ็ต CFrame บนตัวเรา ถ้าเป็นค่าลงเหว (Y<-1000)
@@ -767,6 +768,20 @@ local function runAuto()
             end
             if not ghost then task.wait(0.05) end
         end
+        -- v5.7 วินิจฉัย: อ่านไฮไลต์ไม่เจอสักครั้ง (log ขึ้น "เดาชื่อ" ตลอด) — ดูให้ชัดว่าทำไม
+        if not ghost then
+            local folder = workspace:FindFirstChild("Camera")
+            folder = folder and folder:FindFirstChild("SortingGhosts")
+            local total, lit = 0, 0
+            local namedGhost = nil
+            if folder then
+                total = #folder:GetChildren()
+                for _ in pairs(getLitGhosts()) do lit += 1 end
+                namedGhost = folder:FindFirstChild(wantGhostName)
+            end
+            alog(("🔍 %s: ghost ทั้งหมด %d, ติดไฟ %d, ชื่อ %s %s"):format(
+                item.Name, total, lit, wantGhostName, namedGhost and "มีอยู่" or "ไม่มี!"))
+        end
 
         -- v5.5: รายชื่อสล็อตชื่อตรงทั้งหมด เรียง: ตัวที่ไฮไลต์ชี้ → PairId ตรง → RoomId ตรง → ที่เหลือ
         -- วางไม่เข้า (จุดเต็ม) → บินไปลองจุดถัดไป สูงสุด 3 จุดต่อชิ้น
@@ -803,15 +818,17 @@ local function runAuto()
                 if spos then flyTo(clampY(spos), 6) end
                 if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
 
-                -- v5.6: วางด้วยการ "กดปุ่ม E จริง" (เดินผ่านระบบของเกมเอง) — ถ้าไม่เข้า ค่อย
-                -- fallback ยิง remote ตรงแบบเดิม
-                pcall(function()
-                    local VIM = game:GetService("VirtualInputManager")
-                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-                    task.wait(0.05)
-                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-                end)
-                task.wait(0.25)
+                -- v5.6: วางด้วยการ "กดปุ่ม E จริง" — v5.7: กดเฉพาะตอนยืนอยู่จุดไฮไลต์จริง (เจอ ghost)
+                -- เท่านั้น เพราะกด E ตอนยืนผิดจุด เกมอาจหยิบของชิ้นอื่นซ้อนจน "มือเต็ม"
+                if ci == 1 and ghost then
+                    pcall(function()
+                        local VIM = game:GetService("VirtualInputManager")
+                        VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                        task.wait(0.05)
+                        VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                    end)
+                    task.wait(0.25)
+                end
                 local ipE, spE = partPosition(item), partPosition(slot)
                 if not (ipE and spE and (ipE - spE).Magnitude < 6) then
                     pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
