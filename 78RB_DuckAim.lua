@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v6.1 — เล็งแม่น + ไม่ยิงศพ (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.1: (1) เล็งไม่แม่น → ดูดกล้องไวขึ้น SMOOTH 0.35→0.6 + ยิงเฉพาะตอนเข้าเป้า <4° (เดิม 10°)
+--   (2)(3) ยิงศพ → เป็ดที่ตกกลายเป็น DuckController_LandedDucks ในโฟลเดอร์เดียวกัน กรองออก เอา
+--   เฉพาะชื่อมี "Duck" และไม่มี "Landed" (เป็ดบินที่ยังไม่ตาย)
 -- 78RB_DuckAim.lua v6.0 — 1 ตัวยิงนัดเดียว ไม่ถล่มตัวเดิม (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.0: เดิมจ่อยิงตัวเดิม 7 นัด (SHOT_SKIP 2 วิสั้นไป + fallback ไปตัวที่ยิงแล้ว) → ยิดตัวละนัดเดียว
 --   ข้ามยาว 6 วิ (ล้างเมื่อตาย) + เลิก fallback ไปตัวที่ยิงแล้ว = ประหยัดกระสุน ฆ่าได้หลายตัวกว่า
@@ -49,7 +53,7 @@ local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local AIM_ON = false
-local SMOOTH = 0.35
+local SMOOTH = 0.6 -- v6.1: ดูดกล้องไวขึ้น (0.35→0.6) ให้เข้าเป้าเร็ว เล็งแม่นขึ้น
 -- v5.9: สถานะปืนเก็บใน _G (hook เขียน — ใช้ร่วมทุก gen กันโหลดซ้ำแล้ว hook เก่าจับไม่ได้)
 _G.DA78_CTR = _G.DA78_CTR or 0
 
@@ -122,12 +126,19 @@ local function recentlyShot(model)
     return t ~= nil and (os.clock() - t) < SHOT_SKIP
 end
 
+-- v6.1: เป้าต้องเป็น "เป็ดบินที่ยังไม่ตาย" เท่านั้น — เป็ดที่ยิงตกกลายเป็น DuckController_LandedDucks
+-- (ศพร่วงพื้น) อยู่ในโฟลเดอร์ Ume เดียวกัน เดิมเลยเล็งศพด้วย → เอาเฉพาะชื่อมี "Duck" และไม่มี "Landed"
+local function isLiveDuck(m)
+    local n = m.Name
+    return n:find("Duck") ~= nil and not n:find("Landed")
+end
+
 local function allDucks(includeShot)
     local out = {}
     local f = duckFolder()
     if not f then return out end
     for _, m in ipairs(f:GetChildren()) do
-        if m:IsA("Model") and (includeShot or not recentlyShot(m)) then
+        if m:IsA("Model") and isLiveDuck(m) and (includeShot or not recentlyShot(m)) then
             local p = duckPos(m)
             if p then out[#out + 1] = { model = m, pos = p } end
         end
@@ -344,7 +355,7 @@ local function shootStart()
                     if toD.Magnitude > 1 then
                         local ang = math.deg(math.acos(math.clamp(
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
-                        if ang < 10 then
+                        if ang < 4 then -- v6.1: 10°→4° ยิงเฉพาะตอนกล้องเข้าเป้าจริง เล็งแม่นขึ้น
                             fireShot()
                             markShot(d.model) -- ยิงแล้ว 1 นัด → ข้ามไปตัวใหม่ทันที ไม่ถล่มตัวเดิม
                             setStatus(("[DuckAim78] 🔫 ยิง: %s (นัด %d)"):format(d.model.Name, _G.DA78_CTR or 0))
