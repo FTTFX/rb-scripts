@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v6.6 — เก็บเป็ดหลุดผ่านให้มากขึ้น (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.6: เป็ดบินผ่านไม่โดนบางตัว เพราะ findBoss สแกน GetDescendants ทุกเฟรม (เป็ด 70+) หน่วงจนเล็งไม่ทัน
+--   → throttle บอสทุก 0.5 วิ + cache + ลด SHOT_SKIP 1.0→0.4 (ตัวใหม่ถูกเล็งไวขึ้น)
 -- 78RB_DuckAim.lua v6.5 — บอสหาจากป้าย HP + ยิงรัวต่อเนื่อง (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.5: (1) log พิสูจน์ยิง remote 0.18 วิต่อเนื่องฆ่าจริง (แม็ก/รีโหลดเป็นลิมิต client เท่านั้น) → ตัด
 --   หน่วงรีโหลด v6.4 ทิ้ง ยิงรัว 0.2 วิ (2) บอสไม่มี Humanoid → หาจากป้าย "<เลข> HP" แล้วเอา Model บอส
@@ -134,7 +137,7 @@ end
 local shotDucks = {}          -- model -> os.clock() ตอนยิง
 -- v6.2: SHOT_SKIP 6 วินานไป — ยิงเร็ว 3 วิก็ครบทุกตัว แล้วนั่งรอ 6 วิ ดูเหมือนช้า ตัวที่โดนจริงจะ
 -- กลายเป็น Landed/หายเอง (recentlyShot ล้างให้) เหลือแต่ตัวพลาด → รอแค่ 1 วิพอ พลาดแล้วยิงใหม่ไว
-local SHOT_SKIP = 1.0
+local SHOT_SKIP = 0.4 -- v6.6: ลด 1.0→0.4 ให้ตัวใหม่ที่บินเข้ามาถูกเล็งไวขึ้น เป็ดหลุดผ่านน้อยลง
 local function markShot(model) if model then shotDucks[model] = os.clock() end end
 local function recentlyShot(model)
     if not model.Parent then shotDucks[model] = nil return false end -- ตายไปแล้ว ล้างทิ้ง
@@ -149,20 +152,24 @@ local function isLiveDuck(m)
     return n:find("Duck") ~= nil and not n:find("Landed")
 end
 
--- v6.5: บอส (เช่น "Silly Duck 150 HP") ไม่มี Humanoid — แต่มี "ป้าย HP bar" (BillboardGui/TextLabel
--- ที่มีข้อความ "<เลข> HP") เป็นเอกลักษณ์ → หาป้ายนั้นแล้วเอา Model บรรพบุรุษเป็นบอส (แม่นกว่าเดาชื่อ)
+-- v6.6: บอสมีป้าย HP bar ("<เลข> HP") — แต่สแกน GetDescendants ทุกเฟรมหนักมาก (เป็ด 70+ ตัว) ทำให้
+-- หน่วงจนเล็งเป็ดบินผ่านไม่ทัน → throttle สแกนทุก 0.5 วิ แล้ว cache ผลไว้
+local bossCache, bossCacheAt = nil, 0
 local function findBoss()
+    if os.clock() - bossCacheAt < 0.5 then
+        if bossCache and bossCache.model.Parent then return bossCache end
+        if not bossCache then return nil end
+    end
+    bossCacheAt = os.clock()
+    bossCache = nil
     local f = duckFolder()
     if not f then return nil end
     for _, d in ipairs(f:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local t = d.Text
-            if t and t:find("%d+%s*HP") then
-                local m = d:FindFirstAncestorWhichIsA("Model")
-                if m and not m.Name:find("Landed") then
-                    local p = duckPos(m)
-                    if p then return { model = m, pos = p, boss = true } end
-                end
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text:find("%d+%s*HP") then
+            local m = d:FindFirstAncestorWhichIsA("Model")
+            if m and not m.Name:find("Landed") then
+                local p = duckPos(m)
+                if p then bossCache = { model = m, pos = p, boss = true }; return bossCache end
             end
         end
     end
