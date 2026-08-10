@@ -25,7 +25,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DS78_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 340, 0, 300); frame.Position = UDim2.new(0, 8, 0.18, 0)
+frame.Size = UDim2.new(0, 352, 0, 300); frame.Position = UDim2.new(0, 8, 0.18, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.15
 frame.Active = true; frame.Draggable = true
 
@@ -50,16 +50,17 @@ end
 
 local function mkbtn(txt, x, col)
     local b = Instance.new("TextButton", frame)
-    b.Size = UDim2.new(0, 60, 0, 24); b.Position = UDim2.new(0, x, 0, 6)
+    b.Size = UDim2.new(0, 50, 0, 24); b.Position = UDim2.new(0, x, 0, 6)
     b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
 local listB  = mkbtn("LIST", 4, Color3.fromRGB(60, 110, 180))
-local clearB = mkbtn("CLEAR", 70, Color3.fromRGB(110, 110, 40))
-local copyB  = mkbtn("COPY", 136, Color3.fromRGB(40, 130, 70))
-local pauseB = mkbtn("PAUSE", 202, Color3.fromRGB(140, 80, 30))
-local closeB = mkbtn("✕", 268, Color3.fromRGB(120, 40, 40))
+local duckB  = mkbtn("DUCK", 58, Color3.fromRGB(170, 110, 40))
+local clearB = mkbtn("CLR", 112, Color3.fromRGB(110, 110, 40))
+local copyB  = mkbtn("COPY", 166, Color3.fromRGB(40, 130, 70))
+local pauseB = mkbtn("PAUSE", 220, Color3.fromRGB(140, 80, 30))
+local closeB = mkbtn("✕", 274, Color3.fromRGB(120, 40, 40))
 
 -- ==================== helper: ย่อ args ====================
 local function short(v, depth)
@@ -148,6 +149,61 @@ listB.MouseButton1Click:Connect(function()
     end
     log("===== จบ LIST =====")
 end)
+-- v1.1: แงะโครงสร้างเป็ด 1 ตัว + ดักเลือดเปลี่ยนเรียลไทม์ (ไว้ดูว่า "ตาย" หน้าตาเป็นยังไง)
+duckB.MouseButton1Click:Connect(function()
+    local f = workspace:FindFirstChild("Ume")
+    local duck = nil
+    if f then
+        for _, m in ipairs(f:GetChildren()) do
+            if m:IsA("Model") then duck = m break end
+        end
+    end
+    if not duck then log("[DUCK] ไม่เจอเป็ดใน workspace.Ume ตอนนี้") return end
+    log("===== [DUCK] " .. duck.Name .. " =====")
+    local hum = duck:FindFirstChildOfClass("Humanoid")
+    if hum then
+        log(("  Humanoid: HP %.0f/%.0f state=%s"):format(hum.Health, hum.MaxHealth, hum:GetState().Name))
+    else
+        log("  ไม่มี Humanoid")
+    end
+    for k, v in pairs(duck:GetAttributes()) do
+        log(("  [attr] %s = %s"):format(k, tostring(v)))
+    end
+    for _, c in ipairs(duck:GetChildren()) do
+        local extra = ""
+        if c:IsA("IntValue") or c:IsA("NumberValue") or c:IsA("StringValue") or c:IsA("BoolValue") then
+            extra = " = " .. tostring(c.Value)
+        end
+        log(("  %s (%s)%s"):format(c.Name, c.ClassName, extra))
+    end
+    log("===== จบ DUCK =====")
+
+    -- ดักเลือด/ค่าตัวเลขของตัวนี้เปลี่ยน จนกว่ามันจะหายไป
+    if hum then
+        table.insert(_G.DS78_CONNS, hum.HealthChanged:Connect(function(h)
+            log(("[HP] %s: %.0f/%.0f"):format(duck.Name, h, hum.MaxHealth))
+        end))
+        table.insert(_G.DS78_CONNS, hum.Died:Connect(function()
+            log(("[DIED] %s Humanoid.Died"):format(duck.Name))
+        end))
+    end
+    for _, c in ipairs(duck:GetDescendants()) do
+        if c:IsA("IntValue") or c:IsA("NumberValue") then
+            local prev = c.Value
+            table.insert(_G.DS78_CONNS, c:GetPropertyChangedSignal("Value"):Connect(function()
+                log(("[VAL] %s.%s: %s → %s"):format(duck.Name, c.Name, tostring(prev), tostring(c.Value)))
+                prev = c.Value
+            end))
+        end
+    end
+    for k in pairs(duck:GetAttributes()) do
+        table.insert(_G.DS78_CONNS, duck:GetAttributeChangedSignal(k):Connect(function()
+            log(("[ATTR] %s.%s → %s"):format(duck.Name, k, tostring(duck:GetAttribute(k))))
+        end))
+    end
+    log("[DUCK] เริ่มดักเลือด/ค่าของ " .. duck.Name .. " แล้ว — ยิงให้ตายดูว่าเปลี่ยนยังไง")
+end)
+
 clearB.MouseButton1Click:Connect(function() LOG = {} render() end)
 copyB.MouseButton1Click:Connect(function()
     local all = table.concat(LOG, "\n")
