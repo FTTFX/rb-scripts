@@ -515,6 +515,9 @@ local function shootStart()
                 table.sort(ducks, function(a, b)
                     return (a.pos - camP).Magnitude < (b.pos - camP).Magnitude
                 end)
+                -- บอสแทรกหัวแถวเสมอ (allDucks ไม่รวมบอสเพราะชื่อไม่มีคำว่า Duck)
+                local boss = findBoss()
+                if boss then table.insert(ducks, 1, boss) end
                 local hit = 0
                 for i = 1, math.min(multi, #ducks) do
                     if not (SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop) then break end
