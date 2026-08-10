@@ -1,3 +1,6 @@
+-- 78RB_DuckSpy.lua v1.4 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- v1.4: ปุ่ม BOSS — หาป้าย "<เลข> HP" ทั้ง workspace+PlayerGui แล้วดัมป์พาธเต็มของโมเดลบอส +
+--   โครงสร้าง + ValueBase ที่ค่าตรงกับ HP ในป้าย (⬅️) เพื่อรู้ว่าบอสจริงอยู่ที่ไหน/ชื่ออะไร
 -- 78RB_DuckSpy.lua v1.3 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
 -- v1.3: เปิด spy แล้วกดยิง/รีโหลด/ปุ่มไม่ได้เลย — เพราะ __namecall hook ดักการเรียกเมธอดทุกอย่าง
 --   ถ้า logic ข้างในพลาดจะทำให้การเรียกเดิมพังหมด → ห่อ pcall ทั้งก้อน + table.pack กัน error เด็ดขาด
@@ -54,17 +57,18 @@ end
 
 local function mkbtn(txt, x, col)
     local b = Instance.new("TextButton", frame)
-    b.Size = UDim2.new(0, 50, 0, 24); b.Position = UDim2.new(0, x, 0, 6)
+    b.Size = UDim2.new(0, 44, 0, 24); b.Position = UDim2.new(0, x, 0, 6)
     b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
 local listB  = mkbtn("LIST", 4, Color3.fromRGB(60, 110, 180))
-local duckB  = mkbtn("DUCK", 58, Color3.fromRGB(170, 110, 40))
-local clearB = mkbtn("CLR", 112, Color3.fromRGB(110, 110, 40))
-local copyB  = mkbtn("COPY", 166, Color3.fromRGB(40, 130, 70))
-local pauseB = mkbtn("PAUSE", 220, Color3.fromRGB(140, 80, 30))
-local closeB = mkbtn("✕", 274, Color3.fromRGB(120, 40, 40))
+local duckB  = mkbtn("DUCK", 52, Color3.fromRGB(170, 110, 40))
+local bossB  = mkbtn("BOSS", 100, Color3.fromRGB(180, 50, 120))
+local clearB = mkbtn("CLR", 148, Color3.fromRGB(110, 110, 40))
+local copyB  = mkbtn("COPY", 196, Color3.fromRGB(40, 130, 70))
+local pauseB = mkbtn("PAUSE", 244, Color3.fromRGB(140, 80, 30))
+local closeB = mkbtn("✕", 292, Color3.fromRGB(120, 40, 40))
 
 -- ==================== helper: ย่อ args ====================
 local function short(v, depth)
@@ -220,6 +224,55 @@ duckB.MouseButton1Click:Connect(function()
         end))
     end
     log("[DUCK] เริ่มดักเลือด/ค่าของ " .. duck.Name .. " แล้ว — ยิงให้ตายดูว่าเปลี่ยนยังไง")
+end)
+
+-- ==================== [BOSS] หาการ์ด HP บอส แล้วดัมป์พาธ/โครงสร้าง/ที่เก็บ HP ====================
+bossB.MouseButton1Click:Connect(function()
+    -- หา TextLabel ที่มีข้อความ "<เลข> HP" ทั้งใน workspace และ PlayerGui
+    local found = {}
+    local function scan(root, where)
+        for _, d in ipairs(root:GetDescendants()) do
+            if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text:find("%d+%s*HP") then
+                found[#found + 1] = { lbl = d, where = where }
+            end
+        end
+    end
+    scan(workspace, "workspace")
+    scan(LP.PlayerGui, "PlayerGui")
+    if #found == 0 then log("[BOSS] ไม่เจอป้าย HP บนจอ — บอสต้องโผล่ก่อน") return end
+
+    for _, e in ipairs(found) do
+        local d = e.lbl
+        log(("===== [BOSS] ป้าย HP: \"%s\" (%s) ====="):format(d.Text, e.where))
+        log("  พาธป้าย: " .. d:GetFullName())
+        -- โมเดลบอส = Model บรรพบุรุษที่ใกล้สุด (เฉพาะป้ายใน workspace ถึงจะมีตัวจริง)
+        local m = d:FindFirstAncestorWhichIsA("Model")
+        if m then
+            log("  🦆 โมเดลบอส: " .. m:GetFullName())
+            log("    ลูก: ")
+            for _, c in ipairs(m:GetChildren()) do
+                local extra = ""
+                if c:IsA("ValueBase") then extra = " = " .. tostring(c.Value) end
+                log(("      %s (%s)%s"):format(c.Name, c.ClassName, extra))
+            end
+            for k, v in pairs(m:GetAttributes()) do
+                log(("      [attr] %s = %s"):format(k, tostring(v)))
+            end
+            local hum = m:FindFirstChildOfClass("Humanoid")
+            if hum then log(("    ♥ Humanoid %s/%s"):format(hum.Health, hum.MaxHealth)) end
+            -- หา ValueBase เลขที่น่าจะเป็น HP (ค่าตรงกับเลขในป้าย)
+            local hpNum = tonumber(d.Text:match("(%d+)"))
+            for _, c in ipairs(m:GetDescendants()) do
+                if (c:IsA("IntValue") or c:IsA("NumberValue")) then
+                    local mark = (hpNum and math.abs(c.Value - hpNum) < 1) and "  ⬅️ ตรงกับป้าย!" or ""
+                    log(("    val %s = %s%s"):format(c:GetFullName():gsub(m:GetFullName(), "…"), c.Value, mark))
+                end
+            end
+        else
+            log("  (ป้ายอยู่ใน GUI ไม่มีโมเดลตัวจริง — HP อาจเก็บฝั่ง client)")
+        end
+        log("===== จบ BOSS =====")
+    end
 end)
 
 clearB.MouseButton1Click:Connect(function() LOG = {} render() end)
