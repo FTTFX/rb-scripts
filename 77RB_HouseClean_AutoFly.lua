@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v6.4 — กด G ไม่ต้องถาม (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v6.5 — เกี่ยวของที่ลอยบนฟ้าได้ (เกม "ล้างบ้านขำๆ")
+-- v6.5: ของที่เกมเหวี่ยงลอยนอกกรอบเคยเกี่ยวไม่ได้ (clamp ตัดเป้า + rescue วาปกลับกลางคัน) →
+--   ของลอยสูงถึง +200 ยังนับเป็นเป้า บินไปหาตัวจริงไม่ clamp พร้อมช่วงผ่อนผัน 8 วิ ให้ rescue
+--   ไม่ยุ่ง เกี่ยวเสร็จกลับเข้ากรอบปกติทันที
 -- v6.4: v6.3 ไม่เคยกด G จริงเพราะ isCarrying (HeldViewmodel) รายงานมือว่างทั้งที่ถืออยู่ → เลิกเช็ค
 --   ก่อนกด: (1) ก่อนจับทุกชิ้น กด G เปล่าๆ 1 ที รับประกันมือว่าง 100% (2) วางไม่เข้า/มือเต็ม กด G
 --   2 รอบทันที — กดตอนมือว่างไม่เสียหายอะไร
@@ -713,6 +716,9 @@ local function runAuto()
     -- root=HRP ปกติ) และการจับ-วางสำเร็จตลอดแม้ตัวอยู่เหว/ฟ้า = เกมไม่เช็คระยะ → เลิกบิน เลิก NoClip
     -- เลิกสู้เรื่องตำแหน่งทั้งหมด ยืนเฉยๆ ยิง remote อย่างเดียว เหลือแค่ตัวช่วยเดียว: ถ้าหลุดกรอบ
     -- ค้างนานเกิน 3 วิ (เกมลืมดึงกลับ) ค่อยวาปกลับกลางบ้านให้
+    -- v6.5: ช่วงผ่อนผัน — ตอนบินขึ้นไปเกี่ยวของที่ลอยนอกกรอบ (เกมเหวี่ยงของขึ้นฟ้า) ห้าม rescue
+    -- วาปเรากลับกลางคัน ไม่งั้นเกี่ยวไม่ได้สักที
+    local oobGraceUntil = 0
     local oobSince, lastWarpLog = nil, 0
     local rescueConn = RunService.Stepped:Connect(function()
         if AUTO_ON and _G.AF77_GEN == MY_GEN then
@@ -723,7 +729,7 @@ local function runAuto()
                 -- "จับ" ต้องอยู่ใกล้ของ มีแต่ "วาง" ที่ยิงจากที่ไหนก็ได้)
                 setNoClip(true)
                 hrp.AssemblyLinearVelocity = Vector3.zero
-                if not positionSane(hrp.Position) then
+                if not positionSane(hrp.Position) and tick() > oobGraceUntil then
                     oobSince = oobSince or tick()
                     if tick() - oobSince > 0.5 then
                         oobSince = nil
@@ -753,7 +759,8 @@ local function runAuto()
             for _, it in ipairs(house.Items:GetChildren()) do
                 if not skipItems[it] and not looksAlreadyPlaced(it, house.Slots) then
                     local p = partPosition(it)
-                    if p and positionSane(p) then
+                    -- v6.5: รวมของที่ลอยขึ้นฟ้าด้วย (สูงกว่ากรอบได้ถึง +200) — เดี๋ยวขึ้นไปเกี่ยวเอง
+                    if p and p.Y > Y_MIN - 30 and p.Y < Y_MAX + 200 and (p - homePos).Magnitude < 700 then
                         local d = (p - hrp.Position).Magnitude
                         if d < bestD then best, bestD, bestHouse = it, d, house end
                     end
@@ -868,10 +875,21 @@ local function runAuto()
         end)
         task.wait(0.15)
         -- v5.2: บินไปหาของก่อนจับ — v5.1 พิสูจน์แล้วว่ายิงจับจากไกลไม่ติด (วางเท่านั้นที่ไม่เช็คระยะ)
+        -- v6.5: ของลอยนอกกรอบ (เกมเหวี่ยงขึ้นฟ้า) → บินไปหา "ตัวจริง" ไม่ clamp + เปิดช่วงผ่อนผัน
+        -- ให้ rescue ไม่วาปเรากลับกลางคัน เกี่ยวเสร็จค่อยกลับเข้ากรอบ
         local ipos = partPosition(item)
-        if ipos then flyTo(clampY(ipos), 6) end
+        if ipos then
+            if not positionSane(ipos) then
+                oobGraceUntil = tick() + 8
+                alog(("🪁 %s ลอยนอกกรอบที่ %s — ขึ้นไปเกี่ยว"):format(item.Name, v3s(ipos)))
+                flyTo(ipos, 8)
+            else
+                flyTo(clampY(ipos), 6)
+            end
+        end
         if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         pcall(function() learnedRemote:FireServer("pickupItem", item) end)
+        oobGraceUntil = 0 -- จับแล้ว (ติดหรือไม่ก็ตาม) กลับเข้ากรอบปกติ
 
         -- (2) หาจุดวางจริง — v5.8 (คำตอบจาก log 🔍): เกมสร้าง ghost เฉพาะจุดที่เกี่ยวข้องตอนถือของ
         -- อยู่แล้ว และไม่ได้ใช้ Highlight.Enabled (ติดไฟ=0 ตลอด) → แค่หา ghost "ชื่อตรง" ก็คือจุดจริง
