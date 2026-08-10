@@ -1,3 +1,6 @@
+-- 78RB_DuckSpy.lua v1.7 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- v1.7: ปุ่ม BOSS สแกน "โมเดลที่ขยับ" ด้วย (จับตำแหน่ง 2 ครั้งห่าง 0.6 วิ) — บอส/เป็ดบินขยับ ฉากนิ่ง
+--   เรียงตามขนาด (บอสตัวใหญ่สุด) โชว์ชื่อ/พาธ/ขนาด → หาบอสได้โดยไม่ต้องเดาชื่อ
 -- 78RB_DuckSpy.lua v1.6 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
 -- v1.6: ปุ่ม BOSS ยิง ray จากกล้องด้วย — ผู้ใช้จ้องบอสอยู่ = บอกชื่อ/พาธโมเดลบอสที่เล็งตรงๆ (เลิกเดาชื่อ)
 -- 78RB_DuckSpy.lua v1.4 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
@@ -253,6 +256,43 @@ bossB.MouseButton1Click:Connect(function()
     else
         log("[เล็งอยู่] ray ไม่โดนอะไร — เล็งให้ตรงบอสแล้วกดใหม่")
     end
+
+    -- v1.7: สแกน "โมเดลที่ขยับ" — บอส/เป็ดบิน (ขยับ), ฉาก/ต้นไม้ (นิ่ง) → แยกบอสได้ + โชว์ขนาด (บอสใหญ่)
+    task.spawn(function()
+        local function snapshot()
+            local s = {}
+            for _, m in ipairs(workspace:GetDescendants()) do
+                if m:IsA("Model") then
+                    local pv = m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+                    if pv then s[m] = pv.Position end
+                end
+            end
+            return s
+        end
+        local a = snapshot()
+        task.wait(0.6)
+        local b = snapshot()
+        local movers = {}
+        for m, p1 in pairs(a) do
+            local p2 = b[m]
+            if p2 then
+                local d = (p2 - p1).Magnitude
+                if d > 1 then -- ขยับจริง
+                    local ok, cf, size = pcall(function() return m:GetBoundingBox() end)
+                    local vol = (ok and size) and (size.X * size.Y * size.Z) or 0
+                    movers[#movers + 1] = { name = m.Name, path = m:GetFullName(), move = d, vol = vol, size = ok and size }
+                end
+            end
+        end
+        table.sort(movers, function(x, y) return x.vol > y.vol end) -- ใหญ่สุดก่อน (บอส)
+        log("----- โมเดลที่ขยับ (เรียงใหญ่→เล็ก, บอสน่าจะใหญ่สุด) -----")
+        for i = 1, math.min(#movers, 15) do
+            local e = movers[i]
+            local sz = e.size and ("%.0fx%.0fx%.0f"):format(e.size.X, e.size.Y, e.size.Z) or "?"
+            log(("  [%s] ขยับ %.0f | ขนาด %s | %s"):format(e.name, e.move, sz, e.path))
+        end
+        log("----- จบ (กด COPY ส่งมา) -----")
+    end)
 
     -- หา TextLabel ที่มีข้อความ "<เลข> HP" ทั้งใน workspace และ PlayerGui
     local found = {}
