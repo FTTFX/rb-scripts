@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v5.4 — บินจับ-บินวาง + จับตัวการ/บล็อกวาปลงเหว (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.5 — บินจับ-บินวาง + สล็อตสำรอง + บล็อกวาปลงเหว (เกม "ล้างบ้านขำๆ")
+-- v5.5: ❌ ส่วนใหญ่คือจุดแรกที่เลือกเต็ม — เพิ่มลองสล็อตชื่อเดียวกันจุดถัดไปสูงสุด 3 จุด/ชิ้น
+--   (เรียง: จุดที่ไฮไลต์ชี้ → PairId ตรง → RoomId ตรง → ที่เหลือ) บินไปวางทีละจุดจนกว่าจะเข้า
 -- v5.4: หาสาเหตุขั้นเด็ดขาด — ดัก __newindex ทุกการเซ็ต CFrame บนตัวเรา ถ้าเป็นค่าลงเหว (Y<-1000)
 --   log ชื่อสคริปต์เกมที่เป็นคนทำ แล้ว "บล็อก" ไม่ให้เซ็ตเลย (client-side = จบเลย, เงียบ = ฝั่ง server)
 -- v5.3: v5.1/v5.2 พิสูจน์ครบ: ทั้งจับและวางต้องบินไปใกล้ๆ ทั้งคู่ (v5.0 ที่นึกว่าวางจากเหวได้ คือบินถึง
@@ -764,30 +766,60 @@ local function runAuto()
             if not ghost then task.wait(0.05) end
         end
 
-        local slot = (ghost and slotFromGhost(ghost, house.Slots)) or findSlotFor(item, house.Slots)
-        if not slot or not slot.Parent then
+        -- v5.5: รายชื่อสล็อตชื่อตรงทั้งหมด เรียง: ตัวที่ไฮไลต์ชี้ → PairId ตรง → RoomId ตรง → ที่เหลือ
+        -- วางไม่เข้า (จุดเต็ม) → บินไปลองจุดถัดไป สูงสุด 3 จุดต่อชิ้น
+        local candidates = {}
+        do
+            local ghostSlot = ghost and slotFromGhost(ghost, house.Slots)
+            if ghostSlot then candidates[#candidates + 1] = ghostSlot end
+            local pairId, roomId = item:GetAttribute("PairId"), item:GetAttribute("RoomId")
+            local rest = {}
+            for _, s in ipairs(house.Slots:GetDescendants()) do
+                if s.Name == item.Name .. "Home" and s ~= ghostSlot then rest[#rest + 1] = s end
+            end
+            table.sort(rest, function(a, b)
+                local sa = (a:GetAttribute("PairId") == pairId and 2) or (a:GetAttribute("RoomId") == roomId and 1) or 0
+                local sb = (b:GetAttribute("PairId") == pairId and 2) or (b:GetAttribute("RoomId") == roomId and 1) or 0
+                return sa > sb
+            end)
+            for _, s in ipairs(rest) do candidates[#candidates + 1] = s end
+        end
+
+        if #candidates == 0 then
             skipItems[item] = true
             failed += 1
             setStatus(("[AutoFly77] ⚠️ %s ไม่เจอทั้งไฮไลต์และสล็อต — ข้าม"):format(item.Name))
         else
-            -- (3) บินไปสล็อต (4) วาง — v5.3: v5.2 พิสูจน์ว่าวางจากไกลก็ไม่เข้าเหมือนกัน ต้องบินไปทั้งคู่
-            local spos = (ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
-            if spos then flyTo(clampY(spos), 6) end
-            if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
-            pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-            task.wait(0.2)
+            local placedOK = false
+            for ci = 1, math.min(3, #candidates) do
+                local slot = candidates[ci]
+                if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
+                if not slot.Parent then continue end
 
-            -- วางติดจริงไหม: ของย้ายมานั่งใกล้สล็อตที่เพิ่งวาง — ติดก็ (5) วนต่อ ไม่ติดก็ข้ามชิ้นนี้
-            local ip, sp = partPosition(item), partPosition(slot)
-            if ip and sp and (ip - sp).Magnitude < 6 then
-                processed += 1
-                skipItems[item] = true -- วางแล้ว ไม่ต้องกลับมามองชิ้นนี้อีก
-                alog(("✅ %s → %s %s"):format(item.Name, slot.Name, ghost and "(ไฮไลต์)" or "(เดาชื่อ)"))
-            else
+                -- (3) บินไปสล็อต (4) วาง — ต้องบินไปใกล้ทั้งตอนจับและตอนวาง (พิสูจน์จาก v5.1/v5.2)
+                local spos = (ci == 1 and ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
+                if spos then flyTo(clampY(spos), 6) end
+                if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
+                pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
+                task.wait(0.2)
+
+                local ip, sp = partPosition(item), partPosition(slot)
+                if ip and sp and (ip - sp).Magnitude < 6 then
+                    processed += 1
+                    skipItems[item] = true
+                    placedOK = true
+                    alog(("✅ %s → %s%s"):format(item.Name, slot.Name,
+                        ci > 1 and (" (จุดสำรอง %d)"):format(ci) or (ghost and " (ไฮไลต์)" or " (เดาชื่อ)")))
+                    break
+                end
+                if ci < math.min(3, #candidates) then
+                    alog(("↻ %s จุดที่ %d เต็ม — ลองจุดถัดไป"):format(item.Name, ci))
+                end
+            end
+            if not placedOK then
                 skipItems[item] = true
                 failed += 1
-                alog(("❌ %s วางไม่เข้า ของอยู่ %s สล็อต %s"):format(item.Name, v3s(ip), v3s(sp)))
-                setStatus(("[AutoFly77] ⚠️ %s วางไม่เข้า (จุดอาจเต็ม) — ข้ามไปชิ้นถัดไป"):format(item.Name))
+                alog(("❌ %s วางไม่เข้าเลย (ลอง %d จุด)"):format(item.Name, math.min(3, #candidates)))
             end
         end
     end
