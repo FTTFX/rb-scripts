@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v7.5 — อ่านค่าช่องพิมพ์สดๆ (FocusLost ไม่ทำงานบางตัว) (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v7.5: ตั้งหน่วงยิง/ยิงต่อตัวแล้วไม่มีผล เพราะ executor นี้ TextBox.FocusLost ไม่ยิง ค่าค้าง default →
+--   ให้ลูปอ่าน tonumber(box.Text) สดๆ ทุกนัด พิมพ์ปุ๊บมีผลทันที (status โชว์ @Xวิ ยืนยันค่าที่ใช้จริง)
 -- 78RB_DuckAim.lua v7.4 — ยิงตามจำนวนที่ตั้งเป๊ะ ไม่เช็คตาย (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v7.4 (แบบ C): เลิกเช็คตายทั้งหมด — เป็ดปกติยิงครบ MAX_SHOTS นัดตามที่ตั้งแล้วไปตัวถัดไปเลย (ผู้ใช้
 --   จูนเอง: ไม่ตายก็เพิ่มนัด/อัปปืน) บอสยังยิงไม่จำกัดจนหายไป
@@ -474,25 +477,27 @@ local function shootStart()
     -- ไม่ตายก็เพิ่มจำนวนนัด/อัปเกรดปืนเอง) บอสยกเว้น: ยิงไม่จำกัดจนหายไป (ตาย)
     task.spawn(function()
         while SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop do
+            -- v7.5: อ่านค่าจากช่องพิมพ์สดๆ ทุกนัด (executor บางตัว FocusLost ไม่ทำงาน ค่าเลยไม่อัปเดต)
+            local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
+            local maxShots = math.floor(math.clamp(tonumber(maxBox.Text) or MAX_SHOTS, 1, 200))
             local d = pickDuck(Camera.CFrame.Position)
             local target = d and d.model
             if not target then task.wait(0.05)
             else
                 local isBoss = target.Name:find("BossController") ~= nil
                 local shots = 0
-                -- เป็ดปกติ: ยิงครบ MAX_SHOTS นัด (ไม่สนว่าตายไหม) / บอส: ยิงจนหายไป
+                -- เป็ดปกติ: ยิงครบ maxShots นัด (ไม่สนว่าตายไหม) / บอส: ยิงจนหายไป
                 while SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop
-                    and (isBoss and target.Parent or (not isBoss and shots < MAX_SHOTS)) do
+                    and (isBoss and target.Parent or (not isBoss and shots < maxShots)) do
                     local p = duckPos(target)
                     if not p then break end
                     fireShotAt(p)
                     shots = shots + 1
-                    setStatus(("[DuckAim78] 🔫 %s%s (%d/%s นัด, รวม %d)"):format(
+                    setStatus(("[DuckAim78] 🔫 %s%s (%d/%s นัด @%.2fวิ, รวม %d)"):format(
                         isBoss and "บอส " or "", target.Name, shots,
-                        isBoss and "∞" or tostring(MAX_SHOTS), _G.DA78_CTR or 0))
-                    task.wait(FIRE_RATE)
+                        isBoss and "∞" or tostring(maxShots), rate, _G.DA78_CTR or 0))
+                    task.wait(rate) -- พักระหว่างนัดตามช่อง "หน่วงยิง"
                 end
-                -- ยิงครบโควตาแล้ว → กันเล็งตัวเดิมซ้ำทันที ไปตัวถัดไป
                 if not isBoss then markShot(target) end
             end
         end
