@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v6.3 — เล็งบอส + ยิงค้างจนตาย (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.3: บอส (เช่น "Silly Duck 150 HP") ไม่ถูกเล็ง เพราะชื่อไม่มี "Duck" — เป็ดปกติไม่มี Humanoid แต่
+--   บอสมี HP bar = มี Humanoid → findBoss หา Model ที่มี Humanoid.Health>0 (ใน Ume+workspace) เล็ง
+--   ก่อนเสมอ + ยิงค้างไม่ mark จนกว่าจะตาย (เป็ดปกติยังยิงนัดเดียวแล้วข้ามเหมือนเดิม)
 -- 78RB_DuckAim.lua v6.2 — แก้ช้าเพราะรอนานเกิน (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.2: ช้าลงเพราะ SHOT_SKIP 6 วิ — ยิงเร็ว 3 วิครบทุกตัว แล้วนั่งรอ 6 วิ ("ไม่เจอเป้า") → ลดเหลือ
 --   1 วิ (ตัวที่โดนจริงกลายเป็น Landed/หายเอง เหลือแต่ตัวพลาดที่ควรยิงใหม่ไวๆ)
@@ -138,6 +142,26 @@ local function isLiveDuck(m)
     return n:find("Duck") ~= nil and not n:find("Landed")
 end
 
+-- v6.3: บอส (เช่น "Silly Duck 150 HP") — เป็ดปกติไม่มี Humanoid แต่บอสมี HP bar = มี Humanoid
+-- หา Model ที่มี Humanoid.Health>0 (ไม่ใช่ผู้เล่น) ทั้งใน Ume และ workspace ชั้นบน → บอสต้องยิงค้างจนตาย
+local function findBoss()
+    local seen = {}
+    local scan = {}
+    local f = duckFolder()
+    if f then for _, c in ipairs(f:GetChildren()) do scan[#scan + 1] = c end end
+    for _, c in ipairs(workspace:GetChildren()) do scan[#scan + 1] = c end
+    for _, m in ipairs(scan) do
+        if m:IsA("Model") and not Players:GetPlayerFromCharacter(m) and m ~= LP.Character then
+            local hum = m:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                local p = duckPos(m)
+                if p then return { model = m, pos = p, boss = true } end
+            end
+        end
+    end
+    return nil
+end
+
 local function allDucks(includeShot)
     local out = {}
     local f = duckFolder()
@@ -190,6 +214,9 @@ local function duckScore(d)
 end
 
 local function pickDuck(origin)
+    -- v6.3: บอสมาก่อนเสมอ (ยิงค้างจนตาย) — ไม่มีบอสค่อยเล็งเป็ดปกติ
+    local boss = findBoss()
+    if boss then return boss end
     -- v6.0: เอาเฉพาะตัวที่ยังไม่ได้ยิง (ไม่ fallback ไปตัวที่ยิงแล้ว — กันถล่มตัวเดิมรัวๆ)
     -- เป็ดมีเยอะพอ มักมีตัวใหม่ให้ยิงเสมอ ถ้าไม่มีจริงๆ ก็รอแป๊บ (คืน nil)
     local ducks = allDucks()
@@ -362,8 +389,10 @@ local function shootStart()
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
                         if ang < 4 then -- v6.1: 10°→4° ยิงเฉพาะตอนกล้องเข้าเป้าจริง เล็งแม่นขึ้น
                             fireShot()
-                            markShot(d.model) -- ยิงแล้ว 1 นัด → ข้ามไปตัวใหม่ทันที ไม่ถล่มตัวเดิม
-                            setStatus(("[DuckAim78] 🔫 ยิง: %s (นัด %d)"):format(d.model.Name, _G.DA78_CTR or 0))
+                            -- v6.3: บอสยิงค้างจนตาย (ไม่ mark) / เป็ดปกติยิงนัดเดียวแล้วข้าม
+                            if not d.boss then markShot(d.model) end
+                            setStatus(("[DuckAim78] 🔫 ยิง%s: %s (นัด %d)"):format(
+                                d.boss and " บอส" or "", d.model.Name, _G.DA78_CTR or 0))
                         else
                             setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
                         end
