@@ -1,7 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v6.1 — ตามจุดเขียวที่เห็นจริง (เกม "ล้างบ้านขำๆ")
--- v6.1: ผู้เล่นเห็นจุดเขียวแต่สคริปต์ไม่ใช้ เพราะชื่อ ghost ไม่ตรงสูตร <ของ>HomeGhost (log: ติดไฟ 1
---   แต่ชื่อไม่มี) → ชื่อตรงไม่เจอ + มีไฮไลต์ติดจุดเดียว = ใช้จุดนั้นเลย (จุดเดียวไม่กำกวม พร้อม log
---   ชื่อจริง) + slotFromGhost ชื่อแปลกก็หาสล็อตใกล้ ghost สุดในรัศมี 10 แทน + log ตอนหาปุ่มทิ้งไม่เจอ
+-- 77RB_HouseClean_AutoFly.lua v6.2 — ทิ้งด้วยปุ่ม G (ยืนยันจากผู้ใช้) (เกม "ล้างบ้านขำๆ")
+-- v6.2: ตัดสูตร "ไฮไลต์จุดเดียวใช้ได้เลย" (คว้า ghost ชิ้นอื่นที่ติดค้าง — ถือ Book ได้ Large vase)
+--   ชื่อตรงเท่านั้นที่เชื่อได้ + ทิ้งของ = กด G (ผู้ใช้ยืนยัน) เช็คจริงว่าหลุดมือผ่าน Camera.HeldViewmodel
+--   มีสำรอง: ปุ่มจอ (ทิ้ง/trash/drop/bin) และคีย์ Q/X/Backspace
 -- v6.0: ของที่วางไม่ออก (จุดเต็มหมด/ไม่มีจุดว่าง) เคยค้างมือสะสมจนระบบตัน ("มือเต็ม! x2") →
 --   เพิ่ม pressDropButton() หาปุ่ม "ทิ้ง" ของเกมบนจอแล้วคลิกให้เอง (firesignal หรือคลิกจริงผ่าน VIM)
 --   เรียกอัตโนมัติทุกครั้งที่: มือเต็ม / วางไม่เข้าครบ 3 จุด / ไม่มีจุดว่าง — มือว่างตลอด งานไม่สะดุด
@@ -762,10 +762,41 @@ local function runAuto()
 
     -- v6.0: ทิ้งอัตโนมัติ — หาปุ่ม "ทิ้ง" ของเกมบนจอแล้วคลิกให้เอง (ทาง firesignal ก่อน ไม่มีก็
     -- คลิกจริงกลางปุ่มผ่าน VirtualInputManager) ใช้ตอนมือเต็ม/วางไม่ออก จะได้ไม่มีของค้างมือสะสม
+    -- ถืออยู่ไหม? เช็คจาก Camera.HeldViewmodel (โมเดลของที่ถือแปะกล้อง — มีลูก = ถืออยู่)
+    local function isCarrying()
+        local hv = workspace:FindFirstChild("Camera")
+        hv = hv and hv:FindFirstChild("HeldViewmodel")
+        return hv ~= nil and #hv:GetChildren() > 0
+    end
+
+    -- v6.2: ทิ้งของ — ผู้ใช้ยืนยัน: ปุ่ม G คือทิ้ง → กด G ก่อนเลย แล้วเช็คจริงผ่าน HeldViewmodel
     local function pressDropButton()
+        if not isCarrying() then return true end
+        local VIM = game:GetService("VirtualInputManager")
+        -- ทางหลัก: กด G (ยืนยันจากผู้ใช้)
+        pcall(function()
+            VIM:SendKeyEvent(true, Enum.KeyCode.G, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.G, false, game)
+        end)
+        task.wait(0.3)
+        if not isCarrying() then
+            alog("🗑️ ทิ้งสำเร็จ (G)")
+            return true
+        end
+        -- ทางสำรอง 1: ปุ่มบนจอ — จับทั้งข้อความ "ทิ้ง" และชื่อปุ่มแนว trash/drop/discard/bin/throw
         for _, d in ipairs(LP.PlayerGui:GetDescendants()) do
-            if (d:IsA("TextButton") or d:IsA("TextLabel")) and tostring(d.Text):find("ทิ้ง") then
-                local btn = d:IsA("TextButton") and d
+            local isBtn = d:IsA("TextButton") or d:IsA("ImageButton")
+            local hit = false
+            if d:IsA("TextButton") or d:IsA("TextLabel") then
+                hit = tostring(d.Text):find("ทิ้ง") ~= nil
+            end
+            if not hit and isBtn then
+                local n = d.Name:lower()
+                hit = n:find("trash") or n:find("drop") or n:find("discard") or n:find("bin") or n:find("throw")
+            end
+            if hit then
+                local btn = isBtn and d
                     or d:FindFirstAncestorWhichIsA("TextButton")
                     or d:FindFirstAncestorWhichIsA("ImageButton")
                 if btn and btn.Visible then
@@ -773,18 +804,33 @@ local function runAuto()
                     if not usedSignal then
                         pcall(function()
                             local p = btn.AbsolutePosition + btn.AbsoluteSize / 2
-                            local VIM = game:GetService("VirtualInputManager")
                             VIM:SendMouseButtonEvent(p.X, p.Y, 0, true, game, 1)
                             task.wait(0.03)
                             VIM:SendMouseButtonEvent(p.X, p.Y, 0, false, game, 1)
                         end)
                     end
-                    alog("🗑️ กดปุ่มทิ้งให้แล้ว (" .. btn:GetFullName():sub(-40) .. ")")
-                    return true
+                    task.wait(0.3)
+                    if not isCarrying() then
+                        alog("🗑️ ทิ้งสำเร็จ (ปุ่ม " .. btn.Name .. ")")
+                        return true
+                    end
                 end
             end
         end
-        alog("⚠️ หาปุ่ม \"ทิ้ง\" บนจอไม่เจอ — ต้องทิ้งเอง")
+        -- ทางสำรอง 2: ปุ่มคีย์บอร์ดอื่นๆ เช็คของหลุดมือหลังกดทุกครั้ง
+        for _, key in ipairs({ Enum.KeyCode.Q, Enum.KeyCode.X, Enum.KeyCode.Backspace }) do
+            pcall(function()
+                VIM:SendKeyEvent(true, key, false, game)
+                task.wait(0.05)
+                VIM:SendKeyEvent(false, key, false, game)
+            end)
+            task.wait(0.3)
+            if not isCarrying() then
+                alog("🗑️ ทิ้งสำเร็จ (ปุ่ม " .. key.Name .. ")")
+                return true
+            end
+        end
+        alog("⚠️ ทิ้งไม่สำเร็จทุกทาง — ต้องทิ้งเอง (บอกหน่อยว่าปุ่มทิ้งของเกมคืออะไร)")
         return false
     end
 
@@ -822,16 +868,8 @@ local function runAuto()
             local folder = workspace:FindFirstChild("Camera")
             folder = folder and folder:FindFirstChild("SortingGhosts")
             ghost = folder and folder:FindFirstChild(wantGhostName)
-            -- v6.1: ชื่อตรงไม่เจอ แต่มีไฮไลต์ติดอยู่ "จุดเดียว" (จุดเขียวที่ผู้เล่นเห็นจริง) → ใช้จุดนั้น
-            -- เลย จุดเดียวไม่กำกวม (log ชื่อจริงมาด้วยเพื่อเรียนรู้แพทเทิร์นชื่อ)
-            if not ghost then
-                local lit = {}
-                for g in pairs(getLitGhosts()) do lit[#lit + 1] = g end
-                if #lit == 1 then
-                    ghost = lit[1]
-                    alog(("💚 ใช้จุดไฮไลต์เดียวที่ติด: %s (ถือ %s)"):format(ghost.Name, item.Name))
-                end
-            end
+            -- v6.2: ตัดสูตร "ไฮไลต์จุดเดียวใช้ได้เลย" ทิ้ง — เจอคว้า ghost ของชิ้นอื่นที่ติดค้าง
+            -- (ถือ Book แต่ไปคว้า Large vaseHomeGhost) ชื่อตรงเท่านั้นที่เชื่อได้
             if not ghost then task.wait(0.05) end
         end
         -- v5.7 วินิจฉัย: อ่านไฮไลต์ไม่เจอสักครั้ง (log ขึ้น "เดาชื่อ" ตลอด) — ดูให้ชัดว่าทำไม
