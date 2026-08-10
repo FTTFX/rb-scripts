@@ -1,4 +1,7 @@
--- 78RB_DuckAim.lua v5.1 — AUTO SHOOT ยิงครบ 2 remote + counter (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- 78RB_DuckAim.lua v5.2 — แก้ compile error "..." (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.2: บั๊กตั้งแต่ v5.0 ทำ GUI ไม่ขึ้นเลย — เอา table.pack(...) ไปไว้ใน pcall(function()...) ซึ่งเป็น
+--   ฟังก์ชันซ้อนไม่มี vararg → "Cannot use '...' outside of a vararg function" → ย้าย table.pack(...)
+--   มาชั้นนอก แล้วให้ closure ของ pcall ใช้ตัวแปร a ที่ capture ไว้แทน
 -- v5.0: DuckSpy พิสูจน์ว่า 1 นัด = 2 remote — A(origin,dir,counter,ts) + B(counter) counter เดินหน้า
 --   ทุกนัด (4,5,6,...) v4.0 ยิง remote เดียว+เลขคงที่เลยไม่ติด → เรียนทั้ง 2 remote, counter เดินหน้า
 -- v5.1: log ยืนยัน origin ขยับตามตัวผู้เล่นตอนเดิน (831→832→814...) → ใช้ตำแหน่งกล้องปัจจุบันเป็น origin
@@ -213,19 +216,21 @@ pcall(function()
 if hookmetamethod and getnamecallmethod then
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
+        -- ดึง varargs ที่ชั้นนอก (vararg function) ก่อน — ห้ามใช้ ... ในฟังก์ชันซ้อนของ pcall
+        local a = table.pack(...)
+        local method = self
         pcall(function()
             if _G.DA78_GEN ~= MY_GEN or getnamecallmethod() ~= "FireServer" then return end
-            local a = table.pack(...)
             -- A: (Vector3, Vector3, number, number) = คำสั่งเล็ง
             if a.n >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
                 and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
-                aimRemote = self
+                aimRemote = method
                 shotOrigin = a[1]
                 if a[3] > shotCounter then shotCounter = a[3] end
                 setStatus("[DuckAim78] ✅ จำปืน(เล็ง)แล้ว")
             -- B: (number เดียว) = คำสั่งยืนยันนัด
             elseif a.n == 1 and typeof(a[1]) == "number" then
-                fireRemote = self
+                fireRemote = method
                 if a[1] > shotCounter then shotCounter = a[1] end
             end
         end)
