@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.7 — วินิจฉัยไฮไลต์ + กด E เฉพาะจุดชัวร์ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.8 — เจอจุดวางจริงแล้ว: ghost ชื่อตรง = จุดจริง (เกม "ล้างบ้านขำๆ")
+-- v5.8: log 🔍 v5.7 ให้คำตอบ — ghost ชื่อ <ของ>HomeGhost "มีอยู่" แต่ "ติดไฟ=0 ตลอด" (เกมเลิกใช้
+--   Highlight.Enabled) และ SortingGhosts มี ghost แค่จุดที่เกี่ยวข้อง → เลิกเช็คติดไฟ ใช้
+--   FindFirstChild ชื่อตรงตรงๆ = ได้จุดวางจริงทุกครั้ง (บิน+กด E ที่จุดนั้นได้เลย)
 -- v5.7: "this spot wants Seat!" = ยังหาจุดวางจริงไม่เจอ (อ่านไฮไลต์ไม่เจอเลย ขึ้น "เดาชื่อ" ตลอด)
 --   → เพิ่ม log วินิจฉัย: ghost ทั้งหมดกี่ตัว/ติดไฟกี่ตัว/ชื่อที่ต้องการมีจริงไหม จะได้รู้ว่าพังตรงไหน
 --   + กด E เฉพาะตอนเจอ ghost จริง (กดตอนยืนผิดจุด เกมหยิบของอื่นซ้อนจนมือเต็ม)
@@ -758,14 +761,15 @@ local function runAuto()
         if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
         pcall(function() learnedRemote:FireServer("pickupItem", item) end)
 
-        -- (2) ดูไฮไลต์: ghost ชื่อ <ชื่อของ>HomeGhost ที่ติดไฟอยู่ตอนนี้
+        -- (2) หาจุดวางจริง — v5.8 (คำตอบจาก log 🔍): เกมสร้าง ghost เฉพาะจุดที่เกี่ยวข้องตอนถือของ
+        -- อยู่แล้ว และไม่ได้ใช้ Highlight.Enabled (ติดไฟ=0 ตลอด) → แค่หา ghost "ชื่อตรง" ก็คือจุดจริง
         local wantGhostName = item.Name .. "HomeGhost"
         local ghost
         local t0 = tick()
-        while AUTO_ON and _G.AF77_GEN == MY_GEN and not ghost and tick() - t0 < 1.0 do
-            for g in pairs(getLitGhosts()) do
-                if g.Name == wantGhostName then ghost = g; break end
-            end
+        while AUTO_ON and _G.AF77_GEN == MY_GEN and not ghost and tick() - t0 < 1.2 do
+            local folder = workspace:FindFirstChild("Camera")
+            folder = folder and folder:FindFirstChild("SortingGhosts")
+            ghost = folder and folder:FindFirstChild(wantGhostName)
             if not ghost then task.wait(0.05) end
         end
         -- v5.7 วินิจฉัย: อ่านไฮไลต์ไม่เจอสักครั้ง (log ขึ้น "เดาชื่อ" ตลอด) — ดูให้ชัดว่าทำไม
