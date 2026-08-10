@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoSpray.lua v1.9 — เริ่มจากจุดที่ยังไม่สะอาดเสมอ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v2.0 — เร่งความเร็วทั้งระบบ (เกม "ล้างบ้านขำๆ")
+-- v2.0: batch 8→20 จุด/ชุด, ช่วงยิง 0.12→0.05 วิ, บิน 100→180, ตัดเวลารอหลังบิน/จบด้านลงเกือบหมด
+--   รวมแล้วต่อด้านเร็วขึ้น ~4-5 เท่า (พักกันเตือนยังมี: ทุก 60 ชุด พัก 1.5 วิ)
 -- v1.9: SPRAY เช็ค dirtVisible ซ้ำก่อนฉีดทุกจุด (จุดที่สะอาดระหว่างรอบถูกข้ามทันที) — ไม่วนจาก 0
 --   + status โชว์ตัวเลข "ล้างแล้ว" จริงจาก HUD แทนเลขรอบ
 -- v1.8: GUIDE บอกเหลือ 291 จุดทั้งที่จริงเหลือ 2 — โฟลเดอร์ Dirt มี Part ที่ล้างแล้ว/สำรอง (โปร่งใส)
@@ -36,7 +38,7 @@ local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 
 local SPRAY_ON = false
-local FLY_SPEED = 100
+local FLY_SPEED = 180 -- v2.0: 100→180
 local learnedRemote = _G.RB77_REMOTE -- จำ remote ที่เรียนรู้ถูกไว้แล้วข้ามรอบ (ตัวเดียวกับ AutoFly77)
 
 -- ==================== GUI ====================
@@ -272,8 +274,8 @@ end
 
 -- ==================== ระบบพัก (กันข้อความ "คุณไม่ได้พักเลย!" จากการฉีดต่อเนื่องไม่หยุด) ====================
 local sprayBurstCount = 0
-local SPRAY_BURSTS_BEFORE_REST = 25 -- ยิง reportSpray ติดกันกี่ครั้งแล้วพัก
-local REST_DURATION = 2.5
+local SPRAY_BURSTS_BEFORE_REST = 60 -- v2.0: batch ใหญ่ขึ้น จำนวน burst รวมน้อยลง พักถี่เท่าเดิมไม่จำเป็น
+local REST_DURATION = 1.5
 local function maybeRest()
     sprayBurstCount += 1
     if sprayBurstCount >= SPRAY_BURSTS_BEFORE_REST then
@@ -290,7 +292,7 @@ local function sprayFace(part, faceName)
     if #points == 0 then return end
 
     local normal = part.CFrame:VectorToWorldSpace(FACES[faceName].normal)
-    local BATCH = 8
+    local BATCH = 20 -- v2.0: 8→20 จุดต่อชุด
     local total = #points
     local done = 0
     local i = 1
@@ -308,13 +310,13 @@ local function sprayFace(part, faceName)
             pcall(function() learnedRemote:FireServer("reportWashProgress", part, faceName, progress) end)
             setStatus(("[AutoSpray77] ฉีด %s (%s): %d%%"):format(part.Name, faceName, math.floor(progress * 100)))
         end
-        task.wait(0.12)
+        task.wait(0.05) -- v2.0: 0.12→0.05
         maybeRest()
     end
     pcall(function() learnedRemote:FireServer("reportWashProgress", part, faceName, 1) end)
-    task.wait(0.15)
+    task.wait(0.08)
     pcall(function() learnedRemote:FireServer("reportSurfaceComplete", part, faceName) end)
-    task.wait(0.2)
+    task.wait(0.08)
 end
 
 -- ==================== อ่านความคืบหน้าจริงจาก HUD เกม ("วัตถุที่ล้างแล้ว: X/Y") ====================
@@ -367,7 +369,7 @@ local function runSpray()
                     local doneNow = getGameProgress()
                     setStatus(("[AutoSpray77] ฉีด: %s (ล้างแล้ว %s)"):format(part.Name, doneNow or "?"))
                     flyTo(part.Position, 6)
-                    task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์ก่อนยิง remote (บินเร็วไปแล้วยิงทันทีอาจถูกปฏิเสธ)
+                    task.wait(0.05) -- v2.0: 0.15→0.05
                     for _, faceName in ipairs(ACTIVE_FACES) do
                         if not SPRAY_ON then break end
                         sprayFace(part, faceName)
