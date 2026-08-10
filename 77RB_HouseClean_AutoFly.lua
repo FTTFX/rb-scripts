@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v5.5 — บินจับ-บินวาง + สล็อตสำรอง + บล็อกวาปลงเหว (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.6 — วางด้วยการกดปุ่ม E จริง (เกม "ล้างบ้านขำๆ")
+-- v5.6: ตอนวาง เปลี่ยนเป็นจำลองกด E (VirtualInputManager) ให้เดินผ่านระบบหยิบ/วางของเกมเอง
+--   ถ้ากดแล้วของยังไม่เข้าสล็อต ค่อย fallback ยิง remote placeCarried ตรงแบบเดิม
 -- v5.5: ❌ ส่วนใหญ่คือจุดแรกที่เลือกเต็ม — เพิ่มลองสล็อตชื่อเดียวกันจุดถัดไปสูงสุด 3 จุด/ชิ้น
 --   (เรียง: จุดที่ไฮไลต์ชี้ → PairId ตรง → RoomId ตรง → ที่เหลือ) บินไปวางทีละจุดจนกว่าจะเข้า
 -- v5.4: หาสาเหตุขั้นเด็ดขาด — ดัก __newindex ทุกการเซ็ต CFrame บนตัวเรา ถ้าเป็นค่าลงเหว (Y<-1000)
@@ -800,8 +802,21 @@ local function runAuto()
                 local spos = (ci == 1 and ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
                 if spos then flyTo(clampY(spos), 6) end
                 if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
-                pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
-                task.wait(0.2)
+
+                -- v5.6: วางด้วยการ "กดปุ่ม E จริง" (เดินผ่านระบบของเกมเอง) — ถ้าไม่เข้า ค่อย
+                -- fallback ยิง remote ตรงแบบเดิม
+                pcall(function()
+                    local VIM = game:GetService("VirtualInputManager")
+                    VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+                    task.wait(0.05)
+                    VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+                end)
+                task.wait(0.25)
+                local ipE, spE = partPosition(item), partPosition(slot)
+                if not (ipE and spE and (ipE - spE).Magnitude < 6) then
+                    pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
+                    task.wait(0.2)
+                end
 
                 local ip, sp = partPosition(item), partPosition(slot)
                 if ip and sp and (ip - sp).Magnitude < 6 then
