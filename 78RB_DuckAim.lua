@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v7.7 — นับลูปยิงโชว์ (หาบั๊กยิงถี่) (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v7.7: ยังยิงถี่+ไม่หน่วง — ฝัง _G.DA78_LOOPS นับลูปที่วิ่งจริง โชว์ "[ลูป×N]" ใน status ถ้า N>1 = ลูปซ้อน
+--   (ต้นเหตุ) ถ้า N=1 แต่ยังถี่ = ปืน burst หลายนัด/นัด
 -- 78RB_DuckAim.lua v7.6 — ปุ่ม −/+ ปรับค่า (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v7.6: เปลี่ยนช่องพิมพ์เป็นปุ่ม −/+ (แตะง่ายกว่า ไม่ต้องพึ่งคีย์บอร์ด/FocusLost) — หน่วงยิง ±0.1 วิ,
 --   กระสุน ±1 นัด ลูปยิงยังอ่านค่าจาก label สดๆ ทุกนัดเหมือนเดิม
@@ -473,6 +476,7 @@ local function shootStart()
     -- v7.4 (แบบ C): ยิงตามจำนวนนัดที่ตั้งเป๊ะๆ แล้วไปตัวถัดไปเลย — ไม่เช็คตายใดๆ (ผู้ใช้จูนเอง:
     -- ไม่ตายก็เพิ่มจำนวนนัด/อัปเกรดปืนเอง) บอสยกเว้น: ยิงไม่จำกัดจนหายไป (ตาย)
     task.spawn(function()
+        _G.DA78_LOOPS = (_G.DA78_LOOPS or 0) + 1 -- v7.7: นับลูปที่วิ่งอยู่ (>1 = ลูปซ้อน = บั๊ก)
         while SHOOT_ON and _G.DA78_GEN == MY_GEN and _G.DA78_SHOOTID == myLoop do
             -- v7.5: อ่านค่าจากช่องพิมพ์สดๆ ทุกนัด (executor บางตัว FocusLost ไม่ทำงาน ค่าเลยไม่อัปเดต)
             local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
@@ -490,14 +494,15 @@ local function shootStart()
                     if not p then break end
                     fireShotAt(p)
                     shots = shots + 1
-                    setStatus(("[DuckAim78] 🔫 %s%s (%d/%s นัด @%.2fวิ, รวม %d)"):format(
-                        isBoss and "บอส " or "", target.Name, shots,
-                        isBoss and "∞" or tostring(maxShots), rate, _G.DA78_CTR or 0))
+                    setStatus(("[DuckAim78] 🔫%s %d/%s นัด @%.1fวิ [ลูป×%d]"):format(
+                        isBoss and " บอส" or "", shots,
+                        isBoss and "∞" or tostring(maxShots), rate, _G.DA78_LOOPS or 1))
                     task.wait(rate) -- พักระหว่างนัดตามช่อง "หน่วงยิง"
                 end
                 if not isBoss then markShot(target) end
             end
         end
+        _G.DA78_LOOPS = math.max(0, (_G.DA78_LOOPS or 1) - 1) -- ลูปนี้จบแล้ว
     end)
 end
 local function shootToggle()
