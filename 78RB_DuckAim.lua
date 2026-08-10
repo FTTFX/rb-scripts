@@ -1,4 +1,6 @@
--- 78RB_DuckAim.lua v4.0 — AUTO SHOOT ยิงออโต้ (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- 78RB_DuckAim.lua v4.1 — AUTO SHOOT ยิงตามทิศกล้อง (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v4.1: v4.0 ยิงออกแต่เป็ดไม่ตาย — น่าจะเซิร์ฟเวอร์เช็คว่า dir ต้องตรงทิศกล้อง (กันโกง) →
+--   AUTO SHOOT เปิดล็อคกล้องอัตโนมัติ ยิง dir = Camera.LookVector และยิงเฉพาะตอนกล้องเข้าเป้า <8°
 -- v4.0: เพิ่ม AUTO SHOOT (คีย์ K) — เรียนปืนแบบ "แอบดูไม่แก้ไข": hook __namecall อ่าน args ตอนผู้เล่น
 --   ยิงเองจริง 1 นัด เพื่อจำ remote + รูปแบบคำสั่ง (ไม่แก้ค่า ไม่พังการรีโหลดแบบ SILENT เดิม) แล้วยิง
 --   ซ้ำเองใส่เป็ดตามโหมด TARGET ทุก 0.12 วิ (อัปเดต timestamp ด้วย GetServerTimeNow กันโดนปฏิเสธ)
@@ -220,7 +222,9 @@ end
 local function fireAt(duckPos3)
     if not (shootRemote and shootTemplate) then return false end
     local origin = Camera.CFrame.Position
-    local dir = (duckPos3 - origin).Unit
+    -- v4.1: ยิงตาม "ทิศที่กล้องมองจริง" ไม่ใช่ทิศไปเป้าตรงๆ — เผื่อเซิร์ฟเวอร์เช็คว่า dir ต้องตรงกล้อง
+    -- (กันโกง) กล้องถูก AIM ล็อคที่เป็ดอยู่แล้ว LookVector จึงชี้เป้าพอดี
+    local dir = Camera.CFrame.LookVector
     local a = { origin, dir, shootTemplate[3], shootTemplate[4] }
     -- อาร์กที่ 4 เป็น timestamp — อัปเดตให้สดถ้าเกมใช้เวลาเซิร์ฟเวอร์ (กันโดนปฏิเสธว่าเก่า)
     local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
@@ -241,14 +245,25 @@ local function shootStart()
     end
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
+    if not AIM_ON then aimStart() end -- v4.1: เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
     task.spawn(function()
         while SHOOT_ON and _G.DA78_GEN == MY_GEN do
             local d = pickDuck(Camera.CFrame.Position)
             if d and d.model.Parent then
                 local p = duckPos(d.model)
                 if p then
-                    fireAt(p)
-                    setStatus(("[DuckAim78] 🔫 ยิงออโต้: %s"):format(d.model.Name))
+                    -- ยิงเมื่อกล้องหันเข้าเป้าใกล้พอแล้ว (< 8°) — กัน dir เพี้ยนตอนกล้องยังหมุนเข้าเป้า
+                    local toD = (p - Camera.CFrame.Position)
+                    if toD.Magnitude > 1 then
+                        local ang = math.deg(math.acos(math.clamp(
+                            Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
+                        if ang < 8 then
+                            fireAt(p)
+                            setStatus(("[DuckAim78] 🔫 ยิง: %s"):format(d.model.Name))
+                        else
+                            setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
+                        end
+                    end
                 end
             end
             task.wait(FIRE_INTERVAL)
