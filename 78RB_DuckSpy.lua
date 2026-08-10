@@ -1,3 +1,5 @@
+-- 78RB_DuckSpy.lua v1.6 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
+-- v1.6: ปุ่ม BOSS ยิง ray จากกล้องด้วย — ผู้ใช้จ้องบอสอยู่ = บอกชื่อ/พาธโมเดลบอสที่เล็งตรงๆ (เลิกเดาชื่อ)
 -- 78RB_DuckSpy.lua v1.4 — NetSpy เกม "ยิงเป็ด" (โปรเจ็ก 78)
 -- v1.4: ปุ่ม BOSS — หาป้าย "<เลข> HP" ทั้ง workspace+PlayerGui แล้วดัมป์พาธเต็มของโมเดลบอส +
 --   โครงสร้าง + ValueBase ที่ค่าตรงกับ HP ในป้าย (⬅️) เพื่อรู้ว่าบอสจริงอยู่ที่ไหน/ชื่ออะไร
@@ -228,6 +230,30 @@ end)
 
 -- ==================== [BOSS] หาการ์ด HP บอส แล้วดัมป์พาธ/โครงสร้าง/ที่เก็บ HP ====================
 bossB.MouseButton1Click:Connect(function()
+    -- v1.6: ยิง ray จากกล้องไปข้างหน้า — ผู้ใช้จ้องบอสอยู่ = โดนโมเดลบอสตรงๆ บอกชื่อ/พาธเป๊ะ
+    local cam = workspace.CurrentCamera
+    local rp = RaycastParams.new()
+    rp.FilterType = Enum.RaycastFilterType.Exclude
+    rp.FilterDescendantsInstances = { LP.Character }
+    local hit = workspace:Raycast(cam.CFrame.Position, cam.CFrame.LookVector * 2000, rp)
+    if hit and hit.Instance then
+        log("===== [เล็งอยู่] สิ่งที่กล้องจ้อง =====")
+        log("  Part: " .. hit.Instance:GetFullName())
+        local m = hit.Instance:FindFirstAncestorWhichIsA("Model")
+        if m then
+            log("  🎯 โมเดล: " .. m:GetFullName())
+            log("    parent folder: " .. (m.Parent and m.Parent.Name or "?"))
+            for _, c in ipairs(m:GetChildren()) do
+                local ex = c:IsA("ValueBase") and (" = " .. tostring(c.Value)) or ""
+                log(("    - %s (%s)%s"):format(c.Name, c.ClassName, ex))
+            end
+            for k, v in pairs(m:GetAttributes()) do log(("    [attr] %s = %s"):format(k, tostring(v))) end
+        end
+        log("===== จบ =====")
+    else
+        log("[เล็งอยู่] ray ไม่โดนอะไร — เล็งให้ตรงบอสแล้วกดใหม่")
+    end
+
     -- หา TextLabel ที่มีข้อความ "<เลข> HP" ทั้งใน workspace และ PlayerGui
     local found = {}
     local function scan(root, where)
