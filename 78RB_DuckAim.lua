@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v6.4 — ยิงตามจังหวะจริงของปืน (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.4: เมนูอัปเกรดเผยปืนมีลิมิตจริง — แม็ก 2 นัด รีโหลด 1.5 วิ ยิงเร็วกว่านี้กระสุนไม่ออก (เซิร์ฟเวอร์
+--   ทิ้งนัดเกิน) → เลิกยิงรัว 0.18 เปลี่ยนเป็น 2 นัดรวด(0.25) แล้วรอรีโหลด 1.6 วิ (ค่าฐาน — ยังไม่อ่าน
+--   ค่าอัปเกรดจริง รอ spy)
 -- 78RB_DuckAim.lua v6.3 — เล็งบอส + ยิงค้างจนตาย (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.3: บอส (เช่น "Silly Duck 150 HP") ไม่ถูกเล็ง เพราะชื่อไม่มี "Duck" — เป็ดปกติไม่มี Humanoid แต่
 --   บอสมี HP bar = มี Humanoid → findBoss หา Model ที่มี Humanoid.Health>0 (ใน Ume+workspace) เล็ง
@@ -298,8 +302,13 @@ end
 --   B(fireRemote): FireServer(counter)   ← counter เดียวกัน เดินหน้าทุกนัด (4,5,6,...)
 local SHOOT_ON = false
 -- ปืนเก็บใน _G.DA78_AIM / _G.DA78_FIRE / _G.DA78_ORIGIN / _G.DA78_CTR (hook เขียน ทุก gen ใช้ร่วม)
-local FIRE_INTERVAL = 0.18           -- ยิงถี่ (รีโหลดเป็นอนิเมชั่นฝั่งจอ ยิง remote ตรงข้ามได้)
 local lastShotClock = 0
+-- v6.4: เมนูอัปเกรดเผยว่าปืนจริงมีลิมิต — แม็ก 2 นัด, รีโหลด 1.5 วิ ยิงเร็วกว่านี้กระสุนไม่ออกจริง
+-- (เซิร์ฟเวอร์ทิ้งนัดเกิน) → ยิงตามจังหวะจริง: 2 นัดรวด แล้วรอรีโหลด (เผื่อขึ้นแม็ก/รีโหลดถ้าอัป)
+local MAG_SIZE = 2
+local RELOAD_TIME = 1.6   -- เผื่อจาก 1.5 นิดกันชนขอบ
+local SHOT_GAP = 0.25     -- ช่วงระหว่าง 2 นัดในแม็กเดียว
+local magLeft = MAG_SIZE
 
 -- v5.5: รายงานผลติดตั้ง hook — เดิม pcall กลืน error เงียบ ทำให้ไม่รู้ว่า hook ไม่ติด (เลยจับปืนไม่ได้)
 local hookOK, hookErr = pcall(function()
@@ -374,6 +383,7 @@ local function shootStart()
         return
     end
     SHOOT_ON = true
+    magLeft = MAG_SIZE -- เริ่มด้วยแม็กเต็ม
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
     if not AIM_ON then aimStart() end -- เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
     task.spawn(function()
@@ -387,19 +397,34 @@ local function shootStart()
                     if toD.Magnitude > 1 then
                         local ang = math.deg(math.acos(math.clamp(
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
-                        if ang < 4 then -- v6.1: 10°→4° ยิงเฉพาะตอนกล้องเข้าเป้าจริง เล็งแม่นขึ้น
+                        if ang < 4 then -- ยิงเฉพาะตอนกล้องเข้าเป้าจริง
                             fireShot()
-                            -- v6.3: บอสยิงค้างจนตาย (ไม่ mark) / เป็ดปกติยิงนัดเดียวแล้วข้าม
+                            magLeft = magLeft - 1
+                            -- v6.4: บอสยิงค้างจนตาย (ไม่ mark) / เป็ดปกติยิงนัดเดียวแล้วข้าม
                             if not d.boss then markShot(d.model) end
-                            setStatus(("[DuckAim78] 🔫 ยิง%s: %s (นัด %d)"):format(
-                                d.boss and " บอส" or "", d.model.Name, _G.DA78_CTR or 0))
+                            setStatus(("[DuckAim78] 🔫 ยิง%s: %s (เหลือแม็ก %d)"):format(
+                                d.boss and " บอส" or "", d.model.Name, magLeft))
+                            -- แม็กหมด → รอรีโหลดตามจริง (2 นัด/แม็ก, รีโหลด 1.5 วิ) แล้วเติมแม็ก
+                            if magLeft <= 0 then
+                                setStatus("[DuckAim78] 🔄 รีโหลด...")
+                                task.wait(RELOAD_TIME)
+                                magLeft = MAG_SIZE
+                            else
+                                task.wait(SHOT_GAP) -- ยิงนัดที่ 2 ในแม็กเร็วๆ
+                            end
                         else
                             setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
+                            task.wait(0.03)
                         end
+                    else
+                        task.wait(0.03)
                     end
+                else
+                    task.wait(0.05)
                 end
+            else
+                task.wait(0.05)
             end
-            task.wait(FIRE_INTERVAL)
         end
     end)
 end
