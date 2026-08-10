@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v5.7 — สถานะปืนแยกบรรทัด (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.7: AIM เขียนทับ status ทุกเฟรมจนมองไม่เห็นสถานะเรียนปืน → เพิ่มบรรทัด gunLbl แยก โชว์
+--   hook OK/ไม่ติด + เล็ง✓/✗ ยิง✓/✗ + นัดล่าสุด (AIM แตะไม่ได้) + ปุ่มบอกให้แตะบนมือถือ
 -- 78RB_DuckAim.lua v5.5 — รายงานผลติดตั้ง hook + ตัด reload มั่ว (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v5.5: DuckSpy พบว่าไม่มี remote รีโหลด (รีโหลด=อนิเมชั่นฝั่งจอ) → ตัดโค้ดจับ/ยิงรีโหลดออก ยิง 2
 --   remote รัวๆ พอ + pcall เดิมกลืน error ตอนติดตั้ง hook เงียบ ทำให้จับปืนไม่ได้แบบไม่รู้สาเหตุ →
@@ -40,6 +43,9 @@ local Camera = workspace.CurrentCamera
 
 local AIM_ON = false
 local SMOOTH = 0.35
+-- ประกาศล่วงหน้า (ให้ setGun/ปุ่มอ้างถึงตัวเดียวกับที่ hook เขียน)
+local aimRemote, fireRemote
+local shotCounter = 0
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -60,6 +66,18 @@ status.TextSize = 12; status.Font = Enum.Font.Code; status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left; status.TextYAlignment = Enum.TextYAlignment.Top
 local function setStatus(s) status.Text = s end
 
+-- v5.7: บรรทัดสถานะปืนแยกต่างหาก — AIM เขียนทับ status ทุกเฟรมจนมองไม่เห็นสถานะเรียนปืน
+local gunLbl = Instance.new("TextLabel", frame)
+gunLbl.Size = UDim2.new(1, -8, 0, 16); gunLbl.Position = UDim2.new(0, 4, 0, 40)
+gunLbl.BackgroundTransparency = 1; gunLbl.TextColor3 = Color3.fromRGB(140, 255, 140)
+gunLbl.TextSize = 11; gunLbl.Font = Enum.Font.Code
+gunLbl.TextXAlignment = Enum.TextXAlignment.Left
+gunLbl.Text = "ปืน: ยังไม่รู้ — ยิงเอง 1 นัด"
+local function setGun()
+    gunLbl.Text = ("ปืน: เล็ง%s ยิง%s  นัดล่าสุด %d"):format(
+        aimRemote and "✓" or "✗", fireRemote and "✓" or "✗", shotCounter)
+end
+
 local function mkbtn(txt, y, col)
     local b = Instance.new("TextButton", frame)
     b.Size = UDim2.new(1, -8, 0, 26); b.Position = UDim2.new(0, 4, 0, y)
@@ -67,12 +85,12 @@ local function mkbtn(txt, y, col)
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
-local aimB    = mkbtn("AIM: OFF (คีย์ลัด L)", 48, Color3.fromRGB(190, 60, 60))
-local shootB  = mkbtn("AUTO SHOOT: OFF (คีย์ K)", 78, Color3.fromRGB(60, 170, 90))
-local targetB = mkbtn("TARGET: ไม่มีอะไรบัง", 108, Color3.fromRGB(60, 110, 180))
-local stopB   = mkbtn("STOP", 138, Color3.fromRGB(150, 60, 30))
-local closeB  = mkbtn("✕ ปิด", 168, Color3.fromRGB(90, 40, 40))
-frame.Size = UDim2.new(0, 250, 0, 200)
+local aimB    = mkbtn("AIM: OFF (คีย์ลัด L)", 60, Color3.fromRGB(190, 60, 60))
+local shootB  = mkbtn("AUTO SHOOT: OFF (แตะปุ่มนี้ / คีย์ K)", 90, Color3.fromRGB(60, 170, 90))
+local targetB = mkbtn("TARGET: ไม่มีอะไรบัง", 120, Color3.fromRGB(60, 110, 180))
+local stopB   = mkbtn("STOP", 150, Color3.fromRGB(150, 60, 30))
+local closeB  = mkbtn("✕ ปิด", 180, Color3.fromRGB(90, 40, 40))
+frame.Size = UDim2.new(0, 250, 0, 214)
 
 setStatus("[DuckAim78] พร้อม — ยิงเอง 1 นัดให้จำปืน แล้วกด K ยิงออโต้")
 
@@ -216,11 +234,9 @@ end
 --   A(aimRemote):  FireServer(Vector3 origin(คงที่ 780,68,104), Vector3 dir(ตามกล้อง), counter, timestamp)
 --   B(fireRemote): FireServer(counter)   ← counter เดียวกัน เดินหน้าทุกนัด (4,5,6,...)
 local SHOOT_ON = false
-local aimRemote, fireRemote          -- 2 remote ยิง
-local reloadRemote, reloadTemplate   -- v5.3: remote รีโหลด (เรียนตอนเกม auto-reload)
+-- aimRemote, fireRemote, shotCounter ประกาศล่วงหน้าด้านบนแล้ว (ให้ setGun อ้างตัวเดียวกัน)
 local shotOrigin                     -- origin จากนัดจริง
-local shotCounter = 0                -- ตัวนับนัด — เดินหน้าต่อจากที่เห็นล่าสุด
-local FIRE_INTERVAL = 0.18           -- v5.3: ยิงถี่ขึ้น (มีรีโหลดทันทีคั่นแล้ว)
+local FIRE_INTERVAL = 0.18           -- ยิงถี่ (รีโหลดเป็นอนิเมชั่นฝั่งจอ ยิง remote ตรงข้ามได้)
 local lastShotClock = 0
 
 -- v5.5: รายงานผลติดตั้ง hook — เดิม pcall กลืน error เงียบ ทำให้ไม่รู้ว่า hook ไม่ติด (เลยจับปืนไม่ได้)
@@ -248,20 +264,23 @@ end
                 aimRemote = method
                 shotOrigin = a[1]
                 if a[3] > shotCounter then shotCounter = a[3] end
-                setStatus("[DuckAim78] ✅ จำปืน(เล็ง)แล้ว")
+                setGun()
             -- B: (number เดียว) = คำสั่งยืนยันนัด
             elseif a.n == 1 and typeof(a[1]) == "number" then
                 fireRemote = method
                 if a[1] > shotCounter then shotCounter = a[1] end
+                setGun()
             end
         end)
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
     end)
 end)
 if hookOK then
-    setStatus("[DuckAim78] ✅ hook พร้อม — ยิงเอง 1 นัดให้จำปืน แล้วกด K")
+    setStatus("[DuckAim78] ✅ hook พร้อม — ยิงเอง 1 นัดให้จำปืน")
+    gunLbl.Text = "ปืน: hook OK — ยิงเอง 1 นัด"
 else
-    setStatus("[DuckAim78] ❌ hook ไม่ติด: " .. tostring(hookErr))
+    setStatus("[DuckAim78] ❌ hook ไม่ติด")
+    gunLbl.Text = "hook ไม่ติด: " .. tostring(hookErr)
 end
 
 -- ยิง 1 นัดสมบูรณ์: A(origin, dir, counter, serverTime) แล้ว B(counter) — counter เดินหน้า
