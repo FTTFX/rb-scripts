@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v7.6 — ปุ่ม −/+ ปรับค่า (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v7.6: เปลี่ยนช่องพิมพ์เป็นปุ่ม −/+ (แตะง่ายกว่า ไม่ต้องพึ่งคีย์บอร์ด/FocusLost) — หน่วงยิง ±0.1 วิ,
+--   กระสุน ±1 นัด ลูปยิงยังอ่านค่าจาก label สดๆ ทุกนัดเหมือนเดิม
 -- 78RB_DuckAim.lua v7.5 — อ่านค่าช่องพิมพ์สดๆ (FocusLost ไม่ทำงานบางตัว) (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v7.5: ตั้งหน่วงยิง/ยิงต่อตัวแล้วไม่มีผล เพราะ executor นี้ TextBox.FocusLost ไม่ยิง ค่าค้าง default →
 --   ให้ลูปอ่าน tonumber(box.Text) สดๆ ทุกนัด พิมพ์ปุ๊บมีผลทันที (status โชว์ @Xวิ ยืนยันค่าที่ใช้จริง)
@@ -144,51 +147,47 @@ local aimB    = mkbtn("AIM: OFF (คีย์ลัด L)", 60, Color3.fromRGB(1
 local shootB  = mkbtn("AUTO SHOOT: OFF (แตะปุ่มนี้ / คีย์ K)", 90, Color3.fromRGB(60, 170, 90))
 local targetB = mkbtn("TARGET: ไม่มีอะไรบัง", 120, Color3.fromRGB(60, 110, 180))
 
--- v7.1: ช่องพิมพ์ความถี่ยิงเอง (วินาที/นัด) — เลขมาก = ยิงช้าลง
-local rateLbl = Instance.new("TextLabel", frame)
-rateLbl.Size = UDim2.new(0, 150, 0, 26); rateLbl.Position = UDim2.new(0, 4, 0, 150)
-rateLbl.BackgroundTransparency = 1; rateLbl.TextColor3 = Color3.new(1, 1, 1)
-rateLbl.Font = Enum.Font.GothamBold; rateLbl.TextSize = 12
-rateLbl.TextXAlignment = Enum.TextXAlignment.Left
-rateLbl.Text = "หน่วงยิง (วิ/นัด):"
-local rateBox = Instance.new("TextBox", frame)
-rateBox.Size = UDim2.new(0, 88, 0, 26); rateBox.Position = UDim2.new(0, 154, 0, 150)
-rateBox.BackgroundColor3 = Color3.fromRGB(40, 40, 60); rateBox.TextColor3 = Color3.new(1, 1, 1)
-rateBox.Font = Enum.Font.Code; rateBox.TextSize = 14; rateBox.ClearTextOnFocus = false
-rateBox.Text = tostring(FIRE_RATE)
-rateBox.FocusLost:Connect(function()
-    local v = tonumber(rateBox.Text)
-    if v and v > 0 then
-        FIRE_RATE = math.clamp(v, 0.05, 5)
-        rateBox.Text = tostring(FIRE_RATE)
-        setStatus(("[DuckAim78] ตั้งหน่วงยิง %.2f วิ/นัด"):format(FIRE_RATE))
-    else
-        rateBox.Text = tostring(FIRE_RATE) -- ใส่ผิด คืนค่าเดิม
-    end
-end)
+-- v7.6: แถวปรับค่าแบบปุ่ม −/+ (แตะง่ายกว่าพิมพ์) — สร้าง label + [−] [ค่า] [+]
+-- คืน valueLabel (TextLabel) ให้ลูปยิงอ่าน .Text สดๆ
+local function mkStepper(y, labelText, initial, step, minV, maxV, fmt, onChange)
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(0, 96, 0, 26); lbl.Position = UDim2.new(0, 4, 0, y)
+    lbl.BackgroundTransparency = 1; lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 12; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Text = labelText
 
--- v7.2: ช่องพิมพ์ "ยิงต่อตัว (กี่นัด)" — เป็ดปกติ ยิงครบเท่านี้แล้วไปตัวถัดไป (บอสยิงไม่จำกัด)
-local maxLbl = Instance.new("TextLabel", frame)
-maxLbl.Size = UDim2.new(0, 150, 0, 26); maxLbl.Position = UDim2.new(0, 4, 0, 180)
-maxLbl.BackgroundTransparency = 1; maxLbl.TextColor3 = Color3.new(1, 1, 1)
-maxLbl.Font = Enum.Font.GothamBold; maxLbl.TextSize = 12
-maxLbl.TextXAlignment = Enum.TextXAlignment.Left
-maxLbl.Text = "ยิงต่อตัว (นัด):"
-local maxBox = Instance.new("TextBox", frame)
-maxBox.Size = UDim2.new(0, 88, 0, 26); maxBox.Position = UDim2.new(0, 154, 0, 180)
-maxBox.BackgroundColor3 = Color3.fromRGB(40, 40, 60); maxBox.TextColor3 = Color3.new(1, 1, 1)
-maxBox.Font = Enum.Font.Code; maxBox.TextSize = 14; maxBox.ClearTextOnFocus = false
-maxBox.Text = tostring(MAX_SHOTS)
-maxBox.FocusLost:Connect(function()
-    local v = tonumber(maxBox.Text)
-    if v and v >= 1 then
-        MAX_SHOTS = math.floor(math.clamp(v, 1, 200))
-        maxBox.Text = tostring(MAX_SHOTS)
-        setStatus(("[DuckAim78] ตั้งยิงต่อตัว %d นัด (บอสไม่จำกัด)"):format(MAX_SHOTS))
-    else
-        maxBox.Text = tostring(MAX_SHOTS)
+    local minus = Instance.new("TextButton", frame)
+    minus.Size = UDim2.new(0, 30, 0, 26); minus.Position = UDim2.new(0, 104, 0, y)
+    minus.BackgroundColor3 = Color3.fromRGB(120, 50, 50); minus.TextColor3 = Color3.new(1, 1, 1)
+    minus.Font = Enum.Font.GothamBold; minus.TextSize = 18; minus.Text = "−"
+
+    local val = Instance.new("TextLabel", frame)
+    val.Size = UDim2.new(0, 70, 0, 26); val.Position = UDim2.new(0, 136, 0, y)
+    val.BackgroundColor3 = Color3.fromRGB(40, 40, 60); val.TextColor3 = Color3.new(1, 1, 1)
+    val.Font = Enum.Font.Code; val.TextSize = 15
+    val.Text = fmt(initial)
+
+    local plus = Instance.new("TextButton", frame)
+    plus.Size = UDim2.new(0, 30, 0, 26); plus.Position = UDim2.new(0, 208, 0, y)
+    plus.BackgroundColor3 = Color3.fromRGB(50, 120, 50); plus.TextColor3 = Color3.new(1, 1, 1)
+    plus.Font = Enum.Font.GothamBold; plus.TextSize = 18; plus.Text = "+"
+
+    local cur = initial
+    local function apply(delta)
+        cur = math.clamp(cur + delta, minV, maxV)
+        val.Text = fmt(cur)
+        onChange(cur)
     end
-end)
+    minus.MouseButton1Click:Connect(function() apply(-step) end)
+    plus.MouseButton1Click:Connect(function() apply(step) end)
+    return val
+end
+
+-- หน่วงยิง ±0.1 วิ (ลูปอ่านจาก rateBox.Text) / กระสุน ±1 นัด (ลูปอ่านจาก maxBox.Text)
+local rateBox = mkStepper(150, "หน่วงยิง(วิ):", FIRE_RATE, 0.1, 0.1, 5, function(v) return ("%.1f"):format(v) end,
+    function(v) setStatus(("[DuckAim78] หน่วงยิง %.1f วิ/นัด"):format(v)) end)
+local maxBox = mkStepper(180, "กระสุน(นัด):", MAX_SHOTS, 1, 1, 200, function(v) return tostring(math.floor(v)) end,
+    function(v) setStatus(("[DuckAim78] ยิงต่อตัว %d นัด (บอสไม่จำกัด)"):format(math.floor(v))) end)
 
 local stopB   = mkbtn("STOP", 210, Color3.fromRGB(150, 60, 30))
 local closeB  = mkbtn("✕ ปิด", 240, Color3.fromRGB(90, 40, 40))
