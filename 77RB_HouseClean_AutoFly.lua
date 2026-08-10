@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v6.0 — ทิ้งของค้างมืออัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v6.1 — ตามจุดเขียวที่เห็นจริง (เกม "ล้างบ้านขำๆ")
+-- v6.1: ผู้เล่นเห็นจุดเขียวแต่สคริปต์ไม่ใช้ เพราะชื่อ ghost ไม่ตรงสูตร <ของ>HomeGhost (log: ติดไฟ 1
+--   แต่ชื่อไม่มี) → ชื่อตรงไม่เจอ + มีไฮไลต์ติดจุดเดียว = ใช้จุดนั้นเลย (จุดเดียวไม่กำกวม พร้อม log
+--   ชื่อจริง) + slotFromGhost ชื่อแปลกก็หาสล็อตใกล้ ghost สุดในรัศมี 10 แทน + log ตอนหาปุ่มทิ้งไม่เจอ
 -- v6.0: ของที่วางไม่ออก (จุดเต็มหมด/ไม่มีจุดว่าง) เคยค้างมือสะสมจนระบบตัน ("มือเต็ม! x2") →
 --   เพิ่ม pressDropButton() หาปุ่ม "ทิ้ง" ของเกมบนจอแล้วคลิกให้เอง (firesignal หรือคลิกจริงผ่าน VIM)
 --   เรียกอัตโนมัติทุกครั้งที่: มือเต็ม / วางไม่เข้าครบ 3 จุด / ไม่มีจุดว่าง — มือว่างตลอด งานไม่สะดุด
@@ -588,6 +591,16 @@ local function slotFromGhost(ghost, slotsFolder)
             if d < bestD or not best then best, bestD = s, d end
         end
     end
+    -- v6.1: ชื่อ ghost แปลกไม่ตรงชื่อสล็อตไหนเลย → เอาสล็อต (ชื่ออะไรก็ได้) ที่อยู่ใกล้ตำแหน่ง ghost
+    -- ที่สุดในรัศมี 10 stud แทน — ghost ยืนอยู่บนจุดวางจริงเสมอ
+    if not best and gpos then
+        for _, s in ipairs(slotsFolder:GetDescendants()) do
+            if s:IsA("BasePart") then
+                local d = (s.Position - gpos).Magnitude
+                if d < 10 and d < bestD then best, bestD = s, d end
+            end
+        end
+    end
     return best
 end
 
@@ -771,6 +784,7 @@ local function runAuto()
                 end
             end
         end
+        alog("⚠️ หาปุ่ม \"ทิ้ง\" บนจอไม่เจอ — ต้องทิ้งเอง")
         return false
     end
 
@@ -808,6 +822,16 @@ local function runAuto()
             local folder = workspace:FindFirstChild("Camera")
             folder = folder and folder:FindFirstChild("SortingGhosts")
             ghost = folder and folder:FindFirstChild(wantGhostName)
+            -- v6.1: ชื่อตรงไม่เจอ แต่มีไฮไลต์ติดอยู่ "จุดเดียว" (จุดเขียวที่ผู้เล่นเห็นจริง) → ใช้จุดนั้น
+            -- เลย จุดเดียวไม่กำกวม (log ชื่อจริงมาด้วยเพื่อเรียนรู้แพทเทิร์นชื่อ)
+            if not ghost then
+                local lit = {}
+                for g in pairs(getLitGhosts()) do lit[#lit + 1] = g end
+                if #lit == 1 then
+                    ghost = lit[1]
+                    alog(("💚 ใช้จุดไฮไลต์เดียวที่ติด: %s (ถือ %s)"):format(ghost.Name, item.Name))
+                end
+            end
             if not ghost then task.wait(0.05) end
         end
         -- v5.7 วินิจฉัย: อ่านไฮไลต์ไม่เจอสักครั้ง (log ขึ้น "เดาชื่อ" ตลอด) — ดูให้ชัดว่าทำไม
