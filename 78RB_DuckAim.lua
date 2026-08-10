@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v6.9 — ไม่ค้างจ้องตัวยาก เก็บฝูงต่อ (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.9: v6.7 เหนียวเกิน — ล็อคเป้าไกล/ยิงยากแล้วค้างรอกล้อง ไม่ยิงตัวอื่นทั้งที่ฝูงบินผ่าน → ถ้าเล็ง
+--   ไม่เข้าใน 0.8 วิ ทิ้งไปตัวใกล้/ง่ายกว่า (บอสยังให้เวลาเต็มที่ ล็อคจนตาย)
 -- 78RB_DuckAim.lua v6.8 — เจอบอสจริง BossController_Client (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.8: Spy (สแกนโมเดลที่ขยับ) เจอบอสชื่อ "BossController_Client_N" ใน Ume (ตัวใหญ่ 75x50x50) →
 --   findBoss หาชื่อนี้ตรงตัว (เลิกเดา Shrek/HP-bar) เล็ง+รัวจนตาย
@@ -398,17 +401,19 @@ local function shootStart()
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
     if not AIM_ON then aimStart() end -- เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
-    -- v6.7: ล็อคตัวเดิมยิงรัวจน "ตาย/หายไป" แล้วค่อยเปลี่ยนเป้า (เป็ดทน+บอสก็จัดการได้)
-    -- กันติดตาย: ถ้ายิงเกิน MAX_SHOTS นัดยังไม่ตาย (ยิงพลาด/ไกลไป) ข้ามไปตัวใหม่ชั่วคราว
+    -- v6.9: ล็อคตัวเดิมยิงจนตาย แต่ "เหนียวไม่เกินไป" — ถ้าเล็งไม่เข้าใน AIM_TIMEOUT (0.8 วิ) = ตัวยาก/
+    -- ไกล/หลบ → ทิ้งไปตัวอื่นทันที (กันค้างจ้องตัวเดียวทั้งที่ฝูงบินผ่าน) / บอสเหนียวได้เต็มที่
     local MAX_SHOTS = 30
+    local AIM_TIMEOUT = 0.8
     task.spawn(function()
-        local target, shotsAt = nil, 0
+        local target, shotsAt, acquireAt = nil, 0, 0
         while SHOOT_ON and _G.DA78_GEN == MY_GEN do
             -- เป้าตาย/หาย หรือยังไม่มี → เลือกใหม่ (บอสมาก่อน)
             if not (target and target.Parent) then
                 local d = pickDuck(Camera.CFrame.Position)
                 target = d and d.model
                 shotsAt = 0
+                acquireAt = os.clock()
                 if not target then task.wait(0.05) end
             end
             if target and target.Parent then
@@ -418,9 +423,11 @@ local function shootStart()
                     if toD.Magnitude > 1 then
                         local ang = math.deg(math.acos(math.clamp(
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
+                        local isBoss = target.Name:find("BossController") ~= nil
                         if ang < 4 then
                             fireShot()
                             shotsAt = shotsAt + 1
+                            acquireAt = os.clock() -- ยิงออกแล้วรีเซ็ตนาฬิกา timeout
                             setStatus(("[DuckAim78] 🔫 %s (ยิงตัวนี้ %d นัด, รวม %d)"):format(
                                 target.Name, shotsAt, _G.DA78_CTR or 0))
                             if shotsAt >= MAX_SHOTS then -- ไม่ตายสักที → พักตัวนี้ ไปตัวอื่น
@@ -428,8 +435,13 @@ local function shootStart()
                             end
                             task.wait(FIRE_RATE)
                         else
-                            setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า (%.0f°)"):format(ang))
-                            task.wait(0.02)
+                            -- เล็งไม่เข้าใน AIM_TIMEOUT (ยกเว้นบอส ให้เวลาเต็มที่) → ทิ้งไปตัวใกล้/ยิงง่ายกว่า
+                            if not isBoss and os.clock() - acquireAt > AIM_TIMEOUT then
+                                markShot(target); target = nil
+                            else
+                                setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า (%.0f°)"):format(ang))
+                                task.wait(0.02)
+                            end
                         end
                     else
                         task.wait(0.03)
