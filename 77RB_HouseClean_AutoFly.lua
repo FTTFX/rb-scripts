@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoFly.lua v5.3 — บินจับ-บินวาง (สูตร v4.9 ที่พิสูจน์แล้ว) + กู้ตัวไว (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v5.4 — บินจับ-บินวาง + จับตัวการ/บล็อกวาปลงเหว (เกม "ล้างบ้านขำๆ")
+-- v5.4: หาสาเหตุขั้นเด็ดขาด — ดัก __newindex ทุกการเซ็ต CFrame บนตัวเรา ถ้าเป็นค่าลงเหว (Y<-1000)
+--   log ชื่อสคริปต์เกมที่เป็นคนทำ แล้ว "บล็อก" ไม่ให้เซ็ตเลย (client-side = จบเลย, เงียบ = ฝั่ง server)
 -- v5.3: v5.1/v5.2 พิสูจน์ครบ: ทั้งจับและวางต้องบินไปใกล้ๆ ทั้งคู่ (v5.0 ที่นึกว่าวางจากเหวได้ คือบินถึง
 --   สล็อตพอดีตอนยิง) → กลับสูตรเต็ม บินจับ → บินสล็อต → วาง และลดเวลากู้ตัวจากเหวจาก 3 วิ เหลือ
 --   0.5 วิ ให้กลับมาทำงานต่อไวๆ ตอนเกมส่งตัวลงเหวระหว่างถือของ
@@ -193,6 +195,31 @@ local function v3s(p) -- Vector3 → สตริงสั้นๆ ไว้ lo
 end
 
 setStatus("[AutoFly77] พร้อม — กด FLY เพื่อบินอิสระ หรือ AUTO เพื่อจับ-วางของอัตโนมัติ")
+
+-- ==================== v5.4 จับตัวการส่งตัวลงเหว + บล็อก ====================
+-- log พิสูจน์: มีการเซ็ตตำแหน่งเรากลับไป (0,-1e6,0) ทุกเฟรม (PivotTo ของเราสู้ไม่ได้) → ดัก __newindex
+-- ทุกการเซ็ต CFrame บนตัวละครเรา: ถ้าค่าเป็น "ลงเหว" (Y < -1000) → log ชื่อสคริปต์เกมที่ทำ แล้วบล็อกทิ้ง
+-- ถ้าเป็นสคริปต์ฝั่ง client = แก้ขาดทันที / ถ้า log เงียบแต่ยังโดน = ฝั่งเซิร์ฟเวอร์ (รู้แน่ชัดเช่นกัน)
+if hookmetamethod then
+    local lastBlockLog = 0
+    local oldNI
+    oldNI = hookmetamethod(game, "__newindex", function(self, k, v)
+        if _G.AF77_GEN == MY_GEN and k == "CFrame" and typeof(v) == "CFrame" and v.Position.Y < -1000 then
+            local char = LP.Character
+            local okDesc = char and pcall(function() return self:IsDescendantOf(char) end) and self:IsDescendantOf(char)
+            if okDesc then
+                if tick() - lastBlockLog > 1 then
+                    lastBlockLog = tick()
+                    local src = getcallingscript and getcallingscript()
+                    alog(("⛔ บล็อกวาปลงเหวโดย: %s"):format(src and src:GetFullName() or "ไม่ทราบ (engine/server)"))
+                end
+                return -- บล็อก ไม่ให้เซ็ตลงเหว
+            end
+        end
+        return oldNI(self, k, v)
+    end)
+    alog("ติดตั้งตัวดัก/บล็อกวาปลงเหวแล้ว")
+end
 
 -- ==================== หา RemoteEvent ที่ใช้จริง ====================
 local function tryAutoFindRemote()
@@ -672,7 +699,7 @@ local function runAuto()
                         oobSince = nil
                         if tick() - lastWarpLog > 1 then
                             lastWarpLog = tick()
-                            alog(("ค้างนอกกรอบเกิน 3 วิ ที่ %s → วาปกลับ"):format(v3s(hrp.Position)))
+                            alog(("ค้างนอกกรอบเกิน 0.5 วิ ที่ %s → วาปกลับ"):format(v3s(hrp.Position)))
                         end
                         for _, part in ipairs(char:GetDescendants()) do
                             if part:IsA("BasePart") then part.AssemblyLinearVelocity = Vector3.zero end
