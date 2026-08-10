@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v7.8 — คุมจังหวะที่ตัวยิง กันลูปซ้อน (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v7.8: ตั้งหน่วง 2 วิยังรัว = มีลูปยิงซ้อนหลายตัว (โหลดซ้ำเยอะ) แต่ละลูปยิงไม่สนหน่วงกัน → ย้ายตัวคุม
+--   จังหวะไปไว้ที่ fireShotAt เอง (_G.DA78_LASTFIRE แชร์ทุกลูป) ต่อให้ลูปซ้อนกี่ตัว ยิงจริงห่างตามที่ตั้งเป๊ะ
 -- 78RB_DuckAim.lua v7.7 — นับลูปยิงโชว์ (หาบั๊กยิงถี่) (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v7.7: ยังยิงถี่+ไม่หน่วง — ฝัง _G.DA78_LOOPS นับลูปที่วิ่งจริง โชว์ "[ลูป×N]" ใน status ถ้า N>1 = ลูปซ้อน
 --   (ต้นเหตุ) ถ้า N=1 แต่ยังถี่ = ปืน burst หลายนัด/นัด
@@ -441,9 +444,14 @@ end)
 
 -- ยิง 1 นัดใส่ตำแหน่งเป้า — v7.0: ยิง dir ไปที่เป้าตรงๆ ไม่ต้องรอกล้องหมุนเข้า (log พิสูจน์เซิร์ฟเวอร์
 -- ไม่เช็คว่ากล้องตรงเป๊ะ) → เล็งใกล้ยิงได้ทันที ไม่ค้าง
+-- v7.8: คุมจังหวะยิงไว้ที่ "ตัวยิงเอง" ด้วย _G.DA78_LASTFIRE (แชร์ทุกลูป/ทุก gen) — ต่อให้มีลูปยิงซ้อน
+-- กี่ตัว การยิงจริงก็ห่างกันตามหน่วงที่ตั้งเป๊ะ (อ่านจากช่อง rateBox สดๆ) นี่คือตัวแก้ "ยิงถี่จากลูปซ้อน"
 local function fireShotAt(targetPos)
     local aR, fR = _G.DA78_AIM, _G.DA78_FIRE
     if not (aR and fR) then return false end
+    local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
+    if os.clock() - (_G.DA78_LASTFIRE or 0) < rate then return false end -- ยังไม่ถึงจังหวะ → ไม่ยิง
+    _G.DA78_LASTFIRE = os.clock()
     _G.DA78_CTR = (_G.DA78_CTR or 0) + 1
     local n = _G.DA78_CTR
     local origin = Camera.CFrame.Position
@@ -492,12 +500,15 @@ local function shootStart()
                     and (isBoss and target.Parent or (not isBoss and shots < maxShots)) do
                     local p = duckPos(target)
                     if not p then break end
-                    fireShotAt(p)
-                    shots = shots + 1
-                    setStatus(("[DuckAim78] 🔫%s %d/%s นัด @%.1fวิ [ลูป×%d]"):format(
-                        isBoss and " บอส" or "", shots,
-                        isBoss and "∞" or tostring(maxShots), rate, _G.DA78_LOOPS or 1))
-                    task.wait(rate) -- พักระหว่างนัดตามช่อง "หน่วงยิง"
+                    -- fireShotAt คุมจังหวะเองด้วย _G.DA78_LASTFIRE — ยิงจริงค่อยนับ shots (ถ้ายังไม่ถึง
+                    -- จังหวะจะคืน false ไม่นับ) → หน่วงยิงเป๊ะแม้ลูปซ้อน
+                    if fireShotAt(p) then
+                        shots = shots + 1
+                        setStatus(("[DuckAim78] 🔫%s %d/%s นัด @%.1fวิ [ลูป×%d]"):format(
+                            isBoss and " บอส" or "", shots,
+                            isBoss and "∞" or tostring(maxShots), rate, _G.DA78_LOOPS or 1))
+                    end
+                    task.wait(0.03) -- สปินเช็คจังหวะถี่ๆ (การหน่วงจริงอยู่ใน fireShotAt แล้ว)
                 end
                 if not isBoss then markShot(target) end
             end
