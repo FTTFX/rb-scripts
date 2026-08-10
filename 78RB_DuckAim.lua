@@ -1,4 +1,5 @@
--- 78RB_DuckAim.lua v2.1 — เลือกเกณฑ์เป้าได้ (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- 78RB_DuckAim.lua v2.2 — รวมบอส/เป็ดพิเศษทุกชื่อ (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v2.2: บอสใช้ชื่ออื่น ไม่ใช่ DuckController_Client_N — เป้า = ทุกโมเดลในโฟลเดอร์ workspace.Ume
 -- v2.1: ปุ่ม TARGET สลับเกณฑ์: ใกล้สุด / ไม่มีอะไรบัง (raycast เช็คสิ่งกีดขวาง — ค่าเริ่มต้น) /
 --   คะแนนเยอะสุด (อ่าน attribute/Value ตัวเลขบนโมเดลเป็ด) — ใช้ทั้ง SILENT และ AIM กล้อง
 -- จาก DuckSpy log ยืนยันแล้ว:
@@ -74,8 +75,9 @@ local function allDucks()
     local out = {}
     local f = duckFolder()
     if not f then return out end
+    -- v2.2: บอส/เป็ดพิเศษใช้ชื่ออื่น (ไม่ใช่ DuckController_Client_N) — เอาทุกโมเดลในโฟลเดอร์ Ume
     for _, m in ipairs(f:GetChildren()) do
-        if m:IsA("Model") and m.Name:find("DuckController") then
+        if m:IsA("Model") then
             local p = duckPos(m)
             if p then out[#out + 1] = { model = m, pos = p } end
         end
