@@ -271,7 +271,37 @@ bossB.MouseButton1Click:Connect(function()
         else
             log("  (ป้ายอยู่ใน GUI ไม่มีโมเดลตัวจริง — HP อาจเก็บฝั่ง client)")
         end
+        -- ObjectValue/attribute ในป้าย/พาเรนต์ ที่อาจชี้ไปโมเดลบอสจริง
+        local node = d
+        for _ = 1, 6 do
+            if not node then break end
+            for _, c in ipairs(node:GetChildren()) do
+                if c:IsA("ObjectValue") and c.Value then
+                    log(("    🔗 ObjectValue %s → %s"):format(c.Name, c.Value:GetFullName()))
+                end
+            end
+            for k, v in pairs(node:GetAttributes()) do
+                log(("    [attr@%s] %s = %s"):format(node.Name, k, tostring(v)))
+            end
+            node = node.Parent
+        end
         log("===== จบ BOSS =====")
+    end
+
+    -- ลิสต์โมเดลใน Ume ที่ "ไม่ใช่เป็ดปกติ" (ไม่ใช่ Client/Landed/Dog) = ผู้ต้องสงสัยว่าเป็นบอส
+    local ume = workspace:FindFirstChild("Ume")
+    if ume then
+        log("----- โมเดลแปลกใน Ume (อาจเป็นบอส) -----")
+        for _, m in ipairs(ume:GetChildren()) do
+            if m:IsA("Model") then
+                local n = m.Name
+                if not (n:find("Client") or n:find("Landed") or n:find("Dog")) then
+                    local pv = m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+                    log(("  🦆? %s  @%s"):format(n, pv and short(pv.Position) or "?"))
+                end
+            end
+        end
+        log("----- จบ -----")
     end
 end)
 
