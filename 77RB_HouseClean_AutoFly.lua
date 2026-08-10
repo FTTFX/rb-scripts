@@ -1,6 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v6.3 — กฎถือทีละ 1 ชิ้น (ไอเดียผู้ใช้) (เกม "ล้างบ้านขำๆ")
--- v6.3: ก่อนจับชิ้นใหม่ทุกครั้ง เช็ค Camera.HeldViewmodel ว่ามือว่างจริง — ถ้ายังถืออะไรค้างอยู่
---   กด G ทิ้งให้ว่างก่อนค่อยจับ ("ถือทีละ 1 ชิ้นเท่านั้น") ตัดปัญหามือเต็มสะสมถาวร
+-- 77RB_HouseClean_AutoFly.lua v6.4 — กด G ไม่ต้องถาม (เกม "ล้างบ้านขำๆ")
+-- v6.4: v6.3 ไม่เคยกด G จริงเพราะ isCarrying (HeldViewmodel) รายงานมือว่างทั้งที่ถืออยู่ → เลิกเช็ค
+--   ก่อนกด: (1) ก่อนจับทุกชิ้น กด G เปล่าๆ 1 ที รับประกันมือว่าง 100% (2) วางไม่เข้า/มือเต็ม กด G
+--   2 รอบทันที — กดตอนมือว่างไม่เสียหายอะไร
 -- v6.2: ตัดสูตร "ไฮไลต์จุดเดียวใช้ได้เลย" (คว้า ghost ชิ้นอื่นที่ติดค้าง — ถือ Book ได้ Large vase)
 --   ชื่อตรงเท่านั้นที่เชื่อได้ + ทิ้งของ = กด G (ผู้ใช้ยืนยัน) เช็คจริงว่าหลุดมือผ่าน Camera.HeldViewmodel
 --   มีสำรอง: ปุ่มจอ (ทิ้ง/trash/drop/bin) และคีย์ Q/X/Backspace
@@ -771,19 +772,21 @@ local function runAuto()
         return hv ~= nil and #hv:GetChildren() > 0
     end
 
-    -- v6.2: ทิ้งของ — ผู้ใช้ยืนยัน: ปุ่ม G คือทิ้ง → กด G ก่อนเลย แล้วเช็คจริงผ่าน HeldViewmodel
+    -- v6.4: กด G ทุกครั้งที่ถูกเรียก ไม่เช็ค isCarrying ก่อน — HeldViewmodel เชื่อไม่ได้ (บอกมือว่าง
+    -- ทั้งที่ถืออยู่ ทำให้ข้ามการกด G แล้วของสะสมจนมือเต็ม) กดตอนมือว่างจริงก็ไม่เสียหายอะไร
     local function pressDropButton()
-        if not isCarrying() then return true end
         local VIM = game:GetService("VirtualInputManager")
-        -- ทางหลัก: กด G (ยืนยันจากผู้ใช้)
-        pcall(function()
-            VIM:SendKeyEvent(true, Enum.KeyCode.G, false, game)
-            task.wait(0.05)
-            VIM:SendKeyEvent(false, Enum.KeyCode.G, false, game)
-        end)
-        task.wait(0.3)
+        -- ทางหลัก: กด G (ยืนยันจากผู้ใช้) — กด 2 รอบกันพลาด
+        for _ = 1, 2 do
+            pcall(function()
+                VIM:SendKeyEvent(true, Enum.KeyCode.G, false, game)
+                task.wait(0.05)
+                VIM:SendKeyEvent(false, Enum.KeyCode.G, false, game)
+            end)
+            task.wait(0.25)
+        end
+        alog("🗑️ กด G ทิ้งแล้ว")
         if not isCarrying() then
-            alog("🗑️ ทิ้งสำเร็จ (G)")
             return true
         end
         -- ทางสำรอง 1: ปุ่มบนจอ — จับทั้งข้อความ "ทิ้ง" และชื่อปุ่มแนว trash/drop/discard/bin/throw
@@ -855,15 +858,15 @@ local function runAuto()
         end
 
         setStatus(("[AutoFly77] เก็บ: %s (วางแล้ว %d)"):format(item.Name, processed))
-        -- v6.3 (ไอเดียผู้ใช้): กฎเหล็ก "ถือทีละ 1 ชิ้นเท่านั้น" — ก่อนจับชิ้นใหม่ เช็คมือก่อนเสมอ
-        -- ถ้ายังถืออะไรอยู่ (ไม่ว่าจากรอบไหน) กด G ทิ้งให้มือว่างก่อน ค่อยจับ
-        if isCarrying() then
-            alog("✋ มือไม่ว่าง — ทิ้งก่อนจับชิ้นใหม่")
-            if not pressDropButton() then
-                setStatus("[AutoFly77] ⛔ มือไม่ว่างและทิ้งไม่ได้ — หยุด AUTO")
-                break
-            end
-        end
+        -- v6.4 กฎเหล็ก "ถือทีละ 1 ชิ้น": กด G ก่อนจับทุกชิ้นแบบไม่ต้องถาม (isCarrying เชื่อไม่ได้)
+        -- มือว่างอยู่แล้วกด G ก็ไม่เสียหาย — รับประกันมือว่างก่อนจับ 100%
+        pcall(function()
+            local VIM = game:GetService("VirtualInputManager")
+            VIM:SendKeyEvent(true, Enum.KeyCode.G, false, game)
+            task.wait(0.05)
+            VIM:SendKeyEvent(false, Enum.KeyCode.G, false, game)
+        end)
+        task.wait(0.15)
         -- v5.2: บินไปหาของก่อนจับ — v5.1 พิสูจน์แล้วว่ายิงจับจากไกลไม่ติด (วางเท่านั้นที่ไม่เช็คระยะ)
         local ipos = partPosition(item)
         if ipos then flyTo(clampY(ipos), 6) end
