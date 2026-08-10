@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v5.9 — เก็บปืนใน _G ทุก gen + ข้ามเป็ดที่ยิงแล้ว (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v5.9: โหลดซ้ำแล้ว executor ไม่ยอม hook __namecall ซ้ำ → hook เก่า (gen เก่า) เป็นตัว active แต่เดิม
+--   เช็ค gen เลยข้ามการจับปืนทิ้ง = จับปืนไม่ได้เลย → เก็บ remote ใน _G ไม่เช็ค gen ตอนจับ ทุก gen
+--   เขียน/อ่านร่วมกัน + เพิ่ม markShot ข้ามเป็ดที่เพิ่งยิง 2 วิ (ไม่เล็งซ้ำ)
 -- 78RB_DuckAim.lua v5.7 — สถานะปืนแยกบรรทัด (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v5.7: AIM เขียนทับ status ทุกเฟรมจนมองไม่เห็นสถานะเรียนปืน → เพิ่มบรรทัด gunLbl แยก โชว์
 --   hook OK/ไม่ติด + เล็ง✓/✗ ยิง✓/✗ + นัดล่าสุด (AIM แตะไม่ได้) + ปุ่มบอกให้แตะบนมือถือ
@@ -43,9 +47,8 @@ local Camera = workspace.CurrentCamera
 
 local AIM_ON = false
 local SMOOTH = 0.35
--- ประกาศล่วงหน้า (ให้ setGun/ปุ่มอ้างถึงตัวเดียวกับที่ hook เขียน)
-local aimRemote, fireRemote
-local shotCounter = 0
+-- v5.9: สถานะปืนเก็บใน _G (hook เขียน — ใช้ร่วมทุก gen กันโหลดซ้ำแล้ว hook เก่าจับไม่ได้)
+_G.DA78_CTR = _G.DA78_CTR or 0
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -73,9 +76,10 @@ gunLbl.BackgroundTransparency = 1; gunLbl.TextColor3 = Color3.fromRGB(140, 255, 
 gunLbl.TextSize = 11; gunLbl.Font = Enum.Font.Code
 gunLbl.TextXAlignment = Enum.TextXAlignment.Left
 gunLbl.Text = "ปืน: ยังไม่รู้ — ยิงเอง 1 นัด"
+-- อ่านสถานะปืนจาก _G (hook เขียนไว้ — ใช้ร่วมทุก gen)
 local function setGun()
     gunLbl.Text = ("ปืน: เล็ง%s ยิง%s  นัดล่าสุด %d"):format(
-        aimRemote and "✓" or "✗", fireRemote and "✓" or "✗", shotCounter)
+        _G.DA78_AIM and "✓" or "✗", _G.DA78_FIRE and "✓" or "✗", _G.DA78_CTR or 0)
 end
 
 local function mkbtn(txt, y, col)
@@ -104,12 +108,21 @@ local function duckPos(m)
     return p and p.Position
 end
 
-local function allDucks()
+-- v5.8: จำเป็ดที่ "เพิ่งยิงไปแล้ว" — ข้ามไม่เล็งซ้ำ 2 วิ (ให้เวลามันร่วง/ตาย) ถ้ายังไม่ตายค่อยกลับมายิง
+local shotDucks = {}          -- model -> os.clock() ตอนยิง
+local SHOT_SKIP = 2.0
+local function markShot(model) if model then shotDucks[model] = os.clock() end end
+local function recentlyShot(model)
+    local t = shotDucks[model]
+    return t ~= nil and (os.clock() - t) < SHOT_SKIP
+end
+
+local function allDucks(includeShot)
     local out = {}
     local f = duckFolder()
     if not f then return out end
     for _, m in ipairs(f:GetChildren()) do
-        if m:IsA("Model") then
+        if m:IsA("Model") and (includeShot or not recentlyShot(m)) then
             local p = duckPos(m)
             if p then out[#out + 1] = { model = m, pos = p } end
         end
@@ -157,6 +170,8 @@ end
 
 local function pickDuck(origin)
     local ducks = allDucks()
+    -- ถ้าตัวที่ยังไม่ได้ยิงหมดแล้ว (เพิ่งยิงทุกตัว) → กลับมาพิจารณาทุกตัว กันค้างไม่มีเป้า
+    if #ducks == 0 then ducks = allDucks(true) end
     if #ducks == 0 then return nil end
     local mode = TARGET_MODES[targetModeIdx]
 
@@ -234,8 +249,7 @@ end
 --   A(aimRemote):  FireServer(Vector3 origin(คงที่ 780,68,104), Vector3 dir(ตามกล้อง), counter, timestamp)
 --   B(fireRemote): FireServer(counter)   ← counter เดียวกัน เดินหน้าทุกนัด (4,5,6,...)
 local SHOOT_ON = false
--- aimRemote, fireRemote, shotCounter ประกาศล่วงหน้าด้านบนแล้ว (ให้ setGun อ้างตัวเดียวกัน)
-local shotOrigin                     -- origin จากนัดจริง
+-- ปืนเก็บใน _G.DA78_AIM / _G.DA78_FIRE / _G.DA78_ORIGIN / _G.DA78_CTR (hook เขียน ทุก gen ใช้ร่วม)
 local FIRE_INTERVAL = 0.18           -- ยิงถี่ (รีโหลดเป็นอนิเมชั่นฝั่งจอ ยิง remote ตรงข้ามได้)
 local lastShotClock = 0
 
@@ -250,26 +264,20 @@ end
         local a = table.pack(...)
         local method = self
         pcall(function()
-            if _G.DA78_GEN ~= MY_GEN or getnamecallmethod() ~= "FireServer" then return end
-            -- v5.4 debug: ยังเรียนปืนไม่ครบ → โชว์ทุก FireServer ที่เห็น (ชื่อ+จำนวน+ชนิด args)
-            -- เพื่อดูว่าลายเซ็นจริงตอนนี้เป็นแบบไหน (เผื่อเกมเปลี่ยน)
-            if not (aimRemote and fireRemote) then
-                local ts = {}
-                for i = 1, math.min(a.n, 5) do ts[i] = typeof(a[i]) end
-                setStatus(("[DuckAim78] เห็น %s (%d: %s)"):format(method.Name, a.n, table.concat(ts, ",")))
-            end
+            -- v5.9: เก็บ remote ที่จับได้ไว้ใน _G (ใช้ร่วมทุก gen) และ "ไม่เช็ค gen" ตอนจับ — เพราะ
+            -- โหลดซ้ำแล้ว executor ไม่ยอม hook __namecall ซ้ำ hook เก่า (gen เก่า) เลยเป็นตัวเดียวที่ active
+            -- ถ้าเช็ค gen มันจะข้ามการจับทิ้ง → ปืนไม่เคยถูกจำ
+            if getnamecallmethod() ~= "FireServer" then return end
             -- A: (Vector3, Vector3, number, number) = คำสั่งเล็ง
             if a.n >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
                 and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
-                aimRemote = method
-                shotOrigin = a[1]
-                if a[3] > shotCounter then shotCounter = a[3] end
-                setGun()
+                _G.DA78_AIM = method
+                _G.DA78_ORIGIN = a[1]
+                _G.DA78_CTR = math.max(_G.DA78_CTR or 0, a[3])
             -- B: (number เดียว) = คำสั่งยืนยันนัด
             elseif a.n == 1 and typeof(a[1]) == "number" then
-                fireRemote = method
-                if a[1] > shotCounter then shotCounter = a[1] end
-                setGun()
+                _G.DA78_FIRE = method
+                _G.DA78_CTR = math.max(_G.DA78_CTR or 0, a[1])
             end
         end)
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
@@ -282,22 +290,28 @@ else
     setStatus("[DuckAim78] ❌ hook ไม่ติด")
     gunLbl.Text = "hook ไม่ติด: " .. tostring(hookErr)
 end
+-- รีเฟรชบรรทัดปืนจาก _G ตลอด (hook เขียน _G ไว้ — ทุก gen ใช้ร่วมกัน)
+task.spawn(function()
+    while _G.DA78_GEN == MY_GEN do
+        if _G.DA78_AIM or _G.DA78_FIRE then pcall(setGun) end
+        task.wait(0.3)
+    end
+end)
 
 -- ยิง 1 นัดสมบูรณ์: A(origin, dir, counter, serverTime) แล้ว B(counter) — counter เดินหน้า
 local function fireShot()
-    if not (aimRemote and fireRemote) then return false end
-    shotCounter += 1
-    local n = shotCounter
-    -- v5.1: origin ขยับตามตัวผู้เล่น (log ยืนยัน 831→832→814...) → ใช้ตำแหน่งกล้องปัจจุบัน ไม่ใช่ค่าที่จำ
-    local origin = Camera.CFrame.Position
-    local dir = Camera.CFrame.LookVector -- ทิศตามกล้อง (AIM ล็อคที่เป็ดแล้ว)
+    local aR, fR = _G.DA78_AIM, _G.DA78_FIRE
+    if not (aR and fR) then return false end
+    _G.DA78_CTR = (_G.DA78_CTR or 0) + 1
+    local n = _G.DA78_CTR
+    local origin = Camera.CFrame.Position -- ขยับตามตัวผู้เล่น
+    local dir = Camera.CFrame.LookVector  -- ทิศตามกล้อง (AIM ล็อคที่เป็ดแล้ว)
     local ts = os.time()
     local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
     if ok and type(now) == "number" then ts = now end
-    pcall(function() aimRemote:FireServer(origin, dir, n, ts) end)
-    pcall(function() fireRemote:FireServer(n) end)
+    pcall(function() aR:FireServer(origin, dir, n, ts) end)
+    pcall(function() fR:FireServer(n) end)
     lastShotClock = os.clock()
-    -- v5.5: ไม่มี remote รีโหลด (รีโหลดเป็นอนิเมชั่นฝั่งจอเท่านั้น) — ยิง 2 remote รัวๆ ข้ามรีโหลดไปเลย
     return true
 end
 
@@ -306,9 +320,9 @@ local function shootStop()
     shootB.Text = "AUTO SHOOT: OFF (คีย์ K)"
 end
 local function shootStart()
-    if not (aimRemote and fireRemote) then
+    if not (_G.DA78_AIM and _G.DA78_FIRE) then
         setStatus(("[DuckAim78] ⚠️ ยังจับปืนไม่ครบ (เล็ง:%s ยิง:%s) — ยิงเองอีกนัด"):format(
-            aimRemote and "✓" or "✗", fireRemote and "✓" or "✗"))
+            _G.DA78_AIM and "✓" or "✗", _G.DA78_FIRE and "✓" or "✗"))
         return
     end
     SHOOT_ON = true
@@ -327,7 +341,8 @@ local function shootStart()
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
                         if ang < 10 then
                             fireShot()
-                            setStatus(("[DuckAim78] 🔫 ยิง: %s (นัด %d)"):format(d.model.Name, shotCounter))
+                            markShot(d.model) -- ขึ้นบัญชี "ยิงแล้ว" ข้ามไม่เล็งซ้ำ 2 วิ
+                            setStatus(("[DuckAim78] 🔫 ยิง: %s (นัด %d)"):format(d.model.Name, _G.DA78_CTR or 0))
                         else
                             setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
                         end
