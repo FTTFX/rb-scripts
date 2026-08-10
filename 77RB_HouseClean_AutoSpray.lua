@@ -1,4 +1,6 @@
--- 77RB_HouseClean_AutoSpray.lua v1.7 — ฉีดทำความสะอาดจุดสกปรกอัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoSpray.lua v1.8 — กรองเฉพาะคราบที่ยังมองเห็นจริง (เกม "ล้างบ้านขำๆ")
+-- v1.8: GUIDE บอกเหลือ 291 จุดทั้งที่จริงเหลือ 2 — โฟลเดอร์ Dirt มี Part ที่ล้างแล้ว/สำรอง (โปร่งใส)
+--   ค้างเป็นร้อย → กรอง dirtVisible: นับเฉพาะ Part/Decal ที่ยังไม่โปร่งใส (ทั้ง GUIDE และ SPRAY)
 -- v1.7: เพิ่มปุ่ม GUIDE — เส้น Beam 3 เส้นชี้ไปจุดสกปรกที่ใกล้ที่สุด 3 จุด (เขียว=ใกล้สุด,
 --   เหลือง=รอง, ฟ้า=ที่สาม) รีเฟรชเป้าทุก 0.5 วิ + status โชว์จำนวนจุดสกปรกที่เหลือ
 -- v1.6: จำ remote ที่เรียนรู้ถูกไว้ใน _G.RB77_REMOTE ข้ามรอบ/ข้ามสคริปต์ (ใช้ร่วมกับ AutoFly77) เหมือนกัน
@@ -109,6 +111,16 @@ local function hookLearn()
 end
 
 -- ==================== หาคราบสกปรกทั้งหมด ====================
+-- v1.8: โฟลเดอร์ Dirt มี Part ค้างหลายร้อยชิ้น แต่ส่วนใหญ่คือจุดที่ล้างแล้ว/จุดสำรองที่เกมซ่อนไว้
+-- (โปร่งใสหมด) — นับเฉพาะจุดที่ "ยังมองเห็นจริง": ตัว Part หรือ Decal/Texture คราบยังไม่โปร่งใส
+local function dirtVisible(p)
+    if p.Transparency < 0.99 then return true end
+    for _, d in ipairs(p:GetDescendants()) do
+        if (d:IsA("Decal") or d:IsA("Texture")) and d.Transparency < 0.99 then return true end
+    end
+    return false
+end
+
 local function findDirtParts()
     local out = {}
     for _, house in ipairs(workspace:GetChildren()) do
@@ -116,7 +128,7 @@ local function findDirtParts()
             local dirtFolder = house:FindFirstChild("Dirt")
             if dirtFolder then
                 for _, p in ipairs(dirtFolder:GetChildren()) do
-                    if p:IsA("BasePart") then out[#out + 1] = p end
+                    if p:IsA("BasePart") and dirtVisible(p) then out[#out + 1] = p end
                 end
             end
         end
