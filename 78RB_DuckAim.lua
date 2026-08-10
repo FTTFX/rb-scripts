@@ -1,4 +1,6 @@
--- 78RB_DuckAim.lua v3.0 — Auto Aim กล้องอย่างเดียว + คีย์ลัด L (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- 78RB_DuckAim.lua v3.1 — เพิ่มโหมดเป้า "เลือดเยอะสุด" (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v3.1: TARGET เพิ่มโหมดที่ 4 เลือดเยอะสุด — อ่าน Humanoid.Health ก่อน ไม่มีค่อยหา attribute/Value
+--   ชื่อพ้อง hp/health บนโมเดลเป็ด (บอสเลือดหนา = โดนล็อคก่อน)
 -- v3.0: ถอด SILENT ออกทั้งระบบ — ตัวดัก FireServer ไปโดนคำสั่งรีโหลดกระสุนด้วย (ลายเซ็น args ชนกัน)
 --   ทำให้รีโหลดไม่ได้ เหลือ AIM ล็อคกล้องอย่างเดียว ปลอดภัยไม่แตะ remote ใดๆ + กด L เปิด/ปิด AIM
 -- เป้า = ทุกโมเดลในโฟลเดอร์ workspace.Ume (เป็ดปกติ DuckController_Client_N + บอสชื่ออื่น)
@@ -78,8 +80,23 @@ local function allDucks()
 end
 
 -- ==================== เกณฑ์เลือกเป้า: ใกล้สุด / ไม่มีอะไรบัง / คะแนนเยอะสุด ====================
-local TARGET_MODES = { "ใกล้สุด", "ไม่มีอะไรบัง", "คะแนนเยอะสุด" }
+local TARGET_MODES = { "ใกล้สุด", "ไม่มีอะไรบัง", "คะแนนเยอะสุด", "เลือดเยอะสุด" }
 local targetModeIdx = 2
+
+-- v3.1: อ่าน HP ของเป็ด — Humanoid.Health ก่อน แล้วค่อย attribute/Value ชื่อพ้อง hp/health/เลือด
+local function duckHP(d)
+    local hum = d.model:FindFirstChildOfClass("Humanoid")
+    if hum then return hum.Health end
+    for k, v in pairs(d.model:GetAttributes()) do
+        if type(v) == "number" and k:lower():find("h[pe]") then return v end
+    end
+    for _, c in ipairs(d.model:GetDescendants()) do
+        if (c:IsA("IntValue") or c:IsA("NumberValue")) and c.Name:lower():find("h[pe]") then
+            return c.Value
+        end
+    end
+    return 0
+end
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -110,6 +127,15 @@ local function pickDuck(origin)
         for _, d in ipairs(ducks) do
             local s = duckScore(d)
             if s > bestScore then best, bestScore = d, s end
+        end
+        return best
+    end
+
+    if mode == "เลือดเยอะสุด" then
+        local best, bestHP = nil, -1
+        for _, d in ipairs(ducks) do
+            local hp = duckHP(d)
+            if hp > bestHP then best, bestHP = d, hp end
         end
         return best
     end
