@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v6.7 — ล็อคยิงจนตาย + จับบอส Shrek (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.7: เป็ดด่านหลัง+บอสทนหลายนัด (Spy: บอส="Shrek" ใน workspace, ป้าย HP อยู่ PlayerGui) → เลิก
+--   "ยิงนัดเดียวข้าม" เปลี่ยนเป็นล็อคตัวเดิมรัวจนหายไป(ตาย)แล้วค่อยเปลี่ยน (กันติดตายด้วย MAX_SHOTS
+--   30 นัด) + findBoss เล็ง Shrek ตอนบอสแอ็กทีฟ (มี BossHealthBar_1)
 -- 78RB_DuckAim.lua v6.6 — เก็บเป็ดหลุดผ่านให้มากขึ้น (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.6: เป็ดบินผ่านไม่โดนบางตัว เพราะ findBoss สแกน GetDescendants ทุกเฟรม (เป็ด 70+) หน่วงจนเล็งไม่ทัน
 --   → throttle บอสทุก 0.5 วิ + cache + ลด SHOT_SKIP 1.0→0.4 (ตัวใหม่ถูกเล็งไวขึ้น)
@@ -162,14 +166,21 @@ local function findBoss()
     end
     bossCacheAt = os.clock()
     bossCache = nil
-    local f = duckFolder()
-    if not f then return nil end
-    for _, d in ipairs(f:GetDescendants()) do
-        if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text:find("%d+%s*HP") then
-            local m = d:FindFirstAncestorWhichIsA("Model")
-            if m and not m.Name:find("Landed") then
-                local p = duckPos(m)
-                if p then bossCache = { model = m, pos = p, boss = true }; return bossCache end
+    -- บอสอยู่ workspace ชั้นบน ชื่อพ้อง Shrek/Boss (Spy LIST เจอ "Shrek x1") — เล็งเฉพาะตอนบอสแอ็กทีฟ
+    -- (มีป้าย BossHealthBar_1 ใน PlayerGui = บอสยังไม่ตาย)
+    local bossActive = false
+    pcall(function()
+        local bar = LP.PlayerGui:FindFirstChild("DuckBossHealthBar", true)
+        if bar and bar:FindFirstChild("BossHealthBar_1", true) then bossActive = true end
+    end)
+    if bossActive then
+        for _, m in ipairs(workspace:GetChildren()) do
+            if m:IsA("Model") then
+                local n = m.Name:lower()
+                if n:find("shrek") or n:find("boss") then
+                    local p = duckPos(m)
+                    if p then bossCache = { model = m, pos = p, boss = true }; return bossCache end
+                end
             end
         end
     end
@@ -227,8 +238,9 @@ local function duckScore(d)
     return best
 end
 
+-- v6.7: เป็ดด่านหลัง + บอส ทนหลายนัด (ผู้ใช้ยืนยัน) → เลิกแยกประเภท ใช้วิธี "ล็อคตัวเดิมยิงจนตาย"
+-- (จัดการในลูปยิง) ที่นี่แค่เลือกเป้า: บอส (Shrek) มาก่อน แล้วเป็ดใกล้สุด
 local function pickDuck(origin)
-    -- v6.3: บอสมาก่อนเสมอ (ยิงค้างจนตาย) — ไม่มีบอสค่อยเล็งเป็ดปกติ
     local boss = findBoss()
     if boss then return boss end
     -- v6.0: เอาเฉพาะตัวที่ยังไม่ได้ยิง (ไม่ fallback ไปตัวที่ยิงแล้ว — กันถล่มตัวเดิมรัวๆ)
@@ -392,36 +404,45 @@ local function shootStart()
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
     if not AIM_ON then aimStart() end -- เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
+    -- v6.7: ล็อคตัวเดิมยิงรัวจน "ตาย/หายไป" แล้วค่อยเปลี่ยนเป้า (เป็ดทน+บอสก็จัดการได้)
+    -- กันติดตาย: ถ้ายิงเกิน MAX_SHOTS นัดยังไม่ตาย (ยิงพลาด/ไกลไป) ข้ามไปตัวใหม่ชั่วคราว
+    local MAX_SHOTS = 30
     task.spawn(function()
+        local target, shotsAt = nil, 0
         while SHOOT_ON and _G.DA78_GEN == MY_GEN do
-            local d = pickDuck(Camera.CFrame.Position)
-            if d and d.model.Parent then
-                local p = duckPos(d.model)
+            -- เป้าตาย/หาย หรือยังไม่มี → เลือกใหม่ (บอสมาก่อน)
+            if not (target and target.Parent) then
+                local d = pickDuck(Camera.CFrame.Position)
+                target = d and d.model
+                shotsAt = 0
+                if not target then task.wait(0.05) end
+            end
+            if target and target.Parent then
+                local p = duckPos(target)
                 if p then
-                    -- ยิงเมื่อกล้องหันเข้าเป้าใกล้พอแล้ว (< 10°) — กัน dir เพี้ยนตอนกล้องยังหมุน
-                    local toD = (p - Camera.CFrame.Position)
+                    local toD = p - Camera.CFrame.Position
                     if toD.Magnitude > 1 then
                         local ang = math.deg(math.acos(math.clamp(
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
-                        if ang < 4 then -- ยิงเฉพาะตอนกล้องเข้าเป้าจริง
+                        if ang < 4 then
                             fireShot()
-                            -- v6.5: บอสยิงค้างจนตาย (ไม่ mark) / เป็ดปกติยิงนัดเดียวแล้วข้าม
-                            if not d.boss then markShot(d.model) end
-                            setStatus(("[DuckAim78] 🔫 ยิง%s: %s (นัด %d)"):format(
-                                d.boss and " บอส" or "", d.model.Name, _G.DA78_CTR or 0))
-                            task.wait(FIRE_RATE) -- ยิงรัวต่อเนื่อง (log พิสูจน์ 0.18 วิ เซิร์ฟเวอร์รับ+ฆ่าจริง)
+                            shotsAt = shotsAt + 1
+                            setStatus(("[DuckAim78] 🔫 %s (ยิงตัวนี้ %d นัด, รวม %d)"):format(
+                                target.Name, shotsAt, _G.DA78_CTR or 0))
+                            if shotsAt >= MAX_SHOTS then -- ไม่ตายสักที → พักตัวนี้ ไปตัวอื่น
+                                markShot(target); target = nil
+                            end
+                            task.wait(FIRE_RATE)
                         else
-                            setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
-                            task.wait(0.03)
+                            setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า (%.0f°)"):format(ang))
+                            task.wait(0.02)
                         end
                     else
                         task.wait(0.03)
                     end
                 else
-                    task.wait(0.05)
+                    target = nil; task.wait(0.03)
                 end
-            else
-                task.wait(0.05)
             end
         end
     end)
