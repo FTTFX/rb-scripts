@@ -288,7 +288,8 @@ local function shootStop()
 end
 local function shootStart()
     if not (aimRemote and fireRemote) then
-        setStatus("[DuckAim78] ⚠️ ยังไม่รู้ปืนครบ — ยิงเอง 1 นัดก่อน แล้วค่อยกด K")
+        setStatus(("[DuckAim78] ⚠️ ยังจับปืนไม่ครบ (เล็ง:%s ยิง:%s) — ยิงเองอีกนัด"):format(
+            aimRemote and "✓" or "✗", fireRemote and "✓" or "✗"))
         return
     end
     SHOOT_ON = true
