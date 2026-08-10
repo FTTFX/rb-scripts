@@ -1,8 +1,10 @@
--- 78RB_DuckAim.lua v1.0 — Auto Aim ง่ายๆ (เกม "ยิงเป็ด")
--- ล็อคกล้องไปที่เป้าที่อยู่ใกล้กลางจอที่สุดอัตโนมัติ — ผู้เล่นกดยิงเองตามปกติ
--- ยังไม่รู้โครงสร้างเกมจริง เลยสแกนกว้างไว้ก่อน: โมเดล/Part ชื่อพ้อง duck/เป็ด/bird
--- หรือโมเดลที่มี Humanoid ที่ไม่ใช่ผู้เล่น (NPC) — status โชว์ชื่อเป้าที่ล็อคอยู่เสมอ
--- ปุ่ม: AIM (ล็อคเป้าอัตโนมัติ) | MODE (ทุก NPC ↔ เฉพาะชื่อพ้องเป็ด) | STOP | ✕
+-- 78RB_DuckAim.lua v2.0 — Auto Aim + Silent Aim (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- จาก DuckSpy log ยืนยันแล้ว:
+--   เป้า: workspace.Ume.DuckController_Client_N (เป็ดบินระนาบ X~258 เกิด-หายตลอด)
+--   ยิง:  <remote ชื่อสุ่ม>:FireServer(Vector3 จุดยิง, Vector3 ทิศทาง, number, number timestamp)
+--         → เซิร์ฟเวอร์คิดผลจาก "ทิศทาง" ที่ client ส่ง = สลับทิศให้พุ่งเข้าเป็ดก่อนส่งได้ (Silent Aim)
+-- ปุ่ม: SILENT (ยิงตรงไหนก็โดนเป็ด) | AIM (ล็อคกล้อง) | STOP | ✕
+-- remote ชื่อสุ่มต่อเซสชัน — จับจากลายเซ็น args (V3, V3, num, num) ไม่อิงชื่อ
 if _G.DA78_GUI then pcall(function() _G.DA78_GUI:Destroy() end) end
 if _G.DA78_CONNS then
     for _, c in ipairs(_G.DA78_CONNS) do pcall(function() c:Disconnect() end) end
@@ -16,10 +18,10 @@ local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
+local SILENT_ON = true -- เปิดมาก็พร้อมใช้เลย
 local AIM_ON = false
-local NAME_ONLY = false -- false = เล็งทุก NPC, true = เฉพาะชื่อพ้องเป็ด
-local MAX_LOCK_ANGLE = 60 -- องศาจากกลางจอ — ไกลกว่านี้ไม่แย่งล็อค (กันสะบัดกล้อง 180°)
-local SMOOTH = 0.35 -- 0..1 ยิ่งมากยิ่งดูดไว (1 = ตึงเป้าทันที)
+local SMOOTH = 0.35
+local MAX_LOCK_ANGLE = 60
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -47,80 +49,104 @@ local function mkbtn(txt, y, col)
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
-local aimB   = mkbtn("AIM: OFF (ล็อคเป้าอัตโนมัติ)", 48, Color3.fromRGB(190, 60, 60))
-local modeB  = mkbtn("MODE: ทุก NPC", 78, Color3.fromRGB(60, 110, 180))
-local stopB  = mkbtn("STOP", 108, Color3.fromRGB(150, 60, 30))
-local closeB = mkbtn("✕ ปิด", 138, Color3.fromRGB(90, 40, 40))
+local silentB = mkbtn("SILENT: ON (ยิงตรงไหนก็โดน)", 48, Color3.fromRGB(60, 170, 90))
+local aimB    = mkbtn("AIM: OFF (ล็อคกล้องที่เป็ด)", 78, Color3.fromRGB(190, 60, 60))
+local stopB   = mkbtn("STOP", 108, Color3.fromRGB(150, 60, 30))
+local closeB  = mkbtn("✕ ปิด", 138, Color3.fromRGB(90, 40, 40))
 
-setStatus("[DuckAim78] พร้อม — กด AIM เพื่อล็อคเป้าอัตโนมัติ")
+setStatus("[DuckAim78] SILENT พร้อม — ยิงได้เลย กระสุนวิ่งเข้าเป็ดเอง")
 
--- ==================== หาเป้า ====================
-local NAME_WORDS = { "duck", "เป็ด", "bird", "นก" }
-
-local function nameLooksDuck(n)
-    n = n:lower()
-    for _, w in ipairs(NAME_WORDS) do
-        if n:find(w) then return true end
-    end
-    return false
+-- ==================== หาเป็ด ====================
+local function duckFolder()
+    return workspace:FindFirstChild("Ume")
 end
 
--- ส่วนที่ใช้เล็งของเป้า 1 ตัว (คืน BasePart หรือ nil)
-local function aimPartOf(model)
-    if model:IsA("BasePart") then return model end
-    return model:FindFirstChild("Head")
-        or model:FindFirstChild("HumanoidRootPart")
-        or model:FindFirstChildWhichIsA("BasePart")
+local function duckPos(m)
+    local p = m.PrimaryPart or m:FindFirstChildWhichIsA("BasePart")
+    return p and p.Position
 end
 
--- เป้าที่เข้าเกณฑ์ทั้งหมดใน workspace
-local function findTargets()
+local function allDucks()
     local out = {}
-    for _, m in ipairs(workspace:GetDescendants()) do
-        if m:IsA("Model") and not Players:GetPlayerFromCharacter(m) and m ~= LP.Character then
-            local hum = m:FindFirstChildOfClass("Humanoid")
-            local byName = nameLooksDuck(m.Name)
-            if byName or ((not NAME_ONLY) and hum and hum.Health > 0) then
-                local p = aimPartOf(m)
-                if p then out[#out + 1] = { model = m, part = p } end
-            end
-        elseif m:IsA("BasePart") and nameLooksDuck(m.Name) and not m:FindFirstAncestorWhichIsA("Model") then
-            out[#out + 1] = { model = m, part = m }
+    local f = duckFolder()
+    if not f then return out end
+    for _, m in ipairs(f:GetChildren()) do
+        if m:IsA("Model") and m.Name:find("DuckController") then
+            local p = duckPos(m)
+            if p then out[#out + 1] = { model = m, pos = p } end
         end
     end
     return out
 end
 
--- เลือกเป้าที่ "ใกล้กลางจอสุด" และมองเห็นอยู่หน้ากล้อง
-local function bestTarget()
-    local best, bestAngle = nil, MAX_LOCK_ANGLE
-    local camCF = Camera.CFrame
-    for _, t in ipairs(findTargets()) do
-        if t.part.Parent then
-            local dir = (t.part.Position - camCF.Position)
-            if dir.Magnitude > 1 then
-                local angle = math.deg(math.acos(math.clamp(camCF.LookVector:Dot(dir.Unit), -1, 1)))
-                if angle < bestAngle then best, bestAngle = t, angle end
-            end
+-- เป็ดที่ "ตรงแนวยิงเดิมที่สุด" (มุมแคบสุดจากทิศที่ผู้เล่นยิงจริง) — ดูธรรมชาติสุด
+local function bestDuckForShot(origin, dir)
+    local best, bestAngle = nil, 90
+    for _, d in ipairs(allDucks()) do
+        local to = d.pos - origin
+        if to.Magnitude > 1 then
+            local angle = math.deg(math.acos(math.clamp(dir.Unit:Dot(to.Unit), -1, 1)))
+            if angle < bestAngle then best, bestAngle = d, angle end
         end
     end
     return best
 end
 
--- ==================== ลูปเล็ง ====================
+-- เป็ดที่ใกล้กลางจอสุด (สำหรับล็อคกล้อง)
+local function bestDuckOnScreen()
+    local best, bestAngle = nil, MAX_LOCK_ANGLE
+    local camCF = Camera.CFrame
+    for _, d in ipairs(allDucks()) do
+        local to = d.pos - camCF.Position
+        if to.Magnitude > 1 then
+            local angle = math.deg(math.acos(math.clamp(camCF.LookVector:Dot(to.Unit), -1, 1)))
+            if angle < bestAngle then best, bestAngle = d, angle end
+        end
+    end
+    return best
+end
+
+-- ==================== SILENT AIM: ดักคำสั่งยิง สลับทิศทางก่อนส่ง ====================
+-- ลายเซ็นจาก log: FireServer(Vector3 origin, Vector3 dir, number, number) — ไม่อิงชื่อ remote (ชื่อสุ่ม)
+if hookmetamethod then
+    local old
+    old = hookmetamethod(game, "__namecall", function(self, ...)
+        if _G.DA78_GEN == MY_GEN and SILENT_ON and getnamecallmethod() == "FireServer" then
+            local args = { ... }
+            if #args >= 4
+                and typeof(args[1]) == "Vector3"
+                and typeof(args[2]) == "Vector3"
+                and typeof(args[3]) == "number"
+                and typeof(args[4]) == "number" then
+                local duck = bestDuckForShot(args[1], args[2])
+                if duck then
+                    args[2] = (duck.pos - args[1]).Unit
+                    setStatus(("[DuckAim78] 🎯 ยิงเข้า: %s"):format(duck.model.Name))
+                    return old(self, unpack(args))
+                end
+            end
+        end
+        return old(self, ...)
+    end)
+else
+    setStatus("[DuckAim78] ❌ executor ไม่มี hookmetamethod — SILENT ใช้ไม่ได้ (AIM กล้องยังใช้ได้)")
+    SILENT_ON = false
+    silentB.Text = "SILENT: ใช้ไม่ได้ (no hook)"
+end
+
+-- ==================== AIM กล้อง (เสริม — เผื่ออยากเห็นภาพล็อคเป้า) ====================
 local aimConn
 local function aimStart()
     AIM_ON = true
     aimConn = RunService.RenderStepped:Connect(function()
         if not AIM_ON or _G.DA78_GEN ~= MY_GEN then return end
-        local t = bestTarget()
-        if t and t.part.Parent then
-            local camCF = Camera.CFrame
-            local targetCF = CFrame.new(camCF.Position, t.part.Position)
-            Camera.CFrame = camCF:Lerp(targetCF, SMOOTH)
-            setStatus(("[DuckAim78] 🎯 ล็อค: %s"):format(t.model.Name))
-        else
-            setStatus("[DuckAim78] ไม่เจอเป้าในระยะกลางจอ — หันกล้องหาเป้าก่อน")
+        local d = bestDuckOnScreen()
+        if d and d.model.Parent then
+            local p = duckPos(d.model)
+            if p then
+                local camCF = Camera.CFrame
+                Camera.CFrame = camCF:Lerp(CFrame.new(camCF.Position, p), SMOOTH)
+            end
         end
     end)
     table.insert(_G.DA78_CONNS, aimConn)
@@ -131,30 +157,32 @@ local function aimStop()
 end
 
 -- ==================== Buttons ====================
+silentB.MouseButton1Click:Connect(function()
+    SILENT_ON = not SILENT_ON
+    silentB.Text = SILENT_ON and "SILENT: ON (ยิงตรงไหนก็โดน)" or "SILENT: OFF"
+end)
 aimB.MouseButton1Click:Connect(function()
     if AIM_ON then
         aimStop()
-        aimB.Text = "AIM: OFF (ล็อคเป้าอัตโนมัติ)"
-        setStatus("[DuckAim78] หยุดเล็งแล้ว")
+        aimB.Text = "AIM: OFF (ล็อคกล้องที่เป็ด)"
     else
         aimStart()
-        aimB.Text = "AIM: ON (กำลังล็อคเป้า...)"
+        aimB.Text = "AIM: ON (กล้องตามเป็ด)"
     end
 end)
-modeB.MouseButton1Click:Connect(function()
-    NAME_ONLY = not NAME_ONLY
-    modeB.Text = NAME_ONLY and "MODE: เฉพาะชื่อพ้องเป็ด" or "MODE: ทุก NPC"
-end)
 stopB.MouseButton1Click:Connect(function()
+    SILENT_ON = false
+    silentB.Text = "SILENT: OFF"
     aimStop()
-    aimB.Text = "AIM: OFF (ล็อคเป้าอัตโนมัติ)"
+    aimB.Text = "AIM: OFF (ล็อคกล้องที่เป็ด)"
     setStatus("[DuckAim78] หยุดแล้ว")
 end)
 closeB.MouseButton1Click:Connect(function()
+    SILENT_ON = false
     aimStop()
     for _, c in ipairs(_G.DA78_CONNS) do pcall(function() c:Disconnect() end) end
     _G.DA78_CONNS = {}
     gui:Destroy(); _G.DA78_GUI = nil
 end)
 
-warn("[DuckAim78] loaded")
+warn("[DuckAim78] v2.0 loaded")
