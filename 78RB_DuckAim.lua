@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v6.5 — บอสหาจากป้าย HP + ยิงรัวต่อเนื่อง (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v6.5: (1) log พิสูจน์ยิง remote 0.18 วิต่อเนื่องฆ่าจริง (แม็ก/รีโหลดเป็นลิมิต client เท่านั้น) → ตัด
+--   หน่วงรีโหลด v6.4 ทิ้ง ยิงรัว 0.2 วิ (2) บอสไม่มี Humanoid → หาจากป้าย "<เลข> HP" แล้วเอา Model บอส
 -- 78RB_DuckAim.lua v6.4 — ยิงตามจังหวะจริงของปืน (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v6.4: เมนูอัปเกรดเผยปืนมีลิมิตจริง — แม็ก 2 นัด รีโหลด 1.5 วิ ยิงเร็วกว่านี้กระสุนไม่ออก (เซิร์ฟเวอร์
 --   ทิ้งนัดเกิน) → เลิกยิงรัว 0.18 เปลี่ยนเป็น 2 นัดรวด(0.25) แล้วรอรีโหลด 1.6 วิ (ค่าฐาน — ยังไม่อ่าน
@@ -146,20 +149,20 @@ local function isLiveDuck(m)
     return n:find("Duck") ~= nil and not n:find("Landed")
 end
 
--- v6.3: บอส (เช่น "Silly Duck 150 HP") — เป็ดปกติไม่มี Humanoid แต่บอสมี HP bar = มี Humanoid
--- หา Model ที่มี Humanoid.Health>0 (ไม่ใช่ผู้เล่น) ทั้งใน Ume และ workspace ชั้นบน → บอสต้องยิงค้างจนตาย
+-- v6.5: บอส (เช่น "Silly Duck 150 HP") ไม่มี Humanoid — แต่มี "ป้าย HP bar" (BillboardGui/TextLabel
+-- ที่มีข้อความ "<เลข> HP") เป็นเอกลักษณ์ → หาป้ายนั้นแล้วเอา Model บรรพบุรุษเป็นบอส (แม่นกว่าเดาชื่อ)
 local function findBoss()
-    local seen = {}
-    local scan = {}
     local f = duckFolder()
-    if f then for _, c in ipairs(f:GetChildren()) do scan[#scan + 1] = c end end
-    for _, c in ipairs(workspace:GetChildren()) do scan[#scan + 1] = c end
-    for _, m in ipairs(scan) do
-        if m:IsA("Model") and not Players:GetPlayerFromCharacter(m) and m ~= LP.Character then
-            local hum = m:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local p = duckPos(m)
-                if p then return { model = m, pos = p, boss = true } end
+    if not f then return nil end
+    for _, d in ipairs(f:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local t = d.Text
+            if t and t:find("%d+%s*HP") then
+                local m = d:FindFirstAncestorWhichIsA("Model")
+                if m and not m.Name:find("Landed") then
+                    local p = duckPos(m)
+                    if p then return { model = m, pos = p, boss = true } end
+                end
             end
         end
     end
@@ -303,12 +306,9 @@ end
 local SHOOT_ON = false
 -- ปืนเก็บใน _G.DA78_AIM / _G.DA78_FIRE / _G.DA78_ORIGIN / _G.DA78_CTR (hook เขียน ทุก gen ใช้ร่วม)
 local lastShotClock = 0
--- v6.4: เมนูอัปเกรดเผยว่าปืนจริงมีลิมิต — แม็ก 2 นัด, รีโหลด 1.5 วิ ยิงเร็วกว่านี้กระสุนไม่ออกจริง
--- (เซิร์ฟเวอร์ทิ้งนัดเกิน) → ยิงตามจังหวะจริง: 2 นัดรวด แล้วรอรีโหลด (เผื่อขึ้นแม็ก/รีโหลดถ้าอัป)
-local MAG_SIZE = 2
-local RELOAD_TIME = 1.6   -- เผื่อจาก 1.5 นิดกันชนขอบ
-local SHOT_GAP = 0.25     -- ช่วงระหว่าง 2 นัดในแม็กเดียว
-local magLeft = MAG_SIZE
+-- v6.5: log พิสูจน์ว่ายิง remote ตรง 0.18 วิ ต่อเนื่อง เซิร์ฟเวอร์รับ+ฆ่าจริง (แม็ก/รีโหลดเป็นลิมิต
+-- ฝั่ง client ตอนกดยิงเอง เราข้ามได้) → ยิงรัวต่อเนื่อง ไม่ต้องหน่วงรีโหลด
+local FIRE_RATE = 0.2
 
 -- v5.5: รายงานผลติดตั้ง hook — เดิม pcall กลืน error เงียบ ทำให้ไม่รู้ว่า hook ไม่ติด (เลยจับปืนไม่ได้)
 local hookOK, hookErr = pcall(function()
@@ -383,7 +383,6 @@ local function shootStart()
         return
     end
     SHOOT_ON = true
-    magLeft = MAG_SIZE -- เริ่มด้วยแม็กเต็ม
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
     if not AIM_ON then aimStart() end -- เปิดล็อคกล้องด้วยเสมอ ให้ทิศกล้องตรงเป้าก่อนยิง
     task.spawn(function()
@@ -399,19 +398,11 @@ local function shootStart()
                             Camera.CFrame.LookVector:Dot(toD.Unit), -1, 1)))
                         if ang < 4 then -- ยิงเฉพาะตอนกล้องเข้าเป้าจริง
                             fireShot()
-                            magLeft = magLeft - 1
-                            -- v6.4: บอสยิงค้างจนตาย (ไม่ mark) / เป็ดปกติยิงนัดเดียวแล้วข้าม
+                            -- v6.5: บอสยิงค้างจนตาย (ไม่ mark) / เป็ดปกติยิงนัดเดียวแล้วข้าม
                             if not d.boss then markShot(d.model) end
-                            setStatus(("[DuckAim78] 🔫 ยิง%s: %s (เหลือแม็ก %d)"):format(
-                                d.boss and " บอส" or "", d.model.Name, magLeft))
-                            -- แม็กหมด → รอรีโหลดตามจริง (2 นัด/แม็ก, รีโหลด 1.5 วิ) แล้วเติมแม็ก
-                            if magLeft <= 0 then
-                                setStatus("[DuckAim78] 🔄 รีโหลด...")
-                                task.wait(RELOAD_TIME)
-                                magLeft = MAG_SIZE
-                            else
-                                task.wait(SHOT_GAP) -- ยิงนัดที่ 2 ในแม็กเร็วๆ
-                            end
+                            setStatus(("[DuckAim78] 🔫 ยิง%s: %s (นัด %d)"):format(
+                                d.boss and " บอส" or "", d.model.Name, _G.DA78_CTR or 0))
+                            task.wait(FIRE_RATE) -- ยิงรัวต่อเนื่อง (log พิสูจน์ 0.18 วิ เซิร์ฟเวอร์รับ+ฆ่าจริง)
                         else
                             setStatus(("[DuckAim78] หมุนกล้องเข้าเป้า %s (%.0f°)"):format(d.model.Name, ang))
                             task.wait(0.03)
