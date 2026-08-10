@@ -1,4 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.9 — เร่งความเร็ว + จัดการของไม่มีจุดว่าง (เกม "ล้างบ้านขำๆ")
+-- 77RB_HouseClean_AutoFly.lua v6.0 — ทิ้งของค้างมืออัตโนมัติ (เกม "ล้างบ้านขำๆ")
+-- v6.0: ของที่วางไม่ออก (จุดเต็มหมด/ไม่มีจุดว่าง) เคยค้างมือสะสมจนระบบตัน ("มือเต็ม! x2") →
+--   เพิ่ม pressDropButton() หาปุ่ม "ทิ้ง" ของเกมบนจอแล้วคลิกให้เอง (firesignal หรือคลิกจริงผ่าน VIM)
+--   เรียกอัตโนมัติทุกครั้งที่: มือเต็ม / วางไม่เข้าครบ 3 จุด / ไม่มีจุดว่าง — มือว่างตลอด งานไม่สะดุด
 -- v5.9: FLY_SPEED 100→180, หั่นเวลารอวางลงครึ่ง + ชิ้นที่จับแล้ว "ghost ไม่ขึ้น" = เกมไม่มีจุดว่าง
 --   เหลือ (ของซ้ำ/บ้านรับเต็ม) ไม่บินลอง 3 จุดให้เสียเวลา ยิงวางเผื่อฟลุค 1 ทีแล้วข้าม พร้อมเตือน
 --   ให้กด "ทิ้ง" ถ้าของค้างมือ (รอชื่อ remote ปุ่มทิ้งจาก NetSpy มาทำทิ้งอัตโนมัติ)
@@ -744,10 +747,42 @@ local function runAuto()
         return best, bestHouse
     end
 
+    -- v6.0: ทิ้งอัตโนมัติ — หาปุ่ม "ทิ้ง" ของเกมบนจอแล้วคลิกให้เอง (ทาง firesignal ก่อน ไม่มีก็
+    -- คลิกจริงกลางปุ่มผ่าน VirtualInputManager) ใช้ตอนมือเต็ม/วางไม่ออก จะได้ไม่มีของค้างมือสะสม
+    local function pressDropButton()
+        for _, d in ipairs(LP.PlayerGui:GetDescendants()) do
+            if (d:IsA("TextButton") or d:IsA("TextLabel")) and tostring(d.Text):find("ทิ้ง") then
+                local btn = d:IsA("TextButton") and d
+                    or d:FindFirstAncestorWhichIsA("TextButton")
+                    or d:FindFirstAncestorWhichIsA("ImageButton")
+                if btn and btn.Visible then
+                    local usedSignal = firesignal and pcall(function() firesignal(btn.MouseButton1Click) end)
+                    if not usedSignal then
+                        pcall(function()
+                            local p = btn.AbsolutePosition + btn.AbsoluteSize / 2
+                            local VIM = game:GetService("VirtualInputManager")
+                            VIM:SendMouseButtonEvent(p.X, p.Y, 0, true, game, 1)
+                            task.wait(0.03)
+                            VIM:SendMouseButtonEvent(p.X, p.Y, 0, false, game, 1)
+                        end)
+                    end
+                    alog("🗑️ กดปุ่มทิ้งให้แล้ว (" .. btn:GetFullName():sub(-40) .. ")")
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
     while AUTO_ON and _G.AF77_GEN == MY_GEN do
         if HAND_FULL_FLAG then
-            setStatus(ABORT_HANDFULL)
-            break
+            HAND_FULL_FLAG = false
+            alog("มือเต็ม → ลองกดปุ่มทิ้งอัตโนมัติ")
+            if not pressDropButton() then
+                setStatus(ABORT_HANDFULL)
+                break
+            end
+            task.wait(0.4)
         end
 
         -- (1) ของชิ้นใกล้สุดที่ยังไม่ได้วาง — v5.1: ไม่บินไปหาแล้ว ยิงจับจากที่ยืนเลย
@@ -824,7 +859,9 @@ local function runAuto()
                 alog(("✅ %s → %s (ฟลุค)"):format(item.Name, s1.Name))
             else
                 failed += 1
-                alog(("⏭️ %s ไม่มีจุดว่าง (ghost ไม่ขึ้น) — ข้าม ถ้าค้างมือกด \"ทิ้ง\" เอง"):format(item.Name))
+                alog(("⏭️ %s ไม่มีจุดว่าง (ghost ไม่ขึ้น) — ทิ้งแล้วข้าม"):format(item.Name))
+                pressDropButton()
+                task.wait(0.2)
             end
         elseif #candidates == 0 then
             skipItems[item] = true
@@ -875,7 +912,9 @@ local function runAuto()
             if not placedOK then
                 skipItems[item] = true
                 failed += 1
-                alog(("❌ %s วางไม่เข้าเลย (ลอง %d จุด)"):format(item.Name, math.min(3, #candidates)))
+                alog(("❌ %s วางไม่เข้าเลย (ลอง %d จุด) — ทิ้งของค้างมือ"):format(item.Name, math.min(3, #candidates)))
+                pressDropButton()
+                task.wait(0.2)
             end
         end
     end
