@@ -1,7 +1,7 @@
--- 77RB_HouseClean_AutoFly.lua v5.2 — บินไปจับ + วางจากที่ยืน (เกม "ล้างบ้านขำๆ")
--- v5.2: v5.1 (ยืนเฉยยิงรัว) วางไม่เข้าเลย = "จับ" ต้องอยู่ใกล้ของจริง มีแต่ "วาง" ที่ไม่เช็คระยะ
---   → สูตรผสม: บินไปหาของ (NoClip+ลอยนิ่งระหว่าง AUTO) → จับ → วางทันทีจากตรงนั้น ไม่บินไปสล็อต
---   (ตัดช่วงถือของบินไกลๆ ที่โดนเกมส่งลงเหวทิ้งไปเลย) + จบงานวาปเหนือหลังคาก่อนเปิดการชนคืน
+-- 77RB_HouseClean_AutoFly.lua v5.3 — บินจับ-บินวาง (สูตร v4.9 ที่พิสูจน์แล้ว) + กู้ตัวไว (เกม "ล้างบ้านขำๆ")
+-- v5.3: v5.1/v5.2 พิสูจน์ครบ: ทั้งจับและวางต้องบินไปใกล้ๆ ทั้งคู่ (v5.0 ที่นึกว่าวางจากเหวได้ คือบินถึง
+--   สล็อตพอดีตอนยิง) → กลับสูตรเต็ม บินจับ → บินสล็อต → วาง และลดเวลากู้ตัวจากเหวจาก 3 วิ เหลือ
+--   0.5 วิ ให้กลับมาทำงานต่อไวๆ ตอนเกมส่งตัวลงเหวระหว่างถือของ
 -- v5.1: log v5.0 พิสูจน์: (0,-1e6,0) คือเกมจงใจส่งตัวไปเหวระหว่างถือของ (hp=100 root=HRP) และการ
 --   จับ-วางสำเร็จตลอดแม้ตัวอยู่เหว/ฟ้า = เกมไม่เช็คระยะ → AUTO เลิกบิน เลิก NoClip เลิกล็อคตำแหน่ง
 --   ทั้งหมด ยืนเฉยๆ ยิง remote จับ-วางรัวๆ อย่างเดียว เหลือ rescue เดียว: ค้างนอกกรอบ >3 วิ วาปกลับ
@@ -668,7 +668,7 @@ local function runAuto()
                 hrp.AssemblyLinearVelocity = Vector3.zero
                 if not positionSane(hrp.Position) then
                     oobSince = oobSince or tick()
-                    if tick() - oobSince > 3 then
+                    if tick() - oobSince > 0.5 then
                         oobSince = nil
                         if tick() - lastWarpLog > 1 then
                             lastWarpLog = tick()
@@ -743,7 +743,9 @@ local function runAuto()
             failed += 1
             setStatus(("[AutoFly77] ⚠️ %s ไม่เจอทั้งไฮไลต์และสล็อต — ข้าม"):format(item.Name))
         else
-            -- (3)+(4) วางจากที่ยืนเลย — พิสูจน์จาก log แล้วว่าเกมไม่เช็คระยะ
+            -- (3) บินไปสล็อต (4) วาง — v5.3: v5.2 พิสูจน์ว่าวางจากไกลก็ไม่เข้าเหมือนกัน ต้องบินไปทั้งคู่
+            local spos = (ghost and partPosition(ghost)) or getGhostPosition(slot) or partPosition(slot)
+            if spos then flyTo(clampY(spos), 6) end
             if not AUTO_ON or _G.AF77_GEN ~= MY_GEN then break end
             pcall(function() learnedRemote:FireServer("placeCarried", slot, item) end)
             task.wait(0.2)
