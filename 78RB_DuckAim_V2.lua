@@ -31,6 +31,11 @@ local FLY_ON, FLY_SPEED = false, 200
 local upHeld, downHeld = false, false
 local flyBV, flyConn
 local HOME = nil -- จุดบ้าน (จำตอนสปอว์น)
+
+-- โหมดแมลงวันบอส: เจอบอส → ลอยเหนือบอสในระยะ 80-100 อัตโนมัติ (ไม่ใกล้/ไม่ห่างเกิน)
+local BOSS_FLY_ON = false
+local BOSS_MIN, BOSS_MAX = 80, 100   -- ระยะห่างบอส (studs) ต่ำสุด/สูงสุด
+local BOSS_HOVER = 90                 -- ระยะเป้าหมาย (กลางๆ)
 local function hrp() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
 local function humo() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
 
@@ -42,7 +47,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DV2_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 230, 0, 280); frame.Position = UDim2.new(0, 8, 0.28, 0)
+frame.Size = UDim2.new(0, 230, 0, 312); frame.Position = UDim2.new(0, 8, 0.28, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.18
 frame.Active = true; frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -62,7 +67,7 @@ local function setStatus(s) status.Text = s end
 
 -- บรรทัดดีบัก (หาบัค) — โชว์สถานะลูปสดๆ
 local dbg = Instance.new("TextLabel", frame)
-dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 248)
+dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 280)
 dbg.BackgroundColor3 = Color3.fromRGB(20, 20, 30); dbg.BackgroundTransparency = 0.2
 dbg.TextColor3 = Color3.fromRGB(120, 230, 255); dbg.TextSize = 10; dbg.Font = Enum.Font.Code
 dbg.TextXAlignment = Enum.TextXAlignment.Left; dbg.TextWrapped = true
@@ -123,8 +128,15 @@ shopB.Text = "🛒 เปิดร้าน (H)"; shopB.Font = Enum.Font.GothamB
 shopB.BackgroundColor3 = Color3.fromRGB(150, 110, 50); shopB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", shopB).CornerRadius = UDim.new(0, 6)
 
+-- ปุ่มโหมดแมลงวันบอส (เจอบอส → ลอยเหนือบอส 80-100 อัตโนมัติ)
+local bossB = Instance.new("TextButton", frame)
+bossB.Size = UDim2.new(1, -8, 0, 28); bossB.Position = UDim2.new(0, 4, 0, 224)
+bossB.Text = "🪰 แมลงวันบอส: OFF (V)"; bossB.Font = Enum.Font.GothamBold; bossB.TextSize = 13
+bossB.BackgroundColor3 = Color3.fromRGB(90, 60, 130); bossB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", bossB).CornerRadius = UDim.new(0, 6)
+
 local closeB = Instance.new("TextButton", frame)
-closeB.Size = UDim2.new(1, -8, 0, 20); closeB.Position = UDim2.new(0, 4, 0, 224)
+closeB.Size = UDim2.new(1, -8, 0, 20); closeB.Position = UDim2.new(0, 4, 0, 256)
 closeB.Text = "✕ ปิดหน้าต่าง"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12
 closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
@@ -368,6 +380,49 @@ table.insert(_G.DV2_CONNS, LP.CharacterAdded:Connect(function(chr)
     if FLY_ON then stopFly(); startFly() end -- ต่อบินใหม่หลังเกิด
 end))
 
+-- ==================== โหมดแมลงวันบอส ====================
+-- เปิดไว้ + เจอบอส → ลอยไปอยู่ "เหนือบอส" ระยะ 80-100 studs อัตโนมัติ
+--   ใกล้เกิน (<80) ดันขึ้น / ห่างเกิน (>100) ดึงลง — เกาะไว้กลางๆ ~90 ปล่อยยิงลงมา
+local bossFlyConn
+local function startBossFly()
+    if bossFlyConn then bossFlyConn:Disconnect() end
+    bossFlyConn = RunService.RenderStepped:Connect(function()
+        if not (BOSS_FLY_ON and _G.DV2_GEN == MY_GEN) then return end
+        local root = hrp(); if not root then return end
+        local boss = findBoss()
+        if not boss then bossB.Text = "🪰 แมลงวันบอส: ON (ยังไม่มีบอส)"; return end
+        bossB.Text = "🪰 แมลงวันบอส: ON 🎯บอส"
+        local bp = boss.pos
+        local cur = root.Position
+        local dist = (cur - bp).Magnitude
+        -- ตำแหน่งเป้าหมาย: เหนือบอสตรงๆ ที่ความสูง BOSS_HOVER
+        local target = bp + Vector3.new(0, BOSS_HOVER, 0)
+        -- ถ้าอยู่ในระยะ 80-100 แล้ว ไม่ต้องขยับแรง (กันสั่น) — แค่ค้างเหนือบอส
+        if dist < BOSS_MIN or dist > BOSS_MAX then
+            root.CFrame = CFrame.new(root.Position:Lerp(target, 0.25), bp) -- ค่อยๆเลื่อนเข้าโซน
+        else
+            -- อยู่ในโซนแล้ว: ตรึงความสูงเหนือบอสไว้ ตามบอสในแนวราบเบาๆ
+            local want = Vector3.new(bp.X, bp.Y + BOSS_HOVER, bp.Z)
+            root.CFrame = CFrame.new(root.Position:Lerp(want, 0.12), bp)
+        end
+        root.AssemblyLinearVelocity = Vector3.zero -- กันร่วง
+    end)
+    table.insert(_G.DV2_CONNS, bossFlyConn)
+end
+local function bossFlyToggle()
+    BOSS_FLY_ON = not BOSS_FLY_ON
+    if BOSS_FLY_ON then
+        if FLY_ON then stopFly() end -- กันชนกับบินปกติ
+        bossB.BackgroundColor3 = Color3.fromRGB(150, 90, 60)
+        bossB.Text = "🪰 แมลงวันบอส: ON (V)"
+        startBossFly()
+    else
+        if bossFlyConn then bossFlyConn:Disconnect(); bossFlyConn = nil end
+        bossB.BackgroundColor3 = Color3.fromRGB(90, 60, 130)
+        bossB.Text = "🪰 แมลงวันบอส: OFF (V)"
+    end
+end
+
 -- ==================== ร้าน (เปิด/ปิด GUI ชื่อ Upgrades/Shop จากทุกที่) ====================
 local SHOP_OPEN = false
 local function shopToggle()
@@ -388,6 +443,7 @@ mainB.MouseButton1Click:Connect(toggle)
 flyB.MouseButton1Click:Connect(flyToggle)
 homeB.MouseButton1Click:Connect(warpHome)
 shopB.MouseButton1Click:Connect(shopToggle)
+bossB.MouseButton1Click:Connect(bossFlyToggle)
 -- แตะสลับ (มือถือ MouseButton1Down มักไม่ทำงาน — ใช้ Click ชัวร์กว่า) + เริ่มบินให้เอง
 local function refreshUpDown()
     upB.BackgroundColor3 = upHeld and Color3.fromRGB(60,170,90) or Color3.fromRGB(70,90,130)
@@ -426,6 +482,7 @@ table.insert(_G.DV2_CONNS, UIS.InputBegan:Connect(function(input, processed)
     elseif k == Enum.KeyCode.F then flyToggle()
     elseif k == Enum.KeyCode.B then warpHome()
     elseif k == Enum.KeyCode.H then shopToggle()
+    elseif k == Enum.KeyCode.V then bossFlyToggle()
     elseif k == Enum.KeyCode.Space then upHeld = true
     elseif k == Enum.KeyCode.LeftShift or k == Enum.KeyCode.LeftControl then downHeld = true
     end
@@ -437,4 +494,4 @@ table.insert(_G.DV2_CONNS, UIS.InputEnded:Connect(function(input)
     end
 end))
 
-warn("[DuckAimV2] v2.4 loaded — คลิก(J) + บิน200(F) + วาปบ้าน(B)")
+warn("[DuckAimV2] v2.8 loaded — คลิก(J) + บิน200(F) + วาปบ้าน(B) + แมลงวันบอส80-100(V)")
