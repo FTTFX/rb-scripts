@@ -1,3 +1,6 @@
+-- 78RB_DuckAim.lua v10.1 — คลิกจริงแบบครบทาง: Tool:Activate() + VIM คลิกเมาส์ (เกม "ยิงเป็ด" 78)
+-- v10.1: v10.0 mouse1click ไม่ทำงานบน executor นี้ → เพิ่ม Tool:Activate() (สั่งปืนยิงตรง เหมือนคลิก
+--   จริง) + VIM คลิกเมาส์กลางจอ + โชว์ว่าเจอปืน(Tool) ไหมตอนกด K
 -- 78RB_DuckAim.lua v10.0 — เลิกยิง remote! Auto Shoot = "คลิกจริง" ให้ปืนเกมยิงเอง (เกม "ยิงเป็ด" 78)
 -- v10.0: การยิง remote ปลอมทำ counter เพี้ยน เป็ดไม่ตาย → เปลี่ยนเป็นคลิกเมาส์จริง (mouse1click /
 --   VirtualInputManager) ปืนของเกมยิงเอง = counter/รีโหลดถูก 100% เหมือนยิงมือ เราแค่ล็อกกล้อง(AIM)
@@ -491,24 +494,36 @@ end)
 -- เหมือนยิงมือ 100%) — เราแค่ล็อกกล้องใส่เป็ด (AIM) แล้วคลิก จังหวะยิงคุมเองด้วยหน่วงยิง
 local VIM = game:GetService("VirtualInputManager")
 local mouse = LP:GetMouse()
+-- v10.1: หา "ปืน" (Tool) ที่ถืออยู่ในตัวละคร
+local function getTool()
+    local ch = LP.Character
+    if not ch then return nil end
+    for _, v in ipairs(ch:GetChildren()) do
+        if v:IsA("Tool") then return v end
+    end
+    return nil
+end
+-- v10.1: คลิกจริงแบบครบทุกทาง — สั่ง Tool ยิง + คลิกเมาส์จริง (executor นี้ mouse1click ไม่ทำงาน)
 local function doClick()
-    -- ลองหลายวิธีตาม executor — เอาวิธีแรกที่ทำงานได้
-    if mouse1click then
-        local ok = pcall(mouse1click)
-        if ok then return true end
+    local did = false
+    -- 1) Tool:Activate() = ตรงกับตอนคลิกปืนจริง (เกมส่วนใหญ่ยิงผ่าน Tool.Activated)
+    local tool = getTool()
+    if tool then
+        pcall(function() tool:Activate() end)
+        did = true
     end
-    if mouse1press and mouse1release then
-        local ok = pcall(function() mouse1press(); mouse1release() end)
-        if ok then return true end
-    end
-    -- VirtualInputManager: กดปุ่มซ้ายที่ตำแหน่งเมาส์ (หรือกลางจอ) แล้วปล่อย
-    local ok = pcall(function()
-        local x = (mouse and mouse.X ~= 0) and mouse.X or (Camera.ViewportSize.X / 2)
-        local y = (mouse and mouse.Y ~= 0) and mouse.Y or (Camera.ViewportSize.Y / 2)
-        VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
-        VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    -- 2) คลิกเมาส์จริงผ่าน VirtualInputManager (เผื่อปืนฟังจาก mouse โดยตรง)
+    pcall(function()
+        local vx = (mouse and mouse.X and mouse.X > 0) and mouse.X or math.floor(Camera.ViewportSize.X / 2)
+        local vy = (mouse and mouse.Y and mouse.Y > 0) and mouse.Y or math.floor(Camera.ViewportSize.Y / 2)
+        VIM:SendMouseButtonEvent(vx, vy, 0, true, game, 0)
+        VIM:SendMouseButtonEvent(vx, vy, 0, false, game, 0)
+        did = true
     end)
-    return ok
+    -- 3) executor helper (เผื่อบางตัวรองรับ)
+    if mouse1click then pcall(mouse1click) end
+    if mouse1press and mouse1release then pcall(function() mouse1press(); mouse1release() end) end
+    return did
 end
 
 local function fireShotAt(targetPos, skipThrottle)
@@ -532,6 +547,9 @@ local function shootStart()
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
     if not AIM_ON then aimStart() end -- ล็อคกล้องใส่เป็ดก่อน แล้วคลิกถึงจะโดน
+    -- v10.1: บอกว่าเจอปืน (Tool) ไหม — ถ้าไม่เจอต้องถือปืนก่อน
+    local tl = getTool()
+    setStatus(("[DuckAim78] คลิกจริง — ปืน:%s"):format(tl and ("✓ " .. tl.Name) or "✗ ไม่เจอ Tool!"))
     -- v7.3: ตัวล็อกให้เหลือ "ลูปยิงตัวเดียว" เสมอ — เดิมกดเปิด/ปิด/เปิด สะสมหลายลูป ยิงถี่รวมกัน
     _G.DA78_SHOOTID = (_G.DA78_SHOOTID or 0) + 1
     local myLoop = _G.DA78_SHOOTID
