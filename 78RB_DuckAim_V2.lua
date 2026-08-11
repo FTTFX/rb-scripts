@@ -75,12 +75,30 @@ local function setGun()
         _G.DV2_OFFSET ~= nil and tostring(_G.DV2_OFFSET) or "?")
 end
 
--- ตัวนับ "ฆ่าไปกี่ตัว" สดๆ จาก leaderstats.DucksKilled — โชว์ว่ายิงรีโมตได้ผลจริงไหม
+-- ตัวนับ "ฆ่าไปกี่ตัว" สดๆ — ค้นหา stat ที่ชื่อเกี่ยวกับ Duck/Kill เองทั่วทั้งตัวผู้เล่น
+-- (บางเกมไม่ได้เก็บใน leaderstats ตรงๆ → สแกน descendant หา IntValue/NumberValue ชื่อพ้อง)
+local killStat, killStatName = nil, "?"
+local function findKillStat()
+    if killStat and killStat.Parent then return killStat end
+    killStat = nil
+    local roots = { LP:FindFirstChild("leaderstats"), LP }
+    for _, root in ipairs(roots) do
+        if root then
+            for _, v in ipairs(root:GetDescendants()) do
+                if (v:IsA("IntValue") or v:IsA("NumberValue")) then
+                    local ln = v.Name:lower()
+                    if ln:find("duckskilled") or (ln:find("duck") and ln:find("kill")) or ln == "kills" then
+                        killStat = v; killStatName = v.Name; return v
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
 local function ducksKilled()
-    local ls = LP:FindFirstChild("leaderstats")
-    if not ls then return nil end
-    local d = ls:FindFirstChild("DucksKilled") or ls:FindFirstChild("Ducks")
-    return d and d.Value or nil
+    local s = findKillStat()
+    return s and s.Value or nil
 end
 local killBase = ducksKilled()
 -- มิเตอร์ "ฆ่า/วิ" — วัดเพดาน fire rate: เร่งแล้วตันที่เลขเดิม=เซิร์ฟคุม / พุ่งตาม=เชื่อ client
@@ -99,7 +117,9 @@ task.spawn(function()
                 local dk = killWindow[#killWindow].total - killWindow[1].total
                 if dt > 0 then rate = dk / dt end
             end
-            title.Text = ("🦆 V2  ฆ่า+%d  %.1f ตัว/วิ"):format(now - killBase, rate)
+            title.Text = ("🦆 %s=%d +%d  %.1f/วิ"):format(killStatName, now, now - killBase, rate)
+        else
+            title.Text = "🦆 V2 — หา stat ฆ่าไม่เจอ (ดูตาเอา)"
         end
         task.wait(0.25)
     end
