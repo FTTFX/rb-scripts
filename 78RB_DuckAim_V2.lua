@@ -34,7 +34,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DV2_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 230, 0, 150); frame.Position = UDim2.new(0, 8, 0.35, 0)
+frame.Size = UDim2.new(0, 230, 0, 184); frame.Position = UDim2.new(0, 8, 0.35, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.18
 frame.Active = true; frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -51,6 +51,15 @@ status.BackgroundTransparency = 1; status.TextColor3 = Color3.fromRGB(180, 255, 
 status.TextSize = 11; status.Font = Enum.Font.Code; status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left; status.TextYAlignment = Enum.TextYAlignment.Top
 local function setStatus(s) status.Text = s end
+
+-- บรรทัดดีบัก (หาบัค) — โชว์สถานะลูปสดๆ
+local dbg = Instance.new("TextLabel", frame)
+dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 152)
+dbg.BackgroundColor3 = Color3.fromRGB(20, 20, 30); dbg.BackgroundTransparency = 0.2
+dbg.TextColor3 = Color3.fromRGB(120, 230, 255); dbg.TextSize = 10; dbg.Font = Enum.Font.Code
+dbg.TextXAlignment = Enum.TextXAlignment.Left; dbg.TextWrapped = true
+dbg.Text = "dbg: (ยังไม่เปิด)"
+local function setDbg(s) dbg.Text = "dbg: " .. s end
 
 local mainB = Instance.new("TextButton", frame)
 mainB.Size = UDim2.new(1, -8, 0, 34); mainB.Position = UDim2.new(0, 4, 0, 58)
@@ -88,7 +97,11 @@ local killStat, killStatName = nil, "?"
 local function findKillStat()
     if killStat and killStat.Parent then return killStat end
     killStat = nil
-    for _, root in ipairs({ LP:FindFirstChild("leaderstats"), LP }) do
+    local roots = {}
+    local ls = LP:FindFirstChild("leaderstats")
+    if ls then roots[#roots + 1] = ls end
+    roots[#roots + 1] = LP
+    for _, root in ipairs(roots) do
         if root then
             for _, v in ipairs(root:GetDescendants()) do
                 if (v:IsA("IntValue") or v:IsA("NumberValue")) then
@@ -232,25 +245,30 @@ local function runStart()
         if not (RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun) then
             conn:Disconnect(); return
         end
-        pcall(function() -- กัน error ในลูปทำให้ทั้งตัวหยุด
+        local ok, err = pcall(function() -- กัน error ในลูปทำให้ทั้งตัวหยุด
+            local f = duckFolder()
+            local nDuck = 0
+            if f then for _, m in ipairs(f:GetChildren()) do if m:IsA("Model") and isLiveDuck(m) then nDuck = nDuck + 1 end end end
             local origin = Camera.CFrame.Position
             local d = pickDuck(origin)
-            if not d then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
+            if not d then setDbg(("รัน✓ เป็ด%d เป้า:ไม่มี"):format(nDuck)); return end
             local p = duckPos(d.model)
-            if not p then return end
+            if not p then setDbg("รัน✓ เป้าไม่มีตำแหน่ง"); return end
             local canFire = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
             aimCameraAt(p, canFire and AIM_SNAP)
+            setDbg(("รัน✓ เป็ด%d เป้า:%s ยิง:%s"):format(nDuck, d.model.Name:gsub("DuckController_Client_",""), canFire and "ได้" or "รอ"))
             if not canFire then return end
             _G.DV2_LASTFIRE = os.clock()
             doTap()
             markShot(d.model)
             setStatus(("[V2] 🎯 %s"):format(d.model.Name))
         end)
+        if not ok then setDbg("❌ ERROR: " .. tostring(err)) end
     end)
     table.insert(_G.DV2_CONNS, conn)
 end
 local function toggle()
-    if RUN_ON then runStop() else runStart() end
+    if RUN_ON then runStop(); setDbg("กดปิดแล้ว") else setDbg("กดเปิดแล้ว — เริ่มลูป"); runStart() end
 end
 
 -- ==================== ปุ่ม/คีย์ ====================
