@@ -1,3 +1,5 @@
+-- 78RB_DuckAim.lua v10.2 — รวมเล็ง+ยิงเป็นปุ่มเดียว (L หรือ K) + เป้าเริ่มต้น=ใกล้สุด (เกม "ยิงเป็ด" 78)
+-- v10.2: L กับ K กดตัวไหนก็เปิด/ปิดทั้งเล็งและยิงพร้อมกัน / TARGET เริ่มที่ "ใกล้สุด"
 -- 78RB_DuckAim.lua v10.1 — คลิกจริงแบบครบทาง: Tool:Activate() + VIM คลิกเมาส์ (เกม "ยิงเป็ด" 78)
 -- v10.1: v10.0 mouse1click ไม่ทำงานบน executor นี้ → เพิ่ม Tool:Activate() (สั่งปืนยิงตรง เหมือนคลิก
 --   จริง) + VIM คลิกเมาส์กลางจอ + โชว์ว่าเจอปืน(Tool) ไหมตอนกด K
@@ -183,9 +185,9 @@ local function mkbtn(txt, y, col)
     b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
     return b
 end
-local aimB    = mkbtn("AIM: OFF (คีย์ลัด L)", 60, Color3.fromRGB(190, 60, 60))
-local shootB  = mkbtn("AUTO SHOOT: OFF (แตะปุ่มนี้ / คีย์ K)", 90, Color3.fromRGB(60, 170, 90))
-local targetB = mkbtn("TARGET: ไม่มีอะไรบัง", 120, Color3.fromRGB(60, 110, 180))
+local aimB    = mkbtn("เล็ง+ยิง: OFF (คีย์ L หรือ K)", 60, Color3.fromRGB(190, 60, 60))
+local shootB  = mkbtn("เล็ง+ยิง: OFF (คีย์ L หรือ K)", 90, Color3.fromRGB(60, 170, 90))
+local targetB = mkbtn("TARGET: ใกล้สุด", 120, Color3.fromRGB(60, 110, 180))
 
 -- v7.6: แถวปรับค่าแบบปุ่ม −/+ (แตะง่ายกว่าพิมพ์) — สร้าง label + [−] [ค่า] [+]
 -- คืน valueLabel (TextLabel) ให้ลูปยิงอ่าน .Text สดๆ
@@ -305,7 +307,7 @@ end
 
 -- ==================== เกณฑ์เลือกเป้า: ใกล้สุด / ไม่มีอะไรบัง / คะแนนเยอะสุด ====================
 local TARGET_MODES = { "ใกล้สุด", "ไม่มีอะไรบัง", "คะแนนเยอะสุด", "เลือดเยอะสุด" }
-local targetModeIdx = 2
+local targetModeIdx = 1 -- v10.2: เริ่มต้น = ใกล้สุด
 
 -- v3.1: อ่าน HP ของเป็ด — Humanoid.Health ก่อน แล้วค่อย attribute/Value ชื่อพ้อง hp/health/เลือด
 local function duckHP(d)
@@ -626,17 +628,29 @@ local function shootToggle()
     if SHOOT_ON then shootStop() else shootStart() end
 end
 
--- คีย์ลัด L (AIM) / K (AUTO SHOOT)
+-- v10.2: รวม "เล็ง + ยิง" เป็นปุ่มเดียว — เปิดทีเดียวได้ทั้งล็อกกล้องและยิง / ปิดทีเดียวหยุดทั้งคู่
+local function bothToggle()
+    if SHOOT_ON or AIM_ON then
+        shootStop(); aimStop()
+        aimB.Text = "เล็ง+ยิง: OFF (คีย์ L หรือ K)"
+        shootB.Text = "เล็ง+ยิง: OFF (คีย์ L หรือ K)"
+    else
+        shootStart() -- ข้างในเรียก aimStart ให้เอง
+        aimB.Text = "เล็ง+ยิง: ON (กด L หรือ K ปิด)"
+        shootB.Text = "เล็ง+ยิง: ON (กด L หรือ K ปิด)"
+    end
+end
+
+-- คีย์ลัด: L หรือ K = เล็ง+ยิง (ปุ่มเดียวกัน)
 table.insert(_G.DA78_CONNS, UIS.InputBegan:Connect(function(input, processed)
     if processed then return end
     if _G.DA78_GEN ~= MY_GEN then return end
-    if input.KeyCode == Enum.KeyCode.L then aimToggle()
-    elseif input.KeyCode == Enum.KeyCode.K then shootToggle() end
+    if input.KeyCode == Enum.KeyCode.L or input.KeyCode == Enum.KeyCode.K then bothToggle() end
 end))
 
 -- ==================== Buttons ====================
-aimB.MouseButton1Click:Connect(aimToggle)
-shootB.MouseButton1Click:Connect(shootToggle)
+aimB.MouseButton1Click:Connect(bothToggle)
+shootB.MouseButton1Click:Connect(bothToggle)
 targetB.MouseButton1Click:Connect(function()
     targetModeIdx = targetModeIdx % #TARGET_MODES + 1
     targetB.Text = "TARGET: " .. TARGET_MODES[targetModeIdx]
@@ -644,6 +658,8 @@ end)
 stopB.MouseButton1Click:Connect(function()
     aimStop()
     shootStop()
+    aimB.Text = "เล็ง+ยิง: OFF (คีย์ L หรือ K)"
+    shootB.Text = "เล็ง+ยิง: OFF (คีย์ L หรือ K)"
     setStatus("[DuckAim78] หยุดแล้ว")
 end)
 closeB.MouseButton1Click:Connect(function()
