@@ -50,61 +50,50 @@ closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
 
 -- ==================== หา ProximityPrompt + หน้าต่างร้าน ====================
-local SHOP_PROMPTS = {}   -- ProximityPrompt ที่น่าจะเปิดร้าน
-local SHOP_GUIS = {}      -- ScreenGui/Frame ร้าน
+local SHOP_GUIS = {}   -- ScreenGui ร้าน -> Frame หลัก (เจาะจงเฉพาะร้านจริง ไม่ยุ่ง UI อื่น)
 
-local function looksShoppy(txt)
+-- ลายเซ็นร้านที่ "เฉพาะเจาะจง" — คำนี้มีแต่ในร้านนี้ ไม่ชนกับ console/UI อื่น
+local function isShopText(txt)
     if not txt then return false end
-    txt = txt:lower()
-    return txt:find("ร้าน") or txt:find("shop") or txt:find("อัปเกรด") or txt:find("upgrade")
-        or txt:find("ขายเป็ด") or txt:find("อาวุธ") or txt:find("store") or txt:find("buy")
+    return txt:find("ขายเป็ด") or txt:find("อัปเกรดอาวุธ") or txt:find("ซื้อประเภทเหยื่อ")
+end
+
+local function biggestFrame(sg)
+    local best, bestArea = nil, 0
+    for _, d in ipairs(sg:GetDescendants()) do
+        if d:IsA("Frame") or d:IsA("ImageLabel") then
+            local a = d.Size.X.Scale + d.Size.Y.Scale
+            if a > bestArea then best, bestArea = d, a end
+        end
+    end
+    return best
 end
 
 local function scan()
-    SHOP_PROMPTS = {}; SHOP_GUIS = {}
-    -- (A) ProximityPrompt ทั้งหมด (มักมีตัวเดียว/ไม่กี่ตัว) — เก็บทุกตัว เผื่อยิงเปิดร้าน
-    pcall(function()
-        for _, p in ipairs(workspace:GetDescendants()) do
-            if p:IsA("ProximityPrompt") then
-                SHOP_PROMPTS[#SHOP_PROMPTS + 1] = p
-            end
-        end
-    end)
-    -- (B) หน้าต่างร้านใน PlayerGui — จากข้อความ ขายเป็ด/อัปเกรด/อาวุธ
+    SHOP_GUIS = {}
+    -- สแกน "เฉพาะ PlayerGui" (ไม่แตะ gethui/console ของ executor!) หาหน้าต่างที่มีคำร้านจริง
     pcall(function()
         local pg = LP:FindFirstChild("PlayerGui")
-        local roots = { pg }
-        if gethui then pcall(function() roots[#roots+1] = gethui() end) end
-        for _, root in ipairs(roots) do
-            if root then
-                for _, d in ipairs(root:GetDescendants()) do
-                    if (d:IsA("TextLabel") or d:IsA("TextButton")) and looksShoppy(d.Text) then
-                        -- ไต่ขึ้นหา ScreenGui หรือ Frame ใหญ่สุดที่คุมร้าน
-                        local sg = d:FindFirstAncestorWhichIsA("ScreenGui")
-                        if sg then SHOP_GUIS[sg] = true end
-                    end
-                end
+        if not pg then return end
+        for _, d in ipairs(pg:GetDescendants()) do
+            if (d:IsA("TextLabel") or d:IsA("TextButton")) and isShopText(d.Text) then
+                local sg = d:FindFirstAncestorWhichIsA("ScreenGui")
+                if sg and SHOP_GUIS[sg] == nil then SHOP_GUIS[sg] = biggestFrame(sg) or false end
             end
         end
     end)
     local nG = 0; for _ in pairs(SHOP_GUIS) do nG = nG + 1 end
-    title.Text = ("🛒 เจอ: prompt %d ตัว, หน้าต่างร้าน %d\n(ถ้ากดแล้วไม่เปิด ลองสแกนใหม่ตอนอยู่ใกล้ร้าน)"):format(#SHOP_PROMPTS, nG)
+    title.Text = ("🛒 เจอหน้าต่างร้าน %d อัน\n(ถ้าเจอ 0 เดินไปใกล้ร้านแล้วกด '🔍 สแกน')"):format(nG)
 end
 
 local SHOP_OPEN = false
 local function setShop(open)
     local did = false
-    -- (A) fireproximityprompt (เหมือนกด E จากที่ไกล) — ยิงตอน "เปิด" เท่านั้น
-    if open and fireproximityprompt then
-        for _, p in ipairs(SHOP_PROMPTS) do pcall(function() fireproximityprompt(p) end); did = true end
-    end
-    -- (B) เปิด/ปิดหน้าต่างร้านตรงๆ
-    for sg in pairs(SHOP_GUIS) do
+    -- เปิด/ปิดเฉพาะ ScreenGui ร้าน + เฟรมหลักเท่านั้น (ไม่ยุ่งเฟรมย่อย/แท็บ ปล่อยเกมจัดการเอง)
+    for sg, mainFrame in pairs(SHOP_GUIS) do
         pcall(function()
-            if sg:IsA("ScreenGui") then sg.Enabled = open end -- ปิด = ซ่อนทั้ง ScreenGui
-            for _, d in ipairs(sg:GetDescendants()) do
-                if d:IsA("Frame") and d.Size.X.Scale > 0.3 then d.Visible = open end
-            end
+            if sg:IsA("ScreenGui") then sg.Enabled = open end
+            if mainFrame and mainFrame ~= false then mainFrame.Visible = open end
             did = true
         end)
     end
@@ -112,8 +101,7 @@ local function setShop(open)
     openB.Text = open and "🛒 ปิดร้าน (G)" or "🛒 เปิดร้าน (G)"
     openB.BackgroundColor3 = open and Color3.fromRGB(120, 70, 60) or Color3.fromRGB(150, 110, 50)
     if did then
-        title.Text = open and "🛒 เปิดร้านแล้ว (กด G อีกทีปิด)"
-            or "🛒 ปิดร้านแล้ว"
+        title.Text = open and "🛒 เปิดร้านแล้ว (กด G อีกทีปิด)" or "🛒 ปิดร้านแล้ว"
     else
         title.Text = "🛒 ยังไม่เจอร้าน — เดินไปใกล้ร้าน กด '🔍 สแกน' ก่อน"
     end
