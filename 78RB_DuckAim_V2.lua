@@ -34,7 +34,7 @@ local HOME = nil -- จุดบ้าน (จำตอนสปอว์น)
 
 -- โหมดแมลงวันบอส: เจอบอส → บินวนรอบบอส 8 ทิศ ระยะราบ 80 สูง 20 (ยิงเฉียงลงโดน)
 local BOSS_FLY_ON = false
-local BOSS_RADIUS = 150   -- ระยะห่างแนวราบจากบอส (studs)
+local BOSS_RADIUS = 200   -- ระยะห่างแนวราบจากบอส (studs)
 local BOSS_HEIGHT = 20    -- สูงกว่าบอส (studs)
 local BOSS_STEP = 0.7     -- วิ/ทิศ (เปลี่ยนทิศทุก 0.7 วิ ครบ 8 ทิศ)
 local function hrp() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
