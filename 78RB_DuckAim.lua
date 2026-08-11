@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v10.0 — เลิกยิง remote! Auto Shoot = "คลิกจริง" ให้ปืนเกมยิงเอง (เกม "ยิงเป็ด" 78)
+-- v10.0: การยิง remote ปลอมทำ counter เพี้ยน เป็ดไม่ตาย → เปลี่ยนเป็นคลิกเมาส์จริง (mouse1click /
+--   VirtualInputManager) ปืนของเกมยิงเอง = counter/รีโหลดถูก 100% เหมือนยิงมือ เราแค่ล็อกกล้อง(AIM)
+--   ใส่เป็ด แล้วคลิกตามหน่วงยิงที่ตั้ง — ไม่ต้องจับปืน/เรียน offset อีกต่อไป
 -- 78RB_DuckAim.lua v9.1 — เรียน offset (AIM−FIRE) จากยิงมือ แล้วคำนวณ FIRE counter ทุกนัด
 -- v9.1: v9.0 counter 2 ตัวเริ่ม 0 พร้อมกัน +1 พร้อมกัน = เท่ากันตลอด (A435/F435) offset หลุด = 0 ตาย
 --   แก้: ยิงมือ 1 นัด → hook จับคู่ AIM ตามด้วย FIRE = offset (23−7=16) → auto: FIRE = AIM − offset
@@ -483,38 +487,40 @@ end)
 -- ไม่เช็คว่ากล้องตรงเป๊ะ) → เล็งใกล้ยิงได้ทันที ไม่ค้าง
 -- v7.8: คุมจังหวะยิงไว้ที่ "ตัวยิงเอง" ด้วย _G.DA78_LASTFIRE (แชร์ทุกลูป/ทุก gen) — ต่อให้มีลูปยิงซ้อน
 -- กี่ตัว การยิงจริงก็ห่างกันตามหน่วงที่ตั้งเป๊ะ (อ่านจากช่อง rateBox สดๆ) นี่คือตัวแก้ "ยิงถี่จากลูปซ้อน"
+-- v10.0: เลิกยิง remote ปลอม! เปลี่ยนเป็น "คลิกจริง" ให้ปืนของเกมยิงเอง (counter/รีโหลดถูกเป๊ะ
+-- เหมือนยิงมือ 100%) — เราแค่ล็อกกล้องใส่เป็ด (AIM) แล้วคลิก จังหวะยิงคุมเองด้วยหน่วงยิง
+local VIM = game:GetService("VirtualInputManager")
+local mouse = LP:GetMouse()
+local function doClick()
+    -- ลองหลายวิธีตาม executor — เอาวิธีแรกที่ทำงานได้
+    if mouse1click then
+        local ok = pcall(mouse1click)
+        if ok then return true end
+    end
+    if mouse1press and mouse1release then
+        local ok = pcall(function() mouse1press(); mouse1release() end)
+        if ok then return true end
+    end
+    -- VirtualInputManager: กดปุ่มซ้ายที่ตำแหน่งเมาส์ (หรือกลางจอ) แล้วปล่อย
+    local ok = pcall(function()
+        local x = (mouse and mouse.X ~= 0) and mouse.X or (Camera.ViewportSize.X / 2)
+        local y = (mouse and mouse.Y ~= 0) and mouse.Y or (Camera.ViewportSize.Y / 2)
+        VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+        VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+    end)
+    return ok
+end
+
 local function fireShotAt(targetPos, skipThrottle)
-    local aR, fR = _G.DA78_AIM, _G.DA78_FIRE
-    if not (aR and fR) then return false end
     local rate = math.clamp(tonumber(rateBox.Text) or FIRE_RATE, 0.05, 5)
-    -- skipThrottle = ยิงชุดกระจายหลายตัว (v8.1) — นัดในชุดเดียวกันไม่ต้องรอจังหวะ
+    -- skipThrottle = ยิงชุดต่อเนื่อง — นัดในชุดเดียวกันไม่ต้องรอจังหวะ
     if not skipThrottle and os.clock() - (_G.DA78_LASTFIRE or 0) < rate then return false end
     _G.DA78_DELTA = os.clock() - (_G.DA78_LASTFIRE or os.clock())
     _G.DA78_LASTFIRE = os.clock()
-    -- v9.1: ต้องเรียน offset จากยิงมือก่อน (AIM−FIRE) ถึงจะยิง auto ได้ ไม่งั้น FIRE counter ผิด = ไม่ตาย
-    if _G.DA78_OFFSET == nil then
-        setStatus("[DuckAim78] ⚠️ ยังไม่รู้ระยะห่าง counter — ยิงมือ 1 นัดก่อน แล้วค่อยเปิด auto")
-        return false
-    end
-    -- v9.1: เดิน AIM counter +1 แล้ว "คำนวณ" FIRE = AIM − offset (offset คงที่จากยิงมือ) → ตรงชุดเสมอ
-    _G.DA78_AIMCTR = (_G.DA78_AIMCTR or 0) + 1
-    local an = _G.DA78_AIMCTR
-    local fn = an - _G.DA78_OFFSET
-    _G.DA78_FIRECTR = fn
-    -- v9.0: ใช้ origin ที่จับจากยิงมือ (คงที่ ~801,68,58) ให้ตรงกับของจริง — dir เซิร์ฟเวอร์ไม่เช็คเป๊ะ
-    local origin = _G.DA78_ORIGIN or Camera.CFrame.Position
-    local camPos = Camera.CFrame.Position
-    local dir = targetPos and (targetPos - camPos).Unit or Camera.CFrame.LookVector
-    local ts = os.time()
-    local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
-    if ok and type(now) == "number" then ts = now end
-    -- v9.1: ตั้งธง self-fire กัน hook เรียน offset จากนัดที่เรายิงเอง
-    _G.DA78_SELFFIRE = true
-    pcall(function() aR:FireServer(origin, dir, an, ts) end)
-    pcall(function() fR:FireServer(fn) end)
-    _G.DA78_SELFFIRE = false
+    -- v10.0: คลิกจริง! ปืนเกมยิงเอง (ไม่แตะ remote/counter อีกต่อไป)
+    local ok = doClick()
     lastShotClock = os.clock()
-    return true
+    return ok
 end
 
 local function shootStop()
@@ -522,14 +528,10 @@ local function shootStop()
     shootB.Text = "AUTO SHOOT: OFF (คีย์ K)"
 end
 local function shootStart()
-    if not (_G.DA78_AIM and _G.DA78_FIRE) then
-        setStatus(("[DuckAim78] ⚠️ ยังจับปืนไม่ครบ (เล็ง:%s ยิง:%s) — ยิงเองอีกนัด"):format(
-            _G.DA78_AIM and "✓" or "✗", _G.DA78_FIRE and "✓" or "✗"))
-        return
-    end
+    -- v10.0: ไม่ต้องจับปืน/remote แล้ว — คลิกจริงล้วนๆ ขอแค่ AIM ล็อกกล้องใส่เป็ด
     SHOOT_ON = true
     shootB.Text = "AUTO SHOOT: ON (กด K ปิด)"
-    if not AIM_ON then aimStart() end -- ล็อคกล้องไว้ให้ดูสวย (ไม่ได้ใช้เป็นเงื่อนไขยิงแล้ว)
+    if not AIM_ON then aimStart() end -- ล็อคกล้องใส่เป็ดก่อน แล้วคลิกถึงจะโดน
     -- v7.3: ตัวล็อกให้เหลือ "ลูปยิงตัวเดียว" เสมอ — เดิมกดเปิด/ปิด/เปิด สะสมหลายลูป ยิงถี่รวมกัน
     _G.DA78_SHOOTID = (_G.DA78_SHOOTID or 0) + 1
     local myLoop = _G.DA78_SHOOTID
