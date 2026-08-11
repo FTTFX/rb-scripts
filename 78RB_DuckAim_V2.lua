@@ -26,6 +26,14 @@ local RUN_ON = false
 local FIRE_DELAY = 0.45  -- วิ/แตะ (ห่างพอไม่แย่งจอ — เกมจะยิงตาม fire rate ปืนเอง) ปรับ −/+
 local AIM_SNAP = true    -- snap กล้องเป๊ะตอนแตะ (ปืนยิงตามกล้อง)
 
+-- บิน + วาปบ้าน
+local FLY_ON, FLY_SPEED = false, 200
+local upHeld, downHeld = false, false
+local flyBV, flyConn
+local HOME = nil -- จุดบ้าน (จำตอนสปอว์น)
+local function hrp() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
+local function humo() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
+
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
 gui.Name = "DuckAimV2"; gui.ResetOnSpawn = false
@@ -34,7 +42,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DV2_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 230, 0, 184); frame.Position = UDim2.new(0, 8, 0.35, 0)
+frame.Size = UDim2.new(0, 230, 0, 248); frame.Position = UDim2.new(0, 8, 0.3, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.18
 frame.Active = true; frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -54,7 +62,7 @@ local function setStatus(s) status.Text = s end
 
 -- บรรทัดดีบัก (หาบัค) — โชว์สถานะลูปสดๆ
 local dbg = Instance.new("TextLabel", frame)
-dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 152)
+dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 216)
 dbg.BackgroundColor3 = Color3.fromRGB(20, 20, 30); dbg.BackgroundTransparency = 0.2
 dbg.TextColor3 = Color3.fromRGB(120, 230, 255); dbg.TextSize = 10; dbg.Font = Enum.Font.Code
 dbg.TextXAlignment = Enum.TextXAlignment.Left; dbg.TextWrapped = true
@@ -84,8 +92,32 @@ rPlus.Font = Enum.Font.GothamBold; rPlus.TextSize = 18; rPlus.Text = "+"
 local function refreshRLbl() rLbl.Text = ("หน่วงยิง %.2f วิ"):format(FIRE_DELAY) end
 refreshRLbl()
 
+-- แถวบิน + วาปบ้าน
+local flyB = Instance.new("TextButton", frame)
+flyB.Size = UDim2.new(0, 109, 0, 28); flyB.Position = UDim2.new(0, 4, 0, 128)
+flyB.Text = "บิน: OFF (F)"; flyB.Font = Enum.Font.GothamBold; flyB.TextSize = 12
+flyB.BackgroundColor3 = Color3.fromRGB(60, 110, 180); flyB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", flyB).CornerRadius = UDim.new(0, 5)
+local homeB = Instance.new("TextButton", frame)
+homeB.Size = UDim2.new(0, 109, 0, 28); homeB.Position = UDim2.new(0, 117, 0, 128)
+homeB.Text = "🏠 บ้าน (B)"; homeB.Font = Enum.Font.GothamBold; homeB.TextSize = 12
+homeB.BackgroundColor3 = Color3.fromRGB(150, 110, 50); homeB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", homeB).CornerRadius = UDim.new(0, 5)
+
+-- แถวขึ้น/ลง (บิน)
+local upB = Instance.new("TextButton", frame)
+upB.Size = UDim2.new(0, 109, 0, 28); upB.Position = UDim2.new(0, 4, 0, 160)
+upB.Text = "▲ ขึ้น"; upB.Font = Enum.Font.GothamBold; upB.TextSize = 13
+upB.BackgroundColor3 = Color3.fromRGB(70, 90, 130); upB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", upB).CornerRadius = UDim.new(0, 5)
+local downB = Instance.new("TextButton", frame)
+downB.Size = UDim2.new(0, 109, 0, 28); downB.Position = UDim2.new(0, 117, 0, 160)
+downB.Text = "▼ ลง"; downB.Font = Enum.Font.GothamBold; downB.TextSize = 13
+downB.BackgroundColor3 = Color3.fromRGB(70, 90, 130); downB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", downB).CornerRadius = UDim.new(0, 5)
+
 local closeB = Instance.new("TextButton", frame)
-closeB.Size = UDim2.new(1, -8, 0, 20); closeB.Position = UDim2.new(0, 4, 0, 128)
+closeB.Size = UDim2.new(1, -8, 0, 20); closeB.Position = UDim2.new(0, 4, 0, 192)
 closeB.Text = "✕ ปิดหน้าต่าง"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12
 closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
@@ -271,8 +303,72 @@ local function toggle()
     if RUN_ON then runStop(); setDbg("กดปิดแล้ว") else setDbg("กดเปิดแล้ว — เริ่มลูป"); runStart() end
 end
 
+-- ==================== บิน (ความเร็ว 200) ====================
+local function startFly()
+    local root = hrp(); if not root then return end
+    if flyBV then pcall(function() flyBV:Destroy() end) end
+    flyBV = Instance.new("BodyVelocity")
+    flyBV.MaxForce = Vector3.new(1, 1, 1) * 9e9
+    flyBV.Velocity = Vector3.zero
+    flyBV.Parent = root
+    FLY_ON = true
+    flyB.Text = "บิน: ON (F)"; flyB.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
+    flyConn = RunService.RenderStepped:Connect(function()
+        if not FLY_ON or _G.DV2_GEN ~= MY_GEN then return end
+        local root2 = hrp(); if not root2 then return end
+        if flyBV.Parent ~= root2 then
+            pcall(function() flyBV:Destroy() end)
+            flyBV = Instance.new("BodyVelocity")
+            flyBV.MaxForce = Vector3.new(1, 1, 1) * 9e9
+            flyBV.Parent = root2
+        end
+        local h = humo()
+        local dir = Vector3.zero
+        if h then dir = dir + h.MoveDirection end -- จอย/WASD
+        if upHeld then dir = dir + Vector3.new(0, 1, 0) end
+        if downHeld then dir = dir - Vector3.new(0, 1, 0) end
+        if dir.Magnitude > 0 then dir = dir.Unit end
+        flyBV.Velocity = dir * FLY_SPEED
+    end)
+    table.insert(_G.DV2_CONNS, flyConn)
+end
+local function stopFly()
+    FLY_ON = false
+    if flyConn then flyConn:Disconnect(); flyConn = nil end
+    if flyBV then pcall(function() flyBV:Destroy() end); flyBV = nil end
+    flyB.Text = "บิน: OFF (F)"; flyB.BackgroundColor3 = Color3.fromRGB(60, 110, 180)
+end
+local function flyToggle() if FLY_ON then stopFly() else startFly() end end
+
+-- ==================== วาปกลับบ้าน ====================
+-- บ้าน = จุดที่ตัวละครสปอว์น (จำอัตโนมัติตอนเกิด) — เผื่อไม่มีก็ใช้ตำแหน่งตอนโหลด
+local function warpHome()
+    local root = hrp()
+    if not root then setStatus("[V2] ไม่เจอตัวละคร"); return end
+    if not HOME then setStatus("[V2] ยังไม่รู้จุดบ้าน (รอเกิดใหม่ 1 ครั้ง)"); return end
+    root.CFrame = CFrame.new(HOME + Vector3.new(0, 3, 0))
+    setStatus("[V2] 🏠 วาปกลับบ้านแล้ว")
+end
+-- จำจุดบ้านตอนโหลด + ทุกครั้งที่เกิดใหม่ (จุดสปอว์น)
+task.spawn(function()
+    local root = hrp()
+    if root then HOME = root.Position end
+end)
+table.insert(_G.DV2_CONNS, LP.CharacterAdded:Connect(function(chr)
+    local root = chr:WaitForChild("HumanoidRootPart", 10)
+    task.wait(0.4) -- รอวาร์ปไปจุดสปอว์นจริงก่อนจำ
+    if root and _G.DV2_GEN == MY_GEN then HOME = root.Position end
+    if FLY_ON then stopFly(); startFly() end -- ต่อบินใหม่หลังเกิด
+end))
+
 -- ==================== ปุ่ม/คีย์ ====================
 mainB.MouseButton1Click:Connect(toggle)
+flyB.MouseButton1Click:Connect(flyToggle)
+homeB.MouseButton1Click:Connect(warpHome)
+upB.MouseButton1Down:Connect(function() upHeld = true end)
+upB.MouseButton1Up:Connect(function() upHeld = false end)
+downB.MouseButton1Down:Connect(function() downHeld = true end)
+downB.MouseButton1Up:Connect(function() downHeld = false end)
 rMinus.MouseButton1Click:Connect(function()
     FIRE_DELAY = math.clamp(FIRE_DELAY - 0.05, 0.1, 3); refreshRLbl()
 end)
@@ -289,7 +385,19 @@ end)
 table.insert(_G.DV2_CONNS, UIS.InputBegan:Connect(function(input, processed)
     if processed then return end
     if _G.DV2_GEN ~= MY_GEN then return end
-    if input.KeyCode == Enum.KeyCode.J then toggle() end
+    local k = input.KeyCode
+    if k == Enum.KeyCode.J then toggle()
+    elseif k == Enum.KeyCode.F then flyToggle()
+    elseif k == Enum.KeyCode.B then warpHome()
+    elseif k == Enum.KeyCode.Space then upHeld = true
+    elseif k == Enum.KeyCode.LeftShift or k == Enum.KeyCode.LeftControl then downHeld = true
+    end
+end))
+table.insert(_G.DV2_CONNS, UIS.InputEnded:Connect(function(input)
+    local k = input.KeyCode
+    if k == Enum.KeyCode.Space then upHeld = false
+    elseif k == Enum.KeyCode.LeftShift or k == Enum.KeyCode.LeftControl then downHeld = false
+    end
 end))
 
-warn("[DuckAimV2] v2.0 loaded — โหมดคลิกล้วน กด J")
+warn("[DuckAimV2] v2.4 loaded — คลิก(J) + บิน200(F) + วาปบ้าน(B)")
