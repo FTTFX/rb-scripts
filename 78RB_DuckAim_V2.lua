@@ -278,19 +278,33 @@ local function getTool()
 end
 local function doClick()
     local tool = getTool()
+    -- 1) Tool:Activate() — ปืนเกมส่วนใหญ่ยิงผ่าน Tool.Activated
     if tool then pcall(function() tool:Activate() end) end
+    local cx = math.floor(Camera.ViewportSize.X / 2)
+    local cy = math.floor(Camera.ViewportSize.Y / 2)
+    local vx = (mouse and mouse.X and mouse.X > 0) and mouse.X or cx
+    local vy = (mouse and mouse.Y and mouse.Y > 0) and mouse.Y or cy
+    -- 2) คลิกเมาส์จริง
     pcall(function()
-        local vx = (mouse and mouse.X and mouse.X > 0) and mouse.X or math.floor(Camera.ViewportSize.X / 2)
-        local vy = (mouse and mouse.Y and mouse.Y > 0) and mouse.Y or math.floor(Camera.ViewportSize.Y / 2)
         VIM:SendMouseButtonEvent(vx, vy, 0, true, game, 0)
         VIM:SendMouseButtonEvent(vx, vy, 0, false, game, 0)
     end)
+    -- 3) จำลอง "สัมผัสจอ" (มือถือ) — กดกลางจอ (บางเกมยิงผ่าน TouchTap/TouchButton)
+    pcall(function()
+        VIM:SendTouchEvent(1, 1, vx, vy) -- Begin
+        VIM:SendTouchEvent(1, 2, vx, vy) -- Changed
+        VIM:SendTouchEvent(1, 3, vx, vy) -- End
+    end)
     return tool ~= nil
 end
--- หันกล้องไปที่เป้า (โหมดคลิก ต้องเล็งจริงเพราะปืนยิงตามกล้อง)
-local function aimCameraAt(targetPos)
+-- หันกล้องไปที่เป้า — โหมดคลิกใช้ snap เป๊ะ (ปืนยิงตามกล้อง ต้องตรงตัวจริง)
+local function aimCameraAt(targetPos, snap)
     local cf = Camera.CFrame
-    Camera.CFrame = cf:Lerp(CFrame.new(cf.Position, targetPos), AIM_SMOOTH)
+    if snap then
+        Camera.CFrame = CFrame.new(cf.Position, targetPos) -- เล็งเป๊ะทันที
+    else
+        Camera.CFrame = cf:Lerp(CFrame.new(cf.Position, targetPos), AIM_SMOOTH)
+    end
 end
 
 -- ยิงรีโมตตรงไปที่ตำแหน่งเป้า — เดิน counter คู่กัน (+1 ทั้งคู่) รักษา offset ที่เรียนมา
@@ -346,13 +360,13 @@ local function runStart()
 
         if MODE == "CLICK" then
             -- โหมดคลิก: ล็อกกล้องใส่เป็ดใกล้สุด (ทุกเฟรม) + คลิกรัวตาม FIRE_DELAY
-            if #ducks > 0 then
-                local p = duckPos(ducks[1].model)
-                if p then aimCameraAt(p) end -- เล็งทุกเฟรมให้ตามทัน
-            else
-                setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return
-            end
-            if os.clock() - (_G.DV2_LASTFIRE or 0) < FIRE_DELAY then return end
+            if #ducks == 0 then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
+            local p = duckPos(ducks[1].model)
+            if not p then return end
+            local canFire = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
+            -- ถ้าถึงจังหวะยิง → snap เป๊ะตรงตัวเป็ดก่อนคลิก / ไม่งั้น Lerp ตามนุ่มๆ
+            aimCameraAt(p, canFire)
+            if not canFire then return end
             _G.DV2_LASTFIRE = os.clock()
             doClick()
             setStatus(("[V2] 🖱️ คลิกล็อก: %s"):format(ducks[1].model.Name))
