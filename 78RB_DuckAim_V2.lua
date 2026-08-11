@@ -395,9 +395,11 @@ local function startBossFly()
         local root = hrp(); if not root then return end
         local boss = findBoss()
         if not boss then bossB.Text = "🪰 แมลงวันบอส: ON (ยังไม่มีบอส)"; return end
-        -- เปลี่ยนทิศทุก BOSS_STEP วิ (วน 8 ทิศ: 0,45,90,...315 องศา)
+        -- เปลี่ยนทิศทุก BOSS_STEP วิ (สุ่ม 8 ทิศ: 0,45,90,...315 องศา — ไม่เรียงตามเข็ม)
         if os.clock() - bossDirT >= BOSS_STEP then
-            bossDirIdx = (bossDirIdx + 1) % 8
+            local nxt = math.random(0, 7)
+            if nxt == bossDirIdx then nxt = (nxt + math.random(1, 7)) % 8 end -- กันสุ่มซ้ำที่เดิม
+            bossDirIdx = nxt
             bossDirT = os.clock()
         end
         bossB.Text = ("🪰 แมลงวันบอส: ON 🎯 ทิศ%d"):format(bossDirIdx + 1)
