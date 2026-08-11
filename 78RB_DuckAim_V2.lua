@@ -163,20 +163,23 @@ local function duckVisible(origin, p, m)
     return workspace:Raycast(origin, p - origin, losParams) == nil
 end
 
--- เลือกเป็ดใกล้สุดที่ "โล่ง + ยังไม่เพิ่งยิง" (บอสมาก่อน)
+-- เลือกเป็ดใกล้สุดที่ "โล่ง + ยังไม่เพิ่งยิง" (บอสมาก่อน) — ถ้าไม่มีตัวโล่ง ใช้ตัวใกล้สุดแทน
 local function pickDuck(origin)
     local boss = findBoss()
     if boss and not recentlyShot(boss.model) then return boss end
     local f = duckFolder(); if not f then return nil end
-    local list = {}
+    local vis, any = {}, {}
     for _, m in ipairs(f:GetChildren()) do
         if m:IsA("Model") and isLiveDuck(m) and not recentlyShot(m) then
             local p = duckPos(m)
-            if p and duckVisible(origin, p, m) then
-                list[#list + 1] = { model = m, pos = p, dist = (p - origin).Magnitude }
+            if p then
+                local e = { model = m, pos = p, dist = (p - origin).Magnitude }
+                any[#any + 1] = e
+                if duckVisible(origin, p, m) then vis[#vis + 1] = e end
             end
         end
     end
+    local list = (#vis > 0) and vis or any -- มีตัวโล่งเอาโล่ง / ไม่มีก็ยิงตัวใกล้สุด
     table.sort(list, function(a, b) return a.dist < b.dist end)
     return list[1]
 end
@@ -229,18 +232,20 @@ local function runStart()
         if not (RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun) then
             conn:Disconnect(); return
         end
-        local origin = Camera.CFrame.Position
-        local d = pickDuck(origin)
-        if not d then setStatus("[V2] ไม่เจอเป้าโล่ง — รอเป็ด"); return end
-        local p = duckPos(d.model)
-        if not p then return end
-        local canFire = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
-        aimCameraAt(p, canFire and AIM_SNAP) -- ถึงจังหวะยิง = snap เป๊ะ / ไม่ถึง = ตามนุ่มๆ
-        if not canFire then return end
-        _G.DV2_LASTFIRE = os.clock()
-        doTap()
-        markShot(d.model)
-        setStatus(("[V2] 🎯 %s"):format(d.model.Name))
+        pcall(function() -- กัน error ในลูปทำให้ทั้งตัวหยุด
+            local origin = Camera.CFrame.Position
+            local d = pickDuck(origin)
+            if not d then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
+            local p = duckPos(d.model)
+            if not p then return end
+            local canFire = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
+            aimCameraAt(p, canFire and AIM_SNAP)
+            if not canFire then return end
+            _G.DV2_LASTFIRE = os.clock()
+            doTap()
+            markShot(d.model)
+            setStatus(("[V2] 🎯 %s"):format(d.model.Name))
+        end)
     end)
     table.insert(_G.DV2_CONNS, conn)
 end
