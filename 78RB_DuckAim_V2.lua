@@ -42,7 +42,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DV2_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 230, 0, 248); frame.Position = UDim2.new(0, 8, 0.3, 0)
+frame.Size = UDim2.new(0, 230, 0, 280); frame.Position = UDim2.new(0, 8, 0.28, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.18
 frame.Active = true; frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -62,7 +62,7 @@ local function setStatus(s) status.Text = s end
 
 -- บรรทัดดีบัก (หาบัค) — โชว์สถานะลูปสดๆ
 local dbg = Instance.new("TextLabel", frame)
-dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 216)
+dbg.Size = UDim2.new(1, -8, 0, 28); dbg.Position = UDim2.new(0, 4, 0, 248)
 dbg.BackgroundColor3 = Color3.fromRGB(20, 20, 30); dbg.BackgroundTransparency = 0.2
 dbg.TextColor3 = Color3.fromRGB(120, 230, 255); dbg.TextSize = 10; dbg.Font = Enum.Font.Code
 dbg.TextXAlignment = Enum.TextXAlignment.Left; dbg.TextWrapped = true
@@ -116,8 +116,15 @@ downB.Text = "▼ ลง"; downB.Font = Enum.Font.GothamBold; downB.TextSize = 1
 downB.BackgroundColor3 = Color3.fromRGB(70, 90, 130); downB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", downB).CornerRadius = UDim.new(0, 5)
 
+-- ปุ่มร้าน (เปิด/ปิด GUI ชื่อ Upgrades จากทุกที่ — ยืนยันด้วย GuiSpy)
+local shopB = Instance.new("TextButton", frame)
+shopB.Size = UDim2.new(1, -8, 0, 28); shopB.Position = UDim2.new(0, 4, 0, 192)
+shopB.Text = "🛒 เปิดร้าน (H)"; shopB.Font = Enum.Font.GothamBold; shopB.TextSize = 14
+shopB.BackgroundColor3 = Color3.fromRGB(150, 110, 50); shopB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", shopB).CornerRadius = UDim.new(0, 6)
+
 local closeB = Instance.new("TextButton", frame)
-closeB.Size = UDim2.new(1, -8, 0, 20); closeB.Position = UDim2.new(0, 4, 0, 192)
+closeB.Size = UDim2.new(1, -8, 0, 20); closeB.Position = UDim2.new(0, 4, 0, 224)
 closeB.Text = "✕ ปิดหน้าต่าง"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12
 closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
@@ -361,10 +368,26 @@ table.insert(_G.DV2_CONNS, LP.CharacterAdded:Connect(function(chr)
     if FLY_ON then stopFly(); startFly() end -- ต่อบินใหม่หลังเกิด
 end))
 
+-- ==================== ร้าน (เปิด/ปิด GUI ชื่อ Upgrades/Shop จากทุกที่) ====================
+local SHOP_OPEN = false
+local function shopToggle()
+    local pg = LP:FindFirstChild("PlayerGui")
+    if not pg then return end
+    SHOP_OPEN = not SHOP_OPEN
+    for _, sg in ipairs(pg:GetChildren()) do
+        if sg:IsA("ScreenGui") and (sg.Name == "Upgrades" or sg.Name == "Shop") then
+            pcall(function() sg.Enabled = SHOP_OPEN end)
+        end
+    end
+    shopB.Text = SHOP_OPEN and "🛒 ปิดร้าน (H)" or "🛒 เปิดร้าน (H)"
+    shopB.BackgroundColor3 = SHOP_OPEN and Color3.fromRGB(120,70,60) or Color3.fromRGB(150,110,50)
+end
+
 -- ==================== ปุ่ม/คีย์ ====================
 mainB.MouseButton1Click:Connect(toggle)
 flyB.MouseButton1Click:Connect(flyToggle)
 homeB.MouseButton1Click:Connect(warpHome)
+shopB.MouseButton1Click:Connect(shopToggle)
 -- แตะสลับ (มือถือ MouseButton1Down มักไม่ทำงาน — ใช้ Click ชัวร์กว่า) + เริ่มบินให้เอง
 local function refreshUpDown()
     upB.BackgroundColor3 = upHeld and Color3.fromRGB(60,170,90) or Color3.fromRGB(70,90,130)
@@ -402,6 +425,7 @@ table.insert(_G.DV2_CONNS, UIS.InputBegan:Connect(function(input, processed)
     if k == Enum.KeyCode.J then toggle()
     elseif k == Enum.KeyCode.F then flyToggle()
     elseif k == Enum.KeyCode.B then warpHome()
+    elseif k == Enum.KeyCode.H then shopToggle()
     elseif k == Enum.KeyCode.Space then upHeld = true
     elseif k == Enum.KeyCode.LeftShift or k == Enum.KeyCode.LeftControl then downHeld = true
     end
