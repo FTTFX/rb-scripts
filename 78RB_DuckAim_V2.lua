@@ -32,10 +32,11 @@ local upHeld, downHeld = false, false
 local flyBV, flyConn
 local HOME = nil -- จุดบ้าน (จำตอนสปอว์น)
 
--- โหมดแมลงวันบอส: เจอบอส → ลอยเหนือบอสในระยะ 80-100 อัตโนมัติ (ไม่ใกล้/ไม่ห่างเกิน)
+-- โหมดแมลงวันบอส: เจอบอส → บินวนรอบบอส 8 ทิศ ระยะราบ 80 สูง 20 (ยิงเฉียงลงโดน)
 local BOSS_FLY_ON = false
-local BOSS_MIN, BOSS_MAX = 80, 100   -- ระยะห่างบอส (studs) ต่ำสุด/สูงสุด
-local BOSS_HOVER = 90                 -- ระยะเป้าหมาย (กลางๆ)
+local BOSS_RADIUS = 80    -- ระยะห่างแนวราบจากบอส (studs)
+local BOSS_HEIGHT = 20    -- สูงกว่าบอส (studs)
+local BOSS_STEP = 0.7     -- วิ/ทิศ (เปลี่ยนทิศทุก 0.7 วิ ครบ 8 ทิศ)
 local function hrp() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
 local function humo() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
 
@@ -384,27 +385,27 @@ end))
 -- เปิดไว้ + เจอบอส → ลอยไปอยู่ "เหนือบอส" ระยะ 80-100 studs อัตโนมัติ
 --   ใกล้เกิน (<80) ดันขึ้น / ห่างเกิน (>100) ดึงลง — เกาะไว้กลางๆ ~90 ปล่อยยิงลงมา
 local bossFlyConn
+local bossDirIdx = 0
+local bossDirT = 0
 local function startBossFly()
     if bossFlyConn then bossFlyConn:Disconnect() end
+    bossDirT = os.clock()
     bossFlyConn = RunService.RenderStepped:Connect(function()
         if not (BOSS_FLY_ON and _G.DV2_GEN == MY_GEN) then return end
         local root = hrp(); if not root then return end
         local boss = findBoss()
         if not boss then bossB.Text = "🪰 แมลงวันบอส: ON (ยังไม่มีบอส)"; return end
-        bossB.Text = "🪰 แมลงวันบอส: ON 🎯บอส"
-        local bp = boss.pos
-        local cur = root.Position
-        local dist = (cur - bp).Magnitude
-        -- ตำแหน่งเป้าหมาย: เหนือบอสตรงๆ ที่ความสูง BOSS_HOVER
-        local target = bp + Vector3.new(0, BOSS_HOVER, 0)
-        -- ถ้าอยู่ในระยะ 80-100 แล้ว ไม่ต้องขยับแรง (กันสั่น) — แค่ค้างเหนือบอส
-        if dist < BOSS_MIN or dist > BOSS_MAX then
-            root.CFrame = CFrame.new(root.Position:Lerp(target, 0.25), bp) -- ค่อยๆเลื่อนเข้าโซน
-        else
-            -- อยู่ในโซนแล้ว: ตรึงความสูงเหนือบอสไว้ ตามบอสในแนวราบเบาๆ
-            local want = Vector3.new(bp.X, bp.Y + BOSS_HOVER, bp.Z)
-            root.CFrame = CFrame.new(root.Position:Lerp(want, 0.12), bp)
+        -- เปลี่ยนทิศทุก BOSS_STEP วิ (วน 8 ทิศ: 0,45,90,...315 องศา)
+        if os.clock() - bossDirT >= BOSS_STEP then
+            bossDirIdx = (bossDirIdx + 1) % 8
+            bossDirT = os.clock()
         end
+        bossB.Text = ("🪰 แมลงวันบอส: ON 🎯 ทิศ%d"):format(bossDirIdx + 1)
+        local bp = boss.pos
+        local ang = math.rad(bossDirIdx * 45)
+        -- ตำแหน่งเป้าหมาย: รอบบอส แนวราบห่าง 80 + สูงกว่า 20
+        local want = bp + Vector3.new(math.cos(ang) * BOSS_RADIUS, BOSS_HEIGHT, math.sin(ang) * BOSS_RADIUS)
+        root.CFrame = CFrame.new(root.Position:Lerp(want, 0.3), bp) -- เลื่อนไปจุดนั้น + หันหน้าใส่บอส
         root.AssemblyLinearVelocity = Vector3.zero -- กันร่วง
     end)
     table.insert(_G.DV2_CONNS, bossFlyConn)
