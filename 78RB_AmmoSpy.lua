@@ -1,3 +1,6 @@
+-- 78RB_AmmoSpy.lua v1.1 — วัด "ยิงกี่นัด ฆ่าได้กี่ตัว" (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v1.1: แถบล่างโชว์ ยิง X นัด | ฆ่า Y ตัว | โดนจริง Z% — เทียบคำสั่งยิงกับ leaderstats.DucksKilled
+--   พิสูจน์ว่านัดที่ยิงข้ามอนิเมชันเซิร์ฟเวอร์นับดาเมจจริงแค่ไหน
 -- 78RB_AmmoSpy.lua v1.0 — สปายเฉพาะกิจ: ตามจำนวนกระสุนบนจอ (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- โจทย์: ผู้เล่นกดยิงมือได้ 3 ครั้งต่อแม็ก (ตัวเลขมุมขวาล่างจอ) แต่สคริปต์ยิง 1 คำสั่ง
 -- กลับเห็นกระสุนออก/ลดพรวดเดียว 3 — สคริปต์นี้จับเฉพาะ "เลขกระสุนบนจอ" เปลี่ยนเมื่อไหร่/ยังไง
@@ -95,6 +98,37 @@ table.insert(_G.AS78_CONNS, LP.PlayerGui.DescendantAdded:Connect(function(d)
     task.defer(function() watchLabel(d) end)
 end))
 
+-- ==================== v1.1: วัดผลจริง — ยิงกี่นัด ฆ่าได้กี่ตัว (DucksKilled leaderstat) ====================
+-- ถ้านัดสคริปต์โดนเซิร์ฟเวอร์ทิ้ง → ยิงเยอะแต่ kill ไม่ขยับ / ถ้านับจริง → kill เดินตามยิง
+local shotCount, killCount = 0, 0
+local statLbl = Instance.new("TextLabel", frame)
+statLbl.Size = UDim2.new(1, -8, 0, 18); statLbl.Position = UDim2.new(0, 4, 1, -22)
+statLbl.BackgroundColor3 = Color3.fromRGB(20, 40, 20); statLbl.TextColor3 = Color3.fromRGB(160, 255, 160)
+statLbl.TextSize = 12; statLbl.Font = Enum.Font.Code
+statLbl.Text = "ยิง 0 | ฆ่า 0"
+local function updStat()
+    local ratio = shotCount > 0 and (killCount / shotCount * 100) or 0
+    statLbl.Text = ("ยิง %d นัด | ฆ่า %d ตัว | โดนจริง %.0f%%"):format(shotCount, killCount, ratio)
+end
+task.spawn(function()
+    -- รอ leaderstats.DucksKilled แล้วดักการเปลี่ยน
+    local ls = LP:WaitForChild("leaderstats", 10)
+    local dk = ls and ls:FindFirstChild("DucksKilled")
+    if not dk then
+        log("⚠️ ไม่เจอ leaderstats.DucksKilled — วัด kill ไม่ได้")
+        return
+    end
+    local prev = dk.Value
+    log(("[KILL-BASE] DucksKilled เริ่มที่ %d"):format(prev))
+    table.insert(_G.AS78_CONNS, dk:GetPropertyChangedSignal("Value"):Connect(function()
+        local diff = dk.Value - prev
+        prev = dk.Value
+        killCount += math.max(0, diff)
+        log(("[KILL] +%d (รวมฆ่า %d)"):format(diff, killCount))
+        updStat()
+    end))
+end)
+
 -- ==================== ดัก FireServer แบบอ่านอย่างเดียว (ไม่แก้ค่า) เพื่อ correlate เวลา ====================
 if hookmetamethod then
     local old
@@ -103,9 +137,9 @@ if hookmetamethod then
         pcall(function()
             if getnamecallmethod() ~= "FireServer" then return end
             if a.n >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3" then
-                log(("[ยิง-เล็ง] counter=%s"):format(tostring(a[3])))
-            elseif a.n == 1 and typeof(a[1]) == "number" then
-                log(("[ยิง-ยืนยัน] counter=%s"):format(tostring(a[1])))
+                shotCount += 1
+                log(("[ยิง] counter=%s (นัดที่ %d)"):format(tostring(a[3]), shotCount))
+                updStat()
             end
         end)
         return old(self, ...)
