@@ -375,7 +375,7 @@ local function shopToggle()
     if not pg then return end
     SHOP_OPEN = not SHOP_OPEN
     for _, sg in ipairs(pg:GetChildren()) do
-        if sg:IsA("ScreenGui") and (sg.Name == "Upgrades" or sg.Name == "Shop") then
+        if sg:IsA("ScreenGui") and sg.Name == "Upgrades" then -- เฉพาะร้านอัปเกรดอาวุธ (ไม่เอา Shop แพ็ค)
             pcall(function() sg.Enabled = SHOP_OPEN end)
         end
     end
