@@ -286,25 +286,20 @@ local function getTool()
     for _, v in ipairs(ch:GetChildren()) do if v:IsA("Tool") then return v end end
     return nil
 end
+-- v1.9: ตัด VIM (เมาส์/สัมผัสจอ) ออก — มันแย่งการสัมผัสทั้งจอ กดปุ่มอะไรไม่ได้
+--   เหลือ Tool:Activate() อย่างเดียว = สั่งปืนยิงตรงๆ ไม่แย่งจอ (เป็ดยังตายเหมือนเดิม)
+-- ถ้าอยากลอง VIM เสริม เปิด _G.DV2_USEVIM = true เอง (แต่จะกดจอไม่ได้)
 local function doClick()
     local tool = getTool()
-    -- 1) Tool:Activate() — ปืนเกมส่วนใหญ่ยิงผ่าน Tool.Activated
     if tool then pcall(function() tool:Activate() end) end
-    local cx = math.floor(Camera.ViewportSize.X / 2)
-    local cy = math.floor(Camera.ViewportSize.Y / 2)
-    local vx = (mouse and mouse.X and mouse.X > 0) and mouse.X or cx
-    local vy = (mouse and mouse.Y and mouse.Y > 0) and mouse.Y or cy
-    -- 2) คลิกเมาส์จริง
-    pcall(function()
-        VIM:SendMouseButtonEvent(vx, vy, 0, true, game, 0)
-        VIM:SendMouseButtonEvent(vx, vy, 0, false, game, 0)
-    end)
-    -- 3) จำลอง "สัมผัสจอ" (มือถือ) — กดกลางจอ (บางเกมยิงผ่าน TouchTap/TouchButton)
-    pcall(function()
-        VIM:SendTouchEvent(1, 1, vx, vy) -- Begin
-        VIM:SendTouchEvent(1, 2, vx, vy) -- Changed
-        VIM:SendTouchEvent(1, 3, vx, vy) -- End
-    end)
+    if _G.DV2_USEVIM then
+        local vx = (mouse and mouse.X and mouse.X > 0) and mouse.X or math.floor(Camera.ViewportSize.X / 2)
+        local vy = (mouse and mouse.Y and mouse.Y > 0) and mouse.Y or math.floor(Camera.ViewportSize.Y / 2)
+        pcall(function()
+            VIM:SendMouseButtonEvent(vx, vy, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(vx, vy, 0, false, game, 0)
+        end)
+    end
     return tool ~= nil
 end
 -- หันกล้องไปที่เป้า — โหมดคลิกใช้ snap เป๊ะ (ปืนยิงตามกล้อง ต้องตรงตัวจริง)
