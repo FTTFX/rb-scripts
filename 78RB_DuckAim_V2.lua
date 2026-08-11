@@ -32,7 +32,9 @@ _G.DV2_AIMCTR  = _G.DV2_AIMCTR or 0
 _G.DV2_FIRECTR = _G.DV2_FIRECTR or 0
 
 local RUN_ON = false
-local RATE = 0.25 -- วิ/นัด (ปรับได้ด้วย −/+)
+local RATE = 0.08 -- วิ/นัด (ปรับได้ด้วย −/+) — เร็วขึ้น
+local MAG = 2      -- นัด/แม็ก (ยิงรัวเท่านี้แล้วพักรีโหลด)
+local RELOAD = 0.9 -- วิ พักรีโหลดหลังยิงจบแม็ก
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -236,18 +238,30 @@ local function runStart()
     local myRun = _G.DV2_RUNID
     task.spawn(function()
         while RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun do
-            local rate = math.clamp(RATE, 0.05, 3)
-            local d = pickDuck(_G.DV2_ORIGIN or Camera.CFrame.Position)
-            if d and d.model.Parent then
-                local p = duckPos(d.model)
-                if p and fireAt(p) then
-                    setStatus(("[V2] 🔫 %s  A%d/F%d @%.2fวิ"):format(
-                        d.model.Name, _G.DV2_AIMCTR, _G.DV2_FIRECTR, rate))
+            local rate = math.clamp(RATE, 0.03, 3)
+            -- ยิงรัวเป็นชุดตามขนาดแม็ก (แต่ละนัดเลือกเป้าใกล้สุดสดๆ) แล้วพักรีโหลด
+            local fired = 0
+            for i = 1, math.max(1, MAG) do
+                if not (RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun) then break end
+                local d = pickDuck(_G.DV2_ORIGIN or Camera.CFrame.Position)
+                if d and d.model.Parent then
+                    local p = duckPos(d.model)
+                    if p and fireAt(p) then
+                        fired = fired + 1
+                        setStatus(("[V2] 🔫 %s A%d/F%d [%d/%d]"):format(
+                            d.model.Name, _G.DV2_AIMCTR, _G.DV2_FIRECTR, i, MAG))
+                    end
+                    task.wait(rate)
+                else
+                    setStatus("[V2] ไม่เจอเป้า — รอเป็ด")
+                    task.wait(0.08)
+                    break
                 end
-                task.wait(rate)
-            else
-                setStatus("[V2] ไม่เจอเป้า — รอเป็ด")
-                task.wait(0.1)
+            end
+            -- พักรีโหลดหลังยิงจบแม็ก (ข้ามถ้าไม่ได้ยิงเลย)
+            if fired > 0 and RELOAD > 0 then
+                setStatus(("[V2] 🔄 รีโหลด %.1fวิ (ยิงไป %d นัด)"):format(RELOAD, fired))
+                task.wait(RELOAD)
             end
         end
     end)
