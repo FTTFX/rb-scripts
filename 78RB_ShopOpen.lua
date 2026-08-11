@@ -91,30 +91,34 @@ local function scan()
     title.Text = ("🛒 เจอ: prompt %d ตัว, หน้าต่างร้าน %d\n(ถ้ากดแล้วไม่เปิด ลองสแกนใหม่ตอนอยู่ใกล้ร้าน)"):format(#SHOP_PROMPTS, nG)
 end
 
-local function openShop()
+local SHOP_OPEN = false
+local function setShop(open)
     local did = false
-    -- (A) fireproximityprompt (เหมือนกด E จากที่ไกล)
-    if fireproximityprompt then
-        for _, p in ipairs(SHOP_PROMPTS) do
-            pcall(function() fireproximityprompt(p) end); did = true
-        end
+    -- (A) fireproximityprompt (เหมือนกด E จากที่ไกล) — ยิงตอน "เปิด" เท่านั้น
+    if open and fireproximityprompt then
+        for _, p in ipairs(SHOP_PROMPTS) do pcall(function() fireproximityprompt(p) end); did = true end
     end
-    -- (B) เปิดหน้าต่างร้านตรงๆ (Enabled + Visible)
+    -- (B) เปิด/ปิดหน้าต่างร้านตรงๆ
     for sg in pairs(SHOP_GUIS) do
         pcall(function()
-            if sg:IsA("ScreenGui") then sg.Enabled = true end
+            if sg:IsA("ScreenGui") then sg.Enabled = open end -- ปิด = ซ่อนทั้ง ScreenGui
             for _, d in ipairs(sg:GetDescendants()) do
-                if d:IsA("Frame") and d.Size.X.Scale > 0.3 then d.Visible = true end
+                if d:IsA("Frame") and d.Size.X.Scale > 0.3 then d.Visible = open end
             end
             did = true
         end)
     end
+    SHOP_OPEN = open
+    openB.Text = open and "🛒 ปิดร้าน (G)" or "🛒 เปิดร้าน (G)"
+    openB.BackgroundColor3 = open and Color3.fromRGB(120, 70, 60) or Color3.fromRGB(150, 110, 50)
     if did then
-        title.Text = "🛒 สั่งเปิดร้านแล้ว — ถ้ายังไม่เปิด กด '🔍 สแกน' ตอนอยู่ใกล้ร้าน 1 ครั้งก่อน"
+        title.Text = open and "🛒 เปิดร้านแล้ว (กด G อีกทีปิด)"
+            or "🛒 ปิดร้านแล้ว"
     else
-        title.Text = "🛒 ยังไม่เจอร้าน — เดินไปใกล้ร้าน กด '🔍 สแกนหาร้านใหม่' ก่อน"
+        title.Text = "🛒 ยังไม่เจอร้าน — เดินไปใกล้ร้าน กด '🔍 สแกน' ก่อน"
     end
 end
+local function openShop() setShop(not SHOP_OPEN) end
 
 openB.MouseButton1Click:Connect(openShop)
 rescanB.MouseButton1Click:Connect(scan)
