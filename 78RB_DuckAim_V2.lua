@@ -197,10 +197,12 @@ local function serverNow()
 end
 
 -- ยิงรีโมตตรงไปที่ตำแหน่งเป้า — เดิน counter คู่กัน (+1 ทั้งคู่) รักษา offset ที่เรียนมา
+-- v1.2: สปายพิสูจน์ origin = กล้องสดๆ / dir = ทิศกล้อง → ใช้กล้องสด ณ ตอนยิง (ไม่ใช้ค่าเก่า!)
+--   dir = (ตำแหน่งเป็ด − กล้อง).Unit ชี้ตรงตัวเป็ด เซิร์ฟเวอร์ยิงเรย์จากกล้องโดนเป็ดพอดี
 local function fireAt(targetPos)
     local aim, fire = _G.DV2_AIM, _G.DV2_FIRE
     if not (aim and fire) then return false end
-    local origin = _G.DV2_ORIGIN or Camera.CFrame.Position
+    local origin = Camera.CFrame.Position -- กล้องสดๆ (ไม่ใช้ _G.DV2_ORIGIN เก่า)
     local dir = (targetPos - origin)
     if dir.Magnitude > 0 then dir = dir.Unit else dir = Vector3.new(0, 0, -1) end
 
@@ -244,7 +246,7 @@ local function runStart()
         end
         if os.clock() - (_G.DV2_LASTFIRE or 0) < FIRE_DELAY then return end
         _G.DV2_LASTFIRE = os.clock()
-        local origin = _G.DV2_ORIGIN or Camera.CFrame.Position
+        local origin = Camera.CFrame.Position
         local ducks = closestDucks(origin)
         if #ducks == 0 then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
         local sent = 0
