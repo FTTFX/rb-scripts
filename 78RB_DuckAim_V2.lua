@@ -176,10 +176,10 @@ local function duckVisible(origin, p, m)
     return workspace:Raycast(origin, p - origin, losParams) == nil
 end
 
--- เลือกเป็ดใกล้สุดที่ "โล่ง + ยังไม่เพิ่งยิง" (บอสมาก่อน) — ถ้าไม่มีตัวโล่ง ใช้ตัวใกล้สุดแทน
+-- เลือกเป้า: บอสมาก่อนเสมอ ล็อกจนตาย (ไม่ติดคูลดาวน์/ไม่สลับ) — ไม่มีบอสค่อยเป็ดใกล้สุดที่โล่ง
 local function pickDuck(origin)
     local boss = findBoss()
-    if boss and not recentlyShot(boss.model) then return boss end
+    if boss then boss.isBoss = true; return boss end -- ล็อกบอสไว้ ยิงรัวจนตายค่อยเปลี่ยน
     local f = duckFolder(); if not f then return nil end
     local vis, any = {}, {}
     for _, m in ipairs(f:GetChildren()) do
@@ -260,8 +260,8 @@ local function runStart()
             if not canFire then return end
             _G.DV2_LASTFIRE = os.clock()
             doTap()
-            markShot(d.model)
-            setStatus(("[V2] 🎯 %s"):format(d.model.Name))
+            if not d.isBoss then markShot(d.model) end -- บอสไม่พัก (ล็อกยิงจนตาย) เป็ดปกติพักไปตัวถัดไป
+            setStatus(("[V2] %s %s"):format(d.isBoss and "👑 บอส" or "🎯", d.model.Name))
         end)
         if not ok then setDbg("❌ ERROR: " .. tostring(err)) end
     end)
