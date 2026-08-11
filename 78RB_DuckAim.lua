@@ -1,3 +1,7 @@
+-- 78RB_DuckAim.lua v9.0 — แก้บั๊กใหญ่: FIRE remote ใช้ counter แยกจาก AIM (เกม "ยิงเป็ด" โปรเจ็ก 78)
+-- v9.0: DuckSpy พิสูจน์ยิงมือ 2 remote คนละ counter — AIM(23,24,25..) FIRE(7,8,9..) ห่างกันคงที่
+--   เดิมเอามารวมเป็นตัวเดียว → FIRE ได้เลขผิด เซิร์ฟเวอร์ทิ้งนัด = โดนแค่ 13% (ยิงมือได้ 100%)
+--   แก้: เดิน 2 counter อิสระ (_G.DA78_AIMCTR / _G.DA78_FIRECTR) + ใช้ origin ที่จับจากยิงมือ
 -- 78RB_DuckAim.lua v8.1 — ยิงชุดกระจายหลายตัว (เกม "ยิงเป็ด" โปรเจ็ก 78)
 -- v8.1: ช่องใหม่ "เป้าต่อชุด(ตัว)" — ตั้ง N แล้ว 1 ชุดยิงกระจายใส่เป็ด N ตัวใกล้สุด คนละนัด ไม่ซ้ำ
 --   ตัวเดิม (ยิงต่อเนื่องในชุด แล้วพักตามหน่วงยิงค่อยชุดถัดไป) ตั้ง 1 = โหมดทีละตัวแบบเดิม
@@ -118,6 +122,10 @@ local AIM_ON = false
 local SMOOTH = 0.6 -- v6.1: ดูดกล้องไวขึ้น (0.35→0.6) ให้เข้าเป้าเร็ว เล็งแม่นขึ้น
 -- v5.9: สถานะปืนเก็บใน _G (hook เขียน — ใช้ร่วมทุก gen กันโหลดซ้ำแล้ว hook เก่าจับไม่ได้)
 _G.DA78_CTR = _G.DA78_CTR or 0
+-- v9.0: DuckSpy พิสูจน์ 2 remote ใช้ counter คนละชุด! AIM(23,24,25..) FIRE(7,8,9..) ห่างกันคงที่
+--   เดิม math.max รวมเป็นตัวเดียว → FIRE ได้เลขผิด เซิร์ฟเวอร์ทิ้งนัด = 13% → แยก 2 counter อิสระ
+_G.DA78_AIMCTR = _G.DA78_AIMCTR or 0
+_G.DA78_FIRECTR = _G.DA78_FIRECTR or 0
 -- v7.6: ค่าปรับได้ (ประกาศก่อน GUI เพราะ stepper ใช้ตอนสร้าง) — หน่วงยิง(วิ/นัด) / กระสุนต่อตัว
 local FIRE_RATE = 0.4
 local MAX_SHOTS = 2
@@ -151,9 +159,9 @@ gunLbl.Text = "ปืน: ยังไม่รู้ — ยิงเอง 1 �
 -- อ่านสถานะปืนจาก _G (hook เขียนไว้ — ใช้ร่วมทุก gen)
 -- v8.0: โชว์ "ห่างจากนัดก่อน X วิ" ด้วย — พิสูจน์ว่าสคริปต์ยิงห่างจริงเท่าไหร่ (ตัดเรื่องอนิเมชั่นทิ้ง)
 local function setGun()
-    gunLbl.Text = ("ปืน: เล็ง%s ยิง%s นัด %d ห่าง %.2fวิ"):format(
+    gunLbl.Text = ("ปืน: เล็ง%s ยิง%s A%d/F%d ห่าง %.2fวิ"):format(
         _G.DA78_AIM and "✓" or "✗", _G.DA78_FIRE and "✓" or "✗",
-        _G.DA78_CTR or 0, _G.DA78_DELTA or 0)
+        _G.DA78_AIMCTR or 0, _G.DA78_FIRECTR or 0, _G.DA78_DELTA or 0)
 end
 
 local function mkbtn(txt, y, col)
@@ -431,11 +439,13 @@ end
                 and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
                 _G.DA78_AIM = method
                 _G.DA78_ORIGIN = a[1]
-                _G.DA78_CTR = math.max(_G.DA78_CTR or 0, a[3])
+                -- v9.0: จำ AIM counter แยก (เดินตามที่ผู้เล่นยิงมือ = ค่าล่าสุดจากเซิร์ฟเวอร์)
+                _G.DA78_AIMCTR = math.max(_G.DA78_AIMCTR or 0, a[3])
             -- B: (number เดียว) = คำสั่งยืนยันนัด
             elseif a.n == 1 and typeof(a[1]) == "number" then
                 _G.DA78_FIRE = method
-                _G.DA78_CTR = math.max(_G.DA78_CTR or 0, a[1])
+                -- v9.0: จำ FIRE counter แยกจาก AIM (ห่างกันคงที่ ต้องส่งเลขถูกชุดถึงจะลงดาเมจ)
+                _G.DA78_FIRECTR = math.max(_G.DA78_FIRECTR or 0, a[1])
             end
         end)
         return old(self, ...) -- ส่งต่อของเดิมเป๊ะ ไม่แตะอะไร
@@ -468,15 +478,20 @@ local function fireShotAt(targetPos, skipThrottle)
     if not skipThrottle and os.clock() - (_G.DA78_LASTFIRE or 0) < rate then return false end
     _G.DA78_DELTA = os.clock() - (_G.DA78_LASTFIRE or os.clock())
     _G.DA78_LASTFIRE = os.clock()
-    _G.DA78_CTR = (_G.DA78_CTR or 0) + 1
-    local n = _G.DA78_CTR
-    local origin = Camera.CFrame.Position
-    local dir = targetPos and (targetPos - origin).Unit or Camera.CFrame.LookVector
+    -- v9.0: เดิน 2 counter อิสระ ตามที่เกมทำจริง (AIM กับ FIRE ห่างกันคงที่)
+    _G.DA78_AIMCTR = (_G.DA78_AIMCTR or 0) + 1
+    _G.DA78_FIRECTR = (_G.DA78_FIRECTR or 0) + 1
+    local an = _G.DA78_AIMCTR
+    local fn = _G.DA78_FIRECTR
+    -- v9.0: ใช้ origin ที่จับจากยิงมือ (คงที่ ~801,68,58) ให้ตรงกับของจริง — dir เซิร์ฟเวอร์ไม่เช็คเป๊ะ
+    local origin = _G.DA78_ORIGIN or Camera.CFrame.Position
+    local camPos = Camera.CFrame.Position
+    local dir = targetPos and (targetPos - camPos).Unit or Camera.CFrame.LookVector
     local ts = os.time()
     local ok, now = pcall(function() return workspace:GetServerTimeNow() end)
     if ok and type(now) == "number" then ts = now end
-    pcall(function() aR:FireServer(origin, dir, n, ts) end)
-    pcall(function() fR:FireServer(n) end)
+    pcall(function() aR:FireServer(origin, dir, an, ts) end)
+    pcall(function() fR:FireServer(fn) end)
     lastShotClock = os.clock()
     return true
 end
