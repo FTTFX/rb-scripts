@@ -35,6 +35,8 @@ local RUN_ON = false
 -- สไตล์ 27.txt: ยิงรัวทุก Heartbeat กระจายใส่เป็ดหลายตัว/tick ไม่พักรีโหลด
 local FIRE_DELAY = 0.03  -- วิ/tick (เร็วสุด — ปรับด้วย −/+)
 local MAX_TARGETS = 8    -- ยิงกี่ตัว/tick (เป็ดใกล้สุด N ตัว)
+local MODE = "REMOTE"    -- "REMOTE" = ยิงรีโมต / "CLICK" = ล็อกกล้อง+คลิกรัว (ปืนเกมยิงเอง)
+local AIM_SMOOTH = 0.7   -- ความไวดูดกล้อง (โหมดคลิก)
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -44,7 +46,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DV2_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 230, 0, 168); frame.Position = UDim2.new(0, 8, 0.35, 0)
+frame.Size = UDim2.new(0, 230, 0, 200); frame.Position = UDim2.new(0, 8, 0.35, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.18
 frame.Active = true; frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -132,24 +134,31 @@ mainB.Text = "เปิดยิงรีโมต: OFF (คีย์ J)"; mainB
 mainB.BackgroundColor3 = Color3.fromRGB(190, 60, 60); mainB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", mainB).CornerRadius = UDim.new(0, 6)
 
+-- ปุ่มสลับโหมด รีโมต ↔ คลิก
+local modeB = Instance.new("TextButton", frame)
+modeB.Size = UDim2.new(1, -8, 0, 26); modeB.Position = UDim2.new(0, 4, 0, 112)
+modeB.Text = "โหมด: รีโมต (แตะสลับเป็นคลิก)"; modeB.Font = Enum.Font.GothamBold; modeB.TextSize = 12
+modeB.BackgroundColor3 = Color3.fromRGB(70, 90, 160); modeB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", modeB).CornerRadius = UDim.new(0, 5)
+
 -- แถวปรับหน่วงยิง −/+
 local rMinus = Instance.new("TextButton", frame)
-rMinus.Size = UDim2.new(0, 32, 0, 26); rMinus.Position = UDim2.new(0, 4, 0, 114)
+rMinus.Size = UDim2.new(0, 32, 0, 26); rMinus.Position = UDim2.new(0, 4, 0, 142)
 rMinus.BackgroundColor3 = Color3.fromRGB(120, 50, 50); rMinus.TextColor3 = Color3.new(1,1,1)
 rMinus.Font = Enum.Font.GothamBold; rMinus.TextSize = 18; rMinus.Text = "−"
 local rLbl = Instance.new("TextLabel", frame)
-rLbl.Size = UDim2.new(0, 150, 0, 26); rLbl.Position = UDim2.new(0, 40, 0, 114)
+rLbl.Size = UDim2.new(0, 150, 0, 26); rLbl.Position = UDim2.new(0, 40, 0, 142)
 rLbl.BackgroundColor3 = Color3.fromRGB(30, 30, 45); rLbl.TextColor3 = Color3.fromRGB(255, 230, 150)
 rLbl.Font = Enum.Font.Code; rLbl.TextSize = 13
 rLbl.Text = ("tick %.2fวิ ×%dตัว"):format(FIRE_DELAY, MAX_TARGETS)
 Instance.new("UICorner", rLbl).CornerRadius = UDim.new(0, 5)
 local rPlus = Instance.new("TextButton", frame)
-rPlus.Size = UDim2.new(0, 32, 0, 26); rPlus.Position = UDim2.new(0, 194, 0, 114)
+rPlus.Size = UDim2.new(0, 32, 0, 26); rPlus.Position = UDim2.new(0, 194, 0, 142)
 rPlus.BackgroundColor3 = Color3.fromRGB(50, 120, 50); rPlus.TextColor3 = Color3.new(1,1,1)
 rPlus.Font = Enum.Font.GothamBold; rPlus.TextSize = 18; rPlus.Text = "+"
 
 local closeB = Instance.new("TextButton", frame)
-closeB.Size = UDim2.new(1, -8, 0, 22); closeB.Position = UDim2.new(0, 4, 0, 144)
+closeB.Size = UDim2.new(1, -8, 0, 22); closeB.Position = UDim2.new(0, 4, 0, 172)
 closeB.Text = "✕ ปิดหน้าต่าง"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12
 closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
@@ -258,6 +267,32 @@ local function serverNow()
     return t
 end
 
+-- ==================== โหมดคลิก: ล็อกกล้อง + คลิกจริง (ปืนเกมยิงเอง) ====================
+local VIM = game:GetService("VirtualInputManager")
+local mouse = LP:GetMouse()
+local function getTool()
+    local ch = LP.Character
+    if not ch then return nil end
+    for _, v in ipairs(ch:GetChildren()) do if v:IsA("Tool") then return v end end
+    return nil
+end
+local function doClick()
+    local tool = getTool()
+    if tool then pcall(function() tool:Activate() end) end
+    pcall(function()
+        local vx = (mouse and mouse.X and mouse.X > 0) and mouse.X or math.floor(Camera.ViewportSize.X / 2)
+        local vy = (mouse and mouse.Y and mouse.Y > 0) and mouse.Y or math.floor(Camera.ViewportSize.Y / 2)
+        VIM:SendMouseButtonEvent(vx, vy, 0, true, game, 0)
+        VIM:SendMouseButtonEvent(vx, vy, 0, false, game, 0)
+    end)
+    return tool ~= nil
+end
+-- หันกล้องไปที่เป้า (โหมดคลิก ต้องเล็งจริงเพราะปืนยิงตามกล้อง)
+local function aimCameraAt(targetPos)
+    local cf = Camera.CFrame
+    Camera.CFrame = cf:Lerp(CFrame.new(cf.Position, targetPos), AIM_SMOOTH)
+end
+
 -- ยิงรีโมตตรงไปที่ตำแหน่งเป้า — เดิน counter คู่กัน (+1 ทั้งคู่) รักษา offset ที่เรียนมา
 -- v1.2: สปายพิสูจน์ origin = กล้องสดๆ / dir = ทิศกล้อง → ใช้กล้องสด ณ ตอนยิง (ไม่ใช้ค่าเก่า!)
 --   dir = (ตำแหน่งเป็ด − กล้อง).Unit ชี้ตรงตัวเป็ด เซิร์ฟเวอร์ยิงเรย์จากกล้องโดนเป็ดพอดี
@@ -290,26 +325,43 @@ local function runStop()
     mainB.BackgroundColor3 = Color3.fromRGB(190, 60, 60)
 end
 local function runStart()
-    if not (_G.DV2_AIM and _G.DV2_FIRE) then
-        setStatus("[V2] ⚠️ ยังไม่รู้จักปืน — ยิงมือ 1 นัดก่อน แล้วกดใหม่")
+    -- โหมดรีโมตต้องรู้จักปืนก่อน / โหมดคลิกไม่ต้อง (ปืนเกมยิงเอง)
+    if MODE == "REMOTE" and not (_G.DV2_AIM and _G.DV2_FIRE) then
+        setStatus("[V2] ⚠️ โหมดรีโมตต้องยิงมือ 1 นัดก่อน (หรือสลับเป็นโหมดคลิก)")
         return
     end
     RUN_ON = true
-    mainB.Text = "เปิดยิงรีโมต: ON (กด J ปิด)"
+    mainB.Text = "เปิดยิง: ON (กด J ปิด)"
     mainB.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
     _G.DV2_RUNID = (_G.DV2_RUNID or 0) + 1
     local myRun = _G.DV2_RUNID
-    -- สไตล์ 27.txt: Heartbeat ทุก FIRE_DELAY วิ กระจายยิงเป็ดใกล้สุด MAX_TARGETS ตัวใน tick เดียว
     _G.DV2_LASTFIRE = 0
     local conn
     conn = RunService.Heartbeat:Connect(function()
         if not (RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun) then
             conn:Disconnect(); return
         end
-        if os.clock() - (_G.DV2_LASTFIRE or 0) < FIRE_DELAY then return end
-        _G.DV2_LASTFIRE = os.clock()
         local origin = Camera.CFrame.Position
         local ducks = closestDucks(origin)
+
+        if MODE == "CLICK" then
+            -- โหมดคลิก: ล็อกกล้องใส่เป็ดใกล้สุด (ทุกเฟรม) + คลิกรัวตาม FIRE_DELAY
+            if #ducks > 0 then
+                local p = duckPos(ducks[1].model)
+                if p then aimCameraAt(p) end -- เล็งทุกเฟรมให้ตามทัน
+            else
+                setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return
+            end
+            if os.clock() - (_G.DV2_LASTFIRE or 0) < FIRE_DELAY then return end
+            _G.DV2_LASTFIRE = os.clock()
+            doClick()
+            setStatus(("[V2] 🖱️ คลิกล็อก: %s"):format(ducks[1].model.Name))
+            return
+        end
+
+        -- โหมดรีโมต (27.txt): กระจายยิงเป็ดใกล้สุด MAX_TARGETS ตัวใน tick เดียว
+        if os.clock() - (_G.DV2_LASTFIRE or 0) < FIRE_DELAY then return end
+        _G.DV2_LASTFIRE = os.clock()
         if #ducks == 0 then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
         local sent = 0
         for _, d in ipairs(ducks) do
@@ -329,6 +381,18 @@ end
 
 -- ==================== ปุ่ม/คีย์ ====================
 mainB.MouseButton1Click:Connect(toggle)
+modeB.MouseButton1Click:Connect(function()
+    if MODE == "REMOTE" then
+        MODE = "CLICK"
+        modeB.Text = "โหมด: คลิก (แตะสลับเป็นรีโมต)"
+        modeB.BackgroundColor3 = Color3.fromRGB(160, 110, 60)
+    else
+        MODE = "REMOTE"
+        modeB.Text = "โหมด: รีโมต (แตะสลับเป็นคลิก)"
+        modeB.BackgroundColor3 = Color3.fromRGB(70, 90, 160)
+    end
+    setStatus(("[V2] สลับเป็นโหมด %s"):format(MODE == "CLICK" and "คลิก (ล็อกกล้อง+คลิกรัว)" or "รีโมต"))
+end)
 -- − ลด/เพิ่ม "จำนวนเป้าต่อ tick" (ยิงกว้างขึ้น = เร็วขึ้น)
 local function refreshRLbl() rLbl.Text = ("tick %.2fวิ ×%dตัว"):format(FIRE_DELAY, MAX_TARGETS) end
 rMinus.MouseButton1Click:Connect(function()
