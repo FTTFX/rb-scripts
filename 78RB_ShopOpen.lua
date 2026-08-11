@@ -50,40 +50,26 @@ closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
 
 -- ==================== หา ProximityPrompt + หน้าต่างร้าน ====================
-local SHOP_GUIS = {}   -- ScreenGui ร้าน -> Frame หลัก (เจาะจงเฉพาะร้านจริง ไม่ยุ่ง UI อื่น)
+local SHOP_GUIS = {}   -- ScreenGui ร้าน (เล็งตรงตามชื่อ — GuiSpy ยืนยันแล้ว)
 
--- ลายเซ็นร้านที่ "เฉพาะเจาะจง" — คำนี้มีแต่ในร้านนี้ ไม่ชนกับ console/UI อื่น
-local function isShopText(txt)
-    if not txt then return false end
-    return txt:find("ขายเป็ด") or txt:find("อัปเกรดอาวุธ") or txt:find("ซื้อประเภทเหยื่อ")
-end
-
-local function biggestFrame(sg)
-    local best, bestArea = nil, 0
-    for _, d in ipairs(sg:GetDescendants()) do
-        if d:IsA("Frame") or d:IsA("ImageLabel") then
-            local a = d.Size.X.Scale + d.Size.Y.Scale
-            if a > bestArea then best, bestArea = d, a end
-        end
-    end
-    return best
-end
+-- ชื่อ GUI ร้านที่ยืนยันจาก GuiSpy: "Upgrades" = ร้านอัปเกรดอาวุธ | "Shop" = แพ็ค/ของอื่น
+local SHOP_NAMES = { "Upgrades", "Shop" }
 
 local function scan()
     SHOP_GUIS = {}
-    -- สแกน "เฉพาะ PlayerGui" (ไม่แตะ gethui/console ของ executor!) หาหน้าต่างที่มีคำร้านจริง
     pcall(function()
         local pg = LP:FindFirstChild("PlayerGui")
         if not pg then return end
-        for _, d in ipairs(pg:GetDescendants()) do
-            if (d:IsA("TextLabel") or d:IsA("TextButton")) and isShopText(d.Text) then
-                local sg = d:FindFirstAncestorWhichIsA("ScreenGui")
-                if sg and SHOP_GUIS[sg] == nil then SHOP_GUIS[sg] = biggestFrame(sg) or false end
+        for _, sg in ipairs(pg:GetChildren()) do
+            if sg:IsA("ScreenGui") then
+                for _, nm in ipairs(SHOP_NAMES) do
+                    if sg.Name == nm then SHOP_GUIS[sg] = false end
+                end
             end
         end
     end)
     local nG = 0; for _ in pairs(SHOP_GUIS) do nG = nG + 1 end
-    title.Text = ("🛒 เจอหน้าต่างร้าน %d อัน\n(ถ้าเจอ 0 เดินไปใกล้ร้านแล้วกด '🔍 สแกน')"):format(nG)
+    title.Text = ("🛒 เจอร้าน %d อัน (Upgrades/Shop)\nกด G เปิด/ปิดได้เลย"):format(nG)
 end
 
 local SHOP_OPEN = false
