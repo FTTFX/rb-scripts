@@ -365,10 +365,23 @@ end))
 mainB.MouseButton1Click:Connect(toggle)
 flyB.MouseButton1Click:Connect(flyToggle)
 homeB.MouseButton1Click:Connect(warpHome)
-upB.MouseButton1Down:Connect(function() upHeld = true end)
-upB.MouseButton1Up:Connect(function() upHeld = false end)
-downB.MouseButton1Down:Connect(function() downHeld = true end)
-downB.MouseButton1Up:Connect(function() downHeld = false end)
+-- แตะสลับ (มือถือ MouseButton1Down มักไม่ทำงาน — ใช้ Click ชัวร์กว่า) + เริ่มบินให้เอง
+local function refreshUpDown()
+    upB.BackgroundColor3 = upHeld and Color3.fromRGB(60,170,90) or Color3.fromRGB(70,90,130)
+    downB.BackgroundColor3 = downHeld and Color3.fromRGB(60,170,90) or Color3.fromRGB(70,90,130)
+    upB.Text = upHeld and "▲ ขึ้น ●" or "▲ ขึ้น"
+    downB.Text = downHeld and "▼ ลง ●" or "▼ ลง"
+end
+upB.MouseButton1Click:Connect(function()
+    upHeld = not upHeld; downHeld = false
+    if upHeld and not FLY_ON then startFly() end
+    refreshUpDown()
+end)
+downB.MouseButton1Click:Connect(function()
+    downHeld = not downHeld; upHeld = false
+    if downHeld and not FLY_ON then startFly() end
+    refreshUpDown()
+end)
 rMinus.MouseButton1Click:Connect(function()
     FIRE_DELAY = math.clamp(FIRE_DELAY - 0.05, 0.1, 3); refreshRLbl()
 end)
