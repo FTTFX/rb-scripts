@@ -194,6 +194,16 @@ local function duckVisible(origin, duckPosV, duckModel)
     return res == nil -- ไม่โดนอะไรระหว่างทาง = โล่ง ยิงโดนแน่
 end
 
+-- จำเป็ดที่ "เพิ่งยิง" — กันจ่อคลิกซ้ำตัวเดิม/ตัวที่ตายแล้ว ให้ไล่ยิงตัวถัดไป
+local shotAt = {} -- model -> os.clock()
+local SHOT_SKIP = 0.35
+local function markShot(m) if m then shotAt[m] = os.clock() end end
+local function recentlyShot(m)
+    if not m.Parent then shotAt[m] = nil; return false end
+    local t = shotAt[m]
+    return t ~= nil and (os.clock() - t) < SHOT_SKIP
+end
+
 -- คืนลิสต์เป็ด "เรียงจากใกล้สุด + ไม่มีอะไรบัง" (บอสแทรกหัวแถว)
 local FILTER_LOS = true -- เปิด/ปิดกรองตัวที่ถูกบัง
 local function closestDucks(origin)
@@ -359,17 +369,22 @@ local function runStart()
         local ducks = closestDucks(origin)
 
         if MODE == "CLICK" then
-            -- โหมดคลิก: ล็อกกล้องใส่เป็ดใกล้สุด (ทุกเฟรม) + คลิกรัวตาม FIRE_DELAY
+            -- โหมดคลิก: เลือกเป็ดใกล้สุดที่ "ยังไม่เพิ่งยิง" (กันจ่อซ้ำตัวเดิม/ตัวที่ตายแล้ว)
             if #ducks == 0 then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
-            local p = duckPos(ducks[1].model)
+            local target = nil
+            for _, d in ipairs(ducks) do
+                if d.model.Parent and not recentlyShot(d.model) then target = d; break end
+            end
+            if not target then target = ducks[1] end -- ทุกตัวเพิ่งยิงหมด → เอาใกล้สุด
+            local p = duckPos(target.model)
             if not p then return end
             local canFire = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
-            -- ถ้าถึงจังหวะยิง → snap เป๊ะตรงตัวเป็ดก่อนคลิก / ไม่งั้น Lerp ตามนุ่มๆ
-            aimCameraAt(p, canFire)
+            aimCameraAt(p, canFire) -- ถึงจังหวะยิง=snap เป๊ะ / ไม่ถึง=Lerp ตามนุ่มๆ
             if not canFire then return end
             _G.DV2_LASTFIRE = os.clock()
             doClick()
-            setStatus(("[V2] 🖱️ คลิกล็อก: %s"):format(ducks[1].model.Name))
+            markShot(target.model) -- พักตัวนี้ ไปตัวถัดไปนัดหน้า
+            setStatus(("[V2] 🖱️ คลิก: %s"):format(target.model.Name))
             return
         end
 
