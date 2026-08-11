@@ -145,14 +145,26 @@ local function findBoss()
     end
     return nil
 end
--- คืนลิสต์เป็ด "เรียงจากใกล้สุด" (บอสแทรกหัวแถว) — สไตล์ 27.txt: ยิงตามตำแหน่ง ไม่สนกล้อง
+-- v1.3: เช็ค "ไม่มีอะไรบัง" — เรย์จากกล้องถึงเป็ด ถ้าไปโดนอย่างอื่นก่อน (ต้นไม้/พื้น) = เสียนัดเปล่า
+local losParams = RaycastParams.new()
+losParams.FilterType = Enum.RaycastFilterType.Exclude
+local function duckVisible(origin, duckPosV, duckModel)
+    losParams.FilterDescendantsInstances = { LP.Character, duckModel }
+    local res = workspace:Raycast(origin, duckPosV - origin, losParams)
+    return res == nil -- ไม่โดนอะไรระหว่างทาง = โล่ง ยิงโดนแน่
+end
+
+-- คืนลิสต์เป็ด "เรียงจากใกล้สุด + ไม่มีอะไรบัง" (บอสแทรกหัวแถว)
+local FILTER_LOS = true -- เปิด/ปิดกรองตัวที่ถูกบัง
 local function closestDucks(origin)
     local list = {}
     local f = duckFolder(); if not f then return list end
     for _, m in ipairs(f:GetChildren()) do
         if m:IsA("Model") and isLiveDuck(m) then
             local p = duckPos(m)
-            if p then list[#list + 1] = { model = m, pos = p, dist = (p - origin).Magnitude } end
+            if p and (not FILTER_LOS or duckVisible(origin, p, m)) then
+                list[#list + 1] = { model = m, pos = p, dist = (p - origin).Magnitude }
+            end
         end
     end
     table.sort(list, function(a, b) return a.dist < b.dist end)
