@@ -75,6 +75,25 @@ local function setGun()
         _G.DV2_OFFSET ~= nil and tostring(_G.DV2_OFFSET) or "?")
 end
 
+-- ตัวนับ "ฆ่าไปกี่ตัว" สดๆ จาก leaderstats.DucksKilled — โชว์ว่ายิงรีโมตได้ผลจริงไหม
+local function ducksKilled()
+    local ls = LP:FindFirstChild("leaderstats")
+    if not ls then return nil end
+    local d = ls:FindFirstChild("DucksKilled") or ls:FindFirstChild("Ducks")
+    return d and d.Value or nil
+end
+local killBase = ducksKilled()
+task.spawn(function()
+    while _G.DV2_GEN == MY_GEN do
+        local now = ducksKilled()
+        if now then
+            if not killBase then killBase = now end
+            title.Text = ("🦆 DuckAim V2  ฆ่า +%d"):format(now - killBase)
+        end
+        task.wait(0.4)
+    end
+end)
+
 -- ปุ่มหลัก เปิด/ปิด (ปุ่มเดียว)
 local mainB = Instance.new("TextButton", frame)
 mainB.Size = UDim2.new(1, -8, 0, 34); mainB.Position = UDim2.new(0, 4, 0, 74)
