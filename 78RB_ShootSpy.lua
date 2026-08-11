@@ -77,36 +77,50 @@ local function rayHitName(origin, dir)
     return ("%s%s @%.0f"):format(isDuck and "🦆 " or "", mn, res.Distance)
 end
 
--- ==================== HOOK: จับ AIM remote ตอนยิงมือ ====================
+-- ==================== HOOK: เก็บค่าดิบเร็วๆ แล้วปล่อยผ่านทันที (ห้ามทำงานหนักใน hook!) ====================
+-- v1.1: v1.0 raycast+log ใน hook → บล็อกการยิง แก้: hook แค่ push ค่าลง queue แล้ว return
+_G.SS78_QUEUE = _G.SS78_QUEUE or {}
 local hookOK, hookErr = pcall(function()
     if not (hookmetamethod and getnamecallmethod) then error("ไม่มี hookmetamethod") end
     local old
     old = hookmetamethod(game, "__namecall", function(self, ...)
-        local a = table.pack(...)
-        local rself = self
-        pcall(function()
-            if _G.SS78_GEN ~= MY_GEN then return end
-            if getnamecallmethod() ~= "FireServer" then return end
-            -- AIM: (V3 origin, V3 dir, num, num)
-            if a.n >= 4 and typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3"
-                and typeof(a[3]) == "number" and typeof(a[4]) == "number" then
-                local origin, dir = a[1], a[2]
-                local camP = Camera.CFrame.Position
-                local camLook = Camera.CFrame.LookVector
-                local dOrigin = (origin - camP).Magnitude
-                local ndir = dir.Magnitude > 0 and dir.Unit or dir
-                local dot = math.clamp(ndir:Dot(camLook), -1, 1)
-                local ang = math.deg(math.acos(dot))
-                log(("── ยิงมือ ctr=%d ──"):format(a[3]))
-                log((" origin เกม: %.1f,%.1f,%.1f"):format(origin.X, origin.Y, origin.Z))
-                log((" กล้องตอนนี้: %.1f,%.1f,%.1f  (ต่าง %.1f)"):format(camP.X, camP.Y, camP.Z, dOrigin))
-                log((" dir เกม: %.2f,%.2f,%.2f"):format(dir.X, dir.Y, dir.Z))
-                log((" dir กล้อง(Look): มุมต่าง %.1f°"):format(ang))
-                log((" เรย์ origin+dir โดน: %s"):format(rayHitName(origin, ndir)))
-            end
-        end)
-        return old(rself, ...)
+        -- เบาสุด: เช็คชนิด args แล้วเก็บลง queue (สแนปช็อตกล้อง ณ ตอนยิง) — ไม่ raycast ไม่ log
+        local a1, a2, a3 = ...
+        if _G.SS78_GEN == MY_GEN and typeof(a1) == "Vector3" and typeof(a2) == "Vector3"
+            and typeof(a3) == "number" then
+            pcall(function()
+                if getnamecallmethod() == "FireServer" then
+                    local cf = Camera.CFrame
+                    table.insert(_G.SS78_QUEUE, {
+                        origin = a1, dir = a2, ctr = a3,
+                        camP = cf.Position, camLook = cf.LookVector,
+                    })
+                end
+            end)
+        end
+        return old(self, ...)
     end)
+end)
+
+-- ประมวลผล queue นอก hook (raycast + log ที่นี่ ปลอดภัย ไม่กระทบการยิง)
+task.spawn(function()
+    while _G.SS78_GEN == MY_GEN do
+        local q = _G.SS78_QUEUE
+        while q and #q > 0 do
+            local e = table.remove(q, 1)
+            local ndir = e.dir.Magnitude > 0 and e.dir.Unit or e.dir
+            local dOrigin = (e.origin - e.camP).Magnitude
+            local dot = math.clamp(ndir:Dot(e.camLook), -1, 1)
+            local ang = math.deg(math.acos(dot))
+            log(("── ยิงมือ ctr=%d ──"):format(e.ctr))
+            log((" origin เกม: %.1f,%.1f,%.1f"):format(e.origin.X, e.origin.Y, e.origin.Z))
+            log((" กล้องตอนยิง: %.1f,%.1f,%.1f  (ต่าง %.1f)"):format(e.camP.X, e.camP.Y, e.camP.Z, dOrigin))
+            log((" dir เกม: %.2f,%.2f,%.2f"):format(e.dir.X, e.dir.Y, e.dir.Z))
+            log((" dir กล้อง(Look): มุมต่าง %.1f°"):format(ang))
+            log((" เรย์ origin+dir โดน: %s"):format(rayHitName(e.origin, ndir)))
+        end
+        task.wait(0.15)
+    end
 end)
 if hookOK then
     log("✅ พร้อม — ยิงมือใส่เป็ด 2-3 นัด แล้วอ่าน:")
@@ -129,4 +143,4 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.SS78_GUI = nil
 end)
 
-warn("[ShootSpy78] v1.0 loaded — ยิงมือ 2-3 นัด")
+warn("[ShootSpy78] v1.1 loaded — hook เบา ยิงได้ปกติ / ยิงมือ 2-3 นัด")
