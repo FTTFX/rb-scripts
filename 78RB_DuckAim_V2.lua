@@ -32,9 +32,9 @@ _G.DV2_AIMCTR  = _G.DV2_AIMCTR or 0
 _G.DV2_FIRECTR = _G.DV2_FIRECTR or 0
 
 local RUN_ON = false
-local RATE = 0.08 -- วิ/นัด (ปรับได้ด้วย −/+) — เร็วขึ้น
-local MAG = 2      -- นัด/แม็ก (ยิงรัวเท่านี้แล้วพักรีโหลด)
-local RELOAD = 0.9 -- วิ พักรีโหลดหลังยิงจบแม็ก
+-- สไตล์ 27.txt: ยิงรัวทุก Heartbeat กระจายใส่เป็ดหลายตัว/tick ไม่พักรีโหลด
+local FIRE_DELAY = 0.03  -- วิ/tick (เร็วสุด — ปรับด้วย −/+)
+local MAX_TARGETS = 8    -- ยิงกี่ตัว/tick (เป็ดใกล้สุด N ตัว)
 
 -- ==================== GUI ====================
 local gui = Instance.new("ScreenGui")
@@ -91,7 +91,7 @@ local rLbl = Instance.new("TextLabel", frame)
 rLbl.Size = UDim2.new(0, 150, 0, 26); rLbl.Position = UDim2.new(0, 40, 0, 114)
 rLbl.BackgroundColor3 = Color3.fromRGB(30, 30, 45); rLbl.TextColor3 = Color3.fromRGB(255, 230, 150)
 rLbl.Font = Enum.Font.Code; rLbl.TextSize = 13
-rLbl.Text = ("หน่วงยิง %.2f วิ"):format(RATE)
+rLbl.Text = ("tick %.2fวิ ×%dตัว"):format(FIRE_DELAY, MAX_TARGETS)
 Instance.new("UICorner", rLbl).CornerRadius = UDim.new(0, 5)
 local rPlus = Instance.new("TextButton", frame)
 rPlus.Size = UDim2.new(0, 32, 0, 26); rPlus.Position = UDim2.new(0, 194, 0, 114)
@@ -126,21 +126,20 @@ local function findBoss()
     end
     return nil
 end
--- เป้าใกล้สุด (บอสมาก่อน) — สไตล์ 27.txt: ยิงตามตำแหน่ง ไม่สนกล้อง
-local function pickDuck(origin)
-    local boss = findBoss(); if boss then return boss end
-    local f = duckFolder(); if not f then return nil end
-    local best, bestDist = nil, math.huge
+-- คืนลิสต์เป็ด "เรียงจากใกล้สุด" (บอสแทรกหัวแถว) — สไตล์ 27.txt: ยิงตามตำแหน่ง ไม่สนกล้อง
+local function closestDucks(origin)
+    local list = {}
+    local f = duckFolder(); if not f then return list end
     for _, m in ipairs(f:GetChildren()) do
         if m:IsA("Model") and isLiveDuck(m) then
             local p = duckPos(m)
-            if p then
-                local dist = (p - origin).Magnitude
-                if dist < bestDist then best, bestDist = { model = m, pos = p }, dist end
-            end
+            if p then list[#list + 1] = { model = m, pos = p, dist = (p - origin).Magnitude } end
         end
     end
-    return best
+    table.sort(list, function(a, b) return a.dist < b.dist end)
+    local boss = findBoss()
+    if boss then table.insert(list, 1, boss) end
+    return list
 end
 
 -- ==================== HOOK เรียนปืน (อ่านอย่างเดียว ไม่แก้ค่า) ====================
@@ -236,35 +235,29 @@ local function runStart()
     mainB.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
     _G.DV2_RUNID = (_G.DV2_RUNID or 0) + 1
     local myRun = _G.DV2_RUNID
-    task.spawn(function()
-        while RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun do
-            local rate = math.clamp(RATE, 0.03, 3)
-            -- ยิงรัวเป็นชุดตามขนาดแม็ก (แต่ละนัดเลือกเป้าใกล้สุดสดๆ) แล้วพักรีโหลด
-            local fired = 0
-            for i = 1, math.max(1, MAG) do
-                if not (RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun) then break end
-                local d = pickDuck(_G.DV2_ORIGIN or Camera.CFrame.Position)
-                if d and d.model.Parent then
-                    local p = duckPos(d.model)
-                    if p and fireAt(p) then
-                        fired = fired + 1
-                        setStatus(("[V2] 🔫 %s A%d/F%d [%d/%d]"):format(
-                            d.model.Name, _G.DV2_AIMCTR, _G.DV2_FIRECTR, i, MAG))
-                    end
-                    task.wait(rate)
-                else
-                    setStatus("[V2] ไม่เจอเป้า — รอเป็ด")
-                    task.wait(0.08)
-                    break
-                end
-            end
-            -- พักรีโหลดหลังยิงจบแม็ก (ข้ามถ้าไม่ได้ยิงเลย)
-            if fired > 0 and RELOAD > 0 then
-                setStatus(("[V2] 🔄 รีโหลด %.1fวิ (ยิงไป %d นัด)"):format(RELOAD, fired))
-                task.wait(RELOAD)
+    -- สไตล์ 27.txt: Heartbeat ทุก FIRE_DELAY วิ กระจายยิงเป็ดใกล้สุด MAX_TARGETS ตัวใน tick เดียว
+    _G.DV2_LASTFIRE = 0
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        if not (RUN_ON and _G.DV2_GEN == MY_GEN and _G.DV2_RUNID == myRun) then
+            conn:Disconnect(); return
+        end
+        if os.clock() - (_G.DV2_LASTFIRE or 0) < FIRE_DELAY then return end
+        _G.DV2_LASTFIRE = os.clock()
+        local origin = _G.DV2_ORIGIN or Camera.CFrame.Position
+        local ducks = closestDucks(origin)
+        if #ducks == 0 then setStatus("[V2] ไม่เจอเป้า — รอเป็ด"); return end
+        local sent = 0
+        for _, d in ipairs(ducks) do
+            if sent >= MAX_TARGETS then break end
+            if d.model.Parent then
+                local p = duckPos(d.model)
+                if p and fireAt(p) then sent = sent + 1 end
             end
         end
+        setStatus(("[V2] 🔫 กระจาย %d ตัว/tick A%d/F%d"):format(sent, _G.DV2_AIMCTR, _G.DV2_FIRECTR))
     end)
+    table.insert(_G.DV2_CONNS, conn)
 end
 local function toggle()
     if RUN_ON then runStop() else runStart() end
@@ -272,11 +265,13 @@ end
 
 -- ==================== ปุ่ม/คีย์ ====================
 mainB.MouseButton1Click:Connect(toggle)
+-- − ลด/เพิ่ม "จำนวนเป้าต่อ tick" (ยิงกว้างขึ้น = เร็วขึ้น)
+local function refreshRLbl() rLbl.Text = ("tick %.2fวิ ×%dตัว"):format(FIRE_DELAY, MAX_TARGETS) end
 rMinus.MouseButton1Click:Connect(function()
-    RATE = math.clamp(RATE - 0.05, 0.05, 3); rLbl.Text = ("หน่วงยิง %.2f วิ"):format(RATE)
+    MAX_TARGETS = math.clamp(MAX_TARGETS - 1, 1, 30); refreshRLbl()
 end)
 rPlus.MouseButton1Click:Connect(function()
-    RATE = math.clamp(RATE + 0.05, 0.05, 3); rLbl.Text = ("หน่วงยิง %.2f วิ"):format(RATE)
+    MAX_TARGETS = math.clamp(MAX_TARGETS + 1, 1, 30); refreshRLbl()
 end)
 closeB.MouseButton1Click:Connect(function()
     runStop()
