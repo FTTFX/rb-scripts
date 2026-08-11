@@ -83,14 +83,25 @@ local function ducksKilled()
     return d and d.Value or nil
 end
 local killBase = ducksKilled()
+-- มิเตอร์ "ฆ่า/วิ" — วัดเพดาน fire rate: เร่งแล้วตันที่เลขเดิม=เซิร์ฟคุม / พุ่งตาม=เชื่อ client
+local killWindow = {} -- เก็บ {t, total} ย้อนหลัง 3 วิ
 task.spawn(function()
     while _G.DV2_GEN == MY_GEN do
         local now = ducksKilled()
         if now then
             if not killBase then killBase = now end
-            title.Text = ("🦆 DuckAim V2  ฆ่า +%d"):format(now - killBase)
+            local t = os.clock()
+            table.insert(killWindow, { t = t, total = now })
+            while #killWindow > 1 and (t - killWindow[1].t) > 3 do table.remove(killWindow, 1) end
+            local rate = 0
+            if #killWindow >= 2 then
+                local dt = killWindow[#killWindow].t - killWindow[1].t
+                local dk = killWindow[#killWindow].total - killWindow[1].total
+                if dt > 0 then rate = dk / dt end
+            end
+            title.Text = ("🦆 V2  ฆ่า+%d  %.1f ตัว/วิ"):format(now - killBase, rate)
         end
-        task.wait(0.4)
+        task.wait(0.25)
     end
 end)
 
