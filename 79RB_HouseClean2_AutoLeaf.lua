@@ -198,9 +198,19 @@ local function doEmpty()
     if dp and root then
         local back = root.Position
         tpTo(dp + Vector3.new(0, 3, 0))
-        task.wait(0.25) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
+        task.wait(0.45) -- v2.2: รอตำแหน่งซิงก์นานขึ้น (0.25 ไม่พอ บางทีขายไม่เข้า)
         ee:FireServer()
-        task.wait(0.15)
+        -- v2.2: กดปุ่ม "ขาย" (ProximityPrompt) ที่ถังให้ด้วย เผื่อเกมขายผ่านปุ่มไม่ใช่ remote
+        pcall(function()
+            local d = workspace:FindFirstChild("Map")
+            d = d and d:FindFirstChild("Dumpsters")
+            if d and fireproximityprompt then
+                for _, pr in ipairs(d:GetDescendants()) do
+                    if pr:IsA("ProximityPrompt") then fireproximityprompt(pr) end
+                end
+            end
+        end)
+        task.wait(0.3)
         tpTo(back)
     else
         ee:FireServer()
