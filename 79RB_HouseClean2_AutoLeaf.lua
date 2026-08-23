@@ -225,6 +225,28 @@ end)
 --   → รอบถัดไปข้าม id พวกนั้น กวาดสั้นลงเรื่อยๆ | เก็บใน _G ข้ามการรันสคริปต์ซ้ำ
 _G.LF79_DONE = _G.LF79_DONE or {}
 local doneIds = _G.LF79_DONE
+-- v2.5: เซฟ/โหลดความจำลงไฟล์ (ผูกกับ JobId เซิร์ฟเวอร์ — ย้ายเซิร์ฟ/แมพรีเซ็ต = เริ่มใหม่)
+local HttpService = game:GetService("HttpService")
+local SAVE_FILE = "LF79_done.json"
+pcall(function()
+    if readfile and isfile and isfile(SAVE_FILE) then
+        local d = HttpService:JSONDecode(readfile(SAVE_FILE))
+        if d.job == game.JobId then
+            for _, id in ipairs(d.ids) do doneIds[id] = true end
+        end
+    end
+end)
+local function saveDone()
+    pcall(function()
+        if not writefile then return end
+        local ids = {}
+        for id in pairs(doneIds) do ids[#ids + 1] = id end
+        writefile(SAVE_FILE, HttpService:JSONEncode({ job = game.JobId, ids = ids }))
+    end)
+end
+task.spawn(function() -- เซฟทุก 20 วิ
+    while _G.LF79_GEN == GEN do task.wait(20); saveDone() end
+end)
 local recentFires = {} -- คิว {id, t} ที่เพิ่งยิง
 local function noteFire(id)
     recentFires[#recentFires + 1] = { id = id, t = os.clock() }
