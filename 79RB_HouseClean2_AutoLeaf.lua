@@ -13,7 +13,7 @@ local LP = Players.LocalPlayer
 
 local LEAF_DELAY = 0.03  -- หน่วงระหว่างชุด (วิ)
 local BURST = 50         -- ยิงกี่ id ต่อชุด (50×0.03 → กวาดครบ ~13k id ใน ~8 วิ/จุด)
-local NEAREST_MODE = true -- v1.5: เก็บใบใกล้ตัวสุดทีละใบ (id=ลำดับโฟลเดอร์) — ถ้าเดาผิดจะสลับกลับกวาดเต็มเอง
+local NEAREST_MODE = false -- v1.7: ปิด — ทดสอบจริงโดนแค่ 6/56 (id ไม่ใช่ลำดับโฟลเดอร์) ใช้กวาดเต็มแบบ v1.4
 local NEAR_SPREAD = 3     -- ยิงเผื่อ index ข้างเคียง ±กี่ตัว
 local EMPTY_EVERY = 20   -- เทกระเป๋าทุกๆ กี่ใบ
 local AUTO_ON = false
@@ -188,11 +188,23 @@ local function dumpsterPos()
     return p and p.Position
 end
 
--- ==================== เทถุง (v1.6: ยิงตรงๆ ไม่วาปไปถัง ตามที่ขอ) ====================
+-- ==================== เทถุง (v1.7: เกมบังคับต้องอยู่ใกล้ถัง → วาปไปเทแล้ววาปกลับ) ====================
 local function doEmpty()
     local ee = findRemote("EmptyBackpack")
-    if ee and ee:IsA("RemoteEvent") then ee:FireServer(); return true end
-    return false
+    if not (ee and ee:IsA("RemoteEvent")) then return false end
+    local dp = dumpsterPos()
+    local root = myRoot()
+    if dp and root then
+        local back = root.Position
+        tpTo(dp + Vector3.new(0, 3, 0))
+        task.wait(0.25) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
+        ee:FireServer()
+        task.wait(0.15)
+        tpTo(back)
+    else
+        ee:FireServer()
+    end
+    return true
 end
 emptyB.MouseButton1Click:Connect(function()
     say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack")
