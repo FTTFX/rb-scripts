@@ -302,10 +302,8 @@ task.spawn(function()
                     for id = 1, maxId do
                         if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
                         pcall(function() ce:FireServer(id) end)
-                        if id % 25 == 0 then
-                            status.Text = ("🍂 จุดนี้ยิง %d/%d | ใบเหลือ %d (เริ่ม %d)")
-                                :format(id, maxId, #allLeaves(), startCount)
-                        end
+                        status.Text = ("🍂 จุดนี้ยิง id %d/%d | ใบเหลือ %d (เริ่ม %d)")
+                            :format(id, maxId, #allLeaves(), startCount)
                         task.wait(LEAF_DELAY)
                     end
                     doEmpty() -- ขายทุกครั้งก่อนย้ายจุด (กันถุงเต็ม)
