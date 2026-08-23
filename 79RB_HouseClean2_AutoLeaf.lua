@@ -11,7 +11,8 @@ local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
-local LEAF_DELAY = 0.10  -- หน่วงระหว่างเก็บแต่ละใบ (วิ)
+local LEAF_DELAY = 0.05  -- หน่วงระหว่างชุด (วิ)
+local BURST = 10         -- ยิงกี่ id ต่อชุด
 local EMPTY_EVERY = 20   -- เทกระเป๋าทุกๆ กี่ใบ
 local AUTO_ON = false
 
@@ -85,6 +86,14 @@ dlyB.MouseButton1Click:Connect(function()
         if math.abs(v - LEAF_DELAY) < 0.001 then LEAF_DELAY = steps[i % #steps + 1]; break end
     end
     dlyB.Text = ("หน่วง %.2f"):format(LEAF_DELAY)
+end)
+local burstB = mkbtn(("ชุด %d"):format(BURST), 104, 296, 70, Color3.fromRGB(70, 110, 70))
+burstB.MouseButton1Click:Connect(function()
+    local steps = { 5, 10, 20, 40 }
+    for i, v in ipairs(steps) do
+        if v == BURST then BURST = steps[i % #steps + 1]; break end
+    end
+    burstB.Text = ("ชุด %d"):format(BURST)
 end)
 
 copyB.MouseButton1Click:Connect(function()
@@ -201,14 +210,16 @@ task.spawn(function()
                     nextId = 1
                     task.wait(1)
                 else
-                    pcall(function() ce:FireServer(nextId) end)
-                    sinceEmpty = sinceEmpty + 1
-                    if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
-                    if nextId % 10 == 0 then
-                        status.Text = ("🍂 ยิง id %d/%d | ใบเหลือในแมพ %d (เริ่ม %d)")
-                            :format(nextId, maxId, #ls, startCount)
+                    -- v1.2: ยิงเป็นชุด BURST id ต่อรอบ (เร็วขึ้นหลายเท่า)
+                    for _ = 1, BURST do
+                        if nextId > maxId then break end
+                        pcall(function() ce:FireServer(nextId) end)
+                        sinceEmpty = sinceEmpty + 1
+                        if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
+                        nextId = nextId + 1
                     end
-                    nextId = nextId + 1
+                    status.Text = ("🍂 ยิง id %d/%d | ใบเหลือในแมพ %d (เริ่ม %d)")
+                        :format(nextId - 1, maxId, #ls, startCount)
                     task.wait(LEAF_DELAY)
                 end
             end
