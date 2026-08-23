@@ -13,6 +13,8 @@ local LP = Players.LocalPlayer
 
 local LEAF_DELAY = 0.03  -- หน่วงระหว่างชุด (วิ)
 local BURST = 50         -- ยิงกี่ id ต่อชุด (50×0.03 → กวาดครบ ~13k id ใน ~8 วิ/จุด)
+local NEAREST_MODE = true -- v1.5: เก็บใบใกล้ตัวสุดทีละใบ (id=ลำดับโฟลเดอร์) — ถ้าเดาผิดจะสลับกลับกวาดเต็มเอง
+local NEAR_SPREAD = 3     -- ยิงเผื่อ index ข้างเคียง ±กี่ตัว
 local EMPTY_EVERY = 20   -- เทกระเป๋าทุกๆ กี่ใบ
 local AUTO_ON = false
 
@@ -222,6 +224,7 @@ task.spawn(function()
     local sinceEmpty = 0
     local startCount = nil
     local leafIdx = 0 -- v1.3: ตัวชี้ใบที่จะวาปไป
+    local hitCnt, tryCnt = 0, 0 -- v1.5: สถิติโหมดใกล้สุด
     while _G.LF79_GEN == GEN do
         if AUTO_ON then
             local ce = findRemote("CollectLeaf")
@@ -236,6 +239,40 @@ task.spawn(function()
                     status.Text = "🍂 ใบหมดแมพแล้ว! — รอเกิดใหม่..."
                     startCount = nil
                     task.wait(2)
+                elseif NEAREST_MODE then
+                    -- v1.5: เก็บใบใกล้ตัวสุดทีละใบ — วาปไปใบใกล้สุด แล้วยิง "ลำดับใบในโฟลเดอร์"
+                    --   (เดาว่า id = index) + ยิงเผื่อ index ข้างเคียง ±NEAR_SPREAD กันลำดับเคลื่อน
+                    local root = myRoot()
+                    if root then
+                        local best, bi, bd = nil, nil, math.huge
+                        for i, m in ipairs(ls) do
+                            if m:IsA("BasePart") then
+                                local d = (m.Position - root.Position).Magnitude
+                                if d < bd then bd = d; best = m; bi = i end
+                            end
+                        end
+                        if best then
+                            tpTo(best.Position + Vector3.new(0, 2, 0))
+                            task.wait(0.12)
+                            -- ยิง index ตัวเอง + เผื่อรอบข้าง
+                            for id = math.max(1, bi - NEAR_SPREAD), bi + NEAR_SPREAD do
+                                pcall(function() ce:FireServer(id) end)
+                            end
+                            task.wait(0.12)
+                            local gone = best.Parent == nil
+                            hitCnt = hitCnt + (gone and 1 or 0)
+                            tryCnt = tryCnt + 1
+                            sinceEmpty = sinceEmpty + 1
+                            if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
+                            status.Text = ("🎯 ใกล้สุด: โดน %d/%d ครั้ง | ใบเหลือ %d")
+                                :format(hitCnt, tryCnt, #allLeaves())
+                            if tryCnt >= 15 and hitCnt == 0 then
+                                status.Text = "❌ id ไม่ใช่ลำดับโฟลเดอร์ — ปิดโหมดใกล้สุด กลับไปกวาดเต็ม"
+                                NEAREST_MODE = false
+                                task.wait(1.5)
+                            end
+                        end
+                    end
                 else
                     -- v1.4: "ยืนทีละจุด ยิงครบทุก id ค่อยย้าย" — id ไม่ตรงกับใบที่วาปไป
                     --   (v1.3 ยิงข้าม: ยืนใบ A แต่ id ที่ยิงเป็นของใบไกลๆ) → ทุกจุดยิงครบ 1..maxId
@@ -286,4 +323,4 @@ task.spawn(function()
     end
 end)
 
-warn("[AutoLeaf79] v1.4 loaded — ยืนทีละจุด ยิงครบทุก id แล้วค่อยย้าย (ไม่ยิงข้าม) + ขายก่อนย้ายทุกจุด")
+warn("[AutoLeaf79] v1.5 loaded — โหมดใกล้สุด: วาปไปใบใกล้สุด ยิง id=ลำดับโฟลเดอร์±3 (เดาผิดสลับกลับกวาดเต็มเอง)")
