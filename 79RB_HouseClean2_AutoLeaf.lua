@@ -221,6 +221,32 @@ emptyB.MouseButton1Click:Connect(function()
     say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack")
 end)
 
+-- v2.4: จำ id ที่เก็บสำเร็จแล้ว (ดัก ChildRemoved ของ WS.Leaves จับคู่กับ id ที่เพิ่งยิง)
+--   → รอบถัดไปข้าม id พวกนั้น กวาดสั้นลงเรื่อยๆ | เก็บใน _G ข้ามการรันสคริปต์ซ้ำ
+_G.LF79_DONE = _G.LF79_DONE or {}
+local doneIds = _G.LF79_DONE
+local recentFires = {} -- คิว {id, t} ที่เพิ่งยิง
+local function noteFire(id)
+    recentFires[#recentFires + 1] = { id = id, t = os.clock() }
+    if #recentFires > 40 then table.remove(recentFires, 1) end
+end
+do
+    local lf = workspace:FindFirstChild("Leaves")
+    if lf then
+        lf.ChildRemoved:Connect(function()
+            -- ใบหาย → เครดิตให้ id ที่ยิงล่าสุดภายใน 0.5 วิ (ตัวเก่าสุดในหน้าต่างเวลา)
+            local now = os.clock()
+            for i, e in ipairs(recentFires) do
+                if now - e.t <= 0.5 then
+                    doneIds[e.id] = true
+                    table.remove(recentFires, i)
+                    break
+                end
+            end
+        end)
+    end
+end
+
 -- v2.1: ขายอัตโนมัติทุก EMPTY_SEC วิ ระหว่างกวาด (เดิมขายเฉพาะตอนจบจุด ~7 นาที ถุง 25 ใบเต็มก่อน)
 local EMPTY_SEC = 10
 task.spawn(function()
@@ -319,13 +345,19 @@ task.spawn(function()
                         tpTo(lp2 + Vector3.new(0, 2, 0))
                         task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
                     end
-                    -- v2.0: ยิงทีละ 1 id หน่วงทุกนัด (ตามที่ขอ — ไม่ยิงเป็นชุดแล้ว)
+                    -- v2.0: ยิงทีละ 1 id หน่วงทุกนัด | v2.4: ข้าม id ที่เก็บสำเร็จไปแล้ว
+                    local skipped = 0
                     for id = 1, maxId do
                         if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
-                        pcall(function() ce:FireServer(id) end)
-                        status.Text = ("🍂 จุดนี้ยิง id %d/%d | ใบเหลือ %d (เริ่ม %d)")
-                            :format(id, maxId, #allLeaves(), startCount)
-                        task.wait(LEAF_DELAY)
+                        if doneIds[id] then
+                            skipped = skipped + 1
+                        else
+                            pcall(function() ce:FireServer(id) end)
+                            noteFire(id)
+                            status.Text = ("🍂 ยิง id %d/%d | ข้ามที่เก็บแล้ว %d | ใบเหลือ %d")
+                                :format(id, maxId, skipped, #allLeaves())
+                            task.wait(LEAF_DELAY)
+                        end
                     end
                     doEmpty() -- ขายทุกครั้งก่อนย้ายจุด (กันถุงเต็ม)
                     local after = #allLeaves()
