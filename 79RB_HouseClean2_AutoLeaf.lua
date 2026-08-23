@@ -11,8 +11,8 @@ local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
-local LEAF_DELAY = 0.05  -- หน่วงระหว่างชุด (วิ)
-local BURST = 10         -- ยิงกี่ id ต่อชุด
+local LEAF_DELAY = 0.03  -- หน่วงระหว่างชุด (วิ)
+local BURST = 50         -- ยิงกี่ id ต่อชุด (50×0.03 → กวาดครบ ~13k id ใน ~8 วิ/จุด)
 local EMPTY_EVERY = 20   -- เทกระเป๋าทุกๆ กี่ใบ
 local AUTO_ON = false
 
@@ -81,7 +81,7 @@ local closeB = mkbtn("✕", 252, 42, 40, Color3.fromRGB(140, 45, 45))
 -- แถวล่าง: ปรับหน่วง
 local dlyB = mkbtn(("หน่วง %.2f"):format(LEAF_DELAY), 4, 296, 96, Color3.fromRGB(70, 70, 110))
 dlyB.MouseButton1Click:Connect(function()
-    local steps = { 0.05, 0.10, 0.20, 0.40 }
+    local steps = { 0.03, 0.05, 0.10, 0.20 }
     for i, v in ipairs(steps) do
         if math.abs(v - LEAF_DELAY) < 0.001 then LEAF_DELAY = steps[i % #steps + 1]; break end
     end
@@ -89,7 +89,7 @@ dlyB.MouseButton1Click:Connect(function()
 end)
 local burstB = mkbtn(("ชุด %d"):format(BURST), 104, 296, 70, Color3.fromRGB(70, 110, 70))
 burstB.MouseButton1Click:Connect(function()
-    local steps = { 5, 10, 20, 40 }
+    local steps = { 25, 50, 100, 200 }
     for i, v in ipairs(steps) do
         if v == BURST then BURST = steps[i % #steps + 1]; break end
     end
@@ -234,32 +234,49 @@ task.spawn(function()
                 local maxId = math.max(startCount, #ls)
                 if #ls == 0 then
                     status.Text = "🍂 ใบหมดแมพแล้ว! — รอเกิดใหม่..."
-                    nextId = 1; startCount = nil
+                    startCount = nil
                     task.wait(2)
-                elseif nextId > maxId then
-                    -- วนจบรอบแล้ว แต่ยังมีใบเหลือ (บาง id อาจโดนคนอื่นเก็บ/ยิงพลาด) → เริ่มรอบใหม่
-                    doEmpty(); sinceEmpty = 0
-                    status.Text = ("🔁 ครบรอบ id 1..%d — ใบเหลือ %d เริ่มรอบใหม่"):format(maxId, #ls)
-                    nextId = 1
-                    task.wait(1)
                 else
-                    -- v1.3: เซิร์ฟเวอร์เช็คระยะ (เก็บติดเฉพาะใบใกล้ตัว) → วาปไปหาใบทีละจุดพร้อมยิง
-                    leafIdx = (leafIdx % #ls) + 1
-                    local lm = ls[leafIdx]
+                    -- v1.4: "ยืนทีละจุด ยิงครบทุก id ค่อยย้าย" — id ไม่ตรงกับใบที่วาปไป
+                    --   (v1.3 ยิงข้าม: ยืนใบ A แต่ id ที่ยิงเป็นของใบไกลๆ) → ทุกจุดยิงครบ 1..maxId
+                    local before = #ls
+                    local lm = ls[1]
+                    -- เลือกจุด: ใบที่ใกล้ตัวที่สุด (ลดระยะวาปกระโดดมั่ว)
+                    local root = myRoot()
+                    if root then
+                        local best, bd = nil, math.huge
+                        for i = 1, math.min(#ls, 400) do -- เช็คแค่ 400 ตัวแรกพอ (เร็ว)
+                            local p = ls[i]:IsA("BasePart") and ls[i].Position or nil
+                            if p then
+                                local d = (p - root.Position).Magnitude
+                                if d > 4 and d < bd then bd = d; best = ls[i] end
+                            end
+                        end
+                        lm = best or lm
+                    end
                     local lp2 = lm and (lm:IsA("BasePart") and lm.Position
                         or (lm:IsA("Model") and lm:GetPivot().Position))
-                    if lp2 then tpTo(lp2 + Vector3.new(0, 2, 0)) end
-                    -- v1.2: ยิงเป็นชุด BURST id ต่อรอบ (เร็วขึ้นหลายเท่า)
-                    for _ = 1, BURST do
-                        if nextId > maxId then break end
-                        pcall(function() ce:FireServer(nextId) end)
-                        sinceEmpty = sinceEmpty + 1
-                        if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
-                        nextId = nextId + 1
+                    if lp2 then
+                        tpTo(lp2 + Vector3.new(0, 2, 0))
+                        task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
                     end
-                    status.Text = ("🍂 ยิง id %d/%d | ใบเหลือในแมพ %d (เริ่ม %d)")
-                        :format(nextId - 1, maxId, #ls, startCount)
-                    task.wait(LEAF_DELAY)
+                    -- ยิงครบทุก id จากจุดนี้
+                    for id = 1, maxId do
+                        if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
+                        pcall(function() ce:FireServer(id) end)
+                        if id % BURST == 0 then
+                            if id % (BURST * 10) == 0 then
+                                status.Text = ("🍂 จุดนี้ยิง %d/%d | ใบเหลือ %d (เริ่ม %d)")
+                                    :format(id, maxId, #allLeaves(), startCount)
+                            end
+                            task.wait(LEAF_DELAY)
+                        end
+                    end
+                    doEmpty() -- ขายทุกครั้งก่อนย้ายจุด (กันถุงเต็ม)
+                    local after = #allLeaves()
+                    status.Text = ("✅ จุดนี้เก็บได้ %d ใบ | เหลือ %d — ย้ายจุดถัดไป")
+                        :format(math.max(0, before - after), after)
+                    task.wait(0.2)
                 end
             end
         else
@@ -269,4 +286,4 @@ task.spawn(function()
     end
 end)
 
-warn("[AutoLeaf79] v1.3 loaded — วาปตามใบ+ยิงไล่ id / เทถุง=วาปไปถังขายแล้ววาปกลับ")
+warn("[AutoLeaf79] v1.4 loaded — ยืนทีละจุด ยิงครบทุก id แล้วค่อยย้าย (ไม่ยิงข้าม) + ขายก่อนย้ายทุกจุด")
