@@ -98,14 +98,6 @@ burstB.MouseButton1Click:Connect(function()
     end
     burstB.Text = ("ชุด %d"):format(BURST)
 end)
-local workB = mkbtn(("สาย %d"):format(WORKERS), 178, 296, 66, Color3.fromRGB(110, 70, 110))
-workB.MouseButton1Click:Connect(function()
-    local steps = { 5, 10, 20, 40 }
-    for i, v in ipairs(steps) do
-        if v == WORKERS then WORKERS = steps[i % #steps + 1]; break end
-    end
-    workB.Text = ("สาย %d"):format(WORKERS)
-end)
 
 copyB.MouseButton1Click:Connect(function()
     pcall(function() if setclipboard then setclipboard(table.concat(out, "\n")) end end)
@@ -306,28 +298,17 @@ task.spawn(function()
                         tpTo(lp2 + Vector3.new(0, 2, 0))
                         task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
                     end
-                    -- v1.8: แบ่งยิงขนาน WORKERS สาย — คนที่ 1 ยิงช่วงแรก คนที่ 2 ช่วงถัดไป พร้อมกัน
-                    local chunk = math.ceil(maxId / WORKERS)
-                    local doneCnt = 0
-                    local firedTotal = 0
-                    for w = 1, WORKERS do
-                        local lo = (w - 1) * chunk + 1
-                        local hi = math.min(w * chunk, maxId)
-                        task.spawn(function()
-                            for id = lo, hi do
-                                if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
-                                pcall(function() ce:FireServer(id) end)
-                                firedTotal = firedTotal + 1
-                                if (id - lo + 1) % BURST == 0 then task.wait(LEAF_DELAY) end
+                    -- v1.9: ยิงเรียงทีละ id แบบ v1.4 (เวอร์ชันที่เก็บได้จริง) — ขนานแล้วเซิร์ฟเวอร์ไม่รับ
+                    for id = 1, maxId do
+                        if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
+                        pcall(function() ce:FireServer(id) end)
+                        if id % BURST == 0 then
+                            if id % (BURST * 10) == 0 then
+                                status.Text = ("🍂 จุดนี้ยิง %d/%d | ใบเหลือ %d (เริ่ม %d)")
+                                    :format(id, maxId, #allLeaves(), startCount)
                             end
-                            doneCnt = doneCnt + 1
-                        end)
-                    end
-                    -- รอทุกสายยิงจบ
-                    while doneCnt < WORKERS and AUTO_ON and _G.LF79_GEN == GEN do
-                        status.Text = ("🍂 %d สายยิงขนาน %d/%d | ใบเหลือ %d (เริ่ม %d)")
-                            :format(WORKERS, firedTotal, maxId, #allLeaves(), startCount)
-                        task.wait(0.1)
+                            task.wait(LEAF_DELAY)
+                        end
                     end
                     doEmpty() -- ขายทุกครั้งก่อนย้ายจุด (กันถุงเต็ม)
                     local after = #allLeaves()
@@ -343,4 +324,4 @@ task.spawn(function()
     end
 end)
 
-warn("[AutoLeaf79] v1.8 loaded — แบ่งยิงขนาน 10 สาย (สายละช่วง id) ต่อจุด + วาปขายที่ถัง")
+warn("[AutoLeaf79] v1.9 loaded — กลับสูตร v1.4 ที่เก็บได้จริง: ยืนทีละจุด ยิงเรียงครบทุก id + วาปขายที่ถัง")
