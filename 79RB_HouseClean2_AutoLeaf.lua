@@ -211,6 +211,15 @@ emptyB.MouseButton1Click:Connect(function()
     say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack")
 end)
 
+-- v2.1: ขายอัตโนมัติทุก EMPTY_SEC วิ ระหว่างกวาด (เดิมขายเฉพาะตอนจบจุด ~7 นาที ถุง 25 ใบเต็มก่อน)
+local EMPTY_SEC = 10
+task.spawn(function()
+    while _G.LF79_GEN == GEN do
+        if AUTO_ON then doEmpty() end
+        task.wait(EMPTY_SEC)
+    end
+end)
+
 -- ==================== AUTO ====================
 autoB.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
