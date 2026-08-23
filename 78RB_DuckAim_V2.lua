@@ -23,7 +23,8 @@ local Camera = workspace.CurrentCamera
 local mouse = LP:GetMouse()
 
 local RUN_ON = false
-local FIRE_DELAY = 0.45  -- วิ/แตะ (ห่างพอไม่แย่งจอ — เกมจะยิงตาม fire rate ปืนเอง) ปรับ −/+
+local SILENT_ON = _G.DV2_SILENT_ON or false  -- silent aim: hook ดัดทิศยิงเข้าเป้า ไม่ต้องหมุนกล้อง
+local FIRE_DELAY = 0.20  -- วิ/แตะ (ห่างพอไม่แย่งจอ — เกมจะยิงตาม fire rate ปืนเอง) ปรับ −/+
 local AIM_SNAP = true    -- snap กล้องเป๊ะตอนแตะ (ปืนยิงตามกล้อง)
 
 -- บิน + วาปบ้าน
@@ -35,9 +36,9 @@ local HOME = nil -- จุดบ้าน (จำตอนสปอว์น)
 -- โหมดแมลงวันบอส (อัตโนมัติตลอดเวลา ไม่มีปุ่ม): เจอบอส → บินวนรอบบอส 8 ทิศ ระยะราบ 200 สูง 20
 --   บอสตาย (หายไป) → วาปกลับบ้านให้เอง 1 ครั้ง
 local BOSS_FLY_ON = true   -- เปิดค้างอัตโนมัติ
-local BOSS_RADIUS = 200   -- ระยะห่างแนวราบจากบอส (studs)
+local BOSS_RADIUS = 50   -- ระยะห่างแนวราบจากบอส (studs)
 local BOSS_HEIGHT = 20    -- สูงกว่าบอส (studs)
-local BOSS_STEP = 0.7     -- วิ/ทิศ (เปลี่ยนทิศทุก 0.7 วิ ครบ 8 ทิศ)
+local BOSS_STEP = 60     -- วิ/ทิศ (เปลี่ยนทิศทุก 60 วิ)
 local function hrp() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
 local function humo() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
 
@@ -49,7 +50,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 _G.DV2_GUI = gui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 230, 0, 280); frame.Position = UDim2.new(0, 8, 0.28, 0)
+frame.Size = UDim2.new(0, 230, 0, 316); frame.Position = UDim2.new(0, 8, 0.28, 0)
 frame.BackgroundColor3 = Color3.new(0, 0, 0); frame.BackgroundTransparency = 0.18
 frame.Active = true; frame.Draggable = true
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
@@ -69,7 +70,7 @@ local function setStatus(s) status.Text = s end
 
 -- บรรทัดดีบัก (หาบัค) — โชว์สถานะลูปสดๆ
 local dbg = Instance.new("TextLabel", frame)
-dbg.Size = UDim2.new(1, -8, 0, 16); dbg.Position = UDim2.new(0, 4, 0, 262)
+dbg.Size = UDim2.new(1, -8, 0, 16); dbg.Position = UDim2.new(0, 4, 0, 292)
 dbg.BackgroundColor3 = Color3.fromRGB(20, 20, 30); dbg.BackgroundTransparency = 0.2
 dbg.TextColor3 = Color3.fromRGB(120, 230, 255); dbg.TextSize = 10; dbg.Font = Enum.Font.Code
 dbg.TextXAlignment = Enum.TextXAlignment.Left; dbg.TextWrapped = true
@@ -77,10 +78,16 @@ dbg.Text = "dbg: (ยังไม่เปิด)"
 local function setDbg(s) dbg.Text = "dbg: " .. s end
 
 local mainB = Instance.new("TextButton", frame)
-mainB.Size = UDim2.new(1, -8, 0, 34); mainB.Position = UDim2.new(0, 4, 0, 58)
-mainB.Text = "เปิด: OFF (คีย์ J)"; mainB.Font = Enum.Font.GothamBold; mainB.TextSize = 14
+mainB.Size = UDim2.new(0, 150, 0, 34); mainB.Position = UDim2.new(0, 4, 0, 58)
+mainB.Text = "เอมบอท OFF (J)"; mainB.Font = Enum.Font.GothamBold; mainB.TextSize = 12
 mainB.BackgroundColor3 = Color3.fromRGB(190, 60, 60); mainB.TextColor3 = Color3.new(1, 1, 1)
 Instance.new("UICorner", mainB).CornerRadius = UDim.new(0, 6)
+-- ปุ่ม silent aim (hook ดัดทิศ) — เปิดคู่กับเอมบอท ยิงเข้าเป้าไม่ต้องหมุนกล้อง
+local silentB = Instance.new("TextButton", frame)
+silentB.Size = UDim2.new(0, 68, 0, 34); silentB.Position = UDim2.new(0, 158, 0, 58)
+silentB.Text = "🎯Silent\nOFF"; silentB.Font = Enum.Font.GothamBold; silentB.TextSize = 11
+silentB.BackgroundColor3 = Color3.fromRGB(80, 70, 120); silentB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", silentB).CornerRadius = UDim.new(0, 6)
 
 -- แถวหน่วงยิง −/+
 local rMinus = Instance.new("TextButton", frame)
@@ -106,10 +113,16 @@ flyB.Text = "บิน: OFF (F)"; flyB.Font = Enum.Font.GothamBold; flyB.TextSiz
 flyB.BackgroundColor3 = Color3.fromRGB(60, 110, 180); flyB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", flyB).CornerRadius = UDim.new(0, 5)
 local homeB = Instance.new("TextButton", frame)
-homeB.Size = UDim2.new(0, 109, 0, 28); homeB.Position = UDim2.new(0, 117, 0, 128)
-homeB.Text = "🏠 บ้าน (B)"; homeB.Font = Enum.Font.GothamBold; homeB.TextSize = 12
+homeB.Size = UDim2.new(0, 79, 0, 28); homeB.Position = UDim2.new(0, 117, 0, 128)
+homeB.Text = "🏠 บ้าน (B)"; homeB.Font = Enum.Font.GothamBold; homeB.TextSize = 11
 homeB.BackgroundColor3 = Color3.fromRGB(150, 110, 50); homeB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", homeB).CornerRadius = UDim.new(0, 5)
+-- ปุ่มตั้งบ้านตรงนี้ (จำตำแหน่งที่ยืนตอนกด)
+local setHomeB = Instance.new("TextButton", frame)
+setHomeB.Size = UDim2.new(0, 26, 0, 28); setHomeB.Position = UDim2.new(0, 200, 0, 128)
+setHomeB.Text = "📍"; setHomeB.Font = Enum.Font.GothamBold; setHomeB.TextSize = 14
+setHomeB.BackgroundColor3 = Color3.fromRGB(90, 140, 70); setHomeB.TextColor3 = Color3.new(1,1,1)
+Instance.new("UICorner", setHomeB).CornerRadius = UDim.new(0, 5)
 
 -- แถวขึ้น/ลง (บิน)
 local upB = Instance.new("TextButton", frame)
@@ -138,8 +151,15 @@ bossB.BackgroundColor3 = Color3.fromRGB(90, 60, 130); bossB.TextColor3 = Color3.
 bossB.TextWrapped = true
 Instance.new("UICorner", bossB).CornerRadius = UDim.new(0, 6)
 
+-- ปุ่มโหวตข้ามวันอัตโนมัติ (ตั้งเวลาที่เหลือแล้วโหวตให้เอง: ปิด/6/5/4/3 นาที)
+local voteB = Instance.new("TextButton", frame)
+voteB.Size = UDim2.new(1, -8, 0, 24); voteB.Position = UDim2.new(0, 4, 0, 244)
+voteB.Text = "🗳️ โหวตข้ามวัน: ปิด"; voteB.Font = Enum.Font.GothamBold; voteB.TextSize = 12
+voteB.BackgroundColor3 = Color3.fromRGB(70, 70, 90); voteB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", voteB).CornerRadius = UDim.new(0, 6)
+
 local closeB = Instance.new("TextButton", frame)
-closeB.Size = UDim2.new(1, -8, 0, 18); closeB.Position = UDim2.new(0, 4, 0, 244)
+closeB.Size = UDim2.new(1, -8, 0, 18); closeB.Position = UDim2.new(0, 4, 0, 272)
 closeB.Text = "✕ ปิดหน้าต่าง"; closeB.Font = Enum.Font.GothamBold; closeB.TextSize = 12
 closeB.BackgroundColor3 = Color3.fromRGB(90, 40, 40); closeB.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", closeB).CornerRadius = UDim.new(0, 5)
@@ -201,15 +221,67 @@ local function isLiveDuck(m)
     local n = m.Name
     return n:find("Duck") ~= nil and not n:find("Landed")
 end
+-- นกแดง (ตัวโจมตี) = ตัวที่เกมไฮไลท์ — มีลูกชื่อ *Highlight* (ยืนยัน: DuckController_AngryHighlight)
+local function isRedBird(m)
+    for _, d in ipairs(m:GetChildren()) do
+        if d:IsA("Highlight") or d:IsA("SelectionBox") then return true end
+        if d.Name:find("Highlight") then return true end
+    end
+    return false
+end
 local function findBoss()
     local f = duckFolder(); if not f then return nil end
     for _, m in ipairs(f:GetChildren()) do
-        if m:IsA("Model") and m.Name:find("BossController") then
+        if m:IsA("Model") and m.Name:find("BossController_Client") then
             local p = duckPos(m)
             if p then return { model = m, pos = p } end
         end
     end
     return nil
+end
+-- หาบอส "ทุกตัว" (ด่านหลังมีหลายตัว) → คืนทั้งโมเดล+ตำแหน่ง
+local function findAllBosses()
+    local f = duckFolder(); if not f then return {} end
+    local list = {}
+    for _, m in ipairs(f:GetChildren()) do
+        if m:IsA("Model") and m.Name:find("BossController_Client") then
+            local p = duckPos(m)
+            if p then list[#list + 1] = { model = m, pos = p } end
+        end
+    end
+    return list
+end
+-- บอสตายแล้วโมเดลยังอยู่แต่ "หยุดนิ่ง" → เช็คขยับ ถ้านิ่งเกิน BOSS_DEAD_TIME วิ = ตาย (ตัดออก)
+local bossTrack = {}          -- [model] = {pos, tMove}
+local BOSS_DEAD_TIME = 3      -- นิ่งกี่วิถือว่าตาย
+local BOSS_MOVE_EPS = 3       -- ขยับเกินกี่ studs = ยังไม่ตาย
+local function aliveBosses()
+    local all = findAllBosses()
+    local now = os.clock()
+    local alive, present = {}, {}
+    for _, b in ipairs(all) do
+        present[b.model] = true
+        local t = bossTrack[b.model]
+        if not t then
+            bossTrack[b.model] = { pos = b.pos, tMove = now }
+        elseif (b.pos - t.pos).Magnitude > BOSS_MOVE_EPS then
+            t.pos = b.pos; t.tMove = now
+        end
+        if now - bossTrack[b.model].tMove < BOSS_DEAD_TIME then
+            alive[#alive + 1] = b.pos
+        end
+    end
+    for m in pairs(bossTrack) do if not present[m] then bossTrack[m] = nil end end -- ล้างบอสที่หาย
+    return alive
+end
+-- บอสตัวที่ใกล้ origin ที่สุด (ไว้เล็งยิง)
+local function nearestBoss(origin)
+    local best, bd
+    for _, b in ipairs(findAllBosses()) do
+        local dd = (b.pos - origin).Magnitude
+        if not bd or dd < bd then best = b; bd = dd end
+    end
+    return best
 end
 
 -- กัน "จ่อยิงตัวเดิม/ตัวที่ตายแล้ว" — ยิงตัวไหนพักตัวนั้นแป๊บ ไปตัวถัดไป
@@ -232,9 +304,21 @@ end
 
 -- เลือกเป้า: บอสมาก่อนเสมอ ล็อกจนตาย (ไม่ติดคูลดาวน์/ไม่สลับ) — ไม่มีบอสค่อยเป็ดใกล้สุดที่โล่ง
 local function pickDuck(origin)
-    local boss = findBoss()
-    if boss then boss.isBoss = true; return boss end -- ล็อกบอสไว้ ยิงรัวจนตายค่อยเปลี่ยน
     local f = duckFolder(); if not f then return nil end
+    -- นกแดง (ตัวโจมตี) มาก่อนสุด — เลือกตัวใกล้ origin ที่สุด ยิงจนตาย
+    local rbest, rd
+    for _, m in ipairs(f:GetChildren()) do
+        if m:IsA("Model") and isLiveDuck(m) and isRedBird(m) then
+            local p = duckPos(m)
+            if p then
+                local dd = (p - origin).Magnitude
+                if not rd or dd < rd then rbest = { model = m, pos = p, isRed = true }; rd = dd end
+            end
+        end
+    end
+    if rbest then return rbest end
+    local boss = nearestBoss(origin) -- เล็งบอสตัวใกล้ตัวเราสุด
+    if boss then boss.isBoss = true; return boss end
     local vis, any = {}, {}
     for _, m in ipairs(f:GetChildren()) do
         if m:IsA("Model") and isLiveDuck(m) and not recentlyShot(m) then
@@ -249,6 +333,26 @@ local function pickDuck(origin)
     local list = (#vis > 0) and vis or any -- มีตัวโล่งเอาโล่ง / ไม่มีก็ยิงตัวใกล้สุด
     table.sort(list, function(a, b) return a.dist < b.dist end)
     return list[1]
+end
+
+-- เป้าสำหรับ silent aim: นกแดง > บอสใกล้สุด > เป็ดใกล้สุด (ไม่เช็คบัง เพราะ hook ยิงตรงเข้าเป้า)
+local function pickSilentTarget(origin)
+    local f = duckFolder(); if not f then return nil end
+    local rbest, rd, nbest, nd
+    for _, m in ipairs(f:GetChildren()) do
+        if m:IsA("Model") and isLiveDuck(m) then
+            local p = duckPos(m)
+            if p then
+                local dd = (p - origin).Magnitude
+                if isRedBird(m) and (not rd or dd < rd) then rbest = p; rd = dd end
+                if not nd or dd < nd then nbest = p; nd = dd end
+            end
+        end
+    end
+    if rbest then return rbest end
+    local boss = nearestBoss(origin)
+    if boss then return boss.pos end
+    return nbest
 end
 
 -- ==================== แตะยิง (ให้ปืนเกมยิงเอง) ====================
@@ -284,12 +388,12 @@ end
 -- ==================== ลูปหลัก ====================
 local function runStop()
     RUN_ON = false
-    mainB.Text = "เปิด: OFF (คีย์ J)"
+    mainB.Text = "เอมบอท OFF (J)"
     mainB.BackgroundColor3 = Color3.fromRGB(190, 60, 60)
 end
 local function runStart()
     RUN_ON = true
-    mainB.Text = "เปิด: ON (กด J ปิด)"
+    mainB.Text = "เอมบอท ON (J)"
     mainB.BackgroundColor3 = Color3.fromRGB(60, 170, 90)
     _G.DV2_RUNID = (_G.DV2_RUNID or 0) + 1
     local myRun = _G.DV2_RUNID
@@ -301,21 +405,33 @@ local function runStart()
         end
         local ok, err = pcall(function() -- กัน error ในลูปทำให้ทั้งตัวหยุด
             local f = duckFolder()
-            local nDuck = 0
-            if f then for _, m in ipairs(f:GetChildren()) do if m:IsA("Model") and isLiveDuck(m) then nDuck = nDuck + 1 end end end
+            local nDuck, nRed = 0, 0
+            if f then for _, m in ipairs(f:GetChildren()) do if m:IsA("Model") and isLiveDuck(m) then nDuck = nDuck + 1; if isRedBird(m) then nRed = nRed + 1 end end end end
             local origin = Camera.CFrame.Position
+            -- ── โหมด SILENT: อัปเดตเป้าให้ hook + ยิง (ไม่หมุนกล้อง) ──
+            if SILENT_ON then
+                local st = pickSilentTarget(origin)
+                _G.DV2_SILENT_TARGET = st
+                if not st then setDbg(("silent เป็ด%d 🔴%d เป้า:ไม่มี"):format(nDuck, nRed)); return end
+                local canFireS = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
+                setDbg(("silent เป็ด%d 🔴%d ยิง:%s"):format(nDuck, nRed, canFireS and "ได้" or "รอ"))
+                if not canFireS then return end
+                _G.DV2_LASTFIRE = os.clock()
+                doTap()
+                return
+            end
             local d = pickDuck(origin)
-            if not d then setDbg(("รัน✓ เป็ด%d เป้า:ไม่มี"):format(nDuck)); return end
+            if not d then setDbg(("รัน✓ เป็ด%d 🔴%d เป้า:ไม่มี"):format(nDuck, nRed)); return end
             local p = duckPos(d.model)
             if not p then setDbg("รัน✓ เป้าไม่มีตำแหน่ง"); return end
             local canFire = os.clock() - (_G.DV2_LASTFIRE or 0) >= FIRE_DELAY
             aimCameraAt(p, canFire and AIM_SNAP)
-            setDbg(("รัน✓ เป็ด%d เป้า:%s ยิง:%s"):format(nDuck, d.model.Name:gsub("DuckController_Client_",""), canFire and "ได้" or "รอ"))
+            setDbg(("รัน✓ เป็ด%d 🔴%d เป้า:%s ยิง:%s"):format(nDuck, nRed, d.model.Name:gsub("DuckController_Client_",""), canFire and "ได้" or "รอ"))
             if not canFire then return end
             _G.DV2_LASTFIRE = os.clock()
             doTap()
-            if not d.isBoss then markShot(d.model) end -- บอสไม่พัก (ล็อกยิงจนตาย) เป็ดปกติพักไปตัวถัดไป
-            setStatus(("[V2] %s %s"):format(d.isBoss and "👑 บอส" or "🎯", d.model.Name))
+            if not d.isBoss and not d.isRed then markShot(d.model) end -- บอส/นกแดงไม่พัก (ยิงจนตาย) เป็ดปกติพักไปตัวถัดไป
+            setStatus(("[V2] %s %s"):format(d.isRed and "🔴 นกแดง" or (d.isBoss and "👑 บอส" or "🎯"), d.model.Name))
         end)
         if not ok then setDbg("❌ ERROR: " .. tostring(err)) end
     end)
@@ -363,24 +479,44 @@ end
 local function flyToggle() if FLY_ON then stopFly() else startFly() end end
 
 -- ==================== วาปกลับบ้าน ====================
--- บ้าน = จุดที่ตัวละครสปอว์น (จำอัตโนมัติตอนเกิด) — เผื่อไม่มีก็ใช้ตำแหน่งตอนโหลด
+-- ลำดับความแม่น: 1) จุดที่ผู้เล่นตั้งเอง (ปุ่ม 📍) 2) BaseSpawn ในเกม 3) ตำแหน่งตอนโหลด
+-- เก็บใน _G.DV2_HOME เพื่อจำข้ามการรันซ้ำ
+HOME = _G.DV2_HOME
+local function baseSpawnPos()
+    local f = duckFolder(); if not f then return nil end
+    local bs = f:FindFirstChild("BaseSpawn")
+    if bs then
+        local p = bs:IsA("Model") and (bs.PrimaryPart or bs:FindFirstChildWhichIsA("BasePart"))
+        if bs:IsA("BasePart") then p = bs end
+        if p then return p.Position end
+    end
+    return nil
+end
 local function warpHome()
     local root = hrp()
     if not root then setStatus("[V2] ไม่เจอตัวละคร"); return end
-    if not HOME then setStatus("[V2] ยังไม่รู้จุดบ้าน (รอเกิดใหม่ 1 ครั้ง)"); return end
-    root.CFrame = CFrame.new(HOME + Vector3.new(0, 3, 0))
+    local dest = HOME or baseSpawnPos()
+    if not dest then setStatus("[V2] ยังไม่รู้จุดบ้าน — กด 📍 ตั้งบ้านตรงที่ยืน"); return end
+    root.CFrame = CFrame.new(dest + Vector3.new(0, 3, 0))
     setStatus("[V2] 🏠 วาปกลับบ้านแล้ว")
 end
--- จำจุดบ้านตอนโหลด + ทุกครั้งที่เกิดใหม่ (จุดสปอว์น)
-task.spawn(function()
+local function setHome()
     local root = hrp()
-    if root then HOME = root.Position end
+    if not root then setStatus("[V2] ไม่เจอตัวละคร"); return end
+    HOME = root.Position; _G.DV2_HOME = HOME
+    setStatus("[V2] 📍 ตั้งบ้านตรงนี้แล้ว (วาป B จะกลับจุดนี้)")
+end
+-- ค่าเริ่มต้น: ถ้ายังไม่เคยตั้ง → ลองใช้ BaseSpawn (ฐานจริงในเกม)
+task.spawn(function()
+    task.wait(1)
+    if not HOME and _G.DV2_GEN == MY_GEN then
+        local bs = baseSpawnPos()
+        if bs then HOME = bs; _G.DV2_HOME = bs end
+    end
 end)
 table.insert(_G.DV2_CONNS, LP.CharacterAdded:Connect(function(chr)
-    local root = chr:WaitForChild("HumanoidRootPart", 10)
-    task.wait(0.4) -- รอวาร์ปไปจุดสปอว์นจริงก่อนจำ
-    if root and _G.DV2_GEN == MY_GEN then HOME = root.Position end
-    if FLY_ON then stopFly(); startFly() end -- ต่อบินใหม่หลังเกิด
+    chr:WaitForChild("HumanoidRootPart", 10)
+    if FLY_ON then stopFly(); startFly() end -- ต่อบินใหม่หลังเกิด (ไม่แตะ HOME แล้ว — ใช้ที่ตั้งเอง/BaseSpawn)
 end))
 
 -- ==================== โหมดแมลงวันบอส ====================
@@ -396,8 +532,8 @@ local function startBossFly()
     bossFlyConn = RunService.RenderStepped:Connect(function()
         if not (BOSS_FLY_ON and _G.DV2_GEN == MY_GEN) then return end
         local root = hrp(); if not root then return end
-        local boss = findBoss()
-        if not boss then
+        local bosses = aliveBosses()  -- เฉพาะบอสที่ยังขยับ (ตัวนิ่ง=ตายแล้ว ตัดออก)
+        if #bosses == 0 then
             -- ไม่มีบอสแล้ว: ถ้าเมื่อกี้ยังมี = บอสเพิ่งตาย → วาปกลับบ้าน 1 ครั้ง
             if bossWasHere then
                 bossWasHere = false
@@ -410,19 +546,31 @@ local function startBossFly()
         end
         bossWasHere = true
         if FLY_ON then stopFly() end -- กันชนกับบินปกติตอนเจอบอส
-        -- เปลี่ยนทิศทุก BOSS_STEP วิ (สุ่ม 8 ทิศ: 0,45,90,...315 องศา — ไม่เรียงตามเข็ม)
+        -- สุ่มทิศทุก BOSS_STEP วิ (เร็ว) — กันซ้ำที่เดิม + กันทิศตรงข้าม (ไม่พุ่งข้ามกลางชนบอส)
         if os.clock() - bossDirT >= BOSS_STEP then
+            local opp = (bossDirIdx + 4) % 8 -- ทิศตรงข้าม (ห้าม)
             local nxt = math.random(0, 7)
-            if nxt == bossDirIdx then nxt = (nxt + math.random(1, 7)) % 8 end -- กันสุ่มซ้ำที่เดิม
+            while nxt == bossDirIdx or nxt == opp do nxt = math.random(0, 7) end
             bossDirIdx = nxt
             bossDirT = os.clock()
         end
-        bossB.Text = ("🪰 แมลงวันบอส: ON 🎯 ทิศ%d"):format(bossDirIdx + 1)
-        local bp = boss.pos
+        -- ศูนย์กลางกลุ่มบอส + รัศมีกลุ่ม (ระยะจากศูนย์ถึงบอสไกลสุด)
+        local center = Vector3.zero
+        for _, p in ipairs(bosses) do center = center + p end
+        center = center / #bosses
+        local spread = 0
+        for _, p in ipairs(bosses) do
+            local d = (Vector3.new(p.X, 0, p.Z) - Vector3.new(center.X, 0, center.Z)).Magnitude
+            if d > spread then spread = d end
+        end
+        bossB.Text = ("🪰 แมลงวันบอส: ON 🎯 บอส%d ทิศ%d"):format(#bosses, bossDirIdx + 1)
+        -- บินอยู่ "นอกวงกลุ่มบอส" ห่างขอบ BOSS_RADIUS → ห่างบอสทุกตัวพร้อมกัน
+        local R = spread + BOSS_RADIUS
         local ang = math.rad(bossDirIdx * 45)
-        -- ตำแหน่งเป้าหมาย: รอบบอส แนวราบห่าง 200 + สูงกว่า 20
-        local want = bp + Vector3.new(math.cos(ang) * BOSS_RADIUS, BOSS_HEIGHT, math.sin(ang) * BOSS_RADIUS)
-        root.CFrame = CFrame.new(root.Position:Lerp(want, 0.3), bp) -- เลื่อนไปจุดนั้น + หันหน้าใส่บอส
+        local want = center + Vector3.new(math.cos(ang) * R, BOSS_HEIGHT, math.sin(ang) * R)
+        -- ขยับ "แค่ตำแหน่ง" ไม่หมุนตัว → กล้อง/เล็งของ aimbot อิสระ ยิงไปพร้อมวนได้
+        local newPos = root.Position:Lerp(want, 0.3)
+        root.CFrame = (root.CFrame - root.CFrame.Position) + newPos
         root.AssemblyLinearVelocity = Vector3.zero -- กันร่วง
     end)
     table.insert(_G.DV2_CONNS, bossFlyConn)
@@ -443,10 +591,144 @@ local function shopToggle()
     shopB.BackgroundColor3 = SHOP_OPEN and Color3.fromRGB(120,70,60) or Color3.fromRGB(150,110,50)
 end
 
+-- ==================== โหวตข้ามวันอัตโนมัติ (ตามเวลาที่เหลือ) ====================
+-- อ่านนาฬิกา DayGui.MainFrame.DayCounter.TimeText ("M:SS") → พอเหลือ = เป้าหมาย → กดปุ่ม VOTE ให้เอง
+local VOTE_TARGET = 0        -- 0=ปิด, ไม่งั้น = นาทีที่เหลือแล้วโหวต (6/5/4/3)
+local function refreshVote()
+    if VOTE_TARGET == 0 then
+        voteB.Text = "🗳️ โหวตข้ามวัน: ปิด"
+        voteB.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+    else
+        voteB.Text = ("🗳️ โหวตเมื่อเหลือ %d นาที"):format(VOTE_TARGET)
+        voteB.BackgroundColor3 = Color3.fromRGB(60, 130, 90)
+    end
+end
+local function readTimeLeft()
+    local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil end
+    local dg = pg:FindFirstChild("DayGui"); if not dg then return nil end
+    local tt = dg:FindFirstChild("TimeText", true)
+    if not tt or not tt:IsA("TextLabel") then return nil end
+    local m, s = tostring(tt.Text):match("(%d+):(%d+)")
+    if not m then return nil end
+    return tonumber(m) * 60 + tonumber(s)
+end
+local function readDay()
+    local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil end
+    local dg = pg:FindFirstChild("DayGui"); if not dg then return nil end
+    local dt = dg:FindFirstChild("DayText", true)
+    if dt and dt:IsA("TextLabel") then return tostring(dt.Text) end
+    return nil
+end
+local function findVoteButton()
+    local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil end
+    local sg = pg:FindFirstChild("SkipDayGui"); if not sg then return nil end
+    -- ปุ่มจริงคือ SkipDayPopup.ButtonLeave.S_Button (ข้อความ VOTE อยู่ใต้มัน)
+    for _, d in ipairs(sg:GetDescendants()) do
+        if d:IsA("TextButton") or d:IsA("ImageButton") then
+            for _, t in ipairs(d:GetDescendants()) do
+                if t:IsA("TextLabel") and tostring(t.Text):upper():find("VOTE") then return d end
+            end
+        end
+    end
+    return nil
+end
+local function castVote()
+    local btn = findVoteButton()
+    if not btn then setStatus("[V2] 🗳️ ยังไม่เจอปุ่มโหวต (ต้องเปิดหน้าโหวตก่อน?)"); return false end
+    local fired = false
+    for _, sig in ipairs({ "Activated", "MouseButton1Click", "MouseButton1Down" }) do
+        pcall(function()
+            local ev = btn[sig]
+            if ev and getconnections then
+                for _, c in ipairs(getconnections(ev)) do
+                    pcall(function() c:Fire() end); fired = true
+                end
+            end
+        end)
+    end
+    if not fired then -- สำรอง: แตะกลางปุ่ม (ต้องโชว์อยู่)
+        pcall(function()
+            local ap, as = btn.AbsolutePosition, btn.AbsoluteSize
+            local x = math.floor(ap.X + as.X / 2)
+            local y = math.floor(ap.Y + as.Y / 2 + 36)
+            VIM:SendMouseButtonEvent(x, y, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(x, y, 0, false, game, 0)
+        end)
+    end
+    return true
+end
+voteB.MouseButton1Click:Connect(function()
+    VOTE_TARGET = ({ [0] = 6, [6] = 5, [5] = 4, [4] = 3, [3] = 0 })[VOTE_TARGET] or 0
+    refreshVote()
+end)
+refreshVote()
+local voteTriedDay = nil  -- วันที่กำลังพยายามโหวต
+local voteFireCount = 0   -- โหวตสำเร็จไปกี่ครั้งในวันนี้ (กันคลิกรัวเกิน)
+local lastVoteTry = 0
+task.spawn(function()
+    while _G.DV2_GEN == MY_GEN do
+        if VOTE_TARGET > 0 then
+            local left = readTimeLeft()
+            local day = readDay()
+            if left and day then
+                if voteTriedDay ~= day then voteTriedDay = day; voteFireCount = 0 end -- วันใหม่ รีเซ็ต
+                -- เหลือ <= เป้าหมาย → ลองโหวต; ยังไม่เจอปุ่มก็ลองซ้ำเรื่อยๆ ทุก 1.5 วิ
+                -- (พอโหวตสำเร็จ วันจะเปลี่ยน+เวลารีเซ็ต → เงื่อนไขหลุดเอง; ตั้ง cap 4 กันคลิกรัว)
+                if left <= VOTE_TARGET * 60 and voteFireCount < 4 and (os.clock() - lastVoteTry) >= 1.5 then
+                    lastVoteTry = os.clock()
+                    if castVote() then
+                        voteFireCount = voteFireCount + 1
+                        setStatus(("[V2] 🗳️ โหวตแล้ว ครั้งที่%d (%s เหลือ%ds)"):format(voteFireCount, tostring(day), left))
+                    else
+                        setStatus("[V2] 🗳️ รอปุ่มโหวตโผล่... จะลองซ้ำ")
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
 -- ==================== ปุ่ม/คีย์ ====================
 mainB.MouseButton1Click:Connect(toggle)
+-- silent aim: ติดตั้ง hook ครั้งเดียว (อ่าน _G.DV2_SILENT_ON + _G.DV2_SILENT_TARGET จาก loop)
+local function refreshSilent()
+    silentB.Text = SILENT_ON and "🎯Silent\nON" or "🎯Silent\nOFF"
+    silentB.BackgroundColor3 = SILENT_ON and Color3.fromRGB(60,170,90) or Color3.fromRGB(80,70,120)
+end
+if not _G.DV2_HOOK_INSTALLED then
+    local ok = pcall(function()
+        if not (hookmetamethod and getnamecallmethod) then error("no hook") end
+        local old
+        old = hookmetamethod(game, "__namecall", function(self, ...)
+            if _G.DV2_SILENT_ON then
+                local a = { ... }
+                if typeof(a[1]) == "Vector3" and typeof(a[2]) == "Vector3" and typeof(a[3]) == "number"
+                   and getnamecallmethod() == "FireServer" then
+                    local tgt = _G.DV2_SILENT_TARGET
+                    if tgt then
+                        local dir = tgt - a[1]
+                        if dir.Magnitude > 0 then a[2] = dir.Unit; return old(self, table.unpack(a)) end
+                    end
+                end
+            end
+            return old(self, ...)
+        end)
+    end)
+    _G.DV2_HOOK_INSTALLED = ok
+    _G.DV2_HOOK_OK = ok
+end
+silentB.MouseButton1Click:Connect(function()
+    if not _G.DV2_HOOK_OK then setStatus("[V2] ❌ executor ไม่รองรับ hook — silent ใช้ไม่ได้"); return end
+    SILENT_ON = not SILENT_ON; _G.DV2_SILENT_ON = SILENT_ON
+    refreshSilent()
+    if SILENT_ON and not RUN_ON then runStart() end -- เปิด silent ต้องมีเอมบอทคอยยิงด้วย
+    setStatus(SILENT_ON and "[V2] 🎯 Silent ON — ยิงเข้าเป้าไม่ต้องหมุนกล้อง" or "[V2] Silent OFF")
+end)
+refreshSilent()
 flyB.MouseButton1Click:Connect(flyToggle)
 homeB.MouseButton1Click:Connect(warpHome)
+setHomeB.MouseButton1Click:Connect(setHome)
 shopB.MouseButton1Click:Connect(shopToggle)
 startBossFly() -- แมลงวันบอสทำงานอัตโนมัติตลอด (ไม่มีปุ่ม)
 -- แตะสลับ (มือถือ MouseButton1Down มักไม่ทำงาน — ใช้ Click ชัวร์กว่า) + เริ่มบินให้เอง
@@ -467,10 +749,10 @@ downB.MouseButton1Click:Connect(function()
     refreshUpDown()
 end)
 rMinus.MouseButton1Click:Connect(function()
-    FIRE_DELAY = math.clamp(FIRE_DELAY - 0.05, 0.1, 3); refreshRLbl()
+    FIRE_DELAY = math.clamp(FIRE_DELAY - 0.05, 0.03, 3); refreshRLbl()
 end)
 rPlus.MouseButton1Click:Connect(function()
-    FIRE_DELAY = math.clamp(FIRE_DELAY + 0.05, 0.1, 3); refreshRLbl()
+    FIRE_DELAY = math.clamp(FIRE_DELAY + 0.05, 0.03, 3); refreshRLbl()
 end)
 closeB.MouseButton1Click:Connect(function()
     runStop()
@@ -498,4 +780,4 @@ table.insert(_G.DV2_CONNS, UIS.InputEnded:Connect(function(input)
     end
 end))
 
-warn("[DuckAimV2] v2.9 loaded — คลิก(J) + บิน200(F) + วาปบ้าน(B) + แมลงวันบอสอัตโนมัติ + บอสตายวาปบ้านเอง")
+warn("[DuckAimV2] v4.1 loaded — Silent Aim (hook ดัดทิศเข้าเป้า) + หน่วงยิงต่ำสุด 0.03 + ตั้งบ้าน 📍 + เล็งบอสใกล้สุด + โหวตลองซ้ำ")
