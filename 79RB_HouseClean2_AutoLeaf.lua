@@ -174,9 +174,12 @@ autoB.MouseButton1Click:Connect(function()
     autoB.BackgroundColor3 = AUTO_ON and Color3.fromRGB(150, 60, 40) or Color3.fromRGB(40, 130, 60)
 end)
 
+-- v1.1: ใบไม่มี attribute/id ในตัว → id คือ "ลำดับใบ" ฝั่งเซิร์ฟเวอร์ (เลขที่ดักได้ 75..4546
+--   อยู่ในช่วง 1..จำนวนใบพอดี) → ยิงไล่เลข 1..จำนวนใบ ตรงๆ แล้วดูจำนวนใบใน WS.Leaves ลดจริงเป็นตัวยืนยัน
 task.spawn(function()
-    local collected = 0
+    local nextId = 1
     local sinceEmpty = 0
+    local startCount = nil
     while _G.LF79_GEN == GEN do
         if AUTO_ON then
             local ce = findRemote("CollectLeaf")
@@ -185,34 +188,28 @@ task.spawn(function()
                 task.wait(1)
             else
                 local ls = allLeaves()
+                startCount = startCount or #ls
+                local maxId = math.max(startCount, #ls)
                 if #ls == 0 then
-                    status.Text = "🍂 ไม่มีใบไม้เหลือ — รอเกิดใหม่..."
+                    status.Text = "🍂 ใบหมดแมพแล้ว! — รอเกิดใหม่..."
+                    nextId = 1; startCount = nil
+                    task.wait(2)
+                elseif nextId > maxId then
+                    -- วนจบรอบแล้ว แต่ยังมีใบเหลือ (บาง id อาจโดนคนอื่นเก็บ/ยิงพลาด) → เริ่มรอบใหม่
+                    doEmpty(); sinceEmpty = 0
+                    status.Text = ("🔁 ครบรอบ id 1..%d — ใบเหลือ %d เริ่มรอบใหม่"):format(maxId, #ls)
+                    nextId = 1
                     task.wait(1)
                 else
-                    local fired = 0
-                    for _, m in ipairs(ls) do
-                        if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
-                        local id, src = leafId(m)
-                        if id then
-                            pcall(function() ce:FireServer(id) end)
-                            collected = collected + 1
-                            sinceEmpty = sinceEmpty + 1
-                            fired = fired + 1
-                            if sinceEmpty >= EMPTY_EVERY then
-                                doEmpty(); sinceEmpty = 0
-                            end
-                            status.Text = ("🍂 เก็บแล้ว %d ใบ (เหลือ ~%d) id ล่าสุด %s [%s]")
-                                :format(collected, #ls - fired, tostring(id), tostring(src))
-                            task.wait(LEAF_DELAY)
-                        end
+                    pcall(function() ce:FireServer(nextId) end)
+                    sinceEmpty = sinceEmpty + 1
+                    if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
+                    if nextId % 10 == 0 then
+                        status.Text = ("🍂 ยิง id %d/%d | ใบเหลือในแมพ %d (เริ่ม %d)")
+                            :format(nextId, maxId, #ls, startCount)
                     end
-                    if fired == 0 then
-                        status.Text = ("⚠️ มีใบ %d ชิ้นแต่หา id ไม่เจอเลย — กด DUMP แล้วก๊อปมาให้ดู"):format(#ls)
-                        task.wait(1.5)
-                    else
-                        doEmpty(); sinceEmpty = 0
-                        task.wait(0.5)
-                    end
+                    nextId = nextId + 1
+                    task.wait(LEAF_DELAY)
                 end
             end
         else
@@ -222,4 +219,4 @@ task.spawn(function()
     end
 end)
 
-warn("[AutoLeaf79] v1.0 loaded — AUTO เก็บใบไม้ทั้งแมพ + เทถุงอัตโนมัติ")
+warn("[AutoLeaf79] v1.1 loaded — ยิงไล่ id 1..จำนวนใบ + เทถุงอัตโนมัติ")
