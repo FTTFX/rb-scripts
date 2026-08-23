@@ -299,14 +299,16 @@ task.spawn(function()
                     local before = #ls
                     local lm = ls[1]
                     -- เลือกจุด: ใบที่ใกล้ตัวที่สุด (ลดระยะวาปกระโดดมั่ว)
+                    -- v2.3: สแกน "ทุกใบทั้งแมพ" หาใบใกล้ตัวสุดจริงๆ (เดิมดูแค่ 400 ตัวแรก)
                     local root = myRoot()
                     if root then
                         local best, bd = nil, math.huge
-                        for i = 1, math.min(#ls, 400) do -- เช็คแค่ 400 ตัวแรกพอ (เร็ว)
-                            local p = ls[i]:IsA("BasePart") and ls[i].Position or nil
-                            if p then
-                                local d = (p - root.Position).Magnitude
-                                if d > 4 and d < bd then bd = d; best = ls[i] end
+                        local myP = root.Position
+                        for i = 1, #ls do
+                            local m = ls[i]
+                            if m:IsA("BasePart") then
+                                local d = (m.Position - myP).Magnitude
+                                if d > 4 and d < bd then bd = d; best = m end
                             end
                         end
                         lm = best or lm
