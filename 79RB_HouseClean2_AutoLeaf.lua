@@ -11,7 +11,7 @@ local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
-local LEAF_DELAY = 0.03  -- หน่วงระหว่างชุด (วิ)
+local LEAF_DELAY = 0.03  -- หน่วงระหว่างแต่ละ id (วิ)
 local BURST = 50         -- ยิงกี่ id ต่อชุด (50×0.03 → กวาดครบ ~13k id ใน ~8 วิ/จุด)
 local NEAREST_MODE = false -- v1.7: ปิด — ทดสอบจริงโดนแค่ 6/56 (id ไม่ใช่ลำดับโฟลเดอร์) ใช้กวาดเต็มแบบ v1.4
 local NEAR_SPREAD = 3     -- ยิงเผื่อ index ข้างเคียง ±กี่ตัว
@@ -84,7 +84,7 @@ local closeB = mkbtn("✕", 252, 42, 40, Color3.fromRGB(140, 45, 45))
 -- แถวล่าง: ปรับหน่วง
 local dlyB = mkbtn(("หน่วง %.2f"):format(LEAF_DELAY), 4, 296, 96, Color3.fromRGB(70, 70, 110))
 dlyB.MouseButton1Click:Connect(function()
-    local steps = { 0.03, 0.05, 0.10, 0.20 }
+    local steps = { 0.01, 0.03, 0.05, 0.10 }
     for i, v in ipairs(steps) do
         if math.abs(v - LEAF_DELAY) < 0.001 then LEAF_DELAY = steps[i % #steps + 1]; break end
     end
@@ -298,17 +298,15 @@ task.spawn(function()
                         tpTo(lp2 + Vector3.new(0, 2, 0))
                         task.wait(0.15) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
                     end
-                    -- v1.9: ยิงเรียงทีละ id แบบ v1.4 (เวอร์ชันที่เก็บได้จริง) — ขนานแล้วเซิร์ฟเวอร์ไม่รับ
+                    -- v2.0: ยิงทีละ 1 id หน่วงทุกนัด (ตามที่ขอ — ไม่ยิงเป็นชุดแล้ว)
                     for id = 1, maxId do
                         if not AUTO_ON or _G.LF79_GEN ~= GEN then break end
                         pcall(function() ce:FireServer(id) end)
-                        if id % BURST == 0 then
-                            if id % (BURST * 10) == 0 then
-                                status.Text = ("🍂 จุดนี้ยิง %d/%d | ใบเหลือ %d (เริ่ม %d)")
-                                    :format(id, maxId, #allLeaves(), startCount)
-                            end
-                            task.wait(LEAF_DELAY)
+                        if id % 25 == 0 then
+                            status.Text = ("🍂 จุดนี้ยิง %d/%d | ใบเหลือ %d (เริ่ม %d)")
+                                :format(id, maxId, #allLeaves(), startCount)
                         end
+                        task.wait(LEAF_DELAY)
                     end
                     doEmpty() -- ขายทุกครั้งก่อนย้ายจุด (กันถุงเต็ม)
                     local after = #allLeaves()
@@ -324,4 +322,4 @@ task.spawn(function()
     end
 end)
 
-warn("[AutoLeaf79] v1.9 loaded — กลับสูตร v1.4 ที่เก็บได้จริง: ยืนทีละจุด ยิงเรียงครบทุก id + วาปขายที่ถัง")
+warn("[AutoLeaf79] v2.0 loaded — ยิงทีละ 1 id หน่วงทุกนัด + วาปขายที่ถัง")
