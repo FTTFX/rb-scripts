@@ -166,11 +166,43 @@ dumpB.MouseButton1Click:Connect(function()
     say("(📋 ก๊อปแล้ว)")
 end)
 
--- ==================== เทถุง ====================
+-- ==================== วาป (ตำแหน่งอย่างเดียว ไม่หมุนกล้อง) ====================
+local function myRoot()
+    local c = LP.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function tpTo(pos)
+    local root = myRoot(); if not root then return false end
+    root.AssemblyLinearVelocity = Vector3.zero
+    root.CFrame = (root.CFrame - root.CFrame.Position) + pos
+    return true
+end
+-- หาถังขายใบไม้ (Dumpsters)
+local function dumpsterPos()
+    local d = workspace:FindFirstChild("Map")
+    d = d and d:FindFirstChild("Dumpsters")
+    if not d then return nil end
+    local p = d:FindFirstChildWhichIsA("BasePart", true)
+    return p and p.Position
+end
+
+-- ==================== เทถุง (v1.3: วาปไปถังก่อนเท แล้ววาปกลับ) ====================
 local function doEmpty()
     local ee = findRemote("EmptyBackpack")
-    if ee and ee:IsA("RemoteEvent") then ee:FireServer(); return true end
-    return false
+    if not (ee and ee:IsA("RemoteEvent")) then return false end
+    local dp = dumpsterPos()
+    local root = myRoot()
+    if dp and root then
+        local back = root.Position
+        tpTo(dp + Vector3.new(0, 3, 0))
+        task.wait(0.25) -- รอตำแหน่งซิงก์ขึ้นเซิร์ฟเวอร์
+        ee:FireServer()
+        task.wait(0.15)
+        tpTo(back)
+    else
+        ee:FireServer()
+    end
+    return true
 end
 emptyB.MouseButton1Click:Connect(function()
     say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack")
@@ -189,6 +221,7 @@ task.spawn(function()
     local nextId = 1
     local sinceEmpty = 0
     local startCount = nil
+    local leafIdx = 0 -- v1.3: ตัวชี้ใบที่จะวาปไป
     while _G.LF79_GEN == GEN do
         if AUTO_ON then
             local ce = findRemote("CollectLeaf")
@@ -210,6 +243,12 @@ task.spawn(function()
                     nextId = 1
                     task.wait(1)
                 else
+                    -- v1.3: เซิร์ฟเวอร์เช็คระยะ (เก็บติดเฉพาะใบใกล้ตัว) → วาปไปหาใบทีละจุดพร้อมยิง
+                    leafIdx = (leafIdx % #ls) + 1
+                    local lm = ls[leafIdx]
+                    local lp2 = lm and (lm:IsA("BasePart") and lm.Position
+                        or (lm:IsA("Model") and lm:GetPivot().Position))
+                    if lp2 then tpTo(lp2 + Vector3.new(0, 2, 0)) end
                     -- v1.2: ยิงเป็นชุด BURST id ต่อรอบ (เร็วขึ้นหลายเท่า)
                     for _ = 1, BURST do
                         if nextId > maxId then break end
@@ -230,4 +269,4 @@ task.spawn(function()
     end
 end)
 
-warn("[AutoLeaf79] v1.1 loaded — ยิงไล่ id 1..จำนวนใบ + เทถุงอัตโนมัติ")
+warn("[AutoLeaf79] v1.3 loaded — วาปตามใบ+ยิงไล่ id / เทถุง=วาปไปถังขายแล้ววาปกลับ")
