@@ -118,8 +118,11 @@ local hookOK = pcall(function()
                         local animId = (typeof(a1) == "Instance" and a1:IsA("Animation")) and a1.AnimationId or "?"
                         local ownerModel = self:FindFirstAncestorOfClass("Model")
                         local ownerName = ownerModel and ownerModel.Name or self:GetFullName()
-                        local key = ownerName .. "|" .. animId
-                        sayOnce(key, ("🎬 LoadAnimation | เจ้าของ:%s | id:%s"):format(ownerName, animId))
+                        -- สนใจเฉพาะบอส (เป็ดปกติมีเป็นพัน ตัวจะสแปมท่วมจอ)
+                        if ownerName:find("Boss") or ownerName:find("boss") then
+                            local key = ownerName .. "|" .. animId
+                            sayOnce(key, ("🎬 LoadAnimation (บอส) | เจ้าของ:%s | id:%s"):format(ownerName, animId))
+                        end
                     elseif method == "Play" and typeof(self) == "Instance" and self:IsA("AnimationTrack") then
                         local anim = self.Animation
                         local animId = anim and anim.AnimationId or "?"
