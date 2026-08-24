@@ -13,7 +13,7 @@ local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 
 local LEAF_DELAY = 0.03  -- หน่วงหลังยิงแต่ละใบ (วิ)
-local EMPTY_EVERY = 22    -- v3.4: วาปขายเมื่อเก็บครบกี่ใบ (ใกล้เต็มถุงจริงๆ ~25 ลดความถี่วาป)
+local EMPTY_EVERY = 70    -- v3.7: สำรองเผื่อเช็ค Gui.Bag.Amount พลาด (ถุงจริงจุ 75 จาก BAGDUMP)
 local EMPTY_SEC = 45      -- v3.4: ตัวสำรอง เผื่อเก็บช้าไม่ถึง EMPTY_EVERY นาน (เดิม 10 วิ ถี่ไป)
 local STAY_RADIUS = 12    -- v3.1: อยู่นิ่งยิงใบในรัศมีนี้ก่อน ค่อยวาปย้าย (กันโดดเป็นกบ)
 local AUTO_ON = false
@@ -162,27 +162,18 @@ local function doEmpty()
 end
 emptyB.MouseButton1Click:Connect(function() say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack") end)
 
--- ==================== v3.5: หา GUI นับใบในถุง (แทนเดาตัวเลข) ====================
--- สแกน PlayerGui หา TextLabel/TextButton ที่ Text เป็นตัวเลขล้วน แล้วมีคำว่า bag/trash/ถุง/ขยะ
--- ในชื่อ instance หรือพี่แม่ของมัน (ชื่อ GUI มักไม่เป็นไทย แต่กันไว้)
+-- ==================== v3.7: จาก BAGDUMP เจอ path ตรงแล้ว: Gui.Bag.Amount / Gui.Bag.Capacity ====================
 local function findBagLabel()
     local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil end
-    local best = nil
-    for _, d in ipairs(pg:GetDescendants()) do
-        if (d:IsA("TextLabel") or d:IsA("TextButton")) and tonumber(d.Text) then
-            local p, hit = d, false
-            for _ = 1, 4 do
-                if not p then break end
-                local ln = p.Name:lower()
-                if ln:find("bag") or ln:find("trash") or ln:find("thrash") or ln:find("sack") then
-                    hit = true; break
-                end
-                p = p.Parent
-            end
-            if hit then best = d; break end
-        end
-    end
-    return best
+    local g = pg:FindFirstChild("Gui"); local bag = g and g:FindFirstChild("Bag")
+    local amt = bag and bag:FindFirstChild("Amount")
+    return amt
+end
+local function bagCapacity()
+    local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil end
+    local g = pg:FindFirstChild("Gui"); local bag = g and g:FindFirstChild("Bag")
+    local cap = bag and bag:FindFirstChild("Capacity")
+    return cap and tonumber(cap.Text)
 end
 bagB.MouseButton1Click:Connect(function()
     out = {}; say("===== BAGDUMP: หา label นับใบในถุง =====")
@@ -330,13 +321,14 @@ task.spawn(function()
                             task.wait(LEAF_DELAY)
                             hit = hit + pendingHit; pendingHit = 0
                             sinceEmpty = sinceEmpty + 1
-                            -- v3.5: เช็คถุงเต็มจริงจาก GUI — ถ้าเก็บเพิ่มแล้วเลขในถุงไม่ขยับ = เต็มจริง
+                            -- v3.7: เช็คถุงเต็มจริงจาก Gui.Bag.Amount / Capacity (เจอ path จริงจาก BAGDUMP แล้ว)
                             local bagFull = false
                             if hit > lastHit then
                                 local lb = findBagLabel()
                                 local cur = lb and tonumber(lb.Text)
-                                if cur and lastBagCount and cur <= lastBagCount then bagFull = true end
+                                local cap = bagCapacity()
                                 if cur then lastBagCount = cur end
+                                if cur and cap and cur >= cap - 2 then bagFull = true end
                                 lastHit = hit
                             end
                             if bagFull or sinceEmpty >= EMPTY_EVERY then
@@ -362,4 +354,4 @@ task.spawn(function() -- ขายอัตโนมัติเป็นระ�
     end
 end)
 
-warn("[AutoLeaf79] v3.6 loaded — แก้บั๊กวาปตกหลุมถัง (ยืนขอบนอก+สูงขึ้น) + สปายขนาดถุงจริง")
+warn("[AutoLeaf79] v3.7 loaded — ใช้ Gui.Bag.Amount/Capacity จริง (75) แทนเดา + แก้บั๊กวาปตกหลุมถัง")
