@@ -170,6 +170,31 @@ end)
 
 snapB.MouseButton1Click:Connect(function() doSnapshot() end)
 
+-- v3.3: ดักจริงว่าใบหายเมื่อไหร่ (ChildRemoved) แทนเช็คทันทีหลังยิง (เร็วเกินไป เซิร์ฟเวอร์ยังไม่ตอบ
+--   ทำให้นับ "ไม่โดน" ทั้งที่จริงสำเร็จ → วนยิง id เดิมซ้ำไม่เลิก, สแนปใหม่ถี่ทั้งที่ยังไม่ครบจริง)
+local recentFires = {} -- คิว {id, t} ที่เพิ่งยิง ยังไม่ยืนยันผล
+local pendingHit = 0
+local function noteFire(id)
+    recentFires[#recentFires + 1] = { id = id, t = os.clock() }
+    if #recentFires > 60 then table.remove(recentFires, 1) end
+end
+do
+    local lf = workspace:FindFirstChild("Leaves")
+    if lf then
+        lf.ChildRemoved:Connect(function()
+            local now = os.clock()
+            for i, e in ipairs(recentFires) do
+                if now - e.t <= 1.0 then
+                    doneIds[e.id] = true
+                    pendingHit = pendingHit + 1
+                    table.remove(recentFires, i)
+                    return
+                end
+            end
+        end)
+    end
+end
+
 local ce = findRemote("CollectLeaf")
 say("CollectLeaf: " .. (ce and ce:GetFullName() or "❌ ไม่เจอ"))
 say("กด SNAP ก่อนเริ่ม (หรือ AUTO จะสแนปให้อัตโนมัติครั้งแรก)")
@@ -209,10 +234,15 @@ task.spawn(function()
                         end
                     end
                     if not best then
-                        status.Text = ("✅ ครบสแนปนี้แล้ว (%d ใบ) — สแนปรอบใหม่..."):format(tryC)
-                        task.wait(0.5)
-                        doSnapshot()
-                        hit, tryC = 0, 0
+                        -- v3.3: มี fire ที่ยังรอผลอยู่ (recentFires) → รอสักพักก่อนถือว่าครบจริง กันสแนปถี่เกิน
+                        if #recentFires > 0 then
+                            task.wait(0.6)
+                        else
+                            status.Text = ("✅ ครบสแนปนี้แล้ว (โดน %d/%d) — สแนปรอบใหม่..."):format(hit, tryC)
+                            task.wait(0.5)
+                            doSnapshot()
+                            hit, tryC = 0, 0
+                        end
                     else
                         -- v3.1: วาปไปใบใกล้สุด "ครั้งเดียว" แล้วอยู่นิ่งยิงทุกใบในรัศมี STAY_RADIUS
                         --   ก่อน ไม่วาปย้ายทุกใบ (กันโดดเป็นกบ) — ค่อยหาจุดใหม่เมื่อรอบตัวหมดจริง
@@ -233,9 +263,10 @@ task.spawn(function()
                             end
                             if not nb or nd > STAY_RADIUS then break end
                             pcall(function() ceR:FireServer(nid) end)
+                            noteFire(nid)
                             tryC = tryC + 1
                             task.wait(LEAF_DELAY)
-                            if nb.Parent == nil then doneIds[nid] = true; hit = hit + 1 end
+                            hit = hit + pendingHit; pendingHit = 0
                             sinceEmpty = sinceEmpty + 1
                             if sinceEmpty >= 20 then doEmpty(); sinceEmpty = 0 end
                             status.Text = ("🎯 จุดนี้ โดน %d/%d | ระยะ %.1f | id %d"):format(hit, tryC, nd, nid)
@@ -257,4 +288,4 @@ task.spawn(function() -- ขายอัตโนมัติเป็นระ�
     end
 end)
 
-warn("[AutoLeaf79] v3.1 loaded — วาปไปจุดแล้วอยู่นิ่งกวาดรัศมี " .. STAY_RADIUS .. " studs ก่อนย้าย (ไม่โดดเป็นกบ)")
+warn("[AutoLeaf79] v3.3 loaded — ดักผลจริงด้วย ChildRemoved (ไม่เช็คไวเกิน) + อยู่นิ่งกวาดรัศมี " .. STAY_RADIUS .. " studs")
