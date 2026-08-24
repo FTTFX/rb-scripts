@@ -1,8 +1,7 @@
--- 78RB_BossSkillSpy.lua v1.0 — ดักสกิลใหม่ของบอส (เกม "ยิงเป็ด" 78) ล่วงหน้า
--- ไม่ต้องรอโดนสกิลจริง แค่บอสโหลด/เล่นแอนิเมชั่นก็ดักได้ (hook LoadAnimation)
--- + สแกนลึกในโมเดลบอสหา Attachment/Particle/Sound/Highlight ที่มีคำใบ้สกิล
--- + สแกน Remote ใหม่ทั้งเกมที่ยังไม่รู้จัก
--- วิธีใช้: รันตอนมีบอสในด่าน (หรือรอจนบอสโผล่) → ปล่อยทิ้งไว้ → กด 📋 ก๊อปผล
+-- 78RB_BossSkillSpy.lua v1.1 — ดักสกิลใหม่ของบอส (เกม "ยิงเป็ด" 78) ล่วงหน้า
+-- v1.1: เลิกดัมพ์รายชื่อ Remote นิ่งๆ (ชื่อสุ่ม GUID ไม่มีประโยชน์) → ดักตอนยิงจริงแทน
+--   ฟัง OnClientEvent ทุก Remote, นับความถี่, โชว์เฉพาะตัว "ยิงไม่บ่อย" (น่าสงสัยว่าเป็นสกิล/อีเวนต์พิเศษ)
+--   + แก้บั๊กคำใบ้ (เดิม substring เพี้ยน เช่น WeldConstraint แมตช์ "rain" เพราะ st-RAIN-t)
 if _G.BSS_GUI then pcall(function() _G.BSS_GUI:Destroy() end) end
 _G.BSS_GEN = (_G.BSS_GEN or 0) + 1
 local GEN = _G.BSS_GEN
@@ -31,13 +30,13 @@ ttl.Size = UDim2.new(1, -80, 0, 26); ttl.Position = UDim2.new(0, 6, 0, 4)
 ttl.BackgroundTransparency = 1; ttl.TextColor3 = Color3.fromRGB(230, 170, 255)
 ttl.Font = Enum.Font.GothamBold; ttl.TextSize = 13
 ttl.TextXAlignment = Enum.TextXAlignment.Left
-ttl.Text = "🕵️ BossSkillSpy — ดักสกิลใหม่บอส"
+ttl.Text = "🕵️ BossSkillSpy v1.1"
 
-local scanB = Instance.new("TextButton", fr)
-scanB.Size = UDim2.new(0, 60, 0, 24); scanB.Position = UDim2.new(1, -138, 0, 5)
-scanB.Text = "🔎 สแกน"; scanB.Font = Enum.Font.GothamBold; scanB.TextSize = 11
-scanB.BackgroundColor3 = Color3.fromRGB(60, 100, 150); scanB.TextColor3 = Color3.new(1, 1, 1)
-Instance.new("UICorner", scanB).CornerRadius = UDim.new(0, 5)
+local rareB = Instance.new("TextButton", fr)
+rareB.Size = UDim2.new(0, 90, 0, 24); rareB.Position = UDim2.new(1, -168, 0, 5)
+rareB.Text = "📊 รายงาน"; rareB.Font = Enum.Font.GothamBold; rareB.TextSize = 11
+rareB.BackgroundColor3 = Color3.fromRGB(60, 100, 150); rareB.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", rareB).CornerRadius = UDim.new(0, 5)
 
 local cpy = Instance.new("TextButton", fr)
 cpy.Size = UDim2.new(0, 34, 0, 24); cpy.Position = UDim2.new(1, -72, 0, 5)
@@ -65,7 +64,7 @@ local out = {}
 local seen = {} -- กันซ้ำ (key -> true)
 local function say(s)
     out[#out + 1] = tostring(s)
-    if #out > 400 then table.remove(out, 1) end
+    if #out > 500 then table.remove(out, 1) end
     lbl.Text = table.concat(out, "\n")
 end
 local function sayOnce(key, s)
@@ -80,29 +79,31 @@ cls.MouseButton1Click:Connect(function()
     _G.BSS_GEN = _G.BSS_GEN + 1; gui:Destroy(); _G.BSS_GUI = nil
 end)
 
--- ==================== คำใบ้ที่จะหา ====================
+-- ==================== คำใบ้ที่จะหา (เช็คทั้งคำ ไม่ใช่ substring) ====================
 local HINT_WORDS = {
     "peck", "dive", "rain", "warn", "telegraph", "shadow", "skill", "attack",
     "special", "ulti", "cast", "summon", "drop", "meteor", "smash", "slam",
-    "impact", "storm", "wing", "swoop", "charge", "beam", "aoe", "circle",
-    "danger", "indicator", "zone", "target",
+    "impact", "storm", "swoop", "charge", "danger", "indicator", "zone", "target",
 }
+-- แยกชื่อเป็นคำๆ ตาม PascalCase/underscore/ตัวเลข แล้วเทียบทั้งคำเท่านั้น (กัน false positive เช่น WeldConstraint~=rain)
+local function splitWords(name)
+    local words = {}
+    for w in name:gmatch("%u?%l+") do words[#words + 1] = w:lower() end
+    for w in name:gmatch("%u%u+") do words[#words + 1] = w:lower() end
+    return words
+end
 local function hasHint(name)
-    local ln = name:lower()
-    for _, w in ipairs(HINT_WORDS) do
-        if ln:find(w, 1, true) then return w end
+    local words = splitWords(name)
+    for _, w in ipairs(words) do
+        for _, hw in ipairs(HINT_WORDS) do
+            if w == hw then return hw end
+        end
     end
     return nil
 end
 
--- รู้จักแล้ว (เกม 78) — remote พวกนี้ไม่ต้อง flag ซ้ำ
-local KNOWN_REMOTES = {
-    fire = true, shoot = true, reload = true, vote = true, buy = true,
-    upgrade = true, equip = true,
-}
-
--- ==================== ส่วน 1: hook LoadAnimation ====================
-say("=== 1) ดักแอนิเมชั่นที่เล่นจริง (hook LoadAnimation) ===")
+-- ==================== ส่วน 1: hook LoadAnimation/Play ====================
+say("=== 1) ดักแอนิเมชั่นที่เล่นจริง (hook LoadAnimation/Play) ===")
 local hookOK = pcall(function()
     if not (hookmetamethod and getnamecallmethod) then error("no hook") end
     local old
@@ -124,7 +125,6 @@ local hookOK = pcall(function()
                         local animId = anim and anim.AnimationId or "?"
                         local ownerModel = self:FindFirstAncestorOfClass("Model")
                         local ownerName = ownerModel and ownerModel.Name or "?"
-                        -- สนใจเฉพาะของบอส (กันสแปมท่าเดินเป็ดทั่วไป)
                         if ownerName:find("Boss") or ownerName:find("boss") then
                             local key = "PLAY|" .. ownerName .. "|" .. animId
                             sayOnce(key, ("▶️ Play (บอส) | %s | id:%s"):format(ownerName, animId))
@@ -138,10 +138,10 @@ local hookOK = pcall(function()
 end)
 if not hookOK then say("❌ hook ไม่ติด (executor ไม่รองรับ)") end
 
--- ==================== ส่วน 2: สแกนลึกในโมเดลบอส ====================
+-- ==================== ส่วน 2: สแกนลึกในโมเดลบอส (แก้บั๊กคำใบ้แล้ว) ====================
 local function scanBossModels()
     say("")
-    say("=== 2) สแกนลึกในโมเดลบอส (Attachment/Particle/Sound/Highlight ที่มีคำใบ้) ===")
+    say("=== 2) สแกนลึกในโมเดลบอส (คำใบ้แบบทั้งคำ) ===")
     local f = workspace:FindFirstChild("Ume")
     if not f then say("⚠️ ไม่เจอ workspace.Ume"); return end
     local foundAny = false
@@ -152,51 +152,84 @@ local function scanBossModels()
             for _, d in ipairs(m:GetDescendants()) do
                 local hint = hasHint(d.Name)
                 if hint then
-                    say(("  🔸 [%s] %s  (คำใบ้:%s)"):format(d.ClassName, d:GetFullName():gsub("^.-BossController[^%.]*%.?", ""), hint))
-                elseif d:IsA("ParticleEmitter") or d:IsA("Beam") or d:IsA("Trail") then
-                    say(("  ✨ Effect [%s] %s"):format(d.ClassName, d.Name))
-                elseif d:IsA("Sound") then
-                    say(("  🔊 Sound %s  id:%s"):format(d.Name, tostring(d.SoundId)))
+                    say(("  🔸 [%s] %s  (คำใบ้:%s)"):format(d.ClassName, d.Name, hint))
                 end
             end
         end
     end
-    if not foundAny then say("⚠️ ยังไม่มีบอสในด่านตอนนี้ — รอบอสโผล่แล้วกด 🔎 สแกน อีกที") end
+    if not foundAny then say("⚠️ ยังไม่มีบอสในด่านตอนนี้") end
 end
 
--- ==================== ส่วน 3: สแกน Remote ใหม่ที่ยังไม่รู้จัก ====================
-local function scanRemotes()
-    say("")
-    say("=== 3) สแกน RemoteEvent/RemoteFunction ที่ยังไม่รู้จัก ===")
+-- ==================== ส่วน 3: ดักตอน Remote ยิงจริง (ไม่ดัมพ์นิ่งๆ) ====================
+-- ฟัง OnClientEvent ของทุก RemoteEvent ที่เจอ, นับความถี่ + เก็บ arg ตัวอย่างล่าสุด
+-- ตัวที่ "ยิงไม่บ่อย" (นานๆครั้ง) ระหว่างเล่น = น่าสงสัยว่าเป็นสกิล/อีเวนต์พิเศษ (ต่างจากตัว sync ตำแหน่งที่ยิงรัวทุกเฟรม)
+local remoteStat = {} -- [remote] = {count=n, lastArgs="...", firstT=os.clock()}
+local hookedRemotes = {}
+local function fmtArgs(...)
+    local parts = {}
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        local s
+        if typeof(v) == "Instance" then s = "Inst:" .. v.Name
+        elseif typeof(v) == "Vector3" then s = ("Vec3(%.0f,%.0f,%.0f)"):format(v.X, v.Y, v.Z)
+        elseif typeof(v) == "table" then s = "table"
+        else s = tostring(v) end
+        parts[#parts + 1] = s
+        if i >= 5 then parts[#parts + 1] = "..."; break end
+    end
+    return table.concat(parts, ", ")
+end
+local function hookRemote(rem)
+    if hookedRemotes[rem] then return end
+    hookedRemotes[rem] = true
+    remoteStat[rem] = { count = 0, lastArgs = "", firstT = os.clock() }
+    pcall(function()
+        rem.OnClientEvent:Connect(function(...)
+            if _G.BSS_GEN ~= GEN then return end
+            local st = remoteStat[rem]
+            st.count = st.count + 1
+            st.lastArgs = fmtArgs(...)
+            st.lastT = os.clock()
+        end)
+    end)
+end
+local function scanAndHookRemotes()
     local roots = { RS, workspace }
-    local shown = {}
+    local n = 0
     for _, root in ipairs(roots) do
         for _, d in ipairs(root:GetDescendants()) do
-            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
-                local ln = d.Name:lower()
-                local known = false
-                for k in pairs(KNOWN_REMOTES) do if ln:find(k) then known = true; break end end
-                if not known and not shown[d] then
-                    shown[d] = true
-                    say(("  📡 [%s] %s"):format(d.ClassName, d:GetFullName()))
-                end
-            end
+            if d:IsA("RemoteEvent") then hookRemote(d); n = n + 1 end
         end
     end
+    say(("(ติดตั้ง hook OnClientEvent กับ %d remote — ปล่อยเล่นไปเรื่อยๆ แล้วกด 📊 รายงาน)"):format(n))
 end
 
-scanB.MouseButton1Click:Connect(function()
-    scanBossModels()
-    scanRemotes()
-end)
+local function report()
+    say("")
+    say(("=== 3) รายงาน Remote ที่ยิง 'ไม่บ่อย' (นานๆครั้ง = น่าสงสัยว่าเป็นสกิล) เวลา %.0f วิ ==="):format(os.clock()))
+    local list = {}
+    for rem, st in pairs(remoteStat) do
+        if st.count > 0 then list[#list + 1] = { rem = rem, st = st } end
+    end
+    table.sort(list, function(a, b) return a.st.count < b.st.count end)
+    local shown = 0
+    for _, e in ipairs(list) do
+        if e.st.count <= 30 then -- ตัดตัวที่ยิงรัว (sync ตำแหน่ง ฯลฯ) ออก โชว์แค่ตัวนานๆครั้ง
+            shown = shown + 1
+            if shown > 40 then break end
+            say(("  📡 x%d | %s | args:[%s]"):format(e.st.count, e.rem:GetFullName(), e.st.lastArgs))
+        end
+    end
+    if shown == 0 then say("  (ยังไม่มี remote ที่เข้าเกณฑ์ — เล่นต่อแล้วกดรายงานใหม่)") end
+end
+rareB.MouseButton1Click:Connect(report)
 
--- สแกนอัตโนมัติครั้งแรกตอนโหลด (เผื่อบอสอยู่ในด่านอยู่แล้ว)
 task.spawn(function()
     task.wait(1)
     if _G.BSS_GEN == GEN then
         scanBossModels()
-        scanRemotes()
+        scanAndHookRemotes()
     end
 end)
 
-warn("[BossSkillSpy78] v1.0 loaded — ปล่อยทิ้งไว้จนบอสเล่นสกิล แล้วกด 📋 ก๊อปผลมาให้ดู")
+warn("[BossSkillSpy78] v1.1 loaded — เล่นไปเรื่อยๆ จนบอสใช้สกิล แล้วกด 📊 รายงาน + 📋 ก๊อป")
