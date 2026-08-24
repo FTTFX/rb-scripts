@@ -115,17 +115,27 @@ local function dumpsterPos()
     local p = d:FindFirstChildWhichIsA("BasePart", true)
     return p and p.Position
 end
+-- v3.6: Dumpster เป็นหลุมมีกำแพงกั้น — วาปลงกลาง +3 ตกค้างในหลุมออกไม่ได้ (บั๊กที่เจอ)
+--   แก้: ยืนที่ "ขอบนอก" หลุม เยื้องออกจากจุดเดิมของผู้เล่น (back) + ยกสูงกว่าเดิมมาก กันตกกำแพง
+local function dumpsterStandPos(back)
+    local dp = dumpsterPos()
+    if not dp then return nil end
+    local dir = (back - dp)
+    if dir.Magnitude < 1 then dir = Vector3.new(0, 0, 1) end
+    dir = Vector3.new(dir.X, 0, dir.Z).Unit
+    return dp + dir * 8 + Vector3.new(0, 10, 0)
+end
 
 -- ==================== เทถุง (v3.4: วาปไปถังอีกครั้ง — เกมเช็คระยะจริง ยิงเปล่าไม่เข้า
 --   แต่ลดความถี่ให้วาปเฉพาะตอนถุงใกล้เต็ม (ดู EMPTY_EVERY) + ยืนยันวาปกลับสำเร็จจริงก่อนไปต่อ) ====================
 local function doEmpty()
     local ee = findRemote("EmptyBackpack")
     if not (ee and ee:IsA("RemoteEvent")) then return false end
-    local dp = dumpsterPos()
     local root = myRoot()
-    if dp and root then
-        local back = root.Position
-        tpTo(dp + Vector3.new(0, 3, 0))
+    local back = root and root.Position
+    local standPos = back and dumpsterStandPos(back)
+    if standPos and root then
+        tpTo(standPos)
         task.wait(0.45)
         ee:FireServer()
         pcall(function()
@@ -352,4 +362,4 @@ task.spawn(function() -- ขายอัตโนมัติเป็นระ�
     end
 end)
 
-warn("[AutoLeaf79] v3.5 loaded — สปายขนาดถุงจริง (ปุ่ม BAG) วาปขายเมื่อเต็มจริง แทนเดาตัวเลข")
+warn("[AutoLeaf79] v3.6 loaded — แก้บั๊กวาปตกหลุมถัง (ยืนขอบนอก+สูงขึ้น) + สปายขนาดถุงจริง")
