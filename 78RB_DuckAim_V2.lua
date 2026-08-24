@@ -36,8 +36,8 @@ local HOME = nil -- จุดบ้าน (จำตอนสปอว์น)
 -- โหมดแมลงวันบอส (อัตโนมัติตลอดเวลา ไม่มีปุ่ม): เจอบอส → บินวนรอบบอส 8 ทิศ ระยะราบ 200 สูง 20
 --   บอสตาย (หายไป) → วาปกลับบ้านให้เอง 1 ครั้ง
 local BOSS_FLY_ON = true   -- เปิดค้างอัตโนมัติ
-local BOSS_RADIUS = 50   -- ระยะห่างแนวราบจากบอส (studs)
-local BOSS_HEIGHT = 20    -- สูงกว่าบอส (studs)
+local BOSS_RADIUS = 600   -- ระยะห่างแนวราบจากบอส (studs)
+local BOSS_HEIGHT = 50    -- สูงกว่าบอส (studs)
 local BOSS_STEP = 60     -- วิ/ทิศ (เปลี่ยนทิศทุก 60 วิ)
 local function hrp() local c = LP.Character return c and c:FindFirstChild("HumanoidRootPart") end
 local function humo() local c = LP.Character return c and c:FindFirstChildOfClass("Humanoid") end
