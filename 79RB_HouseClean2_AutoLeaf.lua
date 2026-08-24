@@ -74,11 +74,12 @@ local function mkbtn(txt, x, y, w, col)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
     return b
 end
-local autoB  = mkbtn("▶ AUTO", 4, 42, 76, Color3.fromRGB(40, 130, 60))
-local snapB  = mkbtn("SNAP", 84, 42, 60, Color3.fromRGB(60, 90, 150))
-local emptyB = mkbtn("เทถุง", 148, 42, 56, Color3.fromRGB(150, 110, 40))
-local copyB  = mkbtn("📋", 208, 42, 40, Color3.fromRGB(60, 60, 60))
-local closeB = mkbtn("✕", 252, 42, 40, Color3.fromRGB(140, 45, 45))
+local autoB  = mkbtn("▶ AUTO", 4, 42, 62, Color3.fromRGB(40, 130, 60))
+local snapB  = mkbtn("SNAP", 70, 42, 48, Color3.fromRGB(60, 90, 150))
+local emptyB = mkbtn("เทถุง", 122, 42, 48, Color3.fromRGB(150, 110, 40))
+local bagB   = mkbtn("BAG", 174, 42, 42, Color3.fromRGB(120, 80, 150))
+local copyB  = mkbtn("📋", 220, 42, 36, Color3.fromRGB(60, 60, 60))
+local closeB = mkbtn("✕", 260, 42, 32, Color3.fromRGB(140, 45, 45))
 
 local dlyB = mkbtn(("หน่วง %.2f"):format(LEAF_DELAY), 4, 296, 96, Color3.fromRGB(70, 70, 110))
 dlyB.MouseButton1Click:Connect(function()
@@ -151,6 +152,44 @@ local function doEmpty()
 end
 emptyB.MouseButton1Click:Connect(function() say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack") end)
 
+-- ==================== v3.5: หา GUI นับใบในถุง (แทนเดาตัวเลข) ====================
+-- สแกน PlayerGui หา TextLabel/TextButton ที่ Text เป็นตัวเลขล้วน แล้วมีคำว่า bag/trash/ถุง/ขยะ
+-- ในชื่อ instance หรือพี่แม่ของมัน (ชื่อ GUI มักไม่เป็นไทย แต่กันไว้)
+local function findBagLabel()
+    local pg = LP:FindFirstChild("PlayerGui"); if not pg then return nil end
+    local best = nil
+    for _, d in ipairs(pg:GetDescendants()) do
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and tonumber(d.Text) then
+            local p, hit = d, false
+            for _ = 1, 4 do
+                if not p then break end
+                local ln = p.Name:lower()
+                if ln:find("bag") or ln:find("trash") or ln:find("thrash") or ln:find("sack") then
+                    hit = true; break
+                end
+                p = p.Parent
+            end
+            if hit then best = d; break end
+        end
+    end
+    return best
+end
+bagB.MouseButton1Click:Connect(function()
+    out = {}; say("===== BAGDUMP: หา label นับใบในถุง =====")
+    local pg = LP:FindFirstChild("PlayerGui")
+    if pg then
+        for _, d in ipairs(pg:GetDescendants()) do
+            if (d:IsA("TextLabel") or d:IsA("TextButton")) and tonumber(d.Text) then
+                say(("%s = \"%s\""):format(d:GetFullName():gsub("^.-PlayerGui%.", ""), d.Text))
+            end
+        end
+    end
+    local lb = findBagLabel()
+    say(""); say("เดาได้: " .. (lb and lb:GetFullName() or "❌ ไม่เจอ (ดูลิสต์ด้านบน บอกอันไหนใช่)"))
+    pcall(function() if setclipboard then setclipboard(table.concat(out, "\n")) end end)
+    say("(📋 ก๊อปแล้ว)")
+end)
+
 -- ==================== v3.0: สแนป id ครั้งเดียว (ยืนยันจาก LeafIdSpy: id = ลำดับสแนป) ====================
 -- snapshot[leafInstance] = id ตายตัว | ไม่ re-fetch GetChildren() อีกหลังจากนี้ (กันลำดับเลื่อน)
 local snapshot = {}   -- inst -> id
@@ -220,6 +259,7 @@ end)
 task.spawn(function()
     local sinceEmpty = 0
     local hit, tryC = 0, 0
+    local lastHit, lastBagCount = 0, nil -- v3.5: จับได้จริงว่าถุงเต็ม (ตัวเลขไม่ขยับทั้งที่เก็บเพิ่ม)
     while _G.LF79_GEN == GEN do
         if AUTO_ON then
             local ceR = findRemote("CollectLeaf")
@@ -280,8 +320,20 @@ task.spawn(function()
                             task.wait(LEAF_DELAY)
                             hit = hit + pendingHit; pendingHit = 0
                             sinceEmpty = sinceEmpty + 1
-                            if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
-                            status.Text = ("🎯 จุดนี้ โดน %d/%d | ระยะ %.1f | id %d"):format(hit, tryC, nd, nid)
+                            -- v3.5: เช็คถุงเต็มจริงจาก GUI — ถ้าเก็บเพิ่มแล้วเลขในถุงไม่ขยับ = เต็มจริง
+                            local bagFull = false
+                            if hit > lastHit then
+                                local lb = findBagLabel()
+                                local cur = lb and tonumber(lb.Text)
+                                if cur and lastBagCount and cur <= lastBagCount then bagFull = true end
+                                if cur then lastBagCount = cur end
+                                lastHit = hit
+                            end
+                            if bagFull or sinceEmpty >= EMPTY_EVERY then
+                                doEmpty(); sinceEmpty = 0; lastBagCount = nil
+                            end
+                            status.Text = ("🎯 จุดนี้ โดน %d/%d | ระยะ %.1f | id %d | ถุง %s")
+                                :format(hit, tryC, nd, nid, tostring(lastBagCount))
                         end
                     end
                 end
@@ -300,4 +352,4 @@ task.spawn(function() -- ขายอัตโนมัติเป็นระ�
     end
 end)
 
-warn("[AutoLeaf79] v3.4 loaded — ล้าง doneIds ทุกสแนป (แก้หาใบไม่เจอ) + ค้นหาไม่มีวันตัน + วาปขายเมื่อใกล้เต็ม+ยืนยันวาปกลับ")
+warn("[AutoLeaf79] v3.5 loaded — สปายขนาดถุงจริง (ปุ่ม BAG) วาปขายเมื่อเต็มจริง แทนเดาตัวเลข")
