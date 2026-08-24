@@ -1,20 +1,20 @@
--- 79RB_HouseClean2_AutoLeaf.lua v3.0 — ฟาร์มใบไม้อัตโนมัติ (ล้างบ้านขำๆ ภาค 2 "นอกบ้าน")
+-- 79RB_HouseClean2_AutoLeaf.lua v3.4 — ฟาร์มใบไม้อัตโนมัติ (ล้างบ้านขำๆ ภาค 2 "นอกบ้าน")
 -- จาก 79RB_LeafIdSpy: id ที่ CollectLeaf:FireServer(id) ใช้ = ลำดับใบใน WS.Leaves:GetChildren()
---   ตอน "สแนปครั้งแรก" เป๊ะๆ (448|448, 1987|1987, ... ตรงกันทุกแถว) — เดิม v1.x/v2.x เดาไม่ออก
---   เพราะยิงไล่เลข 1..N มั่วๆ (ช้า, ยิงข้าม) v1.7 โหมด "ใกล้สุด" ก็พลาดเพราะ re-fetch GetChildren()
---   ใหม่ทุกครั้ง (ลำดับเลื่อนเมื่อใบกลางลิสต์หาย) → v3.0 สแนป "ครั้งเดียวตอนเริ่ม" แล้วจำ id
---   คงที่ต่อใบไปตลอด ไม่ re-fetch → วาปไปใบใกล้สุดที่ยังไม่เก็บ ยิง id เดียวจบ แม่น + เร็ว
+--   "ตอนสแนปนั้นๆ" เป๊ะๆ (448|448, 1987|1987 ตรงกันทุกแถว) — สแนปใหม่ ลำดับเปลี่ยน id ก็เปลี่ยนความหมาย
+--   v3.4: doneIds (จำ id ที่เก็บแล้ว) ต้องล้างทุกครั้งที่สแนปใหม่ ไม่งั้นเข้าใจผิดว่าใบใหม่เก็บแล้ว
+--   (ต้นเหตุ "หาใบไม่เจอ" ที่ต้องเดินไปกด SNAP เอง) + ค้นหาไม่มีวันตัน (วนสแนปหาทั่วแมพอัตโนมัติ)
+--   + วาปขายเฉพาะตอนถุงใกล้เต็ม (ลดความถี่วาป กันบัค) + ยืนยันวาปกลับตำแหน่งเดิมสำเร็จก่อนไปต่อ
 if _G.LF79_GUI then pcall(function() _G.LF79_GUI:Destroy() end) end
 _G.LF79_GEN = (_G.LF79_GEN or 0) + 1
 local GEN = _G.LF79_GEN
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 
 local LEAF_DELAY = 0.03  -- หน่วงหลังยิงแต่ละใบ (วิ)
-local EMPTY_SEC = 10      -- ขายอัตโนมัติทุกกี่วิ
+local EMPTY_EVERY = 22    -- v3.4: วาปขายเมื่อเก็บครบกี่ใบ (ใกล้เต็มถุงจริงๆ ~25 ลดความถี่วาป)
+local EMPTY_SEC = 45      -- v3.4: ตัวสำรอง เผื่อเก็บช้าไม่ถึง EMPTY_EVERY นาน (เดิม 10 วิ ถี่ไป)
 local STAY_RADIUS = 12    -- v3.1: อยู่นิ่งยิงใบในรัศมีนี้ก่อน ค่อยวาปย้าย (กันโดดเป็นกบ)
 local AUTO_ON = false
 
@@ -115,11 +115,39 @@ local function dumpsterPos()
     return p and p.Position
 end
 
--- ==================== เทถุง (v3.2: ยิงตรงๆ จากที่ยืน ไม่วาป ตามที่ขอ) ====================
+-- ==================== เทถุง (v3.4: วาปไปถังอีกครั้ง — เกมเช็คระยะจริง ยิงเปล่าไม่เข้า
+--   แต่ลดความถี่ให้วาปเฉพาะตอนถุงใกล้เต็ม (ดู EMPTY_EVERY) + ยืนยันวาปกลับสำเร็จจริงก่อนไปต่อ) ====================
 local function doEmpty()
     local ee = findRemote("EmptyBackpack")
-    if ee and ee:IsA("RemoteEvent") then ee:FireServer(); return true end
-    return false
+    if not (ee and ee:IsA("RemoteEvent")) then return false end
+    local dp = dumpsterPos()
+    local root = myRoot()
+    if dp and root then
+        local back = root.Position
+        tpTo(dp + Vector3.new(0, 3, 0))
+        task.wait(0.45)
+        ee:FireServer()
+        pcall(function()
+            local d = workspace:FindFirstChild("Map")
+            d = d and d:FindFirstChild("Dumpsters")
+            if d and fireproximityprompt then
+                for _, pr in ipairs(d:GetDescendants()) do
+                    if pr:IsA("ProximityPrompt") then fireproximityprompt(pr) end
+                end
+            end
+        end)
+        task.wait(0.3)
+        -- v3.4: ยืนยันว่าวาปกลับสำเร็จจริง (กันบัคค้างที่ถัง) — retry ไม่เกิน 5 ครั้ง
+        for _ = 1, 5 do
+            tpTo(back)
+            task.wait(0.1)
+            local r2 = myRoot()
+            if r2 and (r2.Position - back).Magnitude < 3 then break end
+        end
+    else
+        ee:FireServer()
+    end
+    return true
 end
 emptyB.MouseButton1Click:Connect(function() say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack") end)
 
@@ -128,12 +156,15 @@ emptyB.MouseButton1Click:Connect(function() say(doEmpty() and "🗑️ เทก
 local snapshot = {}   -- inst -> id
 local snapOrder = {}  -- id -> inst (สำหรับไล่หา / debug)
 local snapDone = false
-_G.LF79_DONE = _G.LF79_DONE or {} -- id ที่เก็บสำเร็จแล้ว (เซฟลงไฟล์ข้ามรอบรัน)
-local doneIds = _G.LF79_DONE
-local SAVE_FILE = "LF79_done.json"
+-- v3.4: doneIds มีอายุแค่ 1 สแนป ไม่ persist ข้ามรอบรันแล้ว (ดู doSnapshot ด้านล่าง)
+local doneIds = {}
 
 local function doSnapshot()
     snapshot = {}; snapOrder = {}
+    -- v3.4: ล้าง doneIds ทุกครั้งที่สแนปใหม่ — id มีความหมายแค่ "ในสแนปนั้นๆ" (ลำดับ ณ ขณะสแนป)
+    --   ถ้าไม่ล้าง ใบใหม่ที่ยังไม่เคยเก็บอาจได้เลขซ้ำ id เก่าที่เคยเก็บไปแล้ว → เข้าใจผิดว่าเก็บแล้ว
+    --   ทำให้หาใบไม่เจอทั้งที่มีอยู่จริง (ต้นเหตุที่ต้องเดินไปกด SNAP ใหม่เอง)
+    for k in pairs(doneIds) do doneIds[k] = nil end
     local folder = workspace:FindFirstChild("Leaves")
     if not folder then say("❌ ไม่เจอ WS.Leaves"); return 0 end
     local kids = folder:GetChildren()
@@ -146,28 +177,8 @@ local function doSnapshot()
     return #kids
 end
 
--- โหลดความจำ (ผูก JobId)
-pcall(function()
-    if readfile and isfile and isfile(SAVE_FILE) then
-        local d = HttpService:JSONDecode(readfile(SAVE_FILE))
-        if d.job == game.JobId then
-            for _, id in ipairs(d.ids) do doneIds[id] = true end
-            say(("💾 โหลดความจำ: เก็บไปแล้ว %d ใบ (เซิร์ฟเดิม)"):format(#d.ids))
-        end
-    end
-end)
-local function saveDone()
-    pcall(function()
-        if not writefile then return end
-        local ids = {}
-        for id in pairs(doneIds) do ids[#ids + 1] = id end
-        writefile(SAVE_FILE, HttpService:JSONEncode({ job = game.JobId, ids = ids }))
-    end)
-end
-task.spawn(function()
-    while _G.LF79_GEN == GEN do task.wait(20); saveDone() end
-end)
-
+-- v3.4: เอาไฟล์จำ id ข้ามรอบรันออก — id มีความหมายแค่ในสแนปนั้นๆ (ลำดับ ณ ขณะสแนป)
+--   ข้ามรอบรัน ลำดับใบเปลี่ยนไปแล้วแน่นอน โหลด id เก่ามาใช้จะยิ่งทำให้พลาด ไม่ใช่ช่วย
 snapB.MouseButton1Click:Connect(function() doSnapshot() end)
 
 -- v3.3: ดักจริงว่าใบหายเมื่อไหร่ (ChildRemoved) แทนเช็คทันทีหลังยิง (เร็วเกินไป เซิร์ฟเวอร์ยังไม่ตอบ
@@ -234,12 +245,13 @@ task.spawn(function()
                         end
                     end
                     if not best then
-                        -- v3.3: มี fire ที่ยังรอผลอยู่ (recentFires) → รอสักพักก่อนถือว่าครบจริง กันสแนปถี่เกิน
+                        -- v3.4: ค้นหาไม่มีวันตัน — ไม่ต้องเดินไปกด SNAP เองอีกแล้ว วนสแนป+หาใหม่ทุก 2-3 วิเอง
                         if #recentFires > 0 then
+                            status.Text = "⏳ รอผลยิงที่ค้างอยู่..."
                             task.wait(0.6)
                         else
-                            status.Text = ("✅ ครบสแนปนี้แล้ว (โดน %d/%d) — สแนปรอบใหม่..."):format(hit, tryC)
-                            task.wait(0.5)
+                            status.Text = ("✅ ครบสแนปนี้แล้ว (โดน %d/%d) — หาใบรอบใหม่ทั่วแมพ..."):format(hit, tryC)
+                            task.wait(2 + math.random() * 1) -- 2-3 วิ แล้ววนสแนปหาอีกครั้งอัตโนมัติ
                             doSnapshot()
                             hit, tryC = 0, 0
                         end
@@ -268,14 +280,14 @@ task.spawn(function()
                             task.wait(LEAF_DELAY)
                             hit = hit + pendingHit; pendingHit = 0
                             sinceEmpty = sinceEmpty + 1
-                            if sinceEmpty >= 20 then doEmpty(); sinceEmpty = 0 end
+                            if sinceEmpty >= EMPTY_EVERY then doEmpty(); sinceEmpty = 0 end
                             status.Text = ("🎯 จุดนี้ โดน %d/%d | ระยะ %.1f | id %d"):format(hit, tryC, nd, nid)
                         end
                     end
                 end
             end
         else
-            status.Text = "🍂 AutoLeaf v3.0 พร้อม (AUTO เริ่ม / SNAP รีเซ็ตสแนป)"
+            status.Text = "🍂 AutoLeaf v3.4 พร้อม (AUTO เริ่ม / SNAP รีเซ็ตสแนป)"
             task.wait(0.3)
         end
     end
@@ -288,4 +300,4 @@ task.spawn(function() -- ขายอัตโนมัติเป็นระ�
     end
 end)
 
-warn("[AutoLeaf79] v3.3 loaded — ดักผลจริงด้วย ChildRemoved (ไม่เช็คไวเกิน) + อยู่นิ่งกวาดรัศมี " .. STAY_RADIUS .. " studs")
+warn("[AutoLeaf79] v3.4 loaded — ล้าง doneIds ทุกสแนป (แก้หาใบไม่เจอ) + ค้นหาไม่มีวันตัน + วาปขายเมื่อใกล้เต็ม+ยืนยันวาปกลับ")
