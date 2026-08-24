@@ -15,6 +15,7 @@ local LP = Players.LocalPlayer
 
 local LEAF_DELAY = 0.03  -- หน่วงหลังยิงแต่ละใบ (วิ)
 local EMPTY_SEC = 10      -- ขายอัตโนมัติทุกกี่วิ
+local STAY_RADIUS = 12    -- v3.1: อยู่นิ่งยิงใบในรัศมีนี้ก่อน ค่อยวาปย้าย (กันโดดเป็นกบ)
 local AUTO_ON = false
 
 -- ==================== หา remote ====================
@@ -234,19 +235,32 @@ task.spawn(function()
                         doSnapshot()
                         hit, tryC = 0, 0
                     else
+                        -- v3.1: วาปไปใบใกล้สุด "ครั้งเดียว" แล้วอยู่นิ่งยิงทุกใบในรัศมี STAY_RADIUS
+                        --   ก่อน ไม่วาปย้ายทุกใบ (กันโดดเป็นกบ) — ค่อยหาจุดใหม่เมื่อรอบตัวหมดจริง
                         tpTo(best.Position + Vector3.new(0, 2, 0))
                         task.wait(0.10)
-                        pcall(function() ceR:FireServer(bestId) end)
-                        tryC = tryC + 1
-                        task.wait(LEAF_DELAY)
-                        local gone = best.Parent == nil
-                        if gone then
-                            doneIds[bestId] = true
-                            hit = hit + 1
+                        local stayPos = best.Position
+                        while AUTO_ON and _G.LF79_GEN == GEN do
+                            -- หาใบที่ใกล้ "จุดยืน" สุดในบรรดาที่ยังไม่เก็บ + อยู่ในรัศมี
+                            local nb, nid, nd = nil, nil, math.huge
+                            for id, m in pairs(snapOrder) do
+                                if not doneIds[id] and m.Parent then
+                                    local ok, p = pcall(function() return m.Position end)
+                                    if ok then
+                                        local d = (p - stayPos).Magnitude
+                                        if d < nd then nd = d; nb = m; nid = id end
+                                    end
+                                end
+                            end
+                            if not nb or nd > STAY_RADIUS then break end
+                            pcall(function() ceR:FireServer(nid) end)
+                            tryC = tryC + 1
+                            task.wait(LEAF_DELAY)
+                            if nb.Parent == nil then doneIds[nid] = true; hit = hit + 1 end
+                            sinceEmpty = sinceEmpty + 1
+                            if sinceEmpty >= 20 then doEmpty(); sinceEmpty = 0 end
+                            status.Text = ("🎯 จุดนี้ โดน %d/%d | ระยะ %.1f | id %d"):format(hit, tryC, nd, nid)
                         end
-                        sinceEmpty = sinceEmpty + 1
-                        if sinceEmpty >= 20 then doEmpty(); sinceEmpty = 0 end
-                        status.Text = ("🎯 โดน %d/%d | ระยะ %.1f | id %d"):format(hit, tryC, bd, bestId)
                     end
                 end
             end
@@ -264,4 +278,4 @@ task.spawn(function() -- ขายอัตโนมัติเป็นระ�
     end
 end)
 
-warn("[AutoLeaf79] v3.0 loaded — id=ลำดับสแนปครั้งแรก (ยืนยันจาก LeafIdSpy) วาปใบใกล้สุด ยิง id เดียวจบ")
+warn("[AutoLeaf79] v3.1 loaded — วาปไปจุดแล้วอยู่นิ่งกวาดรัศมี " .. STAY_RADIUS .. " studs ก่อนย้าย (ไม่โดดเป็นกบ)")
