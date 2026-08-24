@@ -14,7 +14,7 @@ local LP = Players.LocalPlayer
 
 local LEAF_DELAY = 0.03  -- หน่วงหลังยิงแต่ละใบ (วิ)
 local EMPTY_EVERY = 70    -- v3.7: สำรองเผื่อเช็ค Gui.Bag.Amount พลาด (ถุงจริงจุ 75 จาก BAGDUMP)
-local EMPTY_SEC = 45      -- v3.4: ตัวสำรอง เผื่อเก็บช้าไม่ถึง EMPTY_EVERY นาน (เดิม 10 วิ ถี่ไป)
+local EMPTY_SEC = 90      -- v3.8: ตัวสำรองฉุกเฉินเท่านั้น (เผื่อลูปหลักพลาดจับถุงเต็ม) ไม่ใช่ตัวขายหลัก
 local STAY_RADIUS = 12    -- v3.1: อยู่นิ่งยิงใบในรัศมีนี้ก่อน ค่อยวาปย้าย (กันโดดเป็นกบ)
 local AUTO_ON = false
 
@@ -347,11 +347,18 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function() -- ขายอัตโนมัติเป็นระยะ ระหว่างที่ยังไม่ครบ EMPTY_EVERY
+-- v3.8: ตัวสำรองเดิมขายทุก EMPTY_SEC วิ "ไม่สนใจว่าถุงมีกี่ใบ" — เลยรู้สึกรีบขายทั้งที่ยังไม่เต็ม
+--   (เช่น "Sold 17 leaves" ทั้งที่ถุงจุ 75) แก้ให้เช็คถุงจริงก่อน: ขายเฉพาะมีของ + รอเกิน EMPTY_SEC
+--   จริงๆ (กันเคสหลักในลูปเก็บพลาดจับไม่ได้) ไม่ใช่ขายทุกครั้งที่ครบเวลา
+task.spawn(function()
     while _G.LF79_GEN == GEN do
-        if AUTO_ON then doEmpty() end
         task.wait(EMPTY_SEC)
+        if AUTO_ON then
+            local lb = findBagLabel()
+            local cur = lb and tonumber(lb.Text)
+            if cur and cur > 0 then doEmpty() end
+        end
     end
 end)
 
-warn("[AutoLeaf79] v3.7 loaded — ใช้ Gui.Bag.Amount/Capacity จริง (75) แทนเดา + แก้บั๊กวาปตกหลุมถัง")
+warn("[AutoLeaf79] v3.8 loaded — ตัวสำรองขายเช็คถุงจริงก่อนขาย (ไม่ขายทั้งที่ยังไม่เต็มแล้ว)")
