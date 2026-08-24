@@ -115,32 +115,11 @@ local function dumpsterPos()
     return p and p.Position
 end
 
--- ==================== เทถุง (วาปไปถัง+กดปุ่ม แล้ววาปกลับ) ====================
+-- ==================== เทถุง (v3.2: ยิงตรงๆ จากที่ยืน ไม่วาป ตามที่ขอ) ====================
 local function doEmpty()
     local ee = findRemote("EmptyBackpack")
-    if not (ee and ee:IsA("RemoteEvent")) then return false end
-    local dp = dumpsterPos()
-    local root = myRoot()
-    if dp and root then
-        local back = root.Position
-        tpTo(dp + Vector3.new(0, 3, 0))
-        task.wait(0.45)
-        ee:FireServer()
-        pcall(function()
-            local d = workspace:FindFirstChild("Map")
-            d = d and d:FindFirstChild("Dumpsters")
-            if d and fireproximityprompt then
-                for _, pr in ipairs(d:GetDescendants()) do
-                    if pr:IsA("ProximityPrompt") then fireproximityprompt(pr) end
-                end
-            end
-        end)
-        task.wait(0.3)
-        tpTo(back)
-    else
-        ee:FireServer()
-    end
-    return true
+    if ee and ee:IsA("RemoteEvent") then ee:FireServer(); return true end
+    return false
 end
 emptyB.MouseButton1Click:Connect(function() say(doEmpty() and "🗑️ เทกระเป๋าแล้ว" or "❌ ไม่เจอ EmptyBackpack") end)
 
