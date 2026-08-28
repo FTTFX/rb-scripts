@@ -1,4 +1,4 @@
--- 79RB_Warp.lua v1.1 — บันทึกจุดและใช้แรงผลักกลับไปยังจุดที่บันทึก
+-- 79RB_Warp.lua v1.2 — บันทึกจุดและใช้แรงผลักความเร็วสูงกลับไปยังจุดที่บันทึก
 -- คีย์ลัด (PC): P = บันทึกจุด, O = กลับจุด | มือถือ: ใช้ปุ่มบนจอ
 
 if _G.WARP79_CONNS then
@@ -24,7 +24,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local savedCFrame
-local PUSH_SPEED = 70
+local PUSH_SPEED = 250
 local STOP_DISTANCE = 3
 
 local function getRoot()
@@ -222,4 +222,4 @@ table.insert(_G.WARP79_CONNS, closeButton.MouseButton1Click:Connect(function()
     _G.WARP79_GUI = nil
 end))
 
-warn("[Warp79] v1.1 loaded — P บันทึกจุด / O ผลักกลับจุด")
+warn("[Warp79] v1.2 loaded — P บันทึกจุด / O ผลักกลับจุด (Speed 250)")
