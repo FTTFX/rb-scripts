@@ -1,5 +1,6 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.0
--- รับเควส (CommF_ StartQuest) → หามอนใกล้สุด → เทเลพอร์ต + M1 ตี → ตรวจ progress (UI) → Loop
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v1.1
+-- รับเควส (CommF_ StartQuest) → เทเลไป NPC/มอน → VirtualUser M1 ตี → ตรวจ progress → Loop
+-- อิงจากสคริปต์ Blox Fruits มาตรฐาน + ข้อมูล spy จริง (BF01-BF03)
 -- วิธีใช้: รันในเกม → กด [Auto] → ดูสถานะใน GUI → กด X ปิด
 
 local Players = game:GetService("Players")
@@ -7,7 +8,7 @@ local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local VIM = game:GetService("VirtualInputManager")
+local VU = game:GetService("VirtualUser")
 local Workspace = workspace
 
 -- ── Config ────────────────────────────────────────────────────────
@@ -16,19 +17,20 @@ local CFG = {
     LEVEL      = 1,
     MOB_NAME   = "Bandit",
     MOB_FOLDER = "Enemies",
+    QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),  -- จุด Bandit Quest Giver
+    MON_CFRAME   = CFrame.new(1196.17, 11.87, 1616.96),  -- จุดรวม Bandit
     AUTO_ON    = false,
-    STATUS     = "idle",
 }
 
 _G.BF04 = _G.BF04 or {}
+_G.BF04_LOOP = nil
 
--- ── GUI (pattern 74RB) ─────────────────────────────────────────────
+-- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
-if _G.BF04_LOOP then _G.BF04_LOOP = nil end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 300, 0, 200)
+frame.Size = UDim2.new(0, 300, 0, 210)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.Parent = sg
@@ -37,7 +39,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.0"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v1.1"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -49,6 +51,7 @@ Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
 closeBtn.MouseButton1Click:Connect(function()
     CFG.AUTO_ON = false
     _G.BF04_LOOP = nil
+    pcall(function() VU:Button1Up() end)
     sg:Destroy()
 end)
 
@@ -60,7 +63,7 @@ autoBtn.Parent = frame
 Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0,6)
 
 local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1,-20,0,90); statusLbl.Position = UDim2.new(0,10,0,74)
+statusLbl.Size = UDim2.new(1,-20,0,96); statusLbl.Position = UDim2.new(0,10,0,74)
 statusLbl.BackgroundTransparency = 1; statusLbl.TextColor3 = Color3.fromRGB(200,200,200)
 statusLbl.Text = "สถานะ: idle\nเควส: -\nความคืบหน้า: -\nเป้าหมาย: -"
 statusLbl.Font = Enum.Font.Code; statusLbl.TextSize = 12
@@ -71,74 +74,46 @@ local function refreshAuto()
     autoBtn.Text = "AUTO: " .. (CFG.AUTO_ON and "ON" or "OFF")
     autoBtn.BackgroundColor3 = CFG.AUTO_ON and Color3.fromRGB(180,40,40) or Color3.fromRGB(30,120,50)
 end
-autoBtn.MouseButton1Click:Connect(function()
-    CFG.AUTO_ON = not CFG.AUTO_ON
-    refreshAuto()
-end)
 
 -- ── Helper ────────────────────────────────────────────────────────
-local function findRemote(name)
-    local remotes = RS:FindFirstChild("Remotes")
-    if remotes then
-        for _, r in ipairs(remotes:GetDescendants()) do
-            if r.Name == name and r:IsA("RemoteFunction") then return r end
-        end
-    end
-    return nil
-end
-local CommF = findRemote("CommF_")
-
 local function setStatus(txt)
-    CFG.STATUS = txt
     statusLbl.Text = string.format(
         "สถานะ: %s\nเควส: %s\nความคืบหน้า: %s\nเป้าหมาย: %s",
-        txt,
-        CFG.QUEST,
-        CFG.cur and (CFG.cur.."/"..CFG.need) or "-",
+        txt, CFG.QUEST,
+        (CFG.cur and CFG.need) and (CFG.cur.."/"..CFG.need) or "-",
         CFG.MOB_NAME
     )
 end
 
--- รับเควสผ่าน CommF_
-local function startQuest()
-    if not CommF then return false end
-    local ok, err = pcall(function()
-        CommF:InvokeServer("StartQuest", CFG.QUEST, CFG.LEVEL)
-    end)
-    return ok
-end
-local function abandonQuest()
-    if not CommF then return false end
-    local ok, err = pcall(function()
-        CommF:InvokeServer("AbandonQuest")
-    end)
-    return ok
+local CommF = nil
+local function getCommF()
+    if CommF and CommF.Parent then return CommF end
+    local remotes = RS:FindFirstChild("Remotes")
+    if remotes then
+        for _, r in ipairs(remotes:GetDescendants()) do
+            if r.Name == "CommF_" and r:IsA("RemoteFunction") then
+                CommF = r
+                return CommF
+            end
+        end
+    end
+    return nil
 end
 
--- อ่าน progress จาก UI "DEFEAT 5 BANDITS (n/5)"
+-- อ่าน progress จาก QuestTitle.Title.Text เช่น "DEFEAT 5 BANDITS (2/5)"
 local function readProgress()
     local main = pg:FindFirstChild("Main")
     local q = main and main:FindFirstChild("Quest")
-    if not q then return nil end
-    local function walk(node, depth)
-        depth = depth or 0
-        if depth > 12 then return nil end
-        for _, c in ipairs(node:GetChildren()) do
-            if c:IsA("TextLabel") or c:IsA("TextButton") then
-                local cur, need = tostring(c.Text):match("%((%d+)/(%d+)%)")
-                if cur and need then
-                    return tonumber(cur), tonumber(need)
-                end
-            end
-            local r = walk(c, depth + 1)
-            if r then return r end
-        end
-        return nil
-    end
-    return walk(q)
+    if not q then return nil, nil, nil end
+    local ok, txt = pcall(function()
+        return q.Container.QuestTitle.Title.Text
+    end)
+    if not ok or not txt then return nil, nil, nil end
+    local cur, need = txt:match("%((%d+)/(%d+)%)")
+    return tonumber(cur), tonumber(need), txt
 end
 
--- หามอนที่ใกล้สุด (ยังไม่ตาย)
+-- หามอนใกล้สุด (ยังไม่ตาย)
 local function findMob()
     local folder = Workspace:FindFirstChild(CFG.MOB_FOLDER)
     if not folder then return nil end
@@ -155,7 +130,7 @@ local function findMob()
                         local d = (mhrp.Position - hrp.Position).Magnitude
                         if d < bestDist then best, bestDist = m, d end
                     else
-                        return m
+                        return m, 0
                     end
                 end
             end
@@ -164,7 +139,17 @@ local function findMob()
     return best, bestDist
 end
 
--- เทเลพอร์ต + หันกล้อง/ตัวละครไปหามอน
+-- เทเลพอร์ต (TP)
+local function tp(cframe)
+    local char = LP.Character
+    if not char then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    hrp.CFrame = cframe
+    return true
+end
+
+-- เทเล + หันไปหามอน (ยืนหลังมอนระยะตี)
 local function aimAt(mob)
     local char = LP.Character
     local cam = Workspace.CurrentCamera
@@ -172,84 +157,125 @@ local function aimAt(mob)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local mhrp = mob:FindFirstChild("HumanoidRootPart")
     if not hrp or not mhrp then return end
-    -- ยืนหลังมอน 3 studs (ระยะตี) + หันเข้าหา
-    local dir = (hrp.Position - mhrp.Position)
+    local dir = hrp.Position - mhrp.Position
     local flat = Vector3.new(dir.X, 0, dir.Z)
     if flat.Magnitude < 0.1 then flat = Vector3.new(0,0,-1) end
-    local standPos = mhrp.Position + flat.Unit * 3
-    hrp.CFrame = CFrame.lookAt(standPos + Vector3.new(0,0.5,0), mhrp.Position)
+    hrp.CFrame = CFrame.lookAt(mhrp.Position + flat.Unit * 3 + Vector3.new(0,0.5,0), mhrp.Position)
     if cam then
         cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0,5,0), mhrp.Position)
     end
 end
 
--- M1 คลิก (client จะ fire remote โจมตีให้เอง)
-local function attack()
-    pcall(function()
-        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-        task.wait(0.06)
-        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-    end)
+-- M1 (VirtualUser — มาตรฐาน Blox Fruits)
+local function attackOn()
+    pcall(function() VU:CaptureController() end)
+    pcall(function() VU:Button1Down() end)
+end
+local function attackOff()
+    pcall(function() VU:Button1Up() end)
 end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
+    local down = false
     while CFG.AUTO_ON and _G.BF04_LOOP do
-        task.wait(0.05)
+        task.wait(0.1)
 
-        if not LP.Character or not LP.Character:FindFirstChild("HumanoidRootPart") then
+        local char = LP.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
             setStatus("รอตัวละคร spawn")
             task.wait(1)
             continue
         end
 
-        local cur, need = readProgress()
+        local cur, need, txt = readProgress()
         CFG.cur, CFG.need = cur, need
 
+        local qVisible = false
+        pcall(function()
+            local main = pg:FindFirstChild("Main")
+            local q = main and main:FindFirstChild("Quest")
+            qVisible = q and q.Visible
+        end)
+
         if not cur then
-            -- ไม่มีเควส → รับเควส
-            setStatus("รับเควส...")
-            if startQuest() then
-                setStatus("รับเควสสำเร็จ")
+            -- ไม่มีเควส
+            if not qVisible then
+                -- ไป NPC ก่อน
+                local d = (hrp.Position - CFG.QUEST_CFRAME.Position).Magnitude
+                if d > 12 then
+                    setStatus("ไปหา NPC (ระยะ " .. math.floor(d) .. ")")
+                    if down then attackOff() down = false end
+                    tp(CFG.QUEST_CFRAME)
+                    task.wait(1)
+                else
+                    setStatus("รับเควส...")
+                    local c = getCommF()
+                    if c then
+                        local ok = pcall(function() c:InvokeServer("StartQuest", CFG.QUEST, CFG.LEVEL) end)
+                        setStatus(ok and "รับเควสแล้ว (รอ UI)" or "รับเควสไม่สำเร็จ")
+                    else
+                        setStatus("หา CommF_ ไม่เจอ")
+                    end
+                    task.wait(1.5)
+                end
             else
-                setStatus("รับเควสไม่สำเร็จ (ไม่มี CommF_?)")
+                -- มี UI แต่ parse ไม่ได้ → รอ
+                setStatus("รออ่านเควส...")
+                task.wait(1)
             end
-            task.wait(1)
         elseif cur >= need then
-            -- เควสเสร็จ → รับใหม่ (ถ้าจำเป็น abandon ก่อน)
-            setStatus("เควสเสร็จ! รับใหม่...")
-            abandonQuest()
-            task.wait(0.5)
-            startQuest()
-            task.wait(1)
+            -- เควสเสร็จ
+            setStatus("เควสเสร็จ! ยกเลิก + รับใหม่")
+            if down then attackOff() down = false end
+            local c = getCommF()
+            if c then
+                pcall(function() c:InvokeServer("AbandonQuest") end)
+                task.wait(0.8)
+                pcall(function() c:InvokeServer("StartQuest", CFG.QUEST, CFG.LEVEL) end)
+            end
+            task.wait(1.5)
         else
-            -- มีเควส → หามอน ตี
+            -- มีเควส → ตีมอน
             local mob, dist = findMob()
             if mob then
-                setStatus("ตี " .. CFG.MOB_NAME .. " (ระยะ " .. math.floor(dist) .. ")")
-                aimAt(mob)
-                attack()
-                task.wait(0.1)
+                if dist > 20 then
+                    setStatus("เทเลไปมอน (ระยะ " .. math.floor(dist) .. ")")
+                    if down then attackOff() down = false end
+                    tp(CFG.MON_CFRAME)
+                    task.wait(0.5)
+                else
+                    setStatus("ตี " .. CFG.MOB_NAME .. " (" .. cur .. "/" .. need .. ")")
+                    aimAt(mob)
+                    if not down then attackOn() down = true end
+                end
             else
-                setStatus("หามอนไม่เจอ (รอ spawn)")
+                setStatus("หามอนไม่เจอ (ไปจุดรวมมอน)")
+                if down then attackOff() down = false end
+                tp(CFG.MON_CFRAME)
                 task.wait(1)
             end
         end
     end
+    if down then attackOff() end
     setStatus("หยุดแล้ว")
 end
 
 autoBtn.MouseButton1Click:Connect(function()
+    CFG.AUTO_ON = not CFG.AUTO_ON
+    refreshAuto()
     if CFG.AUTO_ON then
         _G.BF04_LOOP = true
         task.spawn(mainLoop)
         setStatus("เริ่มทำงาน...")
     else
         _G.BF04_LOOP = nil
+        pcall(function() VU:Button1Up() end)
         setStatus("หยุดแล้ว")
     end
 end)
 
-setStatus("พร้อม — กด AUTO เพื่อเริ่ม (รัน BF03 ก่อนเพื่อให้แน่ใจว่า CommF_ มี)")
+setStatus("พร้อม — กด AUTO เพื่อเริ่ม")
 refreshAuto()
-warn("[BF04] Auto Quest v1.0 loaded | CommF_: " .. tostring(CommF ~= nil and "เจอ ✅" or "ไม่เจอ ❌"))
+warn("[BF04] Auto Quest v1.1 loaded")
