@@ -323,12 +323,20 @@ end)
 
 local SABER_ON = false
 local saberBtn = Instance.new("TextButton")
-saberBtn.Size = UDim2.new(0, 350, 0, 24); saberBtn.Position = UDim2.new(0, 10, 0, 126)
+saberBtn.Size = UDim2.new(0, 262, 0, 24); saberBtn.Position = UDim2.new(0, 10, 0, 126)
 saberBtn.BackgroundColor3 = Color3.fromRGB(20,90,90); saberBtn.TextColor3 = Color3.new(1,1,1)
 saberBtn.Text = "AUTO SABER: OFF (ดาบดีสุด First Sea | ต้อง Lv.200+)"
 saberBtn.Font = Enum.Font.GothamBold; saberBtn.TextSize = 12; saberBtn.BorderSizePixel = 0
 saberBtn.Parent = frame
 Instance.new("UICorner", saberBtn).CornerRadius = UDim.new(0,5)
+
+local clearBtn = Instance.new("TextButton")
+clearBtn.Size = UDim2.new(0, 84, 0, 24); clearBtn.Position = UDim2.new(0, 276, 0, 126)
+clearBtn.BackgroundColor3 = Color3.fromRGB(140,60,20); clearBtn.TextColor3 = Color3.new(1,1,1)
+clearBtn.Text = "ล้าง/ปลดล็อก"
+clearBtn.Font = Enum.Font.GothamBold; clearBtn.TextSize = 11; clearBtn.BorderSizePixel = 0
+clearBtn.Parent = frame
+Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,5)
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1,-16,1,-164); scroll.Position = UDim2.new(0,8,0,156)
@@ -529,19 +537,80 @@ local function applyBodyVelocity(hrp)
     end
 end
 
--- คืนการควบคุมตัวละครให้ผู้เล่น (เลิกล็อกตำแหน่ง/ความเร็ว)
+-- ล้างสถานะทั้งหมดที่สคริปต์ไปยุ่งกับตัวละคร แล้วคืนการควบคุมให้ผู้เล่น
+-- ต้องล้างให้ครบทุกอย่าง ไม่ใช่แค่ BodyVelocity ตัวเดียว
+-- (tween ที่ค้าง / Anchored / PlatformStand / ControlModule ที่ถูกปิด ทำให้ขยับไม่ได้ทั้งนั้น)
+local BLOCKING_CLASSES = {
+    BodyVelocity = true, BodyGyro = true, BodyPosition = true,
+    BodyThrust = true, BodyAngularVelocity = true,
+    AlignPosition = true, AlignOrientation = true,
+    LinearVelocity = true, AngularVelocity = true, VectorForce = true,
+}
 local function releaseControl()
+    pcall(function() if currentTween then currentTween:Cancel() currentTween = nil end end)
+
     pcall(function()
         if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end
-        local char = LP.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
+    end)
+
+    local char = LP.Character
+    if not char then return end
+
+    -- ลบตัวบังคับฟิสิกส์ทุกชิ้นที่ค้างอยู่ในตัวละคร
+    pcall(function()
+        for _, obj in ipairs(char:GetDescendants()) do
+            if BLOCKING_CLASSES[obj.ClassName] then
+                obj:Destroy()
+            end
+        end
+    end)
+
+    -- ปลด Anchored และคืน CanCollide ให้ทุกชิ้นส่วน
+    pcall(function()
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = false
+                if part.Name ~= "HumanoidRootPart" then part.CanCollide = true end
+            end
+        end
+    end)
+
+    pcall(function()
+        local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             hum.PlatformStand = false
             hum.Sit = false
-            if hum.WalkSpeed == 0 then hum.WalkSpeed = 16 end
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            if hum.WalkSpeed <= 0 then hum.WalkSpeed = 16 end
+            if hum.JumpPower <= 0 then hum.JumpPower = 50 end
+            hum.AutoRotate = true
+        end
+    end)
+
+    -- เปิดระบบควบคุมของเกมกลับ (บางกรณีถูกปิดไว้ตอนวาร์ป)
+    pcall(function()
+        local pm = LP:FindFirstChild("PlayerScripts") and LP.PlayerScripts:FindFirstChild("PlayerModule")
+        if pm then
+            local controls = require(pm):GetControls()
+            controls:Enable()
         end
     end)
 end
+
+clearBtn.MouseButton1Click:Connect(function()
+    AUTO_ON = false
+    SABER_ON = false
+    FRUIT_MODE = false
+    _G.BF04_LOOP = nil
+    _G.BF04_SABER = nil
+    releaseControl()
+    autoBtn.Text = "AUTO: OFF"
+    autoBtn.BackgroundColor3 = Color3.fromRGB(30,120,50)
+    saberBtn.Text = "AUTO SABER: OFF (ดาบดีสุด First Sea)"
+    saberBtn.BackgroundColor3 = Color3.fromRGB(20,90,90)
+    fruitBtn.Text = "FRUIT: OFF"
+    log("🧹 ล้างสถานะทั้งหมดแล้ว — ขยับตัวได้ตามปกติ", "G")
+end)
 
 -- ระบบ Smart Travel (บินสูงข้ามเกาะ)
 -- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
