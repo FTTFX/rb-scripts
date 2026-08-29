@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.5 (No Drag Back)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.6 (Unequip Relic Before Fight)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -717,15 +717,32 @@ function tp(cframe)
     return toTarget(cframe)
 end
 
+-- ของเควสที่ถือได้แต่ตีไม่ออก ต้องถอดก่อนสู้
+-- (เดิมเช็คแค่ว่า "มี Tool ในมือ" พอถือ Relic อยู่ก็ไม่สลับอาวุธ = ตีไม่โดน)
+local QUEST_ITEMS = { Relic = true, Cup = true, Torch = true }
+
 local function equipWeapon()
     local char, hrp, hum = getChar()
-    if not char then return false end
-    if char:FindFirstChildOfClass("Tool") then return true end
-    
+    if not char or not hum then return false end
+
+    local held = char:FindFirstChildOfClass("Tool")
+    if held and not QUEST_ITEMS[held.Name] then return true end
+
+    -- ถือของเควสอยู่ → เก็บเข้ากระเป๋าก่อน
+    if held then
+        pcall(function() hum:UnequipTools() end)
+        task.wait(0.1)
+    end
+
     local bp = LP:FindFirstChild("Backpack")
     if not bp then return false end
-    
-    local tool = bp:FindFirstChild("Combat") or bp:FindFirstChildOfClass("Tool")
+
+    local tool = bp:FindFirstChild("Combat")
+    if not tool then
+        for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") and not QUEST_ITEMS[t.Name] then tool = t break end
+        end
+    end
     if tool then
         pcall(function() hum:EquipTool(tool) end)
         return true
@@ -873,7 +890,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.5 ===", "Y")
+    log("=== START AUTO v7.6 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1164,6 +1181,8 @@ local function killNamedBoss(bossName)
                     setState(bossName .. " HP " .. math.floor(v.Humanoid.Health), "S")
                 end
 
+                -- เช็คทุกรอบ กันกรณีเกิดใหม่แล้วอาวุธหลุด หรือเควสยัดของกลับมาในมือ
+                equipWeapon()
                 aimCam(v)
                 directRemoteAttack(v, bossName)
                 task.wait(0.05)
@@ -1415,7 +1434,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.5 พร้อม (ไม่ดึงกลับประตู + เห็นบอสบินตีเลย)", "G")
+log("BF04 v7.6 พร้อม (ถอด Relic ก่อนสู้ = ตีโดนจริง)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.5 loaded")
+warn("[BF04] Auto Quest v7.6 loaded")
