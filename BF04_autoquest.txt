@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.4 (Boss Priority)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.5 (No Drag Back)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -873,7 +873,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.4 ===", "Y")
+    log("=== START AUTO v7.5 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1304,7 +1304,9 @@ local function saberLoop()
                 end
                 equipByName("Relic")
                 local d = (SABER_CF.relicPlace.Position - hrp.Position).Magnitude
-                if d > 20 then
+                -- อยู่แถวนั้นแล้วไม่ต้องดึงตัว (เดิมห่างเกิน 20 ก็ดึงกลับประตูทุกครั้ง น่ารำคาญ)
+                -- ดึงเฉพาะกรณีอยู่คนละโซนจริงๆ
+                if d > 150 then
                     setState("ขั้น 4: ถือ Relic บินกลับ Jungle (ห่าง " .. math.floor(d) .. ")", "B")
                     tp(SABER_CF.relicPlace)
                 else
@@ -1413,7 +1415,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.4 พร้อม (เห็น Saber Expert = บินตีเลย + ถอยที่เลือด 55%)", "G")
+log("BF04 v7.5 พร้อม (ไม่ดึงกลับประตู + เห็นบอสบินตีเลย)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.4 loaded")
+warn("[BF04] Auto Quest v7.5 loaded")
