@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v5.9 (Timestamped Log)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.0 (Nearest Target + Fast Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -539,6 +539,24 @@ local function toTarget(targetCF)
         return true
     end
     
+    -- ระยะกลาง (< 350 studs, อยู่เกาะเดียวกัน) → พุ่งตรงไปเลย ไม่ต้องไต่ขึ้นฟ้า
+    -- ตัดขั้นตอนไต่ขึ้น-ลงออก ประหยัดเวลาต่อมอนได้หลายวินาที
+    if dist < 350 then
+        stopTween()
+        local flyTime = math.max(dist / 320, 0.15)
+        local tw = TweenService:Create(hrp, TweenInfo.new(flyTime, Enum.EasingStyle.Linear), {CFrame = targetCF})
+        currentTween = tw
+        tw:Play()
+        local waited = 0
+        while AUTO_ON and _G.BF04_LOOP and currentTween == tw and waited < (flyTime + 0.3) do
+            if (targetCF.Position - hrp.Position).Magnitude <= 10 then break end
+            task.wait(0.05)
+            waited += 0.05
+        end
+        stopTween()
+        return true
+    end
+
     -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
     stopTween()
     
@@ -746,7 +764,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v5.9 ===", "Y")
+    log("=== START AUTO v6.0 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -830,6 +848,7 @@ local function mainLoop()
 
                 local enemies = Workspace:FindFirstChild("Enemies")
                 local target = nil
+                local bestDist = math.huge
                 if enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
                         local isMatch = string.find(v.Name, qdata.mob)
@@ -840,10 +859,14 @@ local function mainLoop()
                             isMatch = false
                         end
 
+                        -- เลือกตัวที่ใกล้ที่สุด ไม่ใช่ตัวแรกที่เจอ (เดิมบินข้ามแมพ 300-650 studs เสียเวลา)
                         if isMatch and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
-                            target = v
-                            break
+                            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                            if d < bestDist then
+                                bestDist = d
+                                target = v
+                            end
                         end
                     end
                 end
@@ -856,7 +879,8 @@ local function mainLoop()
                 end
 
                 local v = target
-                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ")"
+                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health)
+                    .. " | ห่าง " .. math.floor(bestDist) .. ")"
                     .. (MAGNET_ON and " — Magnet + Remote" or " — ตีระยะไกล (ไม่วาป)"), "Y")
 
                 equipWeapon()
@@ -919,7 +943,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v5.9 พร้อม (log มีเวลา + วัดเวลาฆ่าต่อตัว)", "G")
+log("BF04 v6.0 พร้อม (เลือกมอนตัวใกล้สุด + บินตรงเร็วขึ้น)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v5.9 loaded")
+warn("[BF04] Auto Quest v6.0 loaded")
