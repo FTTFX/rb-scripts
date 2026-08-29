@@ -1,5 +1,6 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.8
--- v1.8: แก้บั๊กค้าง (WaitForChild CombatFramework บล็อก) → โหลดแบบ non-blocking + สแปม M1 ทุก loop
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v1.9
+-- v1.9: แก้จุดคลิก M1 ให้คำนวณจาก ViewportSize จริง (จุดตายตัว 1280,672 พลาดจอกว้าง)
+--       + ยิงหลายวิธีพร้อมกัน (firesignal / getconnections / VirtualInputManager / mouse1press / VirtualUser)
 -- รับเควส → เทเลไป NPC → เทเลติดมอน → FastAttack + M1 ฆ่าทีละตัว → Loop
 
 local Players = game:GetService("Players")
@@ -37,7 +38,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.8"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v1.9"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -184,6 +185,70 @@ local function loadCombatFramework()
     return CombatFramework
 end
 
+-- จุดคลิกกึ่งกลางจอ คำนวณจาก ViewportSize จริง (ไม่ใช้พิกัดตายตัว 1280,672
+-- ซึ่งพลาดจอกว้าง/ความละเอียดต่างกัน — นี่คือสาเหตุหลักที่คลิกไม่โดน)
+local function getClickPos()
+    local ok, pos = pcall(function()
+        local vp = Workspace.CurrentCamera.ViewportSize
+        return Vector2.new(vp.X * 0.5, vp.Y * 0.55)
+    end)
+    if ok and pos then return pos end
+    return Vector2.new(1280, 672)
+end
+
+local Mouse = LP:GetMouse()
+local execInfo = nil -- diagnostic: which exploit funcs are available
+local function detectExecFuncs()
+    if execInfo then return execInfo end
+    local names = {}
+    if typeof(firesignal) == "function" then table.insert(names, "firesignal") end
+    if typeof(getconnections) == "function" then table.insert(names, "getconnections") end
+    if typeof(mouse1press) == "function" then table.insert(names, "mouse1press") end
+    if typeof(fireclickdetector) == "function" then table.insert(names, "fireclickdetector") end
+    execInfo = #names > 0 and table.concat(names, ", ") or "ไม่เจอ (executor พื้นฐาน)"
+    return execInfo
+end
+
+local function fireMouseSignal(down)
+    local sig = down and Mouse.Button1Down or Mouse.Button1Up
+    local didAny = false
+    if typeof(firesignal) == "function" then
+        if pcall(firesignal, sig) then didAny = true end
+    end
+    if typeof(getconnections) == "function" then
+        pcall(function()
+            for _, c in ipairs(getconnections(sig)) do
+                pcall(function() c:Fire() end)
+                didAny = true
+            end
+        end)
+    end
+    return didAny
+end
+
+-- กด M1 ลง — ยิงหลายวิธีพร้อมกันเพื่อให้ครอบคลุม executor ต่าง ๆ
+local function attackDown()
+    local pos = getClickPos()
+    fireMouseSignal(true)
+    if typeof(mouse1press) == "function" then pcall(mouse1press) end
+    pcall(function()
+        game:GetService("VirtualInputManager"):SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+    end)
+    pcall(function()
+        VU:CaptureController()
+        VU:Button1Down(pos)
+    end)
+end
+local function attackUp()
+    local pos = getClickPos()
+    fireMouseSignal(false)
+    if typeof(mouse1release) == "function" then pcall(mouse1release) end
+    pcall(function()
+        game:GetService("VirtualInputManager"):SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end)
+    pcall(function() VU:Button1Up() end)
+end
+
 local function fastAttack()
     -- ตั้งค่า CombatFramework ให้โจมตีได้ทันที
     pcall(function()
@@ -203,12 +268,12 @@ local function fastAttack()
             if hum then hum.Sit = false end
         end
     end)
-    -- คลิก M1 (สแปมทุก loop แบบ MUXHUB + รีเช็ค Controller)
-    pcall(function() VU:CaptureController() end)
-    pcall(function() VU:Button1Down(Vector2.new(1280, 672)) end)
+    attackDown()
+    task.delay(0.08, attackUp)
 end
 local function attackOff()
     pcall(function() VU:Button1Up() end)
+    fireMouseSignal(false)
 end
 
 local function readProgress()
@@ -229,6 +294,9 @@ local function mainLoop()
     log("CommF_ เจอ ✓", "G")
     local cf = loadCombatFramework()
     log(cf and "CombatFramework เจอ ✓" or "⚠️ CombatFramework ยังไม่เจอ (รอเกมโหลด module แล้วจะรีเทรย์อัตโนมัติ)", cf and "G" or "R")
+    log("Executor รองรับ: " .. detectExecFuncs(), "B")
+    local cp = getClickPos()
+    log("จุดคลิก M1: (" .. math.floor(cp.X) .. ", " .. math.floor(cp.Y) .. ")", "B")
 
     while CFG.AUTO_ON and _G.BF04_LOOP and not getChar() do
         setState("รอตัวละคร spawn...", "S")
@@ -329,6 +397,6 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v1.8 พร้อม (FastAttack แบบ non-blocking)", "G")
+log("BF04 v1.9 พร้อม (จุดคลิกไดนามิก + ยิงหลายวิธี)", "G")
 log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
-warn("[BF04] Auto Quest v1.7 loaded")
+warn("[BF04] Auto Quest v1.9 loaded")
