@@ -1,0 +1,329 @@
+-- BF03_actionhook.txt — Blox Fruits Quest/Combat Action Hook v1.0
+-- เจาะลึกสุดท้ายก่อนเขียน auto: dump โมดูลระบบเควส + hook remote ไม่กรอง + ดัก event server->client
+-- วิธีใช้: รัน → ไปคุย Bandit Quest Giver (รับ/ปิดเควส) → ตี Bandit 1-2 ตัว → รอ 3 วิ → Copy ส่งผลลัพธ์
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local okHooks  = hookmeta and getnc
+
+_G.BF03 = _G.BF03 or {}
+local S = _G.BF03
+S.hooked = S.hooked or false
+
+-- ── GUI (pattern 74RB) ─────────────────────────────────────────────
+local old = pg:FindFirstChild("BF03GUI"); if old then old:Destroy() end
+local sg = Instance.new("ScreenGui")
+sg.Name = "BF03GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0,640,0,560); frame.Position = UDim2.new(0.5,-320,0.5,-280)
+frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
+frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size = UDim2.new(1,-100,0,28); titleLbl.Position = UDim2.new(0,10,0,0)
+titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120,200,255)
+titleLbl.Text = "BF03 ActionHook — searching..."; titleLbl.Font = Enum.Font.Code; titleLbl.TextSize = 13
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
+local function topBtn(w,x,col,txt)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,22); b.Position = UDim2.new(1,x,0,3)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1); b.Text = txt
+    b.Font = Enum.Font.Code; b.TextSize = 12; b.BorderSizePixel = 0; b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4); return b
+end
+local copyBtn  = topBtn(62,-70,Color3.fromRGB(30,100,50),"Copy")
+local clearBtn = topBtn(62,-140,Color3.fromRGB(60,60,90),"Clear")
+local closeBtn = topBtn(28,-30,Color3.fromRGB(120,20,20),"X")
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-8,1,-34); scroll.Position = UDim2.new(0,4,0,30)
+scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+local padL = Instance.new("UIPadding"); padL.PaddingLeft = UDim.new(0,6); padL.Parent = scroll
+
+local copyLines, order = {}, 0
+local C = { Y=Color3.fromRGB(255,210,0), G=Color3.fromRGB(80,255,120),
+    B=Color3.fromRGB(140,160,255), O=Color3.fromRGB(255,160,50),
+    W=Color3.fromRGB(210,210,210), S=Color3.fromRGB(140,140,140),
+    R=Color3.fromRGB(255,80,80), M=Color3.fromRGB(255,120,255) }
+local function addLine(txt,col)
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-12,0,15); l.BackgroundTransparency = 1; l.Font = Enum.Font.Code
+    l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextTruncate = Enum.TextTruncate.AtEnd
+    l.TextColor3 = col or C.S; l.Text = txt; l.LayoutOrder = order; l.Parent = scroll
+    table.insert(copyLines, txt)
+    scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+end
+
+closeBtn.MouseButton1Click:Connect(function() S.enabled = false sg:Destroy() end)
+clearBtn.MouseButton1Click:Connect(function()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    order = 0; table.clear(copyLines); S.remoteSeen = {}
+    addLine("=== cleared ===", C.S)
+end)
+copyBtn.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard or (getgenv and getgenv().setclipboard)
+    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
+    copyBtn.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(2, function() if copyBtn.Parent then copyBtn.Text = "Copy" end end)
+end)
+
+-- ── Helper ────────────────────────────────────────────────────────
+local function fmt(v, full)
+    local t = typeof(v)
+    if t == "Instance" then return v.ClassName..":"..v.Name
+    elseif t == "Vector3" then return string.format("V3(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then local p=v.Position return string.format("CF(%.0f,%.0f,%.0f)", p.X,p.Y,p.Z)
+    elseif t == "string" then
+        local mx = full and 300 or 40
+        if #v > mx then return '"'..v:sub(1,mx)..'..."' end
+        return '"'..v..'"'
+    elseif t == "number" then return string.format("%.4g", v)
+    elseif t == "boolean" then return tostring(v)
+    else return t end
+end
+local function fmtArgs(...)
+    local n = select("#", ...)
+    if n == 0 then return "(ไม่มี args)" end
+    local p = {}
+    for i = 1, math.min(n, 6) do p[i] = fmt(select(i, ...), true) end
+    return table.concat(p, " | ")
+end
+local function findPath(root, path)
+    local cur = root
+    for part in path:gmatch("[^.]+") do
+        cur = cur and cur:FindFirstChild(part)
+        if not cur then return nil end
+    end
+    return cur
+end
+
+-- ── Hook remotes แบบไม่กรอง (dedup ตาม path) ───────────────────────
+S.remoteSeen = S.remoteSeen or {}
+S.remoteCount = S.remoteCount or 0
+local remoteLabels = {}   -- [path] = TextLabel
+
+if okHooks and not S.hooked then
+    S.hooked = true
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local m = getnc()
+        if (m == "FireServer" or m == "InvokeServer") and S.enabled ~= false then
+            local ok, nm = pcall(function() return self:GetFullName() end)
+            nm = ok and nm or "?"
+            local rec = S.remoteSeen[nm]
+            if not rec then
+                if S.remoteCount >= 200 then return oldNc(self, ...) end
+                S.remoteCount += 1
+                rec = { count = 0, first = fmtArgs(...), last = "" }
+                S.remoteSeen[nm] = rec
+            end
+            rec.count += 1
+            rec.last = fmtArgs(...)
+        end
+        return oldNc(self, ...)
+    end))
+end
+
+-- ── Render hook summary (Heartbeat — อัปเดต label ที่มีอยู่) ────────
+RunService.Heartbeat:Connect(function()
+    if S.enabled == false then return end
+    for nm, rec in pairs(S.remoteSeen) do
+        local lbl = remoteLabels[nm]
+        local short = nm:gsub("^.-Remotes%.", "")
+        local txt = ("  ▶ %s  ×%d"):format(short, rec.count)
+        if rec.count == 1 then
+            txt = txt .. "  args=" .. rec.first
+        else
+            txt = txt .. "  last=" .. rec.last
+        end
+        if not lbl then
+            lbl = Instance.new("TextLabel")
+            lbl.Size = UDim2.new(1,-12,0,15); lbl.BackgroundTransparency = 1; lbl.Font = Enum.Font.Code
+            lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.TextTruncate = Enum.TextTruncate.AtEnd
+            lbl.TextColor3 = C.R; lbl.Parent = scroll
+            order += 1; lbl.LayoutOrder = order
+            remoteLabels[nm] = lbl
+            rec.copyIdx = #copyLines + 1
+            table.insert(copyLines, txt)
+            scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+        end
+        lbl.Text = txt
+        if rec.copyIdx then copyLines[rec.copyIdx] = txt end
+    end
+end)
+
+-- ── Dump table (module) แบบจำกัดความลึก ───────────────────────────
+local function dumpTable(name, t, depth, budget)
+    depth = depth or 0
+    budget = budget or { n = 0 }
+    if depth > 3 or budget.n > 400 then return end
+    if type(t) ~= "table" then
+        addLine(("%s = %s"):format(name, tostring(t)), C.G)
+        return
+    end
+    local pad = string.rep("  ", depth)
+    local cnt = 0
+    for k, v in pairs(t) do
+        cnt += 1
+        budget.n += 1
+        if budget.n > 400 then addLine(pad .. "...(ตัดท้าย)", C.S) return end
+        local kn = tostring(k)
+        local vt = type(v)
+        if vt == "table" then
+            local n = 0
+            pcall(function() for _ in pairs(v) do n += 1 end end)
+            addLine(("%s%s = <table %d keys>"):format(pad, kn, n), C.B)
+            if depth < 2 and n <= 12 then
+                dumpTable(name.."."..kn, v, depth + 1, budget)
+            end
+        elseif vt == "function" then
+            addLine(("%s%s = [function]"):format(pad, kn), C.M)
+        elseif vt == "userdata" then
+            addLine(("%s%s = <userdata>"):format(pad, kn), C.S)
+        else
+            addLine(("%s%s = %s"):format(pad, kn, tostring(v)), C.G)
+        end
+    end
+    if cnt == 0 then addLine(pad .. "(ว่าง)", C.S) end
+end
+
+local function tryRequire(path)
+    local mod = findPath(RS, path)
+    if not mod or not mod:IsA("ModuleScript") then
+        addLine(("  ✗ %s (ไม่เจอ/ไม่ใช่ ModuleScript)"):format(path), C.S)
+        return
+    end
+    local ok, result = pcall(function()
+        local req = (getrenv and getrenv().require) or require
+        return req(mod)
+    end)
+    if ok and result ~= nil then
+        addLine(("  ✓ %s → %s"):format(path, type(result)), C.G)
+        dumpTable("  "..path, result, 1)
+    else
+        addLine(("  ✗ %s require ไม่ได้: %s"):format(path, tostring(result)), C.O)
+    end
+end
+
+-- ── Scan ───────────────────────────────────────────────────────────
+task.spawn(function()
+    task.wait(0.1)
+    pcall(function()
+
+    addLine("=== BF03 ACTION HOOK v1.0 (Blox Fruits) ===", C.Y)
+    addLine("hook: " .. (okHooks and "ON ✅" or "OFF ❌"), okHooks and C.G or C.R)
+    addLine("", C.S)
+
+    -- 1) Dump modules ระบบเควส
+    addLine("── 1) Dump โมดูลระบบเควส (require) ──", C.Y)
+    tryRequire("Quests")
+    addLine("", C.S)
+    tryRequire("QuestServiceShared")
+    addLine("", C.S)
+    tryRequire("QuestServiceShared.Classes.Quest")
+    addLine("", C.S)
+    tryRequire("QuestServiceShared.Classes.Task")
+    addLine("", C.S)
+    tryRequire("Controllers.QuestController")
+    addLine("", C.S)
+
+    -- 2) โครงสร้าง Bandit Quest Giver ละเอียด
+    addLine("── 2) Bandit Quest Giver — โครงสร้างละเอียด ──", C.Y)
+    local npcs = workspace:FindFirstChild("NPCs")
+    local giver = npcs and npcs:FindFirstChild("Bandit Quest Giver")
+    if giver then
+        for _, d in ipairs(giver:GetDescendants()) do
+            local extra = d:IsA("ValueBase") and (" = " .. tostring(d.Value)) or ""
+            local mark = ""
+            if d:IsA("ProximityPrompt") or d:IsA("ClickDetector") or d:IsA("TouchTransmitter")
+               or d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
+                mark = "  ⭐"
+                addLine(("  [%s] %s%s%s"):format(d.ClassName, d.Name, extra, mark), C.M)
+                if d:IsA("ProximityPrompt") then
+                    addLine(("     ActionText=%s ObjectText=%s"):format(tostring(d.ActionText), tostring(d.ObjectText)), C.G)
+                end
+            else
+                addLine(("  [%s] %s%s"):format(d.ClassName, d.Name, extra), C.S)
+            end
+        end
+    else
+        addLine("  ⚠️ ไม่เจอ Bandit Quest Giver (อยู่นอกโซน NPC หรือชื่อเปลี่ยน)", C.O)
+    end
+    addLine("", C.S)
+
+    -- 3) หา interaction object ในตัวผู้เล่น (ตอนกด E / คลิก NPC)
+    addLine("── 3) ตัวผู้เล่น: Tool + Backpack (อาวุธที่ใช้ตี) ──", C.Y)
+    local char = LP.Character
+    if char then
+        for _, c in ipairs(char:GetChildren()) do
+            if c:IsA("Tool") then
+                addLine(("  Character.Tool: %s"):format(c.Name), C.G)
+                for _, d in ipairs(c:GetDescendants()) do
+                    if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
+                        addLine(("     ⭐ %s: %s"):format(d.ClassName, d.Name), C.M)
+                    end
+                end
+            end
+        end
+    end
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, c in ipairs(bp:GetChildren()) do
+            if c:IsA("Tool") then addLine(("  Backpack.Tool: %s"):format(c.Name), C.G) end
+        end
+    end
+    addLine("", C.S)
+
+    -- 4) Quest remotes + event listener
+    addLine("── 4) Quest RemoteEvent/Function ใน Remotes (เช็คชื่อจริง) ──", C.Y)
+    local remotes = RS:FindFirstChild("Remotes")
+    if remotes then
+        for _, r in ipairs(remotes:GetDescendants()) do
+            if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
+                local ln = r.Name:lower()
+                if ln:find("quest") or ln:find("bestquest") then
+                    addLine(("  %s: %s"):format(r.ClassName, r:GetFullName()), C.G)
+                    if r:IsA("RemoteEvent") then
+                        r.OnClientEvent:Connect(function(...)
+                            if S.enabled ~= false then
+                                local rec = S.remoteSeen["[SERV] "..r:GetFullName()]
+                                if not rec then
+                                    S.remoteSeen["[SERV] "..r:GetFullName()] = {count=1, first=fmtArgs(...), last=fmtArgs(...)}
+                                else
+                                    rec.count += 1; rec.last = fmtArgs(...)
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end
+    addLine("", C.S)
+
+    -- 5) สรุปวิธีใช้
+    addLine("=== วิธีใช้ (ทำตามลำดับ) ===", C.Y)
+    addLine("1. ไปยืนใกล้ 'Bandit Quest Giver' จนเควสขึ้น (กดปุ่ม Accept ถ้ามี)", C.W)
+    addLine("2. ตี Bandit 1-2 ตัว (คลิกซ้าย / M1)", C.W)
+    addLine("3. ดู log สีแดงด้านล่าง = remote ที่เกมใช้ (FireServer/InvokeServer + args)", C.W)
+    addLine("4. กด Copy ส่งผลลัพธ์ทั้งหมดมา", C.W)
+    addLine("", C.S)
+    addLine("=== REMOTE LOG (ไม่กรอง — dedup ตาม path) ===", C.R)
+
+    end)
+    titleLbl.Text = "BF03 ActionHook — ready (ไปรับเควส+ตีมอน แล้ว Copy)"
+end)
+
+S.enabled = true
+warn("[BF03] ActionHook v1.0 loaded | hook: " .. tostring(okHooks))
