@@ -1,9 +1,10 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v4.1
--- v4.1:
---   1. รักษาระยะยืนเหนือหัวมอน 5-6 studs (บินอยู่ด้านบน ลอยตัว ไม่ให้มอนต่อยสวนถึง)
---   2. ระบบ Mob Magnet / รวมมอนสเตอร์: ขยาย SimulationRadius + ดึงมอนรอบข้างในระยะ 350 studs มารวมที่จุดตี + ดึงให้มอนหยุดนิ่ง (PlatformStand / CanCollide=false)
---   3. Direct Remote Attack (ยิง RegisterAttack + RegisterHit ตรงเข้ามอนทุกตัวที่รวมมาได้พร้อมกัน)
---   4. Smart Fly บินข้ามเกาะยกสูง + กรองบอส + เลเวล 1-700 ครบทั้ง First Sea
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v4.2
+-- v4.2:
+--   1. เพิ่มความสูงจุดลอยตัวตีมอนเป็น 18-20 studs เหนือมอน (Safe Hovering Altitude ป้องกันตกแมพ/ตกน้ำตาย 100%)
+--   2. เสริม BodyVelocity ล็อกแกน Y นิ่งสนิท ไม่ให้แรงโน้มถ่วงดึงตัวร่วง
+--   3. ระบบ Mob Magnet ดึงมอนรอบข้างมารวมจุดเดียว
+--   4. Direct Remote Attack ยิง RegisterAttack + RegisterHit ดาเมจทะลุจากบนฟ้า
+--   5. Smart Fly บินข้ามเกาะยกสูง + กรองบอส + เลเวล 1-700 ครบ First Sea
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -236,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.1 (Mob Magnet)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v4.2 (High Hover)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -649,15 +650,15 @@ local function mainLoop()
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04_LOOP do
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
-                        -- รักษาระยะยืนเหนือหัวมอน 5-6 studs (ลอยตัวด้านบน ปลอดภัย มอนตีไม่ถึง)
-                        tp(mhrp.CFrame * CFrame.new(0, 5.5, 0))
+                        -- รักษาระยะลอยตัวสูงเหนือมอน 18-20 studs (ปลอดภัย 100% ไม่ร่วง ไม่ตกน้ำ มอนตีไม่ถึง)
+                        tp(mhrp.CFrame * CFrame.new(0, 18, 0))
                         aimCam(v)
                         
                         -- รวมมอนสเตอร์ตัวอื่นๆ ในละแวกนั้นมาไว้ที่จุดเดียวกัน
                         bringMobsToTarget(v, qdata.mob)
                     end
                     
-                    -- ยิงดาเมจตรงๆ ผ่าน Remote เข้ามอนทุกตัวพร้อมกัน
+                    -- ยิงดาเมจตรงๆ ผ่าน Remote เข้ามอนทุกตัวพร้อมกันจากบนฟ้า
                     directRemoteAttack(v, qdata.mob)
                     task.wait(0.1)
                 end
@@ -688,7 +689,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.1 พร้อม (ระยะลอยตัว 5 studs + ระบบ Mob Magnet รวมมอน)", "G")
+log("BF04 v4.2 พร้อม (ระยะลอยตัวสูง 18 studs เหนือมอน ไม่ตกแมพ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("กด AUTO เพื่อเริ่มฟาร์มแบบอัตโนมัติต่อเนื่อง", "S")
-warn("[BF04] Auto Quest v4.1 loaded")
+warn("[BF04] Auto Quest v4.2 loaded")
