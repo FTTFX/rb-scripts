@@ -237,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v5.0 (Fruit Priority)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v5.1 (Per-Target AoE)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -599,11 +599,18 @@ local function closeDialogue()
 end
 
 -- 🧲 ระบบ Mob Magnet / รวมมอนสเตอร์รอบข้าง
--- ขยาย SimulationRadius เพื่อให้ Network Owner จับมอนได้
+-- ขยาย SimulationRadius เพื่อให้เราเป็นเจ้าของฟิสิกส์มอน (Network Ownership)
+-- ถ้าไม่ทำเซาะตรงนี้ CFrame ที่เราตั้งจะไม่ replicate ไปเซิร์ฟ = มอนไม่ขยับจริง
 local function boostSimulationRadius()
     pcall(function()
+        -- วิธีของสคริปต์ใหญ่ (MUXHUB): setsimulationradius ทรงพลังกว่า sethiddenproperty เฉยๆ
+        if setsimulationradius then
+            setsimulationradius(math.huge, math.huge)
+        end
         if sethiddenproperty then
+            sethiddenproperty(LP, "MaximumSimulationRadius", math.huge)
             sethiddenproperty(LP, "SimulationRadius", math.huge)
+            sethiddenproperty(Workspace, "PhysicsSteppedMethod", "Transient")
         end
     end)
 end
@@ -662,9 +669,10 @@ local function directRemoteAttack(mobTarget, mobName)
     local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
     if not mainPart then return end
     
-    -- รวบรวมมอนทุกตัว "ทั้งแมพ" ไม่จำกัดระยะ (เพราะ Bring All ดึงมารวมแล้ว)
-    -- ถ้ายังไม่ถูกดึง (เพิ่งเกิดไกลๆ) จะใช้รัศมีกว้าง 300 studs รองรับ
-    local othersEnemies = {}
+    -- 🎯 เทคนิคนอกกรอบ: ยิง RegisterHit "แยกทีละตัว" ใน tick เดียว
+    -- เพราะ Server อาจ limit 2 เป้าต่อ 1 remote call (สังเกตจากที่ตีโดนแค่ 2 ตัวเสมอ)
+    -- ทำให้ทุกตัวในกองโดนดาเมจเต็มๆ ไม่ถูกตัดที่ 2
+    local hitTargets = {}
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
         for _, enemy in ipairs(enemies:GetChildren()) do
@@ -673,28 +681,27 @@ local function directRemoteAttack(mobTarget, mobName)
                 local eHead = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
                 if eHum and eHead and eHum.Health > 0 then
                     local dist = (eHead.Position - mainPart.Position).Magnitude
-                    if dist <= 300 then
-                        table.insert(othersEnemies, { enemy, eHead })
+                    if dist <= 150 then
+                        table.insert(hitTargets, { enemy = enemy, part = eHead })
                     end
                 end
             end
         end
     end
     
-    -- 1. ยิง RegisterAttack
+    -- 1. ยิง RegisterAttack เปิดคอมโบ
     pcall(function()
         if rAttack then
             rAttack:FireServer(0.5, comboIndex)
         end
     end)
     
-    -- 2. ยิง RegisterHit ด้วยตารางคู่ {Enemy, Part} ที่ Server ต้องการแท้จริง
-    -- แถม: ยิงซ้ำรอบละ 2 hit เพื่อดาเมจเข้าทุกตัวแน่นอน (บางตัวกลืน hit แรก)
-    pcall(function()
-        if rHit and #othersEnemies > 0 then
-            rHit:FireServer(mainPart, othersEnemies)
-        end
-    end)
+    -- 2. ยิง RegisterHit "ทีละตัว" ติดๆ กันในเฟรมเดียว (ไม่ใช่ส่งทีเดียวหลายเป้า)
+    for _, tgt in ipairs(hitTargets) do
+        pcall(function()
+            rHit:FireServer(tgt.part, { { tgt.enemy, tgt.part } })
+        end)
+    end
     
     comboIndex = (comboIndex % 4) + 1
 end
@@ -858,7 +865,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v5.0 พร้อม (FRUIT จัดลำดับปลอดภัย - ไม่ตีกันเอง)", "G")
+log("BF04 v5.1 พร้อม (Per-Target Hit + Physics Ownership)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v5.0 loaded")
+warn("[BF04] Auto Quest v5.1 loaded")
