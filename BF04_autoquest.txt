@@ -1,7 +1,7 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v3.1
--- v3.1: ระบบบินข้ามเกาะ / ระยะไกลแบบ Smooth Fly (Tween สูง + ดันไป ไม่เร็วเกินไป ไม่โดน Anti-Teleport ดีดกลับ)
---   - ถ้าระยะ < 50 studs (เช่น ตีมอนใกล้ๆ): วาร์ปประชิดตรงๆ ได้เลย
---   - ถ้าระยะ >= 50 studs (ข้ามเกาะ / ไปหา NPC): บินยกตัวสูง (Y + 120) แล้วเลื่อนไปด้วยความเร็วที่ปลอดภัย (Tween)
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v3.2
+-- v3.2: 
+--   - กรองบอสแยกจากมอนธรรมดา (เช่น เควส "Gorilla" จะไม่เผลอไปล็อก "The Gorilla King [Boss]")
+--   - Smart Fly บินข้ามเกาะยกสูง + ร่อนลง
 --   - เลเวล 1-700 Auto Quest ครบทั้ง First Sea (Old World)
 
 local Players = game:GetService("Players")
@@ -234,7 +234,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v3.1 (Smooth Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v3.2 (Boss Filter)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -587,8 +587,17 @@ local function mainLoop()
                 local target = nil
                 if enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
-                        -- หาชื่อมอนที่ตรงกับเควส (รองรับทั้งชื่อเต็มและชื่อบางส่วน เช่น Bandit, Monkey, Gorilla)
-                        if string.find(v.Name, qdata.mob) and v:FindFirstChild("Humanoid")
+                        -- หาชื่อมอนที่ตรงกับเควส:
+                        -- ต้องไม่เป็น Boss (เช่น The Gorilla King ไม่ใช่ Gorilla ธรรมดา)
+                        local isMatch = string.find(v.Name, qdata.mob)
+                        local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
+                        
+                        -- ถ้าเควสไม่ใช่บอส แต่ตัวมอนเป็นบอส ให้ข้าม
+                        if not string.find(qdata.mob, "King") and not string.find(qdata.mob, "Boss") and isBoss then
+                            isMatch = false
+                        end
+
+                        if isMatch and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             target = v
                             break
@@ -647,7 +656,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v3.1 พร้อม (ระบบบินสูง + บินลื่นข้ามเกาะ)", "G")
+log("BF04 v3.2 พร้อม (ระบบกรองบอส + บินข้ามเกาะ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("กด AUTO เพื่อเริ่มฟาร์มแบบอัตโนมัติต่อเนื่อง", "S")
-warn("[BF04] Auto Quest v3.1 loaded")
+warn("[BF04] Auto Quest v3.2 loaded")
