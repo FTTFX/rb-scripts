@@ -1,11 +1,12 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.6
--- v1.6: แก้ตีไม่เข้า = EquipTool(Combat) ก่อน + กด M1 ค้าง + หันกล้องไปหามอน
--- รับเควส → เทเลไป NPC → เทเลติดมอน → ถืออาวุธ + M1 ฆ่าทีละตัว → Loop
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v1.7
+-- v1.7: ใส่ FastAttack ผ่าน CombatFramework (หัวใจของสคริปต์ Blox Fruits — คลิก M1 เปล่าไม่พอ)
+-- รับเควส → เทเลไป NPC → เทเลติดมอน → FastAttack + M1 ฆ่าทีละตัว → Loop
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local VU = game:GetService("VirtualUser")
 local Workspace = workspace
 
@@ -13,7 +14,7 @@ local CFG = {
     QUEST_NAME   = "BanditQuest1",
     QUEST_NUM    = 1,
     MOB_NAME     = "Bandit",
-    WEAPON_NAME  = "Combat",   -- อาวุธเริ่มต้น
+    WEAPON_NAME  = "Combat",
     QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),
     AUTO_ON      = false,
 }
@@ -36,7 +37,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.6"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v1.7"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -127,7 +128,6 @@ local function getChar()
     return nil
 end
 
--- เทเลพอร์ตตรง ๆ + BodyVelocity กันกระเด็น
 local function tp(cframe)
     local char, hrp = getChar()
     if not char then return false end
@@ -143,7 +143,6 @@ local function tp(cframe)
     return true
 end
 
--- ถืออาวุธ (สำคัญ — Blox Fruits ต้องมีอาวุธถึงตีได้)
 local function equipWeapon()
     local char, hrp, hum = getChar()
     if not char then return false end
@@ -159,7 +158,6 @@ local function equipWeapon()
     return false
 end
 
--- หันกล้องไปหามอน (ให้มอนอยู่กลางจอ)
 local function aimCam(mob)
     local char, hrp = getChar()
     local mhrp = mob and mob:FindFirstChild("HumanoidRootPart")
@@ -170,18 +168,51 @@ local function aimCam(mob)
     end
 end
 
--- กด M1 ค้าง (ไม่ปล่อย — Blox Fruits M1 auto ต่อเนื่อง)
+-- ⭐ FastAttack — หัวใจสำคัญ (จาก MUXHUB): แก้ state ของ CombatFramework
+local CombatFramework = nil
+local function loadCombatFramework()
+    if CombatFramework then return CombatFramework end
+    local ok, cf = pcall(function()
+        return require(LP.PlayerScripts:WaitForChild("CombatFramework"))
+    end)
+    if ok and cf then
+        CombatFramework = cf
+    end
+    return CombatFramework
+end
+
 local m1Held = false
-local function attackOn()
-    if m1Held then return end
-    pcall(function() VU:CaptureController() end)
-    pcall(function() VU:Button1Down(Vector2.new(1280, 672)) end)
-    m1Held = true
+local function fastAttack()
+    -- ตั้งค่า CombatFramework ให้โจมตีได้ทันที
+    pcall(function()
+        local cf = loadCombatFramework()
+        if cf and cf.activeController then
+            cf.activeController.attacking = false
+            cf.activeController.blocking = false
+            cf.activeController.timeToNextAttack = tick() - 1
+            cf.activeController.timeToNextBlock = 0
+            cf.activeController.increment = 3
+            cf.activeController.hitboxMagnitude = 120
+        end
+        local char = LP.Character
+        if char then
+            if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Sit = false end
+        end
+    end)
+    -- คลิก M1
+    if not m1Held then
+        pcall(function() VU:CaptureController() end)
+        pcall(function() VU:Button1Down(Vector2.new(1280, 672)) end)
+        m1Held = true
+    end
 end
 local function attackOff()
-    if not m1Held then return end
-    pcall(function() VU:Button1Up() end)
-    m1Held = false
+    if m1Held then
+        pcall(function() VU:Button1Up() end)
+        m1Held = false
+    end
 end
 
 local function readProgress()
@@ -200,6 +231,8 @@ local function mainLoop()
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
+    local cf = loadCombatFramework()
+    log(cf and "CombatFramework เจอ ✓" or "⚠️ CombatFramework ไม่เจอ (FastAttack จะไม่เต็มประสิทธิภาพ)", cf and "G" or "R")
 
     while CFG.AUTO_ON and _G.BF04_LOOP and not getChar() do
         setState("รอตัวละคร spawn...", "S")
@@ -240,7 +273,6 @@ local function mainLoop()
                     task.wait(1)
                 end
             else
-                -- มีเควส → หามอน + ล็อกตัวเดียวจนตาย
                 local enemies = Workspace:FindFirstChild("Enemies")
                 local target = nil
                 if enemies then
@@ -260,23 +292,19 @@ local function mainLoop()
                 end
 
                 local v = target
-                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") — ถืออาวุธ + ตี", "Y")
+                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") — FastAttack", "Y")
 
-                -- ถืออาวุธก่อน
                 local hasWeapon = equipWeapon()
                 if not hasWeapon then setState("⚠️ ไม่เจออาวุธ '" .. CFG.WEAPON_NAME .. "'", "R") end
 
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and CFG.AUTO_ON and _G.BF04_LOOP do
-                    -- ยืนหลังมอน 5 studs
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
                         tp(mhrp.CFrame * CFrame.new(0, 0, 5))
                         aimCam(v)
                     end
-                    -- กด M1 ค้าง
-                    attackOn()
-                    -- เช็คทุก 0.3 วิ (ไม่ spam log)
-                    task.wait(0.3)
+                    fastAttack()   -- รีเซ็ต combat state + คลิก M1 ทุก loop
+                    task.wait(0.2)
                 end
                 attackOff()
                 if v.Parent and v.Humanoid.Health <= 0 then
@@ -305,6 +333,6 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v1.6 พร้อม (EquipTool + M1 ค้าง + หันกล้อง)", "G")
+log("BF04 v1.7 พร้อม (FastAttack ผ่าน CombatFramework)", "G")
 log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
-warn("[BF04] Auto Quest v1.6 loaded")
+warn("[BF04] Auto Quest v1.7 loaded")
