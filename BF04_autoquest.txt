@@ -1,14 +1,13 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.9
--- v1.9: แก้จุดคลิก M1 ให้คำนวณจาก ViewportSize จริง (จุดตายตัว 1280,672 พลาดจอกว้าง)
---       + ยิงหลายวิธีพร้อมกัน (firesignal / getconnections / VirtualInputManager / mouse1press / VirtualUser)
--- รับเควส → เทเลไป NPC → เทเลติดมอน → FastAttack + M1 ฆ่าทีละตัว → Loop
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v2.0
+-- v2.0: 
+--   1. เลิกคลิกหน้าจอเด็ดขาด → ใช้ Tool:Activate() สั่งต่อยโดยตรง (ไม่โดนปุ่ม UI dialog บัง)
+--   2. แก้รับเควสเบิ้ล → ยิงรับเควสครั้งเดียว + รอ UI เควสขึ้น + เทเลไปหามอนทันที + ปิด Dialogue NPC
+--   3. FastAttack ปรับปรุงให้ไม่ตีหน้าจอ
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 local RS = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local VU = game:GetService("VirtualUser")
 local Workspace = workspace
 
 local CFG = {
@@ -17,6 +16,7 @@ local CFG = {
     MOB_NAME     = "Bandit",
     WEAPON_NAME  = "Combat",
     QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),
+    MOB_SPAWN_CF = CFrame.new(1196.17, 11.87, 1616.96),
     AUTO_ON      = false,
 }
 
@@ -38,7 +38,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.9"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v2.0"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -50,7 +50,6 @@ Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
 closeBtn.MouseButton1Click:Connect(function()
     CFG.AUTO_ON = false
     _G.BF04_LOOP = nil
-    pcall(function() VU:Button1Up() end)
     pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
     sg:Destroy()
 end)
@@ -165,138 +164,51 @@ local function aimCam(mob)
     if not char or not mhrp then return end
     local cam = Workspace.CurrentCamera
     if cam then
-        cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 3, 0), mhrp.Position)
+        cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 2, 0), mhrp.Position)
     end
 end
 
--- ⭐ FastAttack — หัวใจสำคัญ (จาก MUXHUB): แก้ state ของ CombatFramework
--- โหลดแบบ NON-BLOCKING (WaitForChild ที่บล็อกทำให้ v1.7 ค้างก่อนวิ่งตี)
-local CombatFramework = nil
-local function loadCombatFramework()
-    if CombatFramework then return CombatFramework end
+-- ปิดหน้าต่าง Dialogue คุย NPC ถ้ามีเปิดอยู่
+local function closeDialogue()
     pcall(function()
-        local ps = LP:FindFirstChild("PlayerScripts")
-        local m = ps and ps:FindFirstChild("CombatFramework")
-        if m then
-            local ok, cf = pcall(function() return require(m) end)
-            if ok and cf then CombatFramework = cf end
+        local main = pg:FindFirstChild("Main")
+        if main then
+            local d = main:FindFirstChild("Dialogue") or main:FindFirstChild("Conversations")
+            if d and d.Visible then d.Visible = false end
+            local npcTalk = main:FindFirstChild("Talk")
+            if npcTalk and npcTalk.Visible then npcTalk.Visible = false end
         end
     end)
-    return CombatFramework
 end
 
--- จุดคลิกกึ่งกลางจอ คำนวณจาก ViewportSize จริง (ไม่ใช้พิกัดตายตัว 1280,672
--- ซึ่งพลาดจอกว้าง/ความละเอียดต่างกัน — นี่คือสาเหตุหลักที่คลิกไม่โดน)
-local function getClickPos()
-    local ok, pos = pcall(function()
-        local vp = Workspace.CurrentCamera.ViewportSize
-        return Vector2.new(vp.X * 0.5, vp.Y * 0.55)
-    end)
-    if ok and pos then return pos end
-    return Vector2.new(1280, 672)
-end
-
-local Mouse = LP:GetMouse()
-local execInfo = nil -- diagnostic: which exploit funcs are available
-local function detectExecFuncs()
-    if execInfo then return execInfo end
-    local names = {}
-    if typeof(firesignal) == "function" then table.insert(names, "firesignal") end
-    if typeof(getconnections) == "function" then table.insert(names, "getconnections") end
-    if typeof(mouse1press) == "function" then table.insert(names, "mouse1press") end
-    if typeof(fireclickdetector) == "function" then table.insert(names, "fireclickdetector") end
-    execInfo = #names > 0 and table.concat(names, ", ") or "ไม่เจอ (executor พื้นฐาน)"
-    return execInfo
-end
-
-local function fireMouseSignal(down)
-    local sig = down and Mouse.Button1Down or Mouse.Button1Up
-    local didAny = false
-    if typeof(firesignal) == "function" then
-        if pcall(firesignal, sig) then didAny = true end
-    end
-    if typeof(getconnections) == "function" then
-        pcall(function()
-            for _, c in ipairs(getconnections(sig)) do
-                pcall(function() c:Fire() end)
-                didAny = true
-            end
-        end)
-    end
-    return didAny
-end
-
--- กด M1 ลง — ยิงหลายวิธีพร้อมกันเพื่อให้ครอบคลุม executor ต่าง ๆ
-local function attackDown()
-    local pos = getClickPos()
-    fireMouseSignal(true)
-    if typeof(mouse1press) == "function" then pcall(mouse1press) end
+-- ⚔️ ระบบโจมตีโดยตรงผ่าน Tool:Activate() (ไม่คลิกหน้าจอเด็ดขาด)
+local function directAttack()
+    local char = LP.Character
+    if not char then return end
+    
+    -- ล้างสถานะ stun
     pcall(function()
-        game:GetService("VirtualInputManager"):SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+        if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = false end
     end)
-    pcall(function()
-        VU:CaptureController()
-        VU:Button1Down(pos)
-    end)
-end
-local function attackUp()
-    local pos = getClickPos()
-    fireMouseSignal(false)
-    if typeof(mouse1release) == "function" then pcall(mouse1release) end
-    pcall(function()
-        game:GetService("VirtualInputManager"):SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
-    end)
-    pcall(function() VU:Button1Up() end)
-end
 
-local function fastAttack()
-    -- ตั้งค่า CombatFramework ให้โจมตีได้ทันที
+    -- สั่ง Tool ที่ถืออยู่ให้ Activate โดยตรง (ไม่ต้องแตะเมาส์/จอ)
     pcall(function()
-        local cf = loadCombatFramework()
-        if cf and cf.activeController then
-            cf.activeController.attacking = false
-            cf.activeController.blocking = false
-            cf.activeController.timeToNextAttack = tick() - 1
-            cf.activeController.timeToNextBlock = 0
-            cf.activeController.increment = 3
-            cf.activeController.hitboxMagnitude = 120
-        end
-        local char = LP.Character
-        if char then
-            if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then hum.Sit = false end
+        local tool = char:FindFirstChildOfClass("Tool")
+        if tool then
+            tool:Activate()
         end
     end)
-    attackDown()
-    task.delay(0.08, attackUp)
-end
-local function attackOff()
-    pcall(function() VU:Button1Up() end)
-    fireMouseSignal(false)
-end
-
-local function readProgress()
-    local main = pg:FindFirstChild("Main")
-    local q = main and main:FindFirstChild("Quest")
-    if not q then return nil, nil end
-    local ok, txt = pcall(function() return q.Container.QuestTitle.Title.Text end)
-    if not ok or not txt then return nil, nil end
-    local cur, need = txt:match("%((%d+)/(%d+)%)")
-    return tonumber(cur), tonumber(need)
 end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO ===", "Y")
+    log("=== START AUTO v2.0 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
-    local cf = loadCombatFramework()
-    log(cf and "CombatFramework เจอ ✓" or "⚠️ CombatFramework ยังไม่เจอ (รอเกมโหลด module แล้วจะรีเทรย์อัตโนมัติ)", cf and "G" or "R")
-    log("Executor รองรับ: " .. detectExecFuncs(), "B")
-    local cp = getClickPos()
-    log("จุดคลิก M1: (" .. math.floor(cp.X) .. ", " .. math.floor(cp.Y) .. ")", "B")
+    log("โหมดโจมตี: Tool:Activate() โดยตรง (ไม่คลิกจอ)", "G")
 
     while CFG.AUTO_ON and _G.BF04_LOOP and not getChar() do
         setState("รอตัวละคร spawn...", "S")
@@ -315,6 +227,7 @@ local function mainLoop()
             local titleTxt = ""
             pcall(function() titleTxt = UIQ.Container.QuestTitle.Title.Text end)
 
+            -- ถ้าเควสไม่ใช่ Bandit ให้ยกเลิก
             if UIQ.Visible and titleTxt ~= "" and not string.find(titleTxt, CFG.MOB_NAME) then
                 setState("เควสไม่ใช่ Bandit → AbandonQuest", "Y")
                 CommF:InvokeServer("AbandonQuest")
@@ -322,21 +235,43 @@ local function mainLoop()
                 return
             end
 
+            -- 1. ถ้ายังไม่มีเควส → เทเลไปรับเควส
             if not UIQ.Visible then
-                attackOff()
                 local dist = (CFG.QUEST_CFRAME.Position - hrp.Position).Magnitude
                 if dist > 15 then
                     setState("เทเลไป NPC (ระยะ " .. math.floor(dist) .. ")", "B")
                     tp(CFG.QUEST_CFRAME)
                 else
                     setState("รับเควส: StartQuest(" .. CFG.QUEST_NAME .. "," .. CFG.QUEST_NUM .. ")", "Y")
-                    local ok = pcall(function()
+                    
+                    -- ยิงรับเควส
+                    pcall(function()
                         CommF:InvokeServer("StartQuest", CFG.QUEST_NAME, CFG.QUEST_NUM)
                     end)
-                    if ok then setState("รับเควสแล้ว (รอ UI ขึ้น)", "G") end
-                    task.wait(1)
+                    
+                    -- ปิดหน้าต่างคุยทันที
+                    closeDialogue()
+
+                    -- รอให้ UI เควสขึ้น (รอสูงสุด 2 วิ ไม่ยิงรับเควสเบิ้ลเด็ดขาด)
+                    local waited = 0
+                    while not UIQ.Visible and waited < 20 and CFG.AUTO_ON do
+                        task.wait(0.1)
+                        waited += 1
+                        closeDialogue()
+                    end
+
+                    if UIQ.Visible then
+                        setState("รับเควสสำเร็จ ✓ → บินไปจุดมอนทันที", "G")
+                        -- เทเลออกจาก NPC ทันทีเพื่อไม่ให้ติด Dialogue คุย
+                        tp(CFG.MOB_SPAWN_CF)
+                        task.wait(0.3)
+                    end
                 end
+
+            -- 2. ถ้ามีเควสแล้ว → ล็อกมอนและตีด้วย Tool:Activate()
             else
+                closeDialogue()
+
                 local enemies = Workspace:FindFirstChild("Enemies")
                 local target = nil
                 if enemies then
@@ -350,34 +285,39 @@ local function mainLoop()
                 end
 
                 if not target then
-                    attackOff()
-                    setState("หามอนไม่เจอ (รอ spawn)...", "R")
+                    setState("หามอนไม่เจอ (บินรอที่จุดเกิดมอน)...", "Y")
+                    tp(CFG.MOB_SPAWN_CF)
+                    task.wait(0.5)
                     return
                 end
 
                 local v = target
-                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") — FastAttack", "Y")
+                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") — ตีด้วย Tool:Activate", "Y")
 
-                local hasWeapon = equipWeapon()
-                if not hasWeapon then setState("⚠️ ไม่เจออาวุธ '" .. CFG.WEAPON_NAME .. "'", "R") end
+                equipWeapon()
 
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and CFG.AUTO_ON and _G.BF04_LOOP do
+                    closeDialogue()
+                    equipWeapon()
+                    
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
-                        tp(mhrp.CFrame * CFrame.new(0, 0, 5))
+                        -- ยืนประชิดมอนระยะ 3 studs
+                        tp(mhrp.CFrame * CFrame.new(0, 0, 3))
                         aimCam(v)
                     end
-                    fastAttack()   -- รีเซ็ต combat state + คลิก M1 ทุก loop
-                    task.wait(0.2)
+                    
+                    -- โจมตีโดยตรงผ่าน Tool
+                    directAttack()
+                    task.wait(0.15)
                 end
-                attackOff()
+
                 if v.Parent and v.Humanoid.Health <= 0 then
                     setState("มอนตาย ✓ (HP 0)", "G")
                 end
             end
         end)
     end
-    attackOff()
     pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
     log("=== STOP AUTO ===", "R")
 end
@@ -392,11 +332,10 @@ autoBtn.MouseButton1Click:Connect(function()
         task.spawn(mainLoop)
     else
         _G.BF04_LOOP = nil
-        pcall(function() VU:Button1Up() end)
         log("หยุดโดยผู้ใช้", "R")
     end
 end)
 
-log("BF04 v1.9 พร้อม (จุดคลิกไดนามิก + ยิงหลายวิธี)", "G")
+log("BF04 v2.0 พร้อม (Tool:Activate ตรง + แก้รับเควสเบิ้ล)", "G")
 log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
-warn("[BF04] Auto Quest v1.9 loaded")
+warn("[BF04] Auto Quest v2.0 loaded")
