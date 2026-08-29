@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.0 (Relic Touch Fix)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.1 (Manual Control Fallback)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -529,6 +529,20 @@ local function applyBodyVelocity(hrp)
     end
 end
 
+-- คืนการควบคุมตัวละครให้ผู้เล่น (เลิกล็อกตำแหน่ง/ความเร็ว)
+local function releaseControl()
+    pcall(function()
+        if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end
+        local char = LP.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            hum.Sit = false
+            if hum.WalkSpeed == 0 then hum.WalkSpeed = 16 end
+        end
+    end)
+end
+
 -- ระบบ Smart Travel (บินสูงข้ามเกาะ)
 -- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
 --    บินด้วยความเร็ว 150 studs/sec (เกมรับได้ ไม่ trigger anti-teleport)
@@ -790,7 +804,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.0 ===", "Y")
+    log("=== START AUTO v7.1 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1177,9 +1191,26 @@ local function saberLoop()
                     setState("ขั้น 4: ถือ Relic บินกลับ Jungle (ห่าง " .. math.floor(d) .. ")", "B")
                     tp(SABER_CF.relicPlace)
                 else
+                    RELIC_TRIES = (RELIC_TRIES or 0) + 1
+
+                    -- ลองยิง touch อัตโนมัติ 5 รอบ ถ้าไม่ผ่านให้คืนการควบคุมแก่ผู้เล่น
+                    -- (ยิง touch ซ้ำไปเรื่อยๆ แต่ล็อกตำแหน่งไว้ = ผู้เล่นขยับเองไม่ได้ด้วย)
+                    if RELIC_TRIES > 5 then
+                        if not RELIC_MANUAL then
+                            RELIC_MANUAL = true
+                            releaseControl()
+                            log("⚠️ วาง Relic อัตโนมัติไม่ผ่าน — คืนการควบคุมให้คุณแล้ว", "R")
+                            log("   เดินด้วย WASD เข้าไปแตะแท่นเอง (สคริปต์จะไม่ดึงตัวคุณ)", "Y")
+                            log("   วางสำเร็จแล้วมันจะไปสู้ Saber Expert ต่อเอง", "Y")
+                        end
+                        setState("ขั้น 4: รอคุณเดินไปแตะแท่นเอง (โหมดคุมมือ)", "Y")
+                        task.wait(1)
+                        return
+                    end
+
                     -- วาร์ปเข้ามาเลยทำให้ไม่เกิดเหตุการณ์ "แตะ" แท่นวาง
                     -- ต้องยิง firetouchinterest ระหว่าง Handle ของ Relic กับชิ้นส่วนแท่น
-                    setState("ขั้น 4: วาง Relic (ยิง touch ใส่แท่น)", "Y")
+                    setState("ขั้น 4: วาง Relic (ยิง touch ใส่แท่น " .. RELIC_TRIES .. "/5)", "Y")
                     local relic = char:FindFirstChild("Relic")
                     local handle = relic and relic:FindFirstChild("Handle")
                     local final = jungle and jungle:FindFirstChild("Final")
@@ -1192,11 +1223,9 @@ local function saberLoop()
                                 end)
                             end
                         end
-                        log("  ยิง touch ใส่ Jungle.Final แล้ว", "S")
                     end
                     if relic then pcall(function() relic:Activate() end) end
                     pcall(function() CommF:InvokeServer("ProQuestProgress", "PlaceRelic") end)
-                    -- ขยับตัวเล็กน้อยเพื่อกระตุ้นการตรวจการแตะฝั่งเซิร์ฟเวอร์
                     for i = 1, 4 do
                         local _, h = getChar()
                         if h then
@@ -1237,12 +1266,15 @@ saberBtn.MouseButton1Click:Connect(function()
             log("ปิด AUTO ฟาร์มชั่วคราว (ทำเควส Saber ก่อน)", "S")
         end
         _G.BF04_SABER = true
+        RELIC_TRIES = 0
+        RELIC_MANUAL = false
         saberBtn.Text = "AUTO SABER: ON (กำลังทำเควส...)"
         saberBtn.BackgroundColor3 = Color3.fromRGB(200,140,20)
         task.spawn(saberLoop)
     else
         _G.BF04_SABER = nil
         stopTween()
+        releaseControl()
         saberBtn.Text = "AUTO SABER: OFF (ดาบดีสุด First Sea | ต้อง Lv.200+)"
         saberBtn.BackgroundColor3 = Color3.fromRGB(20,90,90)
         log("หยุด AUTO SABER", "R")
@@ -1264,7 +1296,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.0 พร้อม (ยิง touch วาง Relic + ขยับตัวกระตุ้นเซิร์ฟ)", "G")
+log("BF04 v7.1 พร้อม (วาง Relic ไม่ผ่าน = คืนการควบคุมให้คุณเดินเอง)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.0 loaded")
+warn("[BF04] Auto Quest v7.1 loaded")
