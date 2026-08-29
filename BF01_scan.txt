@@ -123,28 +123,12 @@ padB.PaddingLeft = UDim.new(0, 6)
 padB.PaddingTop  = UDim.new(0, 4)
 padB.Parent      = copyBox
 
-tabResult.MouseButton1Click:Connect(function()
-    scroll.Visible  = true
-    copyBox.Visible = false
-end)
+tabResult.MouseButton1Click:Connect(function() scroll.Visible=true copyBox.Visible=false end)
 tabCopy.MouseButton1Click:Connect(function()
-    local clip = setclipboard or toclipboard or write_clipboard
-    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
-    if ok then
-        tabCopy.Text = "Copied!"
-        task.delay(2, function()
-            if tabCopy.Parent then
-                tabCopy.Text = "Copy"
-            end
-        end)
-    else
-        scroll.Visible = false
-        copyBox.Visible = true
-        copyBox:CaptureFocus()
-        copyBox.SelectionStart = 1
-        copyBox.CursorPosition = #copyBox.Text + 1
-        tabCopy.Text = "ใช้ Ctrl+C"
-    end
+    scroll.Visible=false copyBox.Visible=true
+    copyBox:CaptureFocus()
+    copyBox.SelectionStart = 1
+    copyBox.CursorPosition = #copyBox.Text + 1
 end)
 
 -- ── 3. Helper ─────────────────────────────────────────────────────
