@@ -1,9 +1,10 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v4.4
--- v4.4:
---   - ฟอร์แมต AoE แท้จริง: RegisterHit:FireServer(mainPart, { {enemy1, head1}, {enemy2, head2}, ... })
---   - Mob Magnet ดึงมอนรอบข้างมารวมกอง
---   - รักษาระยะลอยตัวเหนือมอน 18 studs ปลอดภัย ไม่ตกน้ำ
---   - Smart Fly บินข้ามเกาะยกสูง + กรองบอส + เควส 1-700 ครบทั้ง First Sea
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v4.7
+-- v4.7:
+--   - เพิ่มปุ่ม BUY: Buso Haki (Enhancement 25k Beli) ซื้อทันทีไม่ต้องเดินหา NPC
+--   - FRUIT Finder: สแกนหาผลปีศาจที่ตกทั่วแมพ บินไปเก็บอัตโนมัติ
+--   - ฟอร์แมต AoE แท้จริง: RegisterHit:FireServer(mainPart, { {enemy1, head1}, ... })
+--   - Mob Magnet ดึงมอนรวมกอง + ลอยสูง 18 studs + หันตัวเล็งมอน
+--   - Smart Fly บินข้ามเกาะ + กรองบอส + เควส 1-700 ครบทั้ง First Sea
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -236,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.6 (Fruit Finder)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v4.7 (Fruit + Haki Shop)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -275,11 +276,18 @@ copyBtn.Parent = frame
 Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0,5)
 
 local fruitBtn = Instance.new("TextButton")
-fruitBtn.Size = UDim2.new(0, 350, 0, 26); fruitBtn.Position = UDim2.new(0, 10, 0, 68)
+fruitBtn.Size = UDim2.new(0, 170, 0, 26); fruitBtn.Position = UDim2.new(0, 10, 0, 68)
 fruitBtn.BackgroundColor3 = Color3.fromRGB(60,30,90); fruitBtn.TextColor3 = Color3.new(1,1,1)
-fruitBtn.Text = "FRUIT: OFF (บินเก็บผลปีศาจอัตโนมัติ)"; fruitBtn.Font = Enum.Font.GothamBold; fruitBtn.TextSize = 12; fruitBtn.BorderSizePixel = 0
+fruitBtn.Text = "FRUIT: OFF"; fruitBtn.Font = Enum.Font.GothamBold; fruitBtn.TextSize = 12; fruitBtn.BorderSizePixel = 0
 fruitBtn.Parent = frame
 Instance.new("UICorner", fruitBtn).CornerRadius = UDim.new(0,5)
+
+local hakiBtn = Instance.new("TextButton")
+hakiBtn.Size = UDim2.new(0, 170, 0, 26); hakiBtn.Position = UDim2.new(0, 190, 0, 68)
+hakiBtn.BackgroundColor3 = Color3.fromRGB(120,80,20); hakiBtn.TextColor3 = Color3.new(1,1,1)
+hakiBtn.Text = "BUY: Buso Haki (25k)"; hakiBtn.Font = Enum.Font.GothamBold; hakiBtn.TextSize = 12; hakiBtn.BorderSizePixel = 0
+hakiBtn.Parent = frame
+Instance.new("UICorner", hakiBtn).CornerRadius = UDim.new(0,5)
 
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1,-16,1,-110); scroll.Position = UDim2.new(0,8,0,98)
@@ -346,7 +354,7 @@ end
 
 fruitBtn.MouseButton1Click:Connect(function()
     FRUIT_MODE = not FRUIT_MODE
-    fruitBtn.Text = "FRUIT: " .. (FRUIT_MODE and "ON (กำลังหาผล...)" or "OFF (บินเก็บผลปีศาจอัตโนมัติ)")
+    fruitBtn.Text = "FRUIT: " .. (FRUIT_MODE and "ON..." or "OFF")
     fruitBtn.BackgroundColor3 = FRUIT_MODE and Color3.fromRGB(140,60,200) or Color3.fromRGB(60,30,90)
     if FRUIT_MODE then
         task.spawn(function()
@@ -372,6 +380,41 @@ fruitBtn.MouseButton1Click:Connect(function()
             end
             setState("FRUIT OFF", "S")
         end)
+    end
+end)
+
+-- ── ปุ่มซื้อ Buso Haki (Enhancement 25,000 Beli) ──────────────────
+hakiBtn.MouseButton1Click:Connect(function()
+    local CommF = getCommF()
+    if not CommF then
+        log("❌ หา CommF_ ไม่เจอ (รอเกมโหลดก่อน)", "R")
+        return
+    end
+    
+    hakiBtn.Text = "กำลังซื้อ..."
+    local ok, result = pcall(function()
+        return CommF:InvokeServer("BuyHaki", "Buso")
+    end)
+    
+    if ok then
+        -- ตรวจสอบว่าซื้อสำเร็จหรือไม่ (เช็คว่ามี Enhancement ในตัวหรือ Backpack)
+        task.wait(0.5)
+        local char = LP.Character
+        local bp = LP:FindFirstChild("Backpack")
+        local hasBuso = (char and (char:FindFirstChild("Enhancement") or char:FindFirstChild("BlackLeg"))) 
+                        or (bp and (bp:FindFirstChild("Enhancement") or bp:FindFirstChild("Buso")))
+        
+        if hasBuso then
+            log("✅ ซื้อ Buso Haki สำเร็จ! (Enhancement)", "G")
+            hakiBtn.Text = "BUSO: มีแล้ว ✓"
+            hakiBtn.BackgroundColor3 = Color3.fromRGB(30,100,120)
+        else
+            log("สั่งซื้อ Buso Haki แล้ว (ผลตอบ: " .. tostring(result) .. ") — ถ้าเงินไม่พอจะไม่ได้", "Y")
+            hakiBtn.Text = "BUY: Buso Haki (25k)"
+        end
+    else
+        log("❌ ซื้อ Buso Haki ไม่สำเร็จ: " .. tostring(result), "R")
+        hakiBtn.Text = "BUY: Buso Haki (25k)"
     end
 end)
 
@@ -769,7 +812,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.6 พร้อม (AoE + ปุ่ม FRUIT เก็บผลอัตโนมัติ)", "G")
+log("BF04 v4.7 พร้อม (AoE + Fruit Finder + ปุ่มซื้อ Buso Haki)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
-log("กด AUTO เพื่อเริ่มฟาร์ม | กด FRUIT เพื่อบินหาผลปีศาจ", "S")
-warn("[BF04] Auto Quest v4.6 loaded")
+log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
+warn("[BF04] Auto Quest v4.7 loaded")
