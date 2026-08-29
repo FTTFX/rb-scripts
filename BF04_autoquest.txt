@@ -237,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v5.2 (Game-Client Format)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v5.3 (Classic AoE x2)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -669,48 +669,38 @@ local function directRemoteAttack(mobTarget, mobName)
     local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
     if not mainPart then return end
     
-    -- 🎯 เลียนแบบ Client จริงของเกม (จาก Log Spy):
-    --   RegisterAttack:FireServer(0.5, combo 1→4)
-    --   RegisterHit:FireServer(bodyPart, {})   ← ตารางที่สองว่างเสมอ!
-    -- เซิร์ฟคือตัวคำนวณ AoE เองจากตำแหน่ง part (hitbox รอบจุด hit)
-    -- เราแค่ยิง RegisterHit เข้า body part ของมอนแต่ละตัวในกอง ติดๆ กันในเฟรมเดียว
-    local hitTargets = {}
+    -- ✅ ฟอร์แมตที่พิสูจน์แล้วว่าเวิร์ค: ส่งทีเดียวหลายเป้า โดน 2 ตัวต่อจอ
+    -- RegisterHit:FireServer(mainPart, { {enemy1, part1}, {enemy2, part2}, ... })
+    local othersEnemies = {}
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
         for _, enemy in ipairs(enemies:GetChildren()) do
             if string.find(enemy.Name, mobName) then
                 local eHum = enemy:FindFirstChild("Humanoid")
-                if eHum and eHum.Health > 0 then
-                    -- สุ่ม body part เหมือน client จริง (Head/แขน/ขา สลับกัน)
-                    local ePart = enemy:FindFirstChild("Head")
-                        or enemy:FindFirstChild("LeftUpperArm")
-                        or enemy:FindFirstChild("RightUpperLeg")
-                        or enemy:FindFirstChild("HumanoidRootPart")
-                    if ePart then
-                        local dist = (ePart.Position - mainPart.Position).Magnitude
-                        if dist <= 150 then
-                            table.insert(hitTargets, ePart)
-                        end
+                local eHead = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
+                if eHum and eHead and eHum.Health > 0 then
+                    local dist = (eHead.Position - mainPart.Position).Magnitude
+                    if dist <= 150 then
+                        table.insert(othersEnemies, { enemy, eHead })
                     end
                 end
             end
         end
     end
     
-    -- 1. ยิง RegisterAttack เปิดคอมโบ (cooldown สลับ 0.5/1 ตามจริง: combo 4 ใช้ 1)
+    -- 1. ยิง RegisterAttack เปิดคอมโบ
     pcall(function()
         if rAttack then
-            rAttack:FireServer(comboIndex == 4 and 1 or 0.5, comboIndex)
+            rAttack:FireServer(0.5, comboIndex)
         end
     end)
     
-    -- 2. ยิง RegisterHit เข้าแต่ละตัว ตารางว่าง {} ตามฟอร์แมต client จริง
-    -- เซิร์ฟจะ apply ดาเมจ AoE รอบแต่ละ part เอง → ตัวอื่นในกองโดนด้วย
-    for _, ePart in ipairs(hitTargets) do
-        pcall(function()
-            rHit:FireServer(ePart, {})
-        end)
-    end
+    -- 2. ยิง RegisterHit ส่งทั้งกองใน call เดียว
+    pcall(function()
+        if rHit and #othersEnemies > 0 then
+            rHit:FireServer(mainPart, othersEnemies)
+        end
+    end)
     
     comboIndex = (comboIndex % 4) + 1
 end
@@ -874,7 +864,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v5.2 พร้อม (ฟอร์แมต Client จริง: Hit(part,{}) ทีละตัว)", "G")
+log("BF04 v5.3 พร้อม (ย้อนกลับ AoE แบบเดิม: โดน 2 ตัว/จอ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v5.2 loaded")
+warn("[BF04] Auto Quest v5.3 loaded")
