@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.7 (+ AUTO SABER)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.8 (Fix Saber Fly Stuck)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -533,6 +533,11 @@ end
 -- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
 --    บินด้วยความเร็ว 150 studs/sec (เกมรับได้ ไม่ trigger anti-teleport)
 local FLY_SPEED = 150
+-- ระบบไหนก็ได้ที่กำลังทำงาน = อนุญาตให้บินต่อ
+-- (เดิมเช็ค AUTO_ON เท่านั้น พอ AUTO SABER ทำงานลูปบินจะหลุดกลางทาง = ค้างบนฟ้า)
+local function moveOK()
+    return (AUTO_ON and _G.BF04_LOOP) or (SABER_ON and _G.BF04_SABER) or FRUIT_MODE
+end
 local function toTarget(targetCF)
     local char, hrp, hum = getChar()
     if not char then return false end
@@ -557,7 +562,7 @@ local function toTarget(targetCF)
         currentTween = tw
         tw:Play()
         local waited = 0
-        while AUTO_ON and _G.BF04_LOOP and currentTween == tw and waited < (flyTime + 0.3) do
+        while moveOK() and currentTween == tw and waited < (flyTime + 0.3) do
             if (targetCF.Position - hrp.Position).Magnitude <= 10 then break end
             task.wait(0.05)
             waited += 0.05
@@ -593,7 +598,7 @@ local function toTarget(targetCF)
     tw:Play()
     
     local waited = 0
-    while AUTO_ON and _G.BF04_LOOP and currentTween == tw and waited < (flyTime + 0.5) do
+    while moveOK() and currentTween == tw and waited < (flyTime + 0.5) do
         local curDist = (skyEndCF.Position - hrp.Position).Magnitude
         if curDist <= 15 then break end
         task.wait(0.1)
@@ -601,7 +606,7 @@ local function toTarget(targetCF)
     end
     
     -- ไต่ระดับลงเป็นช่วงๆ เช่นกัน
-    if AUTO_ON and _G.BF04_LOOP then
+    if moveOK() then
         local landY = hrp.Position.Y
         while landY > targetCF.Position.Y + 25 do
             landY = math.max(landY - stepY, targetCF.Position.Y + 25)
@@ -775,7 +780,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.7 ===", "Y")
+    log("=== START AUTO v6.8 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1214,7 +1219,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.7 พร้อม (เพิ่มปุ่ม AUTO SABER ทำเควสดาบอัตโนมัติ)", "G")
+log("BF04 v6.8 พร้อม (แก้บินค้างบนฟ้าตอนทำเควส Saber)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.7 loaded")
+warn("[BF04] Auto Quest v6.8 loaded")
