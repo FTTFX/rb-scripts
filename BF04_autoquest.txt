@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v5.5 (Hit Range Fixed)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v5.6 (Close Range + Magnet Toggle)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -305,8 +305,24 @@ hakiBtn.Text = "BUY: Buso Haki (25k)"; hakiBtn.Font = Enum.Font.GothamBold; haki
 hakiBtn.Parent = frame
 Instance.new("UICorner", hakiBtn).CornerRadius = UDim.new(0,5)
 
+local MAGNET_ON = false
+local magnetBtn = Instance.new("TextButton")
+magnetBtn.Size = UDim2.new(0, 350, 0, 24); magnetBtn.Position = UDim2.new(0, 10, 0, 98)
+magnetBtn.BackgroundColor3 = Color3.fromRGB(50,50,70); magnetBtn.TextColor3 = Color3.new(1,1,1)
+magnetBtn.Text = "MAGNET: OFF (ปิดไว้ = ตีมอนตัวเดียวแต่โดนชัวร์)"
+magnetBtn.Font = Enum.Font.GothamBold; magnetBtn.TextSize = 12; magnetBtn.BorderSizePixel = 0
+magnetBtn.Parent = frame
+Instance.new("UICorner", magnetBtn).CornerRadius = UDim.new(0,5)
+magnetBtn.MouseButton1Click:Connect(function()
+    MAGNET_ON = not MAGNET_ON
+    magnetBtn.Text = MAGNET_ON
+        and "MAGNET: ON (ดึงมอนมารวมกอง)"
+        or "MAGNET: OFF (ปิดไว้ = ตีมอนตัวเดียวแต่โดนชัวร์)"
+    magnetBtn.BackgroundColor3 = MAGNET_ON and Color3.fromRGB(90,60,150) or Color3.fromRGB(50,50,70)
+end)
+
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-16,1,-110); scroll.Position = UDim2.new(0,8,0,98)
+scroll.Size = UDim2.new(1,-16,1,-136); scroll.Position = UDim2.new(0,8,0,128)
 scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -723,7 +739,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v5.4 (Quest Levels Fixed) ===", "Y")
+    log("=== START AUTO v5.6 (Close Range) ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -833,29 +849,27 @@ local function mainLoop()
                 end
 
                 local v = target
-                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") — Magnet + Remote", "Y")
+                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ")"
+                    .. (MAGNET_ON and " — Magnet + Remote" or " — ประชิดตัว (ไม่ Magnet)"), "Y")
 
                 equipWeapon()
 
-                -- เพิ่มการเก็บ Log: แสดงจำนวนมอนที่ตีโดนในแต่ละจอ
-                local aoeCount = 0
-                
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04_LOOP do
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
                         local char, hrp = getChar()
                         if hrp then
                             applyBodyVelocity(hrp)
-                            -- ลอยเหนือมอน 8 studs: อยู่ในระยะ hitbox ของ Combat (~10-14) แต่มอนตีไม่ถึง
-                            hrp.CFrame = CFrame.lookAt(mhrp.Position + Vector3.new(0, 8, 0), mhrp.Position)
+                            -- ยืนประชิดข้างมอน (สูง 3 studs) ให้ผ่านการเช็คระยะฝั่งเซิร์ฟเวอร์
+                            hrp.CFrame = CFrame.lookAt(mhrp.Position + Vector3.new(0, 3, -3), mhrp.Position)
                         end
                         aimCam(v)
-                        
-                        -- รวมมอนสเตอร์ทั้งแมพชื่อเดียวกันมาไว้ที่จุดเดียวกัน
-                        bringMobsToTarget(v, qdata.mob)
+
+                        if MAGNET_ON then
+                            bringMobsToTarget(v, qdata.mob)
+                        end
                     end
-                    
-                    -- ยิงดาเมจตรงๆ ผ่าน Remote เข้ามอนทุกตัวพร้อมกันจากบนฟ้า
+
                     directRemoteAttack(v, qdata.mob)
                     task.wait(0.08)
                 end
@@ -887,7 +901,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v5.5 พร้อม (ลดความสูงเหลือ 8 studs ให้ตีโดน)", "G")
+log("BF04 v5.6 พร้อม (ยืนประชิดมอน + ปุ่ม MAGNET แยกทดสอบ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v5.5 loaded")
+warn("[BF04] Auto Quest v5.6 loaded")
