@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v5.7 (AttackNoCoolDown Combo 0-3)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v5.8 (No-Teleport Combat)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -740,7 +740,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v5.7 (Combo 0-3) ===", "Y")
+    log("=== START AUTO v5.8 (No-Teleport) ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -851,7 +851,7 @@ local function mainLoop()
 
                 local v = target
                 setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ")"
-                    .. (MAGNET_ON and " — Magnet + Remote" or " — ประชิดตัว (ไม่ Magnet)"), "Y")
+                    .. (MAGNET_ON and " — Magnet + Remote" or " — ตีระยะไกล (ไม่วาป)"), "Y")
 
                 equipWeapon()
 
@@ -861,8 +861,14 @@ local function mainLoop()
                         local char, hrp = getChar()
                         if hrp then
                             applyBodyVelocity(hrp)
-                            -- ยืนประชิดข้างมอน (สูง 3 studs) ให้ผ่านการเช็คระยะฝั่งเซิร์ฟเวอร์
-                            hrp.CFrame = CFrame.lookAt(mhrp.Position + Vector3.new(0, 3, -3), mhrp.Position)
+                            -- ❌ ไม่วาปเข้าหามอนทุกเฟรมแล้ว (โดน anti-cheat)
+                            -- RegisterHit เช็คระยะที่เซิร์ฟเวอร์ 100 studs → ยืนอยู่ไกลๆ ก็ตีโดน
+                            -- ขยับเข้าไปแค่ตอนหลุดระยะจริงๆ และใช้ tween ช้าๆ ครั้งเดียว
+                            local dist = (mhrp.Position - hrp.Position).Magnitude
+                            if dist > 75 then
+                                setState("มอนไกลเกิน (" .. math.floor(dist) .. ") → บินเข้าไปในระยะ", "B")
+                                tp(CFrame.new(mhrp.Position + Vector3.new(0, 25, 0)))
+                            end
                         end
                         aimCam(v)
 
@@ -902,7 +908,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v5.7 พร้อม (ยิงคอมโบ 0-3 ตามสคริปต์ต้นแบบ)", "G")
+log("BF04 v5.8 พร้อม (ตีระยะไกล ไม่วาปหามอน = ไม่โดน anti-cheat)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v5.7 loaded")
+warn("[BF04] Auto Quest v5.8 loaded")
