@@ -1,0 +1,360 @@
+-- BF01_scan.txt — BF (ตีมอน) First Scan v1.0
+-- สแกนรอบแรก: โครงสร้าง workspace + Quest + Mob + Prompt + Remote + Player data
+-- ใช้: รันในเกม → กด Copy → ส่งผลลัพธ์มาวางแผน BF02 (รับเควส + ตีมอน + Loop)
+
+local LP = game.Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+
+-- ── 1. Guard ──────────────────────────────────────────────────────
+local old = pg:FindFirstChild("BF01GUI")
+if old then old:Destroy() end
+
+-- ── 2. GUI ────────────────────────────────────────────────────────
+local gui = Instance.new("ScreenGui")
+gui.Name         = "BF01GUI"
+gui.ResetOnSpawn = false
+gui.Parent       = pg
+
+local frame = Instance.new("Frame")
+frame.Size             = UDim2.new(0, 560, 0, 480)
+frame.Position         = UDim2.new(0.5, -280, 0.5, -240)
+frame.BackgroundColor3 = Color3.fromRGB(14, 10, 10)
+frame.BorderSizePixel  = 0
+frame.Active           = true
+frame.Draggable        = true
+frame.Parent           = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+local titleBar = Instance.new("Frame")
+titleBar.Size             = UDim2.new(1, 0, 0, 28)
+titleBar.BackgroundColor3 = Color3.fromRGB(90, 30, 20)
+titleBar.BorderSizePixel  = 0
+titleBar.Parent           = frame
+Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 8)
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size                   = UDim2.new(1, -10, 1, 0)
+titleLbl.Position               = UDim2.new(0, 10, 0, 0)
+titleLbl.BackgroundTransparency = 1
+titleLbl.TextColor3             = Color3.fromRGB(255, 170, 120)
+titleLbl.Text                   = "BF01 First Scan v1.0 — กำลัง scan..."
+titleLbl.Font                   = Enum.Font.Code
+titleLbl.TextSize               = 12
+titleLbl.TextXAlignment         = Enum.TextXAlignment.Left
+titleLbl.Parent                 = titleBar
+
+-- Tab: ผลลัพธ์
+local tabResult = Instance.new("TextButton")
+tabResult.Size             = UDim2.new(0, 110, 0, 24)
+tabResult.Position         = UDim2.new(0, 4, 0, 30)
+tabResult.BackgroundColor3 = Color3.fromRGB(150, 50, 30)
+tabResult.TextColor3       = Color3.fromRGB(255, 220, 200)
+tabResult.Text             = "ผลลัพธ์"
+tabResult.Font             = Enum.Font.Code
+tabResult.TextSize         = 12
+tabResult.BorderSizePixel  = 0
+tabResult.Parent           = frame
+Instance.new("UICorner", tabResult).CornerRadius = UDim.new(0, 4)
+
+-- Tab: Copy
+local tabCopy = Instance.new("TextButton")
+tabCopy.Size             = UDim2.new(0, 110, 0, 24)
+tabCopy.Position         = UDim2.new(0, 118, 0, 30)
+tabCopy.BackgroundColor3 = Color3.fromRGB(30, 100, 50)
+tabCopy.TextColor3       = Color3.fromRGB(100, 255, 130)
+tabCopy.Text             = "Copy"
+tabCopy.Font             = Enum.Font.Code
+tabCopy.TextSize         = 12
+tabCopy.BorderSizePixel  = 0
+tabCopy.Parent           = frame
+Instance.new("UICorner", tabCopy).CornerRadius = UDim.new(0, 4)
+
+-- ปุ่มปิด
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size             = UDim2.new(0, 70, 0, 24)
+closeBtn.Position         = UDim2.new(1, -74, 0, 30)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
+closeBtn.TextColor3       = Color3.fromRGB(255, 100, 100)
+closeBtn.Text             = "ปิด"
+closeBtn.Font             = Enum.Font.Code
+closeBtn.TextSize         = 12
+closeBtn.BorderSizePixel  = 0
+closeBtn.Parent           = frame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
+closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
+
+-- Scroll (ผลลัพธ์)
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size               = UDim2.new(1, -8, 1, -90)
+scroll.Position           = UDim2.new(0, 4, 0, 58)
+scroll.BackgroundColor3   = Color3.fromRGB(8, 8, 12)
+scroll.BorderSizePixel    = 0
+scroll.ScrollBarThickness = 5
+scroll.CanvasSize         = UDim2.new(0, 0, 0, 0)
+scroll.Parent             = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 4)
+local padS = Instance.new("UIPadding")
+padS.PaddingLeft = UDim.new(0, 6)
+padS.Parent      = scroll
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding   = UDim.new(0, 1)
+layout.Parent    = scroll
+
+-- TextBox (copy panel)
+local copyBox = Instance.new("TextBox")
+copyBox.Size                   = UDim2.new(1, -8, 1, -90)
+copyBox.Position               = UDim2.new(0, 4, 0, 58)
+copyBox.BackgroundColor3       = Color3.fromRGB(8, 8, 12)
+copyBox.TextColor3             = Color3.fromRGB(180, 255, 180)
+copyBox.Font                   = Enum.Font.Code
+copyBox.TextSize               = 11
+copyBox.TextXAlignment         = Enum.TextXAlignment.Left
+copyBox.TextYAlignment         = Enum.TextYAlignment.Top
+copyBox.MultiLine              = true
+copyBox.ClearTextOnFocus       = false
+copyBox.Text                   = "รอ scan..."
+copyBox.BorderSizePixel        = 0
+copyBox.Visible                = false
+copyBox.Parent                 = frame
+Instance.new("UICorner", copyBox).CornerRadius = UDim.new(0, 4)
+local padB = Instance.new("UIPadding")
+padB.PaddingLeft = UDim.new(0, 6)
+padB.PaddingTop  = UDim.new(0, 4)
+padB.Parent      = copyBox
+
+tabResult.MouseButton1Click:Connect(function()
+    scroll.Visible  = true
+    copyBox.Visible = false
+end)
+tabCopy.MouseButton1Click:Connect(function()
+    scroll.Visible  = false
+    copyBox.Visible = true
+    copyBox:CaptureFocus()
+    copyBox.SelectionStart = 1
+    copyBox.CursorPosition = #copyBox.Text + 1
+end)
+
+-- ── 3. Helper ─────────────────────────────────────────────────────
+local copyLines = {}
+local order     = 0
+local lineTotal = 0
+local MAX_SHOW  = 400   -- จำกัดบรรทัดบน GUI (เกินนี้เก็บใน Copy อย่างเดียว)
+
+local C = {
+    Y = Color3.fromRGB(255, 210,   0),   -- yellow (header)
+    G = Color3.fromRGB( 80, 255, 120),   -- green  (พบ / ดี)
+    B = Color3.fromRGB(140, 160, 255),   -- blue   (path)
+    O = Color3.fromRGB(255, 160,  50),   -- orange (warning)
+    W = Color3.fromRGB(210, 210, 210),   -- white  (ทั่วไป)
+    S = Color3.fromRGB(140, 140, 140),   -- gray   (รอง)
+    R = Color3.fromRGB(255,  80,  80),   -- red    (error)
+}
+
+local function addLine(txt, col)
+    lineTotal += 1
+    table.insert(copyLines, txt)
+    if lineTotal > MAX_SHOW then return end
+    order += 1
+    local lbl = Instance.new("TextLabel")
+    lbl.Size                   = UDim2.new(1, -12, 0, 15)
+    lbl.BackgroundTransparency = 1
+    lbl.Font                   = Enum.Font.Code
+    lbl.TextSize               = 11
+    lbl.TextXAlignment         = Enum.TextXAlignment.Left
+    lbl.TextTruncate           = Enum.TextTruncate.AtEnd
+    lbl.TextColor3             = col or C.W
+    lbl.Text                   = txt
+    lbl.LayoutOrder            = order
+    lbl.Parent                 = scroll
+    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
+end
+
+-- เช็ค keyword ในชื่อ (case-insensitive)
+local function kwIn(name, words)
+    local n = string.lower(tostring(name))
+    for _, w in ipairs(words) do
+        if string.find(n, w, 1, true) then return true end
+    end
+    return false
+end
+
+-- ── 4. Scan (task.spawn — ไม่ block GUI) ─────────────────────────
+task.spawn(function()
+    task.wait(0.1)
+
+    addLine("=== BF01 FIRST SCAN v1.0 ===", C.Y)
+    addLine("เกม: " .. game.Name .. " | PlaceId: " .. game.PlaceId, C.S)
+    addLine("ผู้เล่น: " .. LP.Name, C.S)
+    addLine("", C.S)
+
+    -- ══ A) workspace children (โครงสร้างบนสุด) ══
+    addLine("── A) workspace children ──", C.Y)
+    for _, o in ipairs(workspace:GetChildren()) do
+        addLine("  [" .. o.ClassName .. "] " .. o.Name, C.W)
+    end
+    addLine("", C.S)
+
+    -- ══ B) หา Quest (keyword scan หลาย container) ══
+    addLine("── B) Quest keyword scan (quest/mission/task/daily/contract/bounty) ──", C.Y)
+    local KEY_QUEST = { "quest", "mission", "task", "daily", "contract", "bounty", "objective" }
+    local questFound = 0
+    local containers = {
+        { "workspace",         workspace },
+        { "ReplicatedStorage", game:GetService("ReplicatedStorage") },
+        { "LocalPlayer",       LP },
+        { "PlayerGui",         pg },
+    }
+    for _, ct in ipairs(containers) do
+        local okScan = pcall(function()
+            for _, d in ipairs(ct[2]:GetDescendants()) do
+                if kwIn(d.Name, KEY_QUEST) then
+                    questFound += 1
+                    addLine("  [" .. d.ClassName .. "] " .. d.Name, C.G)
+                    addLine("     " .. d:GetFullName(), C.B)
+                end
+            end
+        end)
+        if not okScan then addLine("  scan error: " .. ct[1], C.R) end
+    end
+    addLine("  เจอ: " .. questFound .. " อัน", questFound > 0 and C.G or C.O)
+    addLine("", C.S)
+
+    -- ══ C) Mob folder (จับ Humanoid model ที่ไม่ใช่ผู้เล่น — จัดกลุ่มตาม folder บนสุด) ══
+    addLine("── C) Mob groups (Humanoid model รวมตาม top folder) ──", C.Y)
+    local mobCount  = {}
+    local mobSample = {}
+    pcall(function()
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d:IsA("Humanoid") and d.Parent and d.Parent:IsA("Model") then
+                if not game.Players:GetPlayerFromCharacter(d.Parent) then
+                    local top = d.Parent
+                    while top.Parent and top.Parent ~= workspace do top = top.Parent end
+                    mobCount[top.Name] = (mobCount[top.Name] or 0) + 1
+                    mobSample[top.Name] = mobSample[top.Name] or {}
+                    if #mobSample[top.Name] < 8 then
+                        table.insert(mobSample[top.Name], d.Parent.Name)
+                    end
+                end
+            end
+        end
+    end)
+    local mobTops = 0
+    for name, cnt in pairs(mobCount) do
+        mobTops += 1
+        addLine("  " .. name .. " → " .. cnt .. " model", C.G)
+        addLine("     ตัวอย่าง: " .. table.concat(mobSample[name], ", "), C.S)
+    end
+    if mobTops == 0 then addLine("  ⚠️ ไม่เจอ Humanoid ใน workspace (มอนอาจ spawn ทีหลัง — เข้าเควสก่อนแล้ว rescan)", C.O) end
+    addLine("", C.S)
+
+    -- ══ D) ProximityPrompt (NPC รับเควส / จุดกด E) ══
+    addLine("── D) ProximityPrompt ทั้ง workspace ──", C.Y)
+    local promptCount = 0
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("ProximityPrompt") then
+                promptCount += 1
+                if promptCount <= 60 then
+                    local owner = obj
+                    while owner.Parent and owner ~= workspace and not owner:IsA("Model") do
+                        owner = owner.Parent
+                    end
+                    local oname = owner and owner.Name or "?"
+                    local act = obj.ActionText ~= "" and obj.ActionText or "E"
+                    addLine("  [" .. oname .. "] action=" .. act .. " hold=" .. tostring(obj.HoldDuration), C.G)
+                    addLine("     " .. obj:GetFullName(), C.B)
+                end
+            end
+        end
+    end)
+    addLine("  เจอ: " .. promptCount .. " prompt", promptCount > 0 and C.G or C.O)
+    addLine("", C.S)
+
+    -- ══ E) Remotes (RemoteEvent/Function ใน ReplicatedStorage + workspace) ══
+    addLine("── E) Remotes (ReplicatedStorage + workspace) ──", C.Y)
+    local remoteCount = 0
+    for _, ct in ipairs({ { "RS", game:GetService("ReplicatedStorage") }, { "workspace", workspace } }) do
+        pcall(function()
+            for _, d in ipairs(ct[2]:GetDescendants()) do
+                if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("UnreliableRemoteEvent") then
+                    remoteCount += 1
+                    if remoteCount <= 100 then
+                        local tag = kwIn(d.Name, KEY_QUEST) and " ⭐" or ""
+                        addLine("  [" .. ct[1] .. "] " .. d.ClassName .. ": " .. d.Name .. tag, C.W)
+                        addLine("     " .. d:GetFullName(), C.B)
+                    end
+                end
+            end
+        end)
+    end
+    addLine("  รวม: " .. remoteCount .. " remote (⭐ = ชื่อคล้ายเควส)", C.S)
+    addLine("", C.S)
+
+    -- ══ F) Player data (leaderstats + values ในตัวผู้เล่น) ══
+    addLine("── F) Player data ──", C.Y)
+    pcall(function()
+        local ls = LP:FindFirstChild("leaderstats")
+        if ls then
+            for _, v in ipairs(ls:GetChildren()) do
+                addLine("  leaderstats." .. v.Name .. " [" .. v.ClassName .. "] = " .. tostring(v.Value), C.G)
+            end
+        else
+            addLine("  ไม่มี leaderstats", C.S)
+        end
+        for _, v in ipairs(LP:GetChildren()) do
+            if v:IsA("ValueBase") or (v:IsA("Folder") and v.Name ~= "PlayerGui") then
+                local extra = ""
+                if v:IsA("ValueBase") then extra = " = " .. tostring(v.Value) end
+                addLine("  LP." .. v.Name .. " [" .. v.ClassName .. "]" .. extra, C.W)
+            end
+        end
+        local ch = LP.Character
+        if ch then
+            for _, v in ipairs(ch:GetChildren()) do
+                if v:IsA("ValueBase") or v:IsA("Folder") or v:IsA("BoolValue") then
+                    local extra = (v:IsA("ValueBase")) and (" = " .. tostring(v.Value)) or ""
+                    addLine("  Character." .. v.Name .. " [" .. v.ClassName .. "]" .. extra, C.S)
+                end
+            end
+        end
+    end)
+    addLine("", C.S)
+
+    -- ══ G) PlayerGui children (หา UI เควส) ══
+    addLine("── G) PlayerGui children ──", C.Y)
+    for _, o in ipairs(pg:GetChildren()) do
+        local mark = kwIn(o.Name, KEY_QUEST) and "  ⭐" or ""
+        addLine("  [" .. o.ClassName .. "] " .. o.Name .. mark, C.W)
+    end
+    addLine("", C.S)
+
+    -- ══ H) Anti-cheat check ══
+    addLine("── H) Anti-cheat check ──", C.Y)
+    local antiFound = 0
+    pcall(function()
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if kwIn(d.Name, { "anticheat", "anti_cheat", "anti-cheat" }) then
+                antiFound += 1
+                addLine("  ⚠️ " .. d:GetFullName(), C.R)
+            end
+        end
+    end)
+    if antiFound == 0 then addLine("  ไม่เจอ anti-cheat ใน workspace", C.G) end
+    addLine("", C.S)
+
+    -- ══ สรุป ══
+    addLine("=== สรุป ===", C.Y)
+    addLine("quest objects: " .. questFound .. " | mob groups: " .. mobTops .. " | prompts: " .. promptCount .. " | remotes: " .. remoteCount, C.W)
+    if lineTotal > MAX_SHOW then
+        addLine("(ผลลัพธ์เกิน " .. MAX_SHOW .. " บรรทัด — ดูทั้งหมดใน tab Copy)", C.O)
+    end
+    addLine("→ กด Copy ส่งผลลัพธ์เพื่อวางแผน BF02 (รับเควส + ตีมอน + Loop)", C.Y)
+
+    titleLbl.Text = "BF01 First Scan v1.0 — เสร็จแล้ว (quest:" .. questFound .. " mob:" .. mobTops .. " prompt:" .. promptCount .. ")"
+    copyBox.Text  = table.concat(copyLines, "\n")
+
+    warn("[BF01] scan เสร็จ — quest:" .. questFound .. " mob:" .. mobTops .. " prompt:" .. promptCount .. " remote:" .. remoteCount)
+end)
+
+warn("[BF01] First Scan v1.0 loaded")
