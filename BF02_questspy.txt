@@ -1,0 +1,271 @@
+-- BF02_questspy.txt — Blox Fruits Quest Deep Spy v1.0
+-- เจาะระบบเควส: Quest UI text + LP.Data + โครงสร้าง Bandit + NPC quest prompts + hook remotes
+-- วิธีใช้: รัน → เดินไปรับเควส (Bandit Quest Giver) → ตี Bandit 1 ตัว → กด Copy ส่งผลลัพธ์
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+local okHooks  = hookmeta and getnc
+
+_G.BF02 = _G.BF02 or {}
+local S = _G.BF02
+S.log = S.log or {}
+S.hooked = S.hooked or false
+
+-- ── GUI (pattern 74RB — ใช้ได้จริง) ───────────────────────────────
+local old = pg:FindFirstChild("BF02GUI"); if old then old:Destroy() end
+local sg = Instance.new("ScreenGui")
+sg.Name = "BF02GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0,620,0,540); frame.Position = UDim2.new(0.5,-310,0.5,-270)
+frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
+frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size = UDim2.new(1,-100,0,28); titleLbl.Position = UDim2.new(0,10,0,0)
+titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120,200,255)
+titleLbl.Text = "BF02 Quest Spy — searching..."; titleLbl.Font = Enum.Font.Code; titleLbl.TextSize = 13
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
+local function topBtn(w,x,col,txt)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0,w,0,22); b.Position = UDim2.new(1,x,0,3)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1,1,1); b.Text = txt
+    b.Font = Enum.Font.Code; b.TextSize = 12; b.BorderSizePixel = 0; b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,4); return b
+end
+local copyBtn  = topBtn(62,-70,Color3.fromRGB(30,100,50),"Copy")
+local closeBtn = topBtn(28,-30,Color3.fromRGB(120,20,20),"X")
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-8,1,-34); scroll.Position = UDim2.new(0,4,0,30)
+scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+local padL = Instance.new("UIPadding"); padL.PaddingLeft = UDim.new(0,6); padL.Parent = scroll
+
+local copyLines, order = {}, 0
+local C = { Y=Color3.fromRGB(255,210,0), G=Color3.fromRGB(80,255,120),
+    B=Color3.fromRGB(140,160,255), O=Color3.fromRGB(255,160,50),
+    W=Color3.fromRGB(210,210,210), S=Color3.fromRGB(140,140,140),
+    R=Color3.fromRGB(255,80,80), M=Color3.fromRGB(255,120,255) }
+local function addLine(txt,col)
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-12,0,15); l.BackgroundTransparency = 1; l.Font = Enum.Font.Code
+    l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextTruncate = Enum.TextTruncate.AtEnd
+    l.TextColor3 = col or C.S; l.Text = txt; l.LayoutOrder = order; l.Parent = scroll
+    table.insert(copyLines, txt)
+    scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+end
+
+closeBtn.MouseButton1Click:Connect(function() S.enabled = false sg:Destroy() end)
+copyBtn.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard or (getgenv and getgenv().setclipboard)
+    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
+    copyBtn.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(2, function() if copyBtn.Parent then copyBtn.Text = "Copy" end end)
+end)
+
+-- ── Helper ────────────────────────────────────────────────────────
+local function fmt(v, full)
+    local t = typeof(v)
+    if t == "Instance" then return v.ClassName..":"..v.Name
+    elseif t == "Vector3" then return string.format("V3(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then local p=v.Position return string.format("CF(%.0f,%.0f,%.0f)", p.X,p.Y,p.Z)
+    elseif t == "string" then
+        local mx = full and 200 or 30
+        if #v > mx then return '"'..v:sub(1,mx)..'..."' end
+        return '"'..v..'"'
+    elseif t == "number" then return string.format("%.4g", v)
+    elseif t == "boolean" then return tostring(v)
+    else return t end
+end
+local function fmtArgs(...)
+    local n = select("#", ...)
+    if n == 0 then return "(ไม่มี args)" end
+    local p = {}
+    for i = 1, math.min(n, 8) do p[i] = fmt(select(i, ...), true) end
+    return table.concat(p, " | ")
+end
+
+-- ── Hook remotes (ครั้งเดียว — ดัก FireServer/InvokeServer ที่เกี่ยวกับ quest/combat) ──
+if okHooks and not S.hooked then
+    S.hooked = true
+    local oldNc
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local m = getnc()
+        if (m == "FireServer" or m == "InvokeServer") and S.enabled ~= false then
+            local ok, nm = pcall(function() return self:GetFullName() end)
+            nm = ok and nm or "?"
+            local lower = nm:lower()
+            if lower:find("quest") or lower:find("interact") or lower:find("start")
+               or lower:find("hit") or lower:find("attack") or lower:find("bandit")
+               or lower:find("subclass") or lower:find("bestquest") or lower:find("getbest") then
+                local short = nm:gsub("^.-Remotes%.", "")
+                S.log[#S.log+1] = m .. " @" .. short .. " | " .. fmtArgs(...)
+            end
+        end
+        return oldNc(self, ...)
+    end))
+end
+
+-- ── Scan (task.spawn) ─────────────────────────────────────────────
+task.spawn(function()
+    task.wait(0.1)
+    pcall(function()
+
+    addLine("=== BF02 QUEST SPY v1.0 (Blox Fruits) ===", C.Y)
+    addLine("hook: " .. (okHooks and "ON ✅" or "OFF ❌ (executor ไม่มี hookmetamethod)"), okHooks and C.G or C.R)
+    addLine("", C.S)
+
+    -- ══ 1) Quest UI text (PlayerGui.Main.Quest) ══
+    addLine("── 1) Quest UI text (PlayerGui.Main.Quest) ──", C.Y)
+    local qframe = pg:FindFirstChild("Main") and pg.Main:FindFirstChild("Quest")
+    if qframe then
+        local function dumpUI(node, depth)
+            depth = depth or 0
+            if depth > 8 then return end
+            for _, c in ipairs(node:GetChildren()) do
+                local pad = string.rep("  ", depth)
+                if c:IsA("TextLabel") or c:IsA("TextButton") then
+                    local txt = tostring(c.Text)
+                    if txt ~= "" then
+                        addLine(("%s[%s] %s = %s"):format(pad, c.ClassName, c.Name, '"'..txt..'"'), c:IsA("TextButton") and C.O or C.G)
+                    end
+                end
+                dumpUI(c, depth + 1)
+            end
+        end
+        dumpUI(qframe)
+    else
+        addLine("  ⚠️ ไม่เจอ PlayerGui.Main.Quest (อาจต้องรับเควสก่อน)", C.O)
+    end
+    addLine("", C.S)
+
+    -- ══ 2) LP.Data (ข้อมูลผู้เล่น/เควส) ══
+    addLine("── 2) LP.Data ──", C.Y)
+    local data = LP:FindFirstChild("Data")
+    if data then
+        for _, c in ipairs(data:GetChildren()) do
+            local extra = c:IsA("ValueBase") and (" = " .. tostring(c.Value)) or ""
+            addLine(("  %s [%s]%s"):format(c.Name, c.ClassName, extra), C.G)
+            -- dump 1 level ลึก
+            if c:IsA("Folder") or c:IsA("Configuration") then
+                for _, cc in ipairs(c:GetChildren()) do
+                    local e2 = cc:IsA("ValueBase") and (" = " .. tostring(cc.Value)) or ""
+                    addLine(("     %s [%s]%s"):format(cc.Name, cc.ClassName, e2), C.S)
+                end
+            end
+        end
+    else
+        addLine("  ⚠️ ไม่เจอ LP.Data (DataLoaded=false ใน BF01 — เกมยังไม่โหลดให้)", C.O)
+    end
+    addLine("", C.S)
+
+    -- ══ 3) โครงสร้าง Bandit (Enemies folder) ══
+    addLine("── 3) โครงสร้าง Enemies (model แรก ๆ) ──", C.Y)
+    local enemies = workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, e in ipairs(enemies:GetChildren()) do
+            if e:IsA("Model") then
+                addLine(("  ▶ %s (%s)"):format(e.Name, e.ClassName), C.M)
+                local hum = e:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    addLine(("     Humanoid: Health=%.0f MaxHealth=%.0f"):format(hum.Health, hum.MaxHealth), C.G)
+                end
+                local hrp = e:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    addLine(("     HRP pos: %.0f, %.0f, %.0f"):format(hrp.Position.X, hrp.Position.Y, hrp.Position.Z), C.S)
+                end
+                for _, c in ipairs(e:GetChildren()) do
+                    local extra = c:IsA("ValueBase") and (" = " .. tostring(c.Value)) or ""
+                    addLine(("     %s [%s]%s"):format(c.Name, c.ClassName, extra), C.S)
+                end
+            end
+        end
+    else
+        addLine("  ⚠️ ไม่เจอ workspace.Enemies", C.O)
+    end
+    addLine("", C.S)
+
+    -- ══ 4) NPC quest giver + prompt ══
+    addLine("── 4) NPC ที่ให้เควส (มี QUEST part หรือชื่อมี Quest) ──", C.Y)
+    local npcs = workspace:FindFirstChild("NPCs")
+    if npcs then
+        for _, n in ipairs(npcs:GetChildren()) do
+            local hasQuest = n:FindFirstChild("QUEST", true) or n.Name:lower():find("quest")
+            if hasQuest then
+                addLine(("  ▶ %s"):format(n.Name), C.M)
+                for _, d in ipairs(n:GetDescendants()) do
+                    if d:IsA("ProximityPrompt") then
+                        addLine(("     Prompt: action=%s objText=%s hold=%s"):format(
+                            tostring(d.ActionText), tostring(d.ObjectText), tostring(d.HoldDuration)), C.G)
+                    end
+                end
+            end
+        end
+    else
+        addLine("  ⚠️ ไม่เจอ workspace.NPCs", C.O)
+    end
+    addLine("", C.S)
+
+    -- ══ 5) Modules ระบบเควส (ชื่อไฟล์จริง) ══
+    addLine("── 5) Module ระบบเควสหลัก (ReplicatedStorage) ──", C.Y)
+    for _, path in ipairs({
+        "QuestServiceShared", "QuestServiceShared.Classes.Quest", "QuestServiceShared.Classes.Task",
+        "Quests", "Controllers.QuestController",
+    }) do
+        local obj = RS:FindFirstChild(path)
+        if obj then
+            addLine(("  ✓ %s [%s]"):format(path, obj.ClassName), C.G)
+        else
+            -- path มีจุด → หาทีละส่วน
+            local cur = RS
+            local okAll = true
+            for part in path:gmatch("[^.]+") do
+                cur = cur and cur:FindFirstChild(part)
+                if not cur then okAll = false break end
+            end
+            if okAll then
+                addLine(("  ✓ %s [%s]"):format(path, cur.ClassName), C.G)
+            else
+                addLine(("  ✗ %s (ไม่เจอ)"):format(path), C.S)
+            end
+        end
+    end
+    addLine("", C.S)
+
+    -- ══ สรุป + วิธีใช้ hook ══
+    addLine("=== วิธีใช้ (สำคัญ) ===", C.Y)
+    addLine("1. ไปรับเควสจาก NPC 'Bandit Quest Giver' (กด E ที่ตัว NPC)", C.W)
+    addLine("2. ตี Bandit 1 ตัว (โจมตีปกติ)", C.W)
+    addLine("3. กลับมาดู log ด้านล่าง (hook จะโชว์ remote + args จริง)", C.W)
+    addLine("", C.S)
+    addLine("=== HOOK LOG (FireServer/InvokeServer ที่เกี่ยวกับ quest/combat) ===", C.R)
+
+    end)
+    titleLbl.Text = "BF02 Quest Spy — done (ไปรับเควส+ตีมอน แล้วกด Copy)"
+end)
+
+-- ── Drain hook log → GUI (Heartbeat) ──────────────────────────────
+RunService.Heartbeat:Connect(function()
+    if S.enabled == false then return end
+    local n = #S.log
+    if n == 0 then return end
+    local newLines = {}
+    for i = 1, n do newLines[i] = S.log[i] end
+    S.log = {}
+    for _, txt in ipairs(newLines) do
+        addLine("  " .. txt, C.R)
+    end
+end)
+
+S.enabled = true
+warn("[BF02] Quest Spy v1.0 loaded | hook: " .. tostring(okHooks))
