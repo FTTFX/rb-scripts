@@ -236,7 +236,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.4 (AoE Fixed)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v4.5 (Aim + Fast AoE)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -435,11 +435,18 @@ end
 
 local function aimCam(mob)
     local char, hrp = getChar()
-    local mhrp = mob and mob:FindFirstChild("HumanoidRootPart")
+    local mhrp = mob and (mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Head"))
     if not char or not mhrp then return end
+    
+    -- หมุนตัวละครให้หันหน้าลงไปหามอน
+    pcall(function()
+        hrp.CFrame = CFrame.lookAt(hrp.Position, mhrp.Position)
+    end)
+    
+    -- หันมุมกล้องมองลงไปที่มอน
     local cam = Workspace.CurrentCamera
     if cam then
-        cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 2, 0), mhrp.Position)
+        cam.CFrame = CFrame.lookAt(cam.CFrame.Position, mhrp.Position)
     end
 end
 
@@ -486,6 +493,7 @@ local function bringMobsToTarget(primaryTarget, mobName)
                         otherMob.Humanoid.PlatformStand = true
                         otherMob.Humanoid.Sit = true
                         oHrp.CanCollide = false
+                        oHrp.Velocity = Vector3.new(0, 0, 0)
                         oHrp.CFrame = pHrp.CFrame
                     end)
                 end
@@ -658,8 +666,12 @@ local function mainLoop()
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04_LOOP do
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
-                        -- รักษาระยะลอยตัวสูงเหนือมอน 18-20 studs (ปลอดภัย 100% ไม่ร่วง ไม่ตกน้ำ มอนตีไม่ถึง)
-                        tp(mhrp.CFrame * CFrame.new(0, 18, 0))
+                        local char, hrp = getChar()
+                        if hrp then
+                            applyBodyVelocity(hrp)
+                            -- รักษาระยะลอยตัวเหนือมอน 18 studs และหมุนหันหน้าลงไปหามอน
+                            hrp.CFrame = CFrame.lookAt(mhrp.Position + Vector3.new(0, 18, 0), mhrp.Position)
+                        end
                         aimCam(v)
                         
                         -- รวมมอนสเตอร์ตัวอื่นๆ ในละแวกนั้นมาไว้ที่จุดเดียวกัน
@@ -668,7 +680,7 @@ local function mainLoop()
                     
                     -- ยิงดาเมจตรงๆ ผ่าน Remote เข้ามอนทุกตัวพร้อมกันจากบนฟ้า
                     directRemoteAttack(v, qdata.mob)
-                    task.wait(0.1)
+                    task.wait(0.08)
                 end
 
                 if v.Parent and v.Humanoid.Health <= 0 then
@@ -697,7 +709,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.4 พร้อม (AoE ฟอร์แมตคู่ {Enemy, Head})", "G")
+log("BF04 v4.5 พร้อม (AoE แท้จริง + หันตัวเล็งมอน + ลดกระตุก)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("กด AUTO เพื่อเริ่มฟาร์มแบบอัตโนมัติต่อเนื่อง", "S")
-warn("[BF04] Auto Quest v4.4 loaded")
+warn("[BF04] Auto Quest v4.5 loaded")
