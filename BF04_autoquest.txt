@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.9 (Fast Sea Fly + Progress)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.0 (Relic Touch Fix)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -790,7 +790,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.9 ===", "Y")
+    log("=== START AUTO v7.0 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1177,8 +1177,33 @@ local function saberLoop()
                     setState("ขั้น 4: ถือ Relic บินกลับ Jungle (ห่าง " .. math.floor(d) .. ")", "B")
                     tp(SABER_CF.relicPlace)
                 else
-                    setState("ขั้น 4: ถึงจุดวาง Relic แล้ว รอเกมรับของ...", "Y")
-                    task.wait(1)
+                    -- วาร์ปเข้ามาเลยทำให้ไม่เกิดเหตุการณ์ "แตะ" แท่นวาง
+                    -- ต้องยิง firetouchinterest ระหว่าง Handle ของ Relic กับชิ้นส่วนแท่น
+                    setState("ขั้น 4: วาง Relic (ยิง touch ใส่แท่น)", "Y")
+                    local relic = char:FindFirstChild("Relic")
+                    local handle = relic and relic:FindFirstChild("Handle")
+                    local final = jungle and jungle:FindFirstChild("Final")
+                    if handle and final and firetouchinterest then
+                        for _, part in ipairs(final:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                pcall(function()
+                                    firetouchinterest(handle, part, 0)
+                                    firetouchinterest(handle, part, 1)
+                                end)
+                            end
+                        end
+                        log("  ยิง touch ใส่ Jungle.Final แล้ว", "S")
+                    end
+                    if relic then pcall(function() relic:Activate() end) end
+                    pcall(function() CommF:InvokeServer("ProQuestProgress", "PlaceRelic") end)
+                    -- ขยับตัวเล็กน้อยเพื่อกระตุ้นการตรวจการแตะฝั่งเซิร์ฟเวอร์
+                    for i = 1, 4 do
+                        local _, h = getChar()
+                        if h then
+                            h.CFrame = SABER_CF.relicPlace * CFrame.new(math.random(-3,3), 0, math.random(-3,3))
+                        end
+                        task.wait(0.4)
+                    end
                 end
                 return
             end
@@ -1239,7 +1264,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.9 พร้อม (บินข้ามทะเลเร็วขึ้น 2.5 เท่า + รายงานระยะ)", "G")
+log("BF04 v7.0 พร้อม (ยิง touch วาง Relic + ขยับตัวกระตุ้นเซิร์ฟ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.9 loaded")
+warn("[BF04] Auto Quest v7.0 loaded")
