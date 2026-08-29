@@ -237,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.7 (Fruit + Haki Shop)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v4.8 (Anti-TP Safe Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -464,6 +464,9 @@ local function applyBodyVelocity(hrp)
 end
 
 -- ระบบ Smart Travel (บินสูงข้ามเกาะ)
+-- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
+--    บินด้วยความเร็ว 150 studs/sec (เกมรับได้ ไม่ trigger anti-teleport)
+local FLY_SPEED = 150
 local function toTarget(targetCF)
     local char, hrp, hum = getChar()
     if not char then return false end
@@ -472,28 +475,33 @@ local function toTarget(targetCF)
     
     local dist = (targetCF.Position - hrp.Position).Magnitude
     
-    -- ระยะประชิด (< 50 studs) → วาร์ปตรง
-    if dist < 50 then
+    -- ระยะประชิด (< 25 studs) → วาร์ปตรง (ไม่เกินเพดานที่เกมยอมรับ)
+    if dist < 25 then
         stopTween()
         hrp.CFrame = targetCF
         return true
     end
     
-    -- ระยะไกล (ข้ามเกาะ) → บินสูง + Tween
+    -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
     stopTween()
     
     local highY = math.max(hrp.Position.Y, targetCF.Position.Y) + 120
     if targetCF.Position.Y > 300 then highY = targetCF.Position.Y + 60 end
     
+    -- ไต่ระดับขึ้นเป็นช่วงๆ ไม่กระโดดสูงทีเดียว (กัน anti-teleport แนวตั้ง)
+    local stepY = 40
+    local curY = hrp.Position.Y
+    while curY < highY - 5 do
+        curY = math.min(curY + stepY, highY)
+        hrp.CFrame = CFrame.new(hrp.Position.X, curY, hrp.Position.Z)
+        task.wait(0.08)
+    end
+    
     local skyStartCF = CFrame.new(hrp.Position.X, highY, hrp.Position.Z)
     local skyEndCF   = CFrame.new(targetCF.Position.X, highY, targetCF.Position.Z)
     
-    hrp.CFrame = skyStartCF
-    task.wait(0.05)
-    
     local flyDist = (skyEndCF.Position - skyStartCF.Position).Magnitude
-    local flySpeed = 260
-    local flyTime = math.max(flyDist / flySpeed, 0.3)
+    local flyTime = math.max(flyDist / FLY_SPEED, 0.3)
     
     local tweenInfo = TweenInfo.new(flyTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     local tw = TweenService:Create(hrp, tweenInfo, {CFrame = skyEndCF})
@@ -508,7 +516,14 @@ local function toTarget(targetCF)
         waited += 0.1
     end
     
+    -- ไต่ระดับลงเป็นช่วงๆ เช่นกัน
     if AUTO_ON and _G.BF04_LOOP then
+        local landY = hrp.Position.Y
+        while landY > targetCF.Position.Y + 25 do
+            landY = math.max(landY - stepY, targetCF.Position.Y + 25)
+            hrp.CFrame = CFrame.new(targetCF.Position.X, landY, targetCF.Position.Z)
+            task.wait(0.08)
+        end
         hrp.CFrame = targetCF
     end
     
@@ -812,7 +827,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.7 พร้อม (AoE + Fruit Finder + ปุ่มซื้อ Buso Haki)", "G")
+log("BF04 v4.8 พร้อม (บินช้าลง 150 studs/s + ไต่ระดับ กัน Anti-Warp)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v4.7 loaded")
+warn("[BF04] Auto Quest v4.8 loaded")
