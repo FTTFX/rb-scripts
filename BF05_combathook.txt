@@ -1,0 +1,185 @@
+-- BF05_combathook.txt — Blox Fruits Combat & Attack Spy v1.0
+-- เป้าหมาย: ดักจับ Remote / Function / Event ตอนเรากดคลิกโจมตีเอง (M1 / Tool Attack / Skills)
+-- วิธีใช้:
+--   1. รันสคริปต์นี้ในเกม
+--   2. ถืออาวุธ (หมัด / ดาบ / ผล) แล้วเดินไป "คลิกต่อยมอนธรรมดา (M1)" 3-4 ครั้ง
+--   3. กดใช้สกิล Z / X (ถ้ามี)
+--   4. กดปุ่ม [Copy] ด้านบนขวา แล้วส่งผลลัพธ์มาดูเลย!
+
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+local RS = game:GetService("ReplicatedStorage")
+
+local hookmeta = hookmetamethod
+local getnc    = getnamecallmethod
+local newcc    = newcclosure or function(f) return f end
+
+-- ── GUI Setup ──────────────────────────────────────────────────────
+local old = pg:FindFirstChild("BF05GUI"); if old then old:Destroy() end
+local sg = Instance.new("ScreenGui")
+sg.Name = "BF05GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 680, 0, 520); frame.Position = UDim2.new(0.5, -340, 0.5, -260)
+frame.BackgroundColor3 = Color3.fromRGB(14, 14, 20); frame.BorderSizePixel = 0
+frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size = UDim2.new(1, -160, 0, 28); titleLbl.Position = UDim2.new(0, 10, 0, 2)
+titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255, 120, 120)
+titleLbl.Text = "BF05 Combat Spy (คลิกต่อยมอน แล้วกด Copy)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
+
+local function topBtn(w, x, col, txt)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, w, 0, 22); b.Position = UDim2.new(1, x, 0, 4)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1); b.Text = txt
+    b.Font = Enum.Font.GothamBold; b.TextSize = 12; b.BorderSizePixel = 0; b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4); return b
+end
+
+local copyBtn  = topBtn(70, -75, Color3.fromRGB(30, 120, 60), "Copy")
+local clearBtn = topBtn(60, -140, Color3.fromRGB(60, 60, 90), "Clear")
+local closeBtn = topBtn(26, -32, Color3.fromRGB(140, 30, 30), "X")
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -12, 1, -38); scroll.Position = UDim2.new(0, 6, 0, 32)
+scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 12); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 6; scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 4)
+
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+local padL = Instance.new("UIPadding"); padL.PaddingLeft = UDim.new(0, 6); padL.PaddingTop = UDim.new(0, 4); padL.Parent = scroll
+
+local copyLines = {}
+local order = 0
+local C = {
+    G = Color3.fromRGB(80, 255, 120),
+    Y = Color3.fromRGB(255, 220, 80),
+    R = Color3.fromRGB(255, 90, 90),
+    B = Color3.fromRGB(120, 180, 255),
+    W = Color3.fromRGB(230, 230, 230),
+    S = Color3.fromRGB(150, 150, 150),
+    P = Color3.fromRGB(255, 130, 255),
+}
+
+local function log(txt, col)
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -12, 0, 16); l.BackgroundTransparency = 1; l.Font = Enum.Font.Code
+    l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+    l.TextColor3 = col or C.W; l.Text = txt; l.LayoutOrder = order; l.Parent = scroll
+    table.insert(copyLines, txt)
+    scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
+end
+
+closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
+clearBtn.MouseButton1Click:Connect(function()
+    for _, c in pairs(scroll:GetChildren()) do if c:IsA("TextLabel") then c:Destroy() end end
+    order = 0; table.clear(copyLines)
+    log("=== Cleared Logs ===", C.S)
+end)
+
+copyBtn.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard or (getgenv and getgenv().setclipboard)
+    local ok = clip and pcall(clip, table.concat(copyLines, "\n"))
+    copyBtn.Text = ok and "Copied!" or "ไม่รองรับ"
+    task.delay(2, function() if copyBtn.Parent then copyBtn.Text = "Copy" end end)
+end)
+
+-- ── Stringify Helper ───────────────────────────────────────────────
+local function valToStr(v, depth)
+    depth = depth or 0
+    if depth > 2 then return "..." end
+    local t = typeof(v)
+    if t == "string" then return '"' .. v .. '"'
+    elseif t == "number" or t == "boolean" then return tostring(v)
+    elseif t == "Instance" then return v:GetFullName()
+    elseif t == "Vector3" then return string.format("V3(%.1f,%.1f,%.1f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then return string.format("CF(%.1f,%.1f,%.1f)", v.X, v.Y, v.Z)
+    elseif t == "table" then
+        local parts = {}
+        local count = 0
+        for k, val in pairs(v) do
+            count += 1
+            if count > 6 then table.insert(parts, "..."); break end
+            table.insert(parts, tostring(k) .. "=" .. valToStr(val, depth + 1))
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    end
+    return "<" .. t .. ">"
+end
+
+-- ── Inspect Player Character & Tools ───────────────────────────────
+log("=== BF05 Combat Spy v1.0 ===", C.Y)
+log("กำลังสแกนโครงสร้าง Combat ของผู้เล่น...", C.S)
+
+local function scanCharacterCombat()
+    local char = LP.Character
+    if not char then log("ไม่เจอ Character", C.R) return end
+    
+    log("[Character Tools/Remotes]:", C.B)
+    for _, v in ipairs(char:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") or v:IsA("BindableEvent") then
+            log("  -> " .. v.ClassName .. ": " .. v:GetFullName(), C.G)
+        end
+    end
+    
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        log("[Backpack Tools/Remotes]:", C.B)
+        for _, v in ipairs(bp:GetDescendants()) do
+            if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+                log("  -> " .. v.ClassName .. ": " .. v:GetFullName(), C.G)
+            end
+        end
+    end
+end
+
+scanCharacterCombat()
+
+-- ── Hook All Remote Calls (__namecall) ─────────────────────────────
+if hookmeta and getnc then
+    local oldNc = nil
+    local callCount = 0
+    
+    oldNc = hookmeta(game, "__namecall", newcc(function(self, ...)
+        local method = getnc()
+        if (method == "FireServer" or method == "InvokeServer") and typeof(self) == "Instance" then
+            local name = self.Name
+            local fullName = self:GetFullName()
+            local args = {...}
+            
+            -- กรองข้อมูลที่ไม่เกี่ยวกับการโจมตีออก เพื่อไม่ให้ log รก (เช่น Movement, Clock, Heartbeat)
+            local ignore = name == "DelayedRequestFunction" or name == "Clock" or name == "SetSpawnPoint"
+            
+            if not ignore then
+                callCount += 1
+                local argStrs = {}
+                for i, a in ipairs(args) do
+                    table.insert(argStrs, "[" .. i .. "]=" .. valToStr(a))
+                end
+                
+                local col = C.W
+                if string.find(string.lower(name .. fullName), "combat") or string.find(string.lower(name .. fullName), "attack") or string.find(string.lower(name .. fullName), "hit") or string.find(string.lower(name .. fullName), "damage") then
+                    col = C.G -- สีเขียวเด่นถ้าเกี่ยวกับ Combat/Attack
+                elseif string.find(string.lower(name), "commf") then
+                    col = C.P -- สีชมพูถ้าเป็น CommF_
+                end
+                
+                log(string.format("#%d [%s] %s:%s(%s)", callCount, self.ClassName, name, method, table.concat(argStrs, ", ")), col)
+                log("    Path: " .. fullName, C.S)
+            end
+        end
+        return oldNc(self, ...)
+    end))
+    log("Hook __namecall: สำเร็จ ✓ (พร้อมดักการคลิกโจมตี)", C.G)
+else
+    log("⚠️ Executor ไม่รองรับ hookmetamethod", C.R)
+end
+
+log("--------------------------------------------------", C.S)
+log("👉 ลองเดินไปคลิกต่อยมอนธรรมดา (M1) 3-4 ทีในเกมตอนนี้ได้เลยครับ!", C.Y)
+log("แล้วดูว่ามีบรรทัดสีเขียว/สีชมพูขึ้นมาไหม", C.Y)
