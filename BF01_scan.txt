@@ -125,10 +125,35 @@ padB.Parent      = copyBox
 
 tabResult.MouseButton1Click:Connect(function() scroll.Visible=true copyBox.Visible=false end)
 tabCopy.MouseButton1Click:Connect(function()
-    scroll.Visible=false copyBox.Visible=true
-    copyBox:CaptureFocus()
-    copyBox.SelectionStart = 1
-    copyBox.CursorPosition = #copyBox.Text + 1
+    local full = table.concat(copyLines, "\n")
+    if full == "" then
+        tabCopy.Text = "รอ scan.."
+        task.delay(2, function() if tabCopy.Parent then tabCopy.Text = "Copy" end end)
+        return
+    end
+    -- วิธี 1: setclipboard (หลายชื่อ เผื่อ executor ต่างกัน)
+    local clip = setclipboard or toclipboard or write_clipboard
+        or (getgenv and getgenv().setclipboard)
+        or (typeof(setclipboard) == "function" and setclipboard)
+    local ok = clip and pcall(clip, full)
+    -- วิธี 2: เซฟเป็นไฟล์ (executor เกือบทุกตัวมี writefile)
+    local saved = (typeof(writefile) == "function") and pcall(writefile, "BF01_scan_result.txt", full)
+    if ok then
+        tabCopy.Text = "Copied!"
+        task.delay(2, function() if tabCopy.Parent then tabCopy.Text = "Copy" end end)
+    elseif saved then
+        tabCopy.Text = "เซฟไฟล์!"
+        task.delay(2, function() if tabCopy.Parent then tabCopy.Text = "Copy" end end)
+    else
+        -- วิธี 3: เปิด TextBox ให้กด Ctrl+A, Ctrl+C เอง
+        scroll.Visible  = false
+        copyBox.Visible = true
+        copyBox.Text    = full
+        copyBox:CaptureFocus()
+        copyBox.SelectionStart = 1
+        copyBox.CursorPosition = #full + 1
+        tabCopy.Text = "Ctrl+C"
+    end
 end)
 
 -- ── 3. Helper ─────────────────────────────────────────────────────
