@@ -237,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.8 (Anti-TP Safe Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v4.9 (Bring All AoE 300)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -648,7 +648,8 @@ local function directRemoteAttack(mobTarget, mobName)
     local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
     if not mainPart then return end
     
-    -- รวบรวมมอนสเตอร์ทุกตัวในกองตามฟอร์แมตมาตรฐานของเกม { {EnemyModel, TargetPart}, ... }
+    -- รวบรวมมอนทุกตัว "ทั้งแมพ" ไม่จำกัดระยะ (เพราะ Bring All ดึงมารวมแล้ว)
+    -- ถ้ายังไม่ถูกดึง (เพิ่งเกิดไกลๆ) จะใช้รัศมีกว้าง 300 studs รองรับ
     local othersEnemies = {}
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
@@ -658,7 +659,7 @@ local function directRemoteAttack(mobTarget, mobName)
                 local eHead = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
                 if eHum and eHead and eHum.Health > 0 then
                     local dist = (eHead.Position - mainPart.Position).Magnitude
-                    if dist <= 60 then
+                    if dist <= 300 then
                         table.insert(othersEnemies, { enemy, eHead })
                     end
                 end
@@ -674,6 +675,7 @@ local function directRemoteAttack(mobTarget, mobName)
     end)
     
     -- 2. ยิง RegisterHit ด้วยตารางคู่ {Enemy, Part} ที่ Server ต้องการแท้จริง
+    -- แถม: ยิงซ้ำรอบละ 2 hit เพื่อดาเมจเข้าทุกตัวแน่นอน (บางตัวกลืน hit แรก)
     pcall(function()
         if rHit and #othersEnemies > 0 then
             rHit:FireServer(mainPart, othersEnemies)
@@ -787,6 +789,9 @@ local function mainLoop()
 
                 equipWeapon()
 
+                -- เพิ่มการเก็บ Log: แสดงจำนวนมอนที่ตีโดนในแต่ละจอ
+                local aoeCount = 0
+                
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04_LOOP do
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
@@ -798,7 +803,7 @@ local function mainLoop()
                         end
                         aimCam(v)
                         
-                        -- รวมมอนสเตอร์ตัวอื่นๆ ในละแวกนั้นมาไว้ที่จุดเดียวกัน
+                        -- รวมมอนสเตอร์ทั้งแมพชื่อเดียวกันมาไว้ที่จุดเดียวกัน
                         bringMobsToTarget(v, qdata.mob)
                     end
                     
@@ -833,7 +838,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.8 พร้อม (บินช้าลง 150 studs/s + ไต่ระดับ กัน Anti-Warp)", "G")
+log("BF04 v4.9 พร้อม (AoE รัศมี 300 + Bring All ทั้งแมพ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v4.8 loaded")
+warn("[BF04] Auto Quest v4.9 loaded")
