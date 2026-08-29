@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.0 (Nearest Target + Fast Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.1 (No-Chase Retarget)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -764,7 +764,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.0 ===", "Y")
+    log("=== START AUTO v6.1 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -863,7 +863,7 @@ local function mainLoop()
                         if isMatch and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
-                            if d < bestDist then
+                            if d < bestDist and d < 400 then
                                 bestDist = d
                                 target = v
                             end
@@ -897,9 +897,15 @@ local function mainLoop()
                             -- RegisterHit เช็คระยะที่เซิร์ฟเวอร์ 100 studs → ยืนอยู่ไกลๆ ก็ตีโดน
                             -- ขยับเข้าไปแค่ตอนหลุดระยะจริงๆ และใช้ tween ช้าๆ ครั้งเดียว
                             local dist = (mhrp.Position - hrp.Position).Magnitude
-                            if dist > 75 then
-                                setState("มอนไกลเกิน (" .. math.floor(dist) .. ") → บินเข้าไปในระยะ", "B")
-                                tp(CFrame.new(mhrp.Position + Vector3.new(0, 25, 0)))
+                            -- มอนกระเด็นไกลมาก = ศพกำลังถูกเกมย้ายกลับจุดเกิดเพื่อ respawn
+                            -- ไม่ต้องไล่ข้ามแมพ ทิ้งเป้านี้แล้วเลือกตัวใกล้สุดใหม่เลย
+                            if dist > 200 then
+                                setState("เป้าหมายกระเด็นไป " .. math.floor(dist) .. " → เปลี่ยนเป้าใกล้สุด", "Y")
+                                break
+                            end
+                            if dist > 70 then
+                                setState("ขยับเข้าระยะ (" .. math.floor(dist) .. ")", "B")
+                                tp(CFrame.new(mhrp.Position + Vector3.new(0, 20, 0)))
                             end
                         end
                         aimCam(v)
@@ -911,7 +917,7 @@ local function mainLoop()
 
                     directRemoteAttack(v, qdata.mob)
                     hitCount += 1
-                    task.wait(0.08)
+                    task.wait(0.05)
                 end
 
                 if v.Parent and v.Humanoid.Health <= 0 then
@@ -943,7 +949,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.0 พร้อม (เลือกมอนตัวใกล้สุด + บินตรงเร็วขึ้น)", "G")
+log("BF04 v6.1 พร้อม (ไม่ไล่ศพข้ามแมพ + เปลี่ยนเป้าทันที)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.0 loaded")
+warn("[BF04] Auto Quest v6.1 loaded")
