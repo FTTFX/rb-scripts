@@ -1,6 +1,6 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.3
--- v1.3: แก้ลูปเทเลไม่ถึงมอน → เทเลตรงไปที่ตัวมอน (HRP.CFrame = mob.HRP.CFrame)
--- รับเควส (CommF_ StartQuest) → เทเลไป NPC → เทเลติดมอน → VirtualUser M1 → ตรวจ progress → Loop
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v1.4
+-- v1.4: ใช้โครงสร้างจาก XeroxSp (พิสูจน์แล้วทำงาน) + GUI/Log/Copy ของเรา
+-- แก้: BodyVelocity กันกระเด็น + ล็อกมอนตัวเดียวจนตาย + Button1Down(กลางจอ) + Tween ตามมอน
 -- วิธีใช้: รันในเกม → กด [Auto] → ดู Log → กด Copy Log ส่ง debug
 
 local Players = game:GetService("Players")
@@ -8,22 +8,23 @@ local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local VU = game:GetService("VirtualUser")
 local Workspace = workspace
 
 -- ── Config ────────────────────────────────────────────────────────
 local CFG = {
-    QUEST      = "BanditQuest1",
-    LEVEL      = 1,
-    MOB_NAME   = "Bandit",
-    MOB_FOLDER = "Enemies",
+    QUEST_NAME   = "BanditQuest1",
+    QUEST_NUM    = 1,
+    MOB_NAME     = "Bandit",
     QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),  -- จุด Bandit Quest Giver
-    TARGET_DIST  = 8,    -- ระยะเริ่มตี (เทเลติดมอนแล้ว = ใกล้มาก)
-    AUTO_ON    = false,
+    TWEEN_SPEED  = 20,    -- studs/sec (XeroxSp ใช้ /20)
+    AUTO_ON      = false,
 }
 
 _G.BF04 = _G.BF04 or {}
 _G.BF04_LOOP = nil
+_G.BF04_BV = nil
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
@@ -39,7 +40,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.3"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v1.4"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -52,6 +53,7 @@ closeBtn.MouseButton1Click:Connect(function()
     CFG.AUTO_ON = false
     _G.BF04_LOOP = nil
     pcall(function() VU:Button1Up() end)
+    pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
     sg:Destroy()
 end)
 
@@ -104,160 +106,134 @@ copyBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ── Helper ────────────────────────────────────────────────────────
-local CommF = nil
 local function getCommF()
-    if CommF and CommF.Parent then return CommF end
     local remotes = RS:FindFirstChild("Remotes")
     if remotes then
         for _, r in ipairs(remotes:GetDescendants()) do
-            if r.Name == "CommF_" and r:IsA("RemoteFunction") then
-                CommF = r
-                return CommF
-            end
+            if r.Name == "CommF_" and r:IsA("RemoteFunction") then return r end
         end
     end
     return nil
 end
 
-local function getChar()
+local function getHRP()
     local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if char and hrp and hum then return char, hrp, hum end
-    return nil
+    return char and char:FindFirstChild("HumanoidRootPart")
 end
 
--- เทเลพอร์ตตรง ๆ (แบบสคริปต์อ้างอิง — เชื่อถือได้)
-local function tp(cframe)
-    local char, hrp = getChar()
-    if not char then return false end
-    hrp.CFrame = cframe
-    return true
+-- Tween ตาม XeroxSp (Cubic, /20) + BodyVelocity กันกระเด็น
+local function addAntiFling()
+    local hrp = getHRP()
+    if not hrp then return end
+    if _G.BF04_BV and _G.BF04_BV.Parent then return end
+    if not hrp:FindFirstChild("BF04_Noclip") then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "BF04_Noclip"
+        bv.Parent = hrp
+        bv.MaxForce = Vector3.new(9e99, 9e99, 9e99)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        _G.BF04_BV = bv
+    end
 end
 
--- อ่าน progress
+local tween = nil
+local function TW(cframe)
+    local hrp = getHRP()
+    if not hrp then return end
+    pcall(function()
+        local dist = (cframe.Position - hrp.Position).Magnitude
+        if tween then tween:Cancel() end
+        addAntiFling()
+        tween = TweenService:Create(hrp, TweenInfo.new(dist / CFG.TWEEN_SPEED, Enum.EasingStyle.Cubic), {CFrame = cframe})
+        tween:Play()
+    end)
+end
+
+-- อ่าน progress จาก QuestTitle.Title.Text
 local function readProgress()
     local main = pg:FindFirstChild("Main")
     local q = main and main:FindFirstChild("Quest")
-    if not q then return nil, nil, nil end
+    if not q then return nil, nil end
     local ok, txt = pcall(function() return q.Container.QuestTitle.Title.Text end)
-    if not ok or not txt then return nil, nil, nil end
+    if not ok or not txt then return nil, nil end
     local cur, need = txt:match("%((%d+)/(%d+)%)")
-    return tonumber(cur), tonumber(need), txt
+    return tonumber(cur), tonumber(need)
 end
 
--- หามอนใกล้สุด (ยังไม่ตาย)
-local function findMob()
-    local folder = Workspace:FindFirstChild(CFG.MOB_FOLDER)
-    if not folder then return nil, nil end
-    local char, hrp = getChar()
-    local best, bestDist = nil, math.huge
-    for _, m in ipairs(folder:GetChildren()) do
-        if m:IsA("Model") and m.Name == CFG.MOB_NAME then
-            local hum = m:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 then
-                local mhrp = m:FindFirstChild("HumanoidRootPart")
-                if mhrp then
-                    if hrp then
-                        local d = (mhrp.Position - hrp.Position).Magnitude
-                        if d < bestDist then best, bestDist = m, d end
-                    else
-                        return m, 0
-                    end
-                end
-            end
-        end
-    end
-    return best, bestDist
-end
-
--- หันกล้องไปหามอน
-local function aimAt(mob)
-    local char, hrp = getChar()
-    local mhrp = mob and mob:FindFirstChild("HumanoidRootPart")
-    if not char or not mhrp then return end
-    local cam = Workspace.CurrentCamera
-    if cam then cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0,3,0), mhrp.Position) end
-end
-
--- M1
-local function attackOn()
+-- M1 คลิก (XeroxSp: Button1Down กลางจอ)
+local function clickM1()
     pcall(function() VU:CaptureController() end)
-    pcall(function() VU:Button1Down() end)
-end
-local function attackOff()
-    pcall(function() VU:Button1Up() end)
+    pcall(function() VU:Button1Down(Vector2.new(1280, 672)) end)
+    pcall(function() VU:Button1Up(Vector2.new(1280, 672)) end)
 end
 
--- ── Main Loop ─────────────────────────────────────────────────────
+-- ── Main Loop (โครงสร้าง XeroxSp + ล็อกมอนตัวเดียว) ────────────────
 local function mainLoop()
-    local down = false
     log("=== START AUTO ===", "Y")
+    local CommF = getCommF()
+    if not CommF then log("หา CommF_ ไม่เจอ!", "R") return end
+
+    local questDoneLogged = false
     while CFG.AUTO_ON and _G.BF04_LOOP do
-        task.wait(0.1)
+        task.wait()
+        pcall(function()
+            local UIQ = pg:FindFirstChild("Main") and pg.Main:FindFirstChild("Quest")
+            if not UIQ then log("หา Quest UI ไม่เจอ", "R") task.wait(1) return end
 
-        local char, hrp = getChar()
-        if not char then
-            log("รอตัวละคร spawn...", "S")
-            task.wait(1)
-            continue
-        end
-
-        local cur, need, txt = readProgress()
-
-        if not cur then
-            -- ไม่มีเควส → ไป NPC + รับ
-            if not getCommF() then
-                log("หา CommF_ ไม่เจอ (รอเกมโหลด?)", "R")
-                task.wait(1)
-            elseif (hrp.Position - CFG.QUEST_CFRAME.Position).Magnitude > 15 then
-                log("TP ไป NPC (ระยะ " .. math.floor((hrp.Position - CFG.QUEST_CFRAME.Position).Magnitude) .. ")", "B")
-                if down then attackOff() down = false end
-                tp(CFG.QUEST_CFRAME)
-                task.wait(0.3)
-            else
-                log("รับเควส: StartQuest(" .. CFG.QUEST .. ", " .. CFG.LEVEL .. ")", "Y")
-                local ok = pcall(function() CommF:InvokeServer("StartQuest", CFG.QUEST, CFG.LEVEL) end)
-                log(ok and "  → รับเควสแล้ว" or "  → รับเควส error", ok and "G" or "R")
-                task.wait(1.5)
+            -- เควสที่ค้างอยู่ไม่ใช่ Bandit → ทิ้ง (ตาม ClearQ)
+            local titleOk = pcall(function()
+                return UIQ.Container.QuestTitle.Title.Text
+            end)
+            if titleOk and UIQ.Visible and not string.find(titleOk, CFG.MOB_NAME) then
+                log("เควสไม่ใช่ " .. CFG.MOB_NAME .. " → Abandon", "Y")
+                CommF:InvokeServer("AbandonQuest")
             end
-        elseif cur >= need then
-            -- เสร็จ → รับใหม่
-            log("เควสเสร็จ (" .. cur .. "/" .. need .. ") → Abandon + Start ใหม่", "G")
-            if down then attackOff() down = false end
-            if getCommF() then
-                pcall(function() CommF:InvokeServer("AbandonQuest") end)
-                task.wait(0.8)
-                pcall(function() CommF:InvokeServer("StartQuest", CFG.QUEST, CFG.LEVEL) end)
-            end
-            task.wait(1.5)
-        else
-            -- มีเควส → ตีมอน
-            local mob, dist = findMob()
-            if mob then
-                local mhrp = mob:FindFirstChild("HumanoidRootPart")
-                if mhrp and dist > CFG.TARGET_DIST then
-                    -- เทเลตรงไปที่ตัวมอน (ไม่ใช่จุด fixed)
-                    log("TP ติดมอน (ระยะ " .. math.floor(dist) .. ")", "B")
-                    if down then attackOff() down = false end
-                    tp(mhrp.CFrame * CFrame.new(0, 0, 3))
+
+            if not UIQ.Visible then
+                -- ไม่มีเควส → tween ไป NPC → รับ
+                TW(CFG.QUEST_CFRAME)
+                if (CFG.QUEST_CFRAME.Position - getHRP().Position).Magnitude <= 15 then
                     task.wait(0.2)
-                else
-                    if not down then
-                        log("เริ่มตี " .. CFG.MOB_NAME .. " (" .. cur .. "/" .. need .. ")", "Y")
-                    end
-                    aimAt(mob)
-                    attackOn()
-                    down = true
+                    log("รับเควส: StartQuest(" .. CFG.QUEST_NAME .. ", " .. CFG.QUEST_NUM .. ")", "Y")
+                    CommF:InvokeServer("StartQuest", CFG.QUEST_NAME, CFG.QUEST_NUM)
+                    task.wait(0.5)
                 end
             else
-                log("หามอนไม่เจอ (รอ spawn)", "R")
-                if down then attackOff() down = false end
-                task.wait(1)
+                -- มีเควส → หา + ล็อกมอนตัวเดียวจนตาย
+                local enemies = Workspace:FindFirstChild("Enemies")
+                local target = nil
+                if enemies then
+                    for _, v in ipairs(enemies:GetChildren()) do
+                        if v.Name == CFG.MOB_NAME and v:FindFirstChild("Humanoid")
+                           and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+                            target = v
+                            break
+                        end
+                    end
+                end
+
+                if target then
+                    questDoneLogged = false
+                    local v = target
+                    log("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ")", "Y")
+                    repeat
+                        task.wait()
+                        if not CFG.AUTO_ON or not _G.BF04_LOOP then break end
+                        TW(v.HumanoidRootPart.CFrame * CFrame.new(0, 0, 5))
+                        clickM1()
+                    until not v.Parent or v.Humanoid.Health <= 0 or not UIQ.Visible or not CFG.AUTO_ON or not _G.BF04_LOOP
+                    log("มอนตาย ✓", "G")
+                else
+                    if not questDoneLogged then
+                        log("หามอนไม่เจอ (รอ spawn) — เช็คว่ามีเควสจริง", "R")
+                    end
+                    task.wait(1)
+                end
             end
-        end
+        end)
     end
-    if down then attackOff() end
+    pcall(function() VU:Button1Up() end)
+    pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
     log("=== STOP AUTO ===", "R")
 end
 
@@ -275,6 +251,6 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v1.3 พร้อม (เทเลติดมอนตรง ๆ)", "G")
+log("BF04 v1.4 พร้อม (โครงสร้าง XeroxSp + ล็อกมอนตัวเดียว)", "G")
 log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
-warn("[BF04] Auto Quest v1.3 loaded")
+warn("[BF04] Auto Quest v1.4 loaded")
