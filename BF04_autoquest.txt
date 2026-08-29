@@ -1,14 +1,13 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.2
--- v1.2: แก้เทเลกระตุก (TweenService + ChangeState(11)) + เพิ่ม Log/Copy panel
--- รับเควส (CommF_ StartQuest) → Tween ไป NPC/มอน → VirtualUser M1 → ตรวจ progress → Loop
--- วิธีใช้: รันในเกม → กด [Auto] → ดู Log → กด Copy ส่งให้ผม debug
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v1.3
+-- v1.3: แก้ลูปเทเลไม่ถึงมอน → เทเลตรงไปที่ตัวมอน (HRP.CFrame = mob.HRP.CFrame)
+-- รับเควส (CommF_ StartQuest) → เทเลไป NPC → เทเลติดมอน → VirtualUser M1 → ตรวจ progress → Loop
+-- วิธีใช้: รันในเกม → กด [Auto] → ดู Log → กด Copy Log ส่ง debug
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local pg = LP:WaitForChild("PlayerGui")
 local RS = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local VU = game:GetService("VirtualUser")
 local Workspace = workspace
 
@@ -18,9 +17,8 @@ local CFG = {
     LEVEL      = 1,
     MOB_NAME   = "Bandit",
     MOB_FOLDER = "Enemies",
-    QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),
-    MON_CFRAME   = CFrame.new(1196.17, 11.87, 1616.96),
-    TWEEN_SPEED  = 300,   -- studs/sec (ยิ่งมากยิ่งเร็ว)
+    QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),  -- จุด Bandit Quest Giver
+    TARGET_DIST  = 8,    -- ระยะเริ่มตี (เทเลติดมอนแล้ว = ใกล้มาก)
     AUTO_ON    = false,
 }
 
@@ -41,7 +39,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.2"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v1.3"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -71,7 +69,6 @@ copyBtn.Text = "Copy Log"; copyBtn.Font = Enum.Font.GothamBold; copyBtn.TextSize
 copyBtn.Parent = frame
 Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0,5)
 
--- Log panel
 local scroll = Instance.new("ScrollingFrame")
 scroll.Size = UDim2.new(1,-16,1,-76); scroll.Position = UDim2.new(0,8,0,70)
 scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
@@ -81,15 +78,13 @@ Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
 local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
 local padL = Instance.new("UIPadding"); padL.PaddingLeft = UDim.new(0,6); padL.PaddingTop = UDim.new(0,2); padL.Parent = scroll
 
--- ── Log system ─────────────────────────────────────────────────────
+-- ── Log ────────────────────────────────────────────────────────────
 local logLines = {}
 local logOrder = 0
 local logColors = {
-    G = Color3.fromRGB(80,255,120),   -- green (สำเร็จ)
-    Y = Color3.fromRGB(255,210,0),    -- yellow (action)
-    R = Color3.fromRGB(255,80,80),    -- red (error)
-    B = Color3.fromRGB(140,160,255),  -- blue (info)
-    S = Color3.fromRGB(140,140,140),  -- gray
+    G = Color3.fromRGB(80,255,120), Y = Color3.fromRGB(255,210,0),
+    R = Color3.fromRGB(255,80,80), B = Color3.fromRGB(140,160,255),
+    S = Color3.fromRGB(140,140,140),
 }
 local function log(txt, col)
     local c = logColors[col] or logColors.S
@@ -101,7 +96,6 @@ local function log(txt, col)
     table.insert(logLines, txt)
     scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
 end
-
 copyBtn.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard or write_clipboard or (getgenv and getgenv().setclipboard)
     local ok = clip and pcall(clip, table.concat(logLines, "\n"))
@@ -133,30 +127,15 @@ local function getChar()
     return nil
 end
 
--- ล็อกตัว (กันฟิสิกส์ดึงกลับ) — ใช้ตอน tween
-local function lockChar(hum)
-    pcall(function()
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
-    end)
-end
-
--- Tween TP (ลื่น ๆ — ไม่กระตุก)
-local tween = nil
+-- เทเลพอร์ตตรง ๆ (แบบสคริปต์อ้างอิง — เชื่อถือได้)
 local function tp(cframe)
-    local char, hrp, hum = getChar()
+    local char, hrp = getChar()
     if not char then return false end
-    local dist = (hrp.Position - cframe.Position).Magnitude
-    if dist < 1 then return true end
-    if tween then pcall(function() tween:Cancel() end) end
-    lockChar(hum)
-    local dur = math.clamp(dist / CFG.TWEEN_SPEED, 0.2, 4)
-    tween = TweenService:Create(hrp, TweenInfo.new(dur, Enum.EasingStyle.Linear), {CFrame = cframe})
-    tween:Play()
-    tween.Completed:Wait()
+    hrp.CFrame = cframe
     return true
 end
 
--- อ่าน progress จาก QuestTitle.Title.Text
+-- อ่าน progress
 local function readProgress()
     local main = pg:FindFirstChild("Main")
     local q = main and main:FindFirstChild("Quest")
@@ -167,7 +146,7 @@ local function readProgress()
     return tonumber(cur), tonumber(need), txt
 end
 
--- หามอนใกล้สุด
+-- หามอนใกล้สุด (ยังไม่ตาย)
 local function findMob()
     local folder = Workspace:FindFirstChild(CFG.MOB_FOLDER)
     if not folder then return nil, nil end
@@ -192,20 +171,16 @@ local function findMob()
     return best, bestDist
 end
 
--- หันไปหามอน (ยืนใกล้พอตี)
+-- หันกล้องไปหามอน
 local function aimAt(mob)
     local char, hrp = getChar()
     local mhrp = mob and mob:FindFirstChild("HumanoidRootPart")
     if not char or not mhrp then return end
-    local dir = hrp.Position - mhrp.Position
-    local flat = Vector3.new(dir.X, 0, dir.Z)
-    if flat.Magnitude < 0.1 then flat = Vector3.new(0,0,-1) end
-    hrp.CFrame = CFrame.lookAt(mhrp.Position + flat.Unit * 3 + Vector3.new(0,0.5,0), mhrp.Position)
     local cam = Workspace.CurrentCamera
-    if cam then cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0,5,0), mhrp.Position) end
+    if cam then cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0,3,0), mhrp.Position) end
 end
 
--- M1 (VirtualUser)
+-- M1
 local function attackOn()
     pcall(function() VU:CaptureController() end)
     pcall(function() VU:Button1Down() end)
@@ -235,10 +210,11 @@ local function mainLoop()
             if not getCommF() then
                 log("หา CommF_ ไม่เจอ (รอเกมโหลด?)", "R")
                 task.wait(1)
-            elseif (hrp.Position - CFG.QUEST_CFRAME.Position).Magnitude > 12 then
+            elseif (hrp.Position - CFG.QUEST_CFRAME.Position).Magnitude > 15 then
                 log("TP ไป NPC (ระยะ " .. math.floor((hrp.Position - CFG.QUEST_CFRAME.Position).Magnitude) .. ")", "B")
                 if down then attackOff() down = false end
                 tp(CFG.QUEST_CFRAME)
+                task.wait(0.3)
             else
                 log("รับเควส: StartQuest(" .. CFG.QUEST .. ", " .. CFG.LEVEL .. ")", "Y")
                 local ok = pcall(function() CommF:InvokeServer("StartQuest", CFG.QUEST, CFG.LEVEL) end)
@@ -259,11 +235,13 @@ local function mainLoop()
             -- มีเควส → ตีมอน
             local mob, dist = findMob()
             if mob then
-                if dist > 25 then
-                    log("TP ไปจุดมอน (ระยะ " .. math.floor(dist) .. ")", "B")
+                local mhrp = mob:FindFirstChild("HumanoidRootPart")
+                if mhrp and dist > CFG.TARGET_DIST then
+                    -- เทเลตรงไปที่ตัวมอน (ไม่ใช่จุด fixed)
+                    log("TP ติดมอน (ระยะ " .. math.floor(dist) .. ")", "B")
                     if down then attackOff() down = false end
-                    tp(CFG.MON_CFRAME)
-                    task.wait(0.5)
+                    tp(mhrp.CFrame * CFrame.new(0, 0, 3))
+                    task.wait(0.2)
                 else
                     if not down then
                         log("เริ่มตี " .. CFG.MOB_NAME .. " (" .. cur .. "/" .. need .. ")", "Y")
@@ -273,9 +251,8 @@ local function mainLoop()
                     down = true
                 end
             else
-                log("หามอนไม่เจอ → TP จุดรวมมอน", "R")
+                log("หามอนไม่เจอ (รอ spawn)", "R")
                 if down then attackOff() down = false end
-                tp(CFG.MON_CFRAME)
                 task.wait(1)
             end
         end
@@ -298,6 +275,6 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v1.2 พร้อม (Tween TP + ChangeState11)", "G")
+log("BF04 v1.3 พร้อม (เทเลติดมอนตรง ๆ)", "G")
 log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
-warn("[BF04] Auto Quest v1.2 loaded")
+warn("[BF04] Auto Quest v1.3 loaded")
