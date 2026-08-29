@@ -244,7 +244,7 @@ local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 370, 0, 430)
+frame.Size = UDim2.new(0, 370, 0, 458)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.6 (Fast Mid-Range Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.7 (+ AUTO SABER)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -321,8 +321,17 @@ magnetBtn.MouseButton1Click:Connect(function()
     magnetBtn.BackgroundColor3 = MAGNET_ON and Color3.fromRGB(90,60,150) or Color3.fromRGB(50,50,70)
 end)
 
+local SABER_ON = false
+local saberBtn = Instance.new("TextButton")
+saberBtn.Size = UDim2.new(0, 350, 0, 24); saberBtn.Position = UDim2.new(0, 10, 0, 126)
+saberBtn.BackgroundColor3 = Color3.fromRGB(20,90,90); saberBtn.TextColor3 = Color3.new(1,1,1)
+saberBtn.Text = "AUTO SABER: OFF (ดาบดีสุด First Sea | ต้อง Lv.200+)"
+saberBtn.Font = Enum.Font.GothamBold; saberBtn.TextSize = 12; saberBtn.BorderSizePixel = 0
+saberBtn.Parent = frame
+Instance.new("UICorner", saberBtn).CornerRadius = UDim.new(0,5)
+
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-16,1,-136); scroll.Position = UDim2.new(0,8,0,128)
+scroll.Size = UDim2.new(1,-16,1,-164); scroll.Position = UDim2.new(0,8,0,156)
 scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -766,7 +775,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.6 ===", "Y")
+    log("=== START AUTO v6.7 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -982,6 +991,214 @@ local function mainLoop()
     log("=== STOP AUTO ===", "R")
 end
 
+-- ── AUTO SABER (ดาบดีที่สุดของ First Sea) ─────────────────────────
+-- ลำดับเควสจากสคริปต์อ้างอิงที่ใช้งานได้จริง:
+--   1. กดแป้นลับ 5 จุด: Workspace.Map.Jungle.QuestPlates.Plate1-5.Button
+--   2. เอา Torch ไปจุดไฟที่ทะเลทราย (Map.Desert.Burn.Part)
+--   3. เชนเควส ProQuestProgress: SickMan → GetCup → FillCup → RichSon
+--   4. ฆ่า Mob Leader เอา Relic → ไปวางที่ Jungle → ฆ่า Saber Expert → PlaceRelic
+local function equipByName(name)
+    local char, _, hum = getChar()
+    if not char or not hum then return false end
+    if char:FindFirstChild(name) then return true end
+    local bp = LP:FindFirstChild("Backpack")
+    local tool = bp and bp:FindFirstChild(name)
+    if tool then
+        pcall(function() hum:EquipTool(tool) end)
+        return true
+    end
+    return false
+end
+
+local function killNamedBoss(bossName)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return false end
+    for _, v in ipairs(enemies:GetChildren()) do
+        if v.Name == bossName and v:FindFirstChild("Humanoid")
+           and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+            setState("สู้ " .. bossName .. " (HP " .. math.floor(v.Humanoid.Health) .. ")", "Y")
+            equipWeapon()
+            while SABER_ON and v.Parent and v.Humanoid.Health > 0 do
+                local _, hrp = getChar()
+                local mhrp = v:FindFirstChild("HumanoidRootPart")
+                if not (hrp and mhrp) then break end
+                pcall(function()
+                    v.Humanoid.WalkSpeed = 0
+                    mhrp.CanCollide = false
+                end)
+                if (mhrp.Position - hrp.Position).Magnitude > 25 then
+                    tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0)))
+                end
+                aimCam(v)
+                directRemoteAttack(v, bossName)
+                task.wait(0.05)
+            end
+            if v.Humanoid.Health <= 0 then
+                setState(bossName .. " ตาย ✓", "G")
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local SABER_CF = {
+    plates = CFrame.new(-1612.55884, 36.9774132, 148.719543),
+    torchPickup = CFrame.new(-1610.00757, 11.5049858, 164.001587),
+    torchBurn = CFrame.new(1114.61475, 5.04679728, 4350.22803),
+    mobLeader = CFrame.new(-2967.59521, -4.91089821, 5328.70703),
+    relicPlace = CFrame.new(-1404.91504, 29.9773273, 3.80598116),
+    saberExpert = CFrame.new(-1401.85046, 29.9773273, 8.81916237),
+}
+
+local function saberLoop()
+    log("=== START AUTO SABER ===", "Y")
+    local CommF = getCommF()
+    if not CommF then log("หา CommF_ ไม่เจอ", "R") return end
+
+    local lv = getMyLevel()
+    if lv < 200 then
+        log("❌ ต้อง Lv.200 ขึ้นไป (ตอนนี้ " .. lv .. ")", "R")
+        SABER_ON = false
+        saberBtn.Text = "AUTO SABER: OFF (ต้อง Lv.200+)"
+        return
+    end
+
+    while SABER_ON and _G.BF04_SABER do
+        task.wait(0.3)
+        pcall(function()
+            local char, hrp = getChar()
+            if not char then setState("รอตัวละคร...", "S") return end
+
+            local jungle = Workspace.Map:FindFirstChild("Jungle")
+            local plates = jungle and jungle:FindFirstChild("QuestPlates")
+            local final = jungle and jungle:FindFirstChild("Final")
+
+            -- จบงานแล้ว: มี Saber ในกระเป๋า
+            local bp = LP:FindFirstChild("Backpack")
+            if (bp and bp:FindFirstChild("Saber")) or char:FindFirstChild("Saber") then
+                log("🎉 ได้ Saber แล้ว! ปิด AUTO SABER", "G")
+                SABER_ON = false
+                _G.BF04_SABER = nil
+                saberBtn.Text = "AUTO SABER: สำเร็จ ✓ (ได้ Saber แล้ว)"
+                saberBtn.BackgroundColor3 = Color3.fromRGB(30,120,50)
+                return
+            end
+
+            -- ขั้นที่ 1: ยังไม่ได้กดแป้น 5 จุด (ประตูยังปิด)
+            if plates and plates:FindFirstChild("Door") and plates.Door.Transparency == 0 then
+                if (SABER_CF.plates.Position - hrp.Position).Magnitude > 100 then
+                    setState("ขั้น 1: บินไป Jungle เพื่อกดแป้นลับ", "B")
+                    tp(SABER_CF.plates)
+                else
+                    setState("ขั้น 1: กดแป้นลับ 5 จุด...", "Y")
+                    for i = 1, 5 do
+                        local plate = plates:FindFirstChild("Plate" .. i)
+                        local btn = plate and plate:FindFirstChild("Button")
+                        if btn then
+                            local _, h = getChar()
+                            if h then h.CFrame = btn.CFrame end
+                            log("  กดแป้น " .. i .. "/5 ✓", "G")
+                        else
+                            log("  ❌ หา Plate" .. i .. " ไม่เจอ", "R")
+                        end
+                        task.wait(1)
+                    end
+                end
+                return
+            end
+
+            -- ขั้นที่ 2: จุดไฟด้วย Torch ที่ทะเลทราย
+            local desert = Workspace.Map:FindFirstChild("Desert")
+            local burn = desert and desert:FindFirstChild("Burn")
+            if burn and burn:FindFirstChild("Part") and burn.Part.Transparency == 0 then
+                if equipByName("Torch") then
+                    setState("ขั้น 2: ถือ Torch → บินไปจุดไฟที่ทะเลทราย", "B")
+                    tp(SABER_CF.torchBurn)
+                else
+                    setState("ขั้น 2: บินไปเก็บ Torch ที่ Jungle", "B")
+                    tp(SABER_CF.torchPickup)
+                end
+                return
+            end
+
+            -- ขั้นที่ 3: เชนเควสคนป่วย (SickMan → GetCup → FillCup)
+            local sick = CommF:InvokeServer("ProQuestProgress", "SickMan")
+            if sick ~= 0 then
+                setState("ขั้น 3: เควสคนป่วย (รับถ้วย → ตักน้ำ → ส่ง)", "Y")
+                CommF:InvokeServer("ProQuestProgress", "GetCup")
+                task.wait(0.5)
+                equipByName("Cup")
+                task.wait(0.5)
+                local cup = char:FindFirstChild("Cup")
+                CommF:InvokeServer("ProQuestProgress", "FillCup", cup)
+                task.wait(0.3)
+                CommF:InvokeServer("ProQuestProgress", "SickMan")
+                return
+            end
+
+            -- ขั้นที่ 4: เควสลูกเศรษฐี (ฆ่า Mob Leader → เอา Relic ไปวาง)
+            local rich = CommF:InvokeServer("ProQuestProgress", "RichSon")
+            if rich == nil then
+                setState("ขั้น 4: รับเควสลูกเศรษฐี", "Y")
+                CommF:InvokeServer("ProQuestProgress", "RichSon")
+                return
+            elseif rich == 0 then
+                setState("ขั้น 4: บินไปฆ่า Mob Leader (Lv.120 Boss)", "B")
+                tp(SABER_CF.mobLeader)
+                killNamedBoss("Mob Leader")
+                return
+            elseif rich == 1 then
+                setState("ขั้น 4: ส่งเควส → ถือ Relic ไปวางที่ Jungle", "Y")
+                CommF:InvokeServer("ProQuestProgress", "RichSon")
+                task.wait(0.5)
+                equipByName("Relic")
+                task.wait(0.5)
+                tp(SABER_CF.relicPlace)
+                return
+            end
+
+            -- ขั้นที่ 5: บอส Saber Expert
+            local enemies = Workspace:FindFirstChild("Enemies")
+            if enemies and enemies:FindFirstChild("Saber Expert") then
+                if killNamedBoss("Saber Expert") then
+                    setState("ขั้น 5: ฆ่า Saber Expert สำเร็จ → PlaceRelic", "G")
+                    CommF:InvokeServer("ProQuestProgress", "PlaceRelic")
+                end
+            else
+                setState("ขั้น 5: บินไปจุดเรียก Saber Expert", "B")
+                tp(SABER_CF.saberExpert)
+            end
+        end)
+    end
+    stopTween()
+    log("=== STOP AUTO SABER ===", "R")
+end
+
+saberBtn.MouseButton1Click:Connect(function()
+    SABER_ON = not SABER_ON
+    if SABER_ON then
+        -- ปิด AUTO ฟาร์มก่อน กันสองระบบดึงตัวละครสวนทางกัน
+        if AUTO_ON then
+            AUTO_ON = false
+            _G.BF04_LOOP = nil
+            autoBtn.Text = "AUTO: OFF"
+            autoBtn.BackgroundColor3 = Color3.fromRGB(30,120,50)
+            log("ปิด AUTO ฟาร์มชั่วคราว (ทำเควส Saber ก่อน)", "S")
+        end
+        _G.BF04_SABER = true
+        saberBtn.Text = "AUTO SABER: ON (กำลังทำเควส...)"
+        saberBtn.BackgroundColor3 = Color3.fromRGB(200,140,20)
+        task.spawn(saberLoop)
+    else
+        _G.BF04_SABER = nil
+        stopTween()
+        saberBtn.Text = "AUTO SABER: OFF (ดาบดีสุด First Sea | ต้อง Lv.200+)"
+        saberBtn.BackgroundColor3 = Color3.fromRGB(20,90,90)
+        log("หยุด AUTO SABER", "R")
+    end
+end)
+
 autoBtn.MouseButton1Click:Connect(function()
     AUTO_ON = not AUTO_ON
     autoBtn.Text = "AUTO: " .. (AUTO_ON and "ON" or "OFF")
@@ -997,7 +1214,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.6 พร้อม (บินตรงถึง 650 studs + Magnet รวมกองที่ตัวเรา)", "G")
+log("BF04 v6.7 พร้อม (เพิ่มปุ่ม AUTO SABER ทำเควสดาบอัตโนมัติ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.6 loaded")
+warn("[BF04] Auto Quest v6.7 loaded")
