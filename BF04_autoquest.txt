@@ -1,9 +1,9 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v4.3
--- v4.3:
---   1. ระบบ AoE Multi-Target Remote Attack (ฟาดโดนทุกตัวในระยะพร้อมกัน เลือดลดพร้อมกัน)
---   2. Mob Magnet ดึงมอนรอบข้างมารวมกอง
---   3. รักษาระยะลอยตัวเหนือมอน 18 studs ปลอดภัย ไม่ตกน้ำ ไม่โดนตี
---   4. Smart Fly บินข้ามเกาะยกสูง + กรองบอส + เควส 1-700 ครบทั้ง First Sea
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v4.4
+-- v4.4:
+--   - ฟอร์แมต AoE แท้จริง: RegisterHit:FireServer(mainPart, { {enemy1, head1}, {enemy2, head2}, ... })
+--   - Mob Magnet ดึงมอนรอบข้างมารวมกอง
+--   - รักษาระยะลอยตัวเหนือมอน 18 studs ปลอดภัย ไม่ตกน้ำ
+--   - Smart Fly บินข้ามเกาะยกสูง + กรองบอส + เควส 1-700 ครบทั้ง First Sea
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -236,7 +236,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.3 (AoE Attack)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v4.4 (AoE Fixed)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -495,8 +495,8 @@ local function bringMobsToTarget(primaryTarget, mobName)
 end
 
 -- ⚡ ระบบโจมตีหมู่ผ่าน Net Remote (AoE Direct Remote Attack)
--- Blox Fruits รับ RegisterHit แบบ [1]=TargetPart, [2]={ {["Enemy"]=mob1}, {["Enemy"]=mob2}, ... }
--- และเราส่ง RegisterHit เข้าทุกตัวในกองพร้อมกันใน 1 tick เพื่อให้เลือดลดพร้อมกัน
+-- รูปแบบแท้จริงของ Blox Fruits Server (จาก FastAttack Source):
+-- RegisterHit:FireServer(mainBasePart, { {enemy1, head1}, {enemy2, head2}, ... })
 local comboIndex = 1
 local function directRemoteAttack(mobTarget, mobName)
     if not mobTarget or not mobTarget.Parent then return end
@@ -513,51 +513,40 @@ local function directRemoteAttack(mobTarget, mobName)
         end
     end)
     
-    local hitPart = mobTarget:FindFirstChild("HumanoidRootPart") or mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChildOfClass("Part")
-    if not hitPart then return end
+    local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
+    if not mainPart then return end
     
-    -- รวบรวมทุกตัวที่อยู่ในรัศมีรอบจุดตี
-    local targetParts = { hitPart }
-    local extraTargets = {}
-    
+    -- รวบรวมมอนสเตอร์ทุกตัวในกองตามฟอร์แมตมาตรฐานของเกม { {EnemyModel, TargetPart}, ... }
+    local othersEnemies = {}
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
-        for _, otherMob in ipairs(enemies:GetChildren()) do
-            if string.find(otherMob.Name, mobName) then
-                local oHrp = otherMob:FindFirstChild("HumanoidRootPart")
-                local oHum = otherMob:FindFirstChild("Humanoid")
-                if oHrp and oHum and oHum.Health > 0 then
-                    local dist = (oHrp.Position - hitPart.Position).Magnitude
-                    if dist <= 45 then
-                        if otherMob ~= mobTarget then
-                            table.insert(targetParts, oHrp)
-                        end
-                        table.insert(extraTargets, {
-                            ["Enemy"] = otherMob,
-                            ["Character"] = otherMob,
-                            ["HitPart"] = oHrp,
-                        })
+        for _, enemy in ipairs(enemies:GetChildren()) do
+            if string.find(enemy.Name, mobName) then
+                local eHum = enemy:FindFirstChild("Humanoid")
+                local eHead = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
+                if eHum and eHead and eHum.Health > 0 then
+                    local dist = (eHead.Position - mainPart.Position).Magnitude
+                    if dist <= 60 then
+                        table.insert(othersEnemies, { enemy, eHead })
                     end
                 end
             end
         end
     end
     
-    -- 1. ยิง RegisterAttack เปิดคอมโบ
+    -- 1. ยิง RegisterAttack
     pcall(function()
         if rAttack then
             rAttack:FireServer(0.5, comboIndex)
         end
     end)
     
-    -- 2. ยิง RegisterHit เข้ามอนทุกตัวในกองพร้อมกัน (เลือดลดพร้อมกันทุกตัว)
-    if rHit then
-        for _, part in ipairs(targetParts) do
-            pcall(function()
-                rHit:FireServer(part, extraTargets)
-            end)
+    -- 2. ยิง RegisterHit ด้วยตารางคู่ {Enemy, Part} ที่ Server ต้องการแท้จริง
+    pcall(function()
+        if rHit and #othersEnemies > 0 then
+            rHit:FireServer(mainPart, othersEnemies)
         end
-    end
+    end)
     
     comboIndex = (comboIndex % 4) + 1
 end
@@ -708,7 +697,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.3 พร้อม (ระบบตีหมู่ AoE โดนทุกตัวพร้อมกัน)", "G")
+log("BF04 v4.4 พร้อม (AoE ฟอร์แมตคู่ {Enemy, Head})", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("กด AUTO เพื่อเริ่มฟาร์มแบบอัตโนมัติต่อเนื่อง", "S")
-warn("[BF04] Auto Quest v4.3 loaded")
+warn("[BF04] Auto Quest v4.4 loaded")
