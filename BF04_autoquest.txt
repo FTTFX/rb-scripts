@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.2 (Full Cleanup Button)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.3 (Boss Survival)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -873,7 +873,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.2 ===", "Y")
+    log("=== START AUTO v7.3 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1116,17 +1116,53 @@ local function killNamedBoss(bossName)
            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
             setState("สู้ " .. bossName .. " (HP " .. math.floor(v.Humanoid.Health) .. ")", "Y")
             equipWeapon()
+            local lastHpLog = 0
             while SABER_ON and v.Parent and v.Humanoid.Health > 0 do
-                local _, hrp = getChar()
+                local char, hrp, myHum = getChar()
+
+                -- ตายแล้ว → รอเกิดใหม่แล้วค่อยกลับมาสู้ต่อ (ไม่ใช่ค้างอยู่เฉยๆ)
+                if not char or (myHum and myHum.Health <= 0) then
+                    log("💀 ตายระหว่างสู้ " .. bossName .. " → รอเกิดใหม่", "R")
+                    LP.CharacterAdded:Wait()
+                    task.wait(3)
+                    return false
+                end
+
                 local mhrp = v:FindFirstChild("HumanoidRootPart")
                 if not (hrp and mhrp) then break end
+
+                -- ปิดความสามารถของบอสให้มากที่สุด: หยุดเดิน หยุดกระโดด ย่อฮิตบ็อกซ์
                 pcall(function()
                     v.Humanoid.WalkSpeed = 0
+                    v.Humanoid.JumpPower = 0
                     mhrp.CanCollide = false
+                    mhrp.Size = Vector3.new(1, 1, 1)
                 end)
-                if (mhrp.Position - hrp.Position).Magnitude > 25 then
-                    tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0)))
+
+                -- ลอยเหนือหัวบอส 14 studs: ยังอยู่ในระยะที่ดาเมจเข้า
+                -- แต่พ้นระยะท่าโจมตีพื้นของบอสส่วนใหญ่
+                if (mhrp.Position - hrp.Position).Magnitude > 22 then
+                    tp(CFrame.new(mhrp.Position + Vector3.new(0, 14, 0)))
                 end
+
+                -- เลือดเหลือน้อย → ถอยขึ้นสูงพักฟื้นก่อนกลับไปตี
+                if myHum and myHum.MaxHealth > 0 and (myHum.Health / myHum.MaxHealth) < 0.35 then
+                    setState("⚠️ เลือดเหลือ " .. math.floor(myHum.Health) .. " → ถอยขึ้นสูงพักฟื้น", "R")
+                    while SABER_ON and myHum.Parent and myHum.Health > 0
+                          and (myHum.Health / myHum.MaxHealth) < 0.85 do
+                        local _, h = getChar()
+                        if not h then break end
+                        h.CFrame = CFrame.new(mhrp.Position + Vector3.new(0, 220, 0))
+                        task.wait(0.3)
+                    end
+                    setState("เลือดฟื้นแล้ว → กลับไปสู้ต่อ", "G")
+                end
+
+                if v.Humanoid.Health < lastHpLog - 500 or lastHpLog == 0 then
+                    lastHpLog = v.Humanoid.Health
+                    setState(bossName .. " HP " .. math.floor(v.Humanoid.Health), "S")
+                end
+
                 aimCam(v)
                 directRemoteAttack(v, bossName)
                 task.wait(0.05)
@@ -1365,7 +1401,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.2 พร้อม (ปุ่ม ล้าง/ปลดล็อก = ล้างของค้างทุกอย่าง)", "G")
+log("BF04 v7.3 พร้อม (สู้บอสไม่ตาย: ลอยเหนือหัว + ถอยพักฟื้น + เกิดใหม่สู้ต่อ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.2 loaded")
+warn("[BF04] Auto Quest v7.3 loaded")
