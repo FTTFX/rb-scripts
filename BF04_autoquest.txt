@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.1 (No-Chase Retarget)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.2 (Search + Patrol)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -764,7 +764,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.1 ===", "Y")
+    log("=== START AUTO v6.2 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -871,9 +871,32 @@ local function mainLoop()
                     end
                 end
 
+                -- ไม่มีตัวไหนในระยะ 400 → หาใหม่แบบไม่จำกัดระยะ แล้วบินไปหา
+                -- (จุดเกิดที่บันทึกไว้อาจไม่ตรง ยืนรอเฉยๆ จะไม่เจอมอนเลย)
+                if not target and enemies then
+                    for _, v in ipairs(enemies:GetChildren()) do
+                        local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
+                        local isMatch = string.find(v.Name, qdata.mob) and not
+                            (isBoss and not string.find(qdata.mob, "King") and not string.find(qdata.mob, "Boss"))
+                        if isMatch and v:FindFirstChild("Humanoid")
+                           and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+                            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                            if d < bestDist then bestDist = d; target = v end
+                        end
+                    end
+                    if target then
+                        setState("เจอ " .. qdata.mob .. " ไกล " .. math.floor(bestDist) .. " → บินไปหา", "B")
+                        tp(CFrame.new(target.HumanoidRootPart.Position + Vector3.new(0, 20, 0)))
+                    end
+                end
+
                 if not target then
-                    setState("หามอน " .. qdata.mob .. " ไม่เจอ (รอที่จุดเกิด)...", "Y")
-                    tp(qdata.mobCF)
+                    -- ไม่มีมอนใน Workspace เลย → ตระเวนรอบจุดเกิดเพื่อกระตุ้นให้เกม spawn
+                    PATROL_I = (PATROL_I or 0) + 1
+                    local ang = PATROL_I * 1.2
+                    local off = Vector3.new(math.cos(ang) * 120, 25, math.sin(ang) * 120)
+                    setState("ไม่มี " .. qdata.mob .. " บนแมพ → ตระเวนรอบจุดเกิด (" .. PATROL_I .. ")", "Y")
+                    tp(CFrame.new(qdata.mobCF.Position + off))
                     task.wait(0.5)
                     return
                 end
@@ -949,7 +972,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.1 พร้อม (ไม่ไล่ศพข้ามแมพ + เปลี่ยนเป้าทันที)", "G")
+log("BF04 v6.2 พร้อม (บินหามอนไกล + ตระเวนรอบจุดเกิด)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.1 loaded")
+warn("[BF04] Auto Quest v6.2 loaded")
