@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.8 (Fix Saber Fly Stuck)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.9 (Fast Sea Fly + Progress)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -532,7 +532,7 @@ end
 -- ระบบ Smart Travel (บินสูงข้ามเกาะ)
 -- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
 --    บินด้วยความเร็ว 150 studs/sec (เกมรับได้ ไม่ trigger anti-teleport)
-local FLY_SPEED = 150
+local FLY_SPEED = 380
 -- ระบบไหนก็ได้ที่กำลังทำงาน = อนุญาตให้บินต่อ
 -- (เดิมเช็ค AUTO_ON เท่านั้น พอ AUTO SABER ทำงานลูปบินจะหลุดกลางทาง = ค้างบนฟ้า)
 local function moveOK()
@@ -597,10 +597,20 @@ local function toTarget(targetCF)
     currentTween = tw
     tw:Play()
     
+    -- บินข้ามทะเลใช้เวลาหลายสิบวินาที ถ้าไม่รายงานความคืบหน้าจะดูเหมือนสคริปต์ค้าง
+    if flyDist > 1500 then
+        log(string.format("บินข้ามทะเล %.0f studs (~%.0f วิ)", flyDist, flyTime), "B")
+    end
+
     local waited = 0
+    local nextReport = 3
     while moveOK() and currentTween == tw and waited < (flyTime + 0.5) do
         local curDist = (skyEndCF.Position - hrp.Position).Magnitude
         if curDist <= 15 then break end
+        if flyDist > 1500 and waited >= nextReport then
+            nextReport = waited + 5
+            log(string.format("  ...เหลือ %.0f studs", curDist), "S")
+        end
         task.wait(0.1)
         waited += 0.1
     end
@@ -780,7 +790,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.8 ===", "Y")
+    log("=== START AUTO v6.9 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1154,12 +1164,22 @@ local function saberLoop()
                 killNamedBoss("Mob Leader")
                 return
             elseif rich == 1 then
-                setState("ขั้น 4: ส่งเควส → ถือ Relic ไปวางที่ Jungle", "Y")
-                CommF:InvokeServer("ProQuestProgress", "RichSon")
-                task.wait(0.5)
+                -- ส่งเควสครั้งเดียวพอ ถ้าเรียกซ้ำทุกรอบเควสอาจรีเซ็ต
+                if not RELIC_SENT then
+                    RELIC_SENT = true
+                    setState("ขั้น 4: ส่งเควสลูกเศรษฐี → รับ Relic", "Y")
+                    CommF:InvokeServer("ProQuestProgress", "RichSon")
+                    task.wait(0.5)
+                end
                 equipByName("Relic")
-                task.wait(0.5)
-                tp(SABER_CF.relicPlace)
+                local d = (SABER_CF.relicPlace.Position - hrp.Position).Magnitude
+                if d > 20 then
+                    setState("ขั้น 4: ถือ Relic บินกลับ Jungle (ห่าง " .. math.floor(d) .. ")", "B")
+                    tp(SABER_CF.relicPlace)
+                else
+                    setState("ขั้น 4: ถึงจุดวาง Relic แล้ว รอเกมรับของ...", "Y")
+                    task.wait(1)
+                end
                 return
             end
 
@@ -1219,7 +1239,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.8 พร้อม (แก้บินค้างบนฟ้าตอนทำเควส Saber)", "G")
+log("BF04 v6.9 พร้อม (บินข้ามทะเลเร็วขึ้น 2.5 เท่า + รายงานระยะ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.8 loaded")
+warn("[BF04] Auto Quest v6.9 loaded")
