@@ -253,7 +253,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v6.4 (Learned Spawn Point)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v6.5 (Stick Close 25 studs)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -764,7 +764,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v6.4 ===", "Y")
+    log("=== START AUTO v6.5 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -901,8 +901,11 @@ local function mainLoop()
                         tp(CFrame.new(anchor + Vector3.new(0, 20, 0)))
                     else
                         PATROL_I = (PATROL_I or 0) + 1
+                        -- แมพนี้มอนจะโหลดเฉพาะเมื่อเราอยู่ใกล้ → ตระเวนเป็นก้นหอย
+                        -- วนใกล้ก่อนแล้วขยายวงออก และบินต่ำ ให้ระบบ streaming โหลดมอนขึ้นมา
                         local ang = PATROL_I * 1.2
-                        local off = Vector3.new(math.cos(ang) * 120, 25, math.sin(ang) * 120)
+                        local r = 60 + (PATROL_I % 6) * 50
+                        local off = Vector3.new(math.cos(ang) * r, 15, math.sin(ang) * r)
                         setState("ยังไม่รู้จุดเกิดจริงของ " .. qdata.mob .. " → ตระเวนหา (" .. PATROL_I .. ")", "Y")
                         tp(CFrame.new(anchor + off))
                     end
@@ -943,9 +946,12 @@ local function mainLoop()
                                 setState("เป้าหมายกระเด็นไป " .. math.floor(dist) .. " → เปลี่ยนเป้าใกล้สุด", "Y")
                                 break
                             end
-                            if dist > 70 then
+                            -- เกาะติดที่ 25 studs: ยิง 283 ครั้งที่ระยะ 70 ได้แค่ 158 dmg/s
+                            -- แต่ยิง 49 ครั้งตอนประชิดได้ 932 dmg/s → เซิร์ฟเวอร์กินดาเมจเฉพาะระยะใกล้
+                            -- (tp จะวาร์ปตรงเมื่อ < 25 studs อยู่แล้ว ไม่เข้าเกณฑ์ anti-cheat)
+                            if dist > 25 then
                                 setState("ขยับเข้าระยะ (" .. math.floor(dist) .. ")", "B")
-                                tp(CFrame.new(mhrp.Position + Vector3.new(0, 20, 0)))
+                                tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0)))
                             end
                         end
                         aimCam(v)
@@ -989,7 +995,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v6.4 พร้อม (จำจุดเกิดจริงเอง ไม่ตระเวนเหนือทะเล)", "G")
+log("BF04 v6.5 พร้อม (เกาะติด 25 studs = ดาเมจเข้าเต็ม + ตระเวนก้นหอย)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v6.4 loaded")
+warn("[BF04] Auto Quest v6.5 loaded")
