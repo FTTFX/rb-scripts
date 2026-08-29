@@ -237,7 +237,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v4.9 (Bring All AoE 300)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v5.0 (Fruit Priority)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -337,20 +337,22 @@ end)
 
 -- ── ระบบเก็บผลปีศาจ (Devil Fruit Finder) ──────────────────────────
 local FRUIT_MODE = false
+-- ธงหยุด AUTO ชั่วคราวระหว่างบินไปเก็บผล (กันสองระบบดึงตัวละครสวนทางกัน = กระตุก)
+local PAUSED_FOR_FRUIT = false
+
 local function findNearestFruit()
     local char, hrp = getChar()
     if not char or not hrp then return nil end
     local best, bestDist = nil, math.huge
+    -- ผลที่ตกบนแมพ = Tool ที่ลอยอยู่ใน Workspace โดยตรง และมี Handle
+    -- (ไม่นับ Tool ใน Character/Backpack ของผู้เล่น = ผลที่คนอื่นถืออยู่)
     for _, obj in ipairs(Workspace:GetChildren()) do
-        -- ผลปีศาจใน Blox Fruits มี Handle เป็นลูกของ Model ชื่อลงท้าย "Fruit"
-        if obj:IsA("Model") or obj:IsA("Tool") then
-            local handle = obj:FindFirstChild("Handle") or obj:FindFirstChild("HumanoidRootPart") or (obj:IsA("Tool") and obj:FindFirstChildWhichIsA("BasePart"))
-            if handle and string.find(obj.Name, "Fruit") then
-                local d = (handle.Position - hrp.Position).Magnitude
-                if d < bestDist then
-                    best = handle
-                    bestDist = d
-                end
+        if obj:IsA("Tool") and obj:FindFirstChild("Handle") then
+            local handle = obj.Handle
+            local d = (handle.Position - hrp.Position).Magnitude
+            if d < bestDist and d < 8000 then
+                best = handle
+                bestDist = d
             end
         end
     end
@@ -363,28 +365,40 @@ fruitBtn.MouseButton1Click:Connect(function()
     fruitBtn.BackgroundColor3 = FRUIT_MODE and Color3.fromRGB(140,60,200) or Color3.fromRGB(60,30,90)
     if FRUIT_MODE then
         task.spawn(function()
-            while FRUIT_MODE and _G.BF04_LOOP ~= nil or FRUIT_MODE do
+            while FRUIT_MODE do
+                local gotOne = false
                 pcall(function()
                     local fruit, dist = findNearestFruit()
                     if fruit and fruit.Parent then
-                        setState("เจอผล: " .. fruit.Parent.Name .. " (ระยะ " .. math.floor(dist or 0) .. ") → บินไปเก็บ", "Y")
-                        if dist and dist > 30 then
+                        gotOne = true
+                        PAUSED_FOR_FRUIT = true -- พัก AUTO ระหว่างบินไปเก็บ
+                        setState("เจอผล: " .. fruit.Name .. " (ระยะ " .. math.floor(dist or 0) .. ") → บินไปเก็บ (AUTO พักชั่วคราว)", "Y")
+                        if dist and dist > 25 then
                             tp(CFrame.new(fruit.Position))
                         else
-                            local hrp = getChar() and select(2, getChar())
+                            local hrp = select(2, getChar())
                             if hrp then hrp.CFrame = fruit.CFrame end
                         end
-                        -- เก็บผลให้แน่ใจ (Touch/Equip อัตโนมัติ)
-                        task.wait(0.5)
+                        task.wait(0.6)
+                        -- เช็คว่าเก็บสำเร็จ (ผลหายไปจากแมพ) → ปลดพัก ให้ AUTO ทำงานต่อ
+                        if not fruit.Parent or not findNearestFruit() then
+                            setState("เก็บผลสำเร็จ ✓ → AUTO กลับมาทำงาน", "G")
+                        end
+                        PAUSED_FOR_FRUIT = false
                     else
+                        PAUSED_FOR_FRUIT = false
                         setState("ไม่มีผลเกิดบนแผนที่ (รอ 5 วิ...)", "S")
                         task.wait(5)
                     end
                 end)
+                if not gotOne then task.wait(0.5) end
                 task.wait(0.2)
             end
+            PAUSED_FOR_FRUIT = false
             setState("FRUIT OFF", "S")
         end)
+    else
+        PAUSED_FOR_FRUIT = false
     end
 end)
 
@@ -706,6 +720,11 @@ local function mainLoop()
 
     while AUTO_ON and _G.BF04_LOOP do
         task.wait(0.1)
+        -- ⏸️ ถ้า FRUIT กำลังบินไปเก็บผล → AUTO หยุดรอ (ไม่ดึงตัวละครสวนทาง)
+        if PAUSED_FOR_FRUIT then
+            setState("AUTO พักชั่วคราว (FRUIT กำลังเก็บผล...)", "S")
+            task.wait(0.3)
+        else
         pcall(function()
             local char, hrp = getChar()
             if not char then setState("รอตัวละคร...", "S") return end
@@ -817,6 +836,7 @@ local function mainLoop()
                 end
             end
         end)
+        end
     end
     stopTween()
     pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
@@ -838,7 +858,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v4.9 พร้อม (AoE รัศมี 300 + Bring All ทั้งแมพ)", "G")
+log("BF04 v5.0 พร้อม (FRUIT จัดลำดับปลอดภัย - ไม่ตีกันเอง)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v4.9 loaded")
+warn("[BF04] Auto Quest v5.0 loaded")
