@@ -1,8 +1,9 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v2.1
--- v2.1: รวมดีที่สุดของ 2 เวอร์ชัน
---   ตี = คลิกเสมือนแบบ v1.9 (พิสูจน์แล้วว่าฆ่ามอนได้ — Tool:Activate ไม่ทำงานกับ BF)
---   เควส = รับครั้งเดียว + รอ UI + ปิดหน้าต่างคุย NPC ทุก tick (กันหน้าต่างคุยดูดคลิก)
--- รับเควส → เทเลไป NPC → เทเลติดมอน → คลิก M1 เสมือนฆ่าทีละตัว → Loop
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v3.0
+-- v3.0: ระบบ Auto Quest เลเวล 1-700 ครบทั้ง First Sea (Old World)
+--   - เช็คเลเวลอัตโนมัติจาก LP.Data.Level.Value
+--   - เปลี่ยนเควส + NPC + เกาะ + มอน อัตโนมัติเมื่อเลเวลถึง
+--   - ตีด้วยคลิกเสมือน + ปิดหน้าต่าง Dialogue ทุก tick
+--   - สลับเกาะ: Bandit -> Monkey -> Gorilla -> Pirate -> Brute -> Desert -> Snow -> Marine -> Sky -> Colosseum -> Magma -> Fishman -> Fountain
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -11,26 +12,221 @@ local RS = game:GetService("ReplicatedStorage")
 local VU = game:GetService("VirtualUser")
 local Workspace = workspace
 
-local CFG = {
-    QUEST_NAME   = "BanditQuest1",
-    QUEST_NUM    = 1,
-    MOB_NAME     = "Bandit",
-    WEAPON_NAME  = "Combat",
-    QUEST_CFRAME = CFrame.new(1059.37, 15.45, 1550.42),
-    MOB_SPAWN_CF = CFrame.new(1196.17, 11.87, 1616.96),
-    AUTO_ON      = false,
-}
-
 _G.BF04 = _G.BF04 or {}
 _G.BF04_LOOP = nil
 _G.BF04_BV = nil
+local AUTO_ON = false
+
+-- ── Quest Database (First Sea / Old World) ─────────────────────────
+local function getQuestData(level)
+    level = level or 1
+    if level < 10 then
+        return {
+            mob = "Bandit",
+            questName = "BanditQuest1",
+            questNum = 1,
+            questCF = CFrame.new(1059.37, 15.45, 1550.42),
+            mobCF = CFrame.new(1196.17, 11.87, 1616.96),
+        }
+    elseif level < 15 then
+        return {
+            mob = "Monkey",
+            questName = "JungleQuest",
+            questNum = 1,
+            questCF = CFrame.new(-1598.09, 35.55, 153.38),
+            mobCF = CFrame.new(-1619.11, 21.70, 142.15),
+        }
+    elseif level < 30 then
+        return {
+            mob = "Gorilla",
+            questName = "JungleQuest",
+            questNum = 2,
+            questCF = CFrame.new(-1598.09, 35.55, 153.38),
+            mobCF = CFrame.new(-1142.65, 40.46, -515.39),
+        }
+    elseif level < 40 then
+        return {
+            mob = "Pirate",
+            questName = "BuggyQuest1",
+            questNum = 1,
+            questCF = CFrame.new(-1140.18, 4.75, 3827.41),
+            mobCF = CFrame.new(-1201.09, 40.63, 3857.60),
+        }
+    elseif level < 60 then
+        return {
+            mob = "Brute",
+            questName = "BuggyQuest1",
+            questNum = 2,
+            questCF = CFrame.new(-1140.18, 4.75, 3827.41),
+            mobCF = CFrame.new(-1387.53, 24.59, 4100.96),
+        }
+    elseif level < 75 then
+        return {
+            mob = "Desert Bandit",
+            questName = "DesertQuest",
+            questNum = 1,
+            questCF = CFrame.new(896.52, 6.44, 4390.15),
+            mobCF = CFrame.new(985.00, 16.11, 4417.91),
+        }
+    elseif level < 90 then
+        return {
+            mob = "Desert Officer",
+            questName = "DesertQuest",
+            questNum = 2,
+            questCF = CFrame.new(896.52, 6.44, 4390.15),
+            mobCF = CFrame.new(1547.15, 14.45, 4381.80),
+        }
+    elseif level < 100 then
+        return {
+            mob = "Snow Bandit",
+            questName = "SnowQuest",
+            questNum = 1,
+            questCF = CFrame.new(1386.81, 87.27, -1298.36),
+            mobCF = CFrame.new(1356.30, 105.77, -1328.24),
+        }
+    elseif level < 120 then
+        return {
+            mob = "Snowman",
+            questName = "SnowQuest",
+            questNum = 2,
+            questCF = CFrame.new(1386.81, 87.27, -1298.36),
+            mobCF = CFrame.new(1218.80, 138.01, -1488.03),
+        }
+    elseif level < 150 then
+        return {
+            mob = "Chief Petty Officer",
+            questName = "MarineQuest2",
+            questNum = 1,
+            questCF = CFrame.new(-5035.50, 28.68, 4324.18),
+            mobCF = CFrame.new(-4931.16, 65.79, 4121.84),
+        }
+    elseif level < 175 then
+        return {
+            mob = "Sky Bandit",
+            questName = "SkyQuest",
+            questNum = 1,
+            questCF = CFrame.new(-4841.83, 717.67, -2623.96),
+            mobCF = CFrame.new(-4970.74, 294.54, -2890.11),
+        }
+    elseif level < 225 then
+        return {
+            mob = "Dark Master",
+            questName = "SkyQuest",
+            questNum = 2,
+            questCF = CFrame.new(-4841.83, 717.67, -2623.96),
+            mobCF = CFrame.new(-5220.59, 430.69, -2278.17),
+        }
+    elseif level < 275 then
+        return {
+            mob = "Toga Warrior",
+            questName = "ColosseumQuest",
+            questNum = 1,
+            questCF = CFrame.new(-1576.12, 7.39, -2983.31),
+            mobCF = CFrame.new(-1779.98, 44.61, -2736.35),
+        }
+    elseif level < 300 then
+        return {
+            mob = "Gladiator",
+            questName = "ColosseumQuest",
+            questNum = 2,
+            questCF = CFrame.new(-1576.12, 7.39, -2983.31),
+            mobCF = CFrame.new(-1274.76, 58.19, -3188.16),
+        }
+    elseif level < 330 then
+        return {
+            mob = "Military Soldier",
+            questName = "MagmaQuest",
+            questNum = 1,
+            questCF = CFrame.new(-5316.56, 12.24, 8517.30),
+            mobCF = CFrame.new(-5363.01, 41.51, 8548.47),
+        }
+    elseif level < 375 then
+        return {
+            mob = "Military Spy",
+            questName = "MagmaQuest",
+            questNum = 2,
+            questCF = CFrame.new(-5316.56, 12.24, 8517.30),
+            mobCF = CFrame.new(-5787.99, 120.86, 8762.25),
+        }
+    elseif level < 400 then
+        return {
+            mob = "Fishman Warrior",
+            questName = "FishmanQuest",
+            questNum = 1,
+            questCF = CFrame.new(61122.56, 18.47, 1568.17),
+            mobCF = CFrame.new(61163.85, 5.31, 1819.78),
+        }
+    elseif level < 450 then
+        return {
+            mob = "Fishman Commando",
+            questName = "FishmanQuest",
+            questNum = 2,
+            questCF = CFrame.new(61122.56, 18.47, 1568.17),
+            mobCF = CFrame.new(61163.85, 5.31, 1819.78),
+        }
+    elseif level < 475 then
+        return {
+            mob = "God's Guard",
+            questName = "SkyExp1Quest",
+            questNum = 1,
+            questCF = CFrame.new(-4721.71, 845.28, -1954.20),
+            mobCF = CFrame.new(-4716.96, 853.09, -1933.93),
+        }
+    elseif level < 525 then
+        return {
+            mob = "Shanda",
+            questName = "SkyExp1Quest",
+            questNum = 2,
+            questCF = CFrame.new(-7863.64, 5545.49, -379.83),
+            mobCF = CFrame.new(-7685.12, 5601.05, -443.17),
+        }
+    elseif level < 550 then
+        return {
+            mob = "Royal Squad",
+            questName = "SkyExp2Quest",
+            questNum = 1,
+            questCF = CFrame.new(-7902.67, 5635.96, -1411.72),
+            mobCF = CFrame.new(-7685.02, 5606.88, -1442.73),
+        }
+    elseif level < 625 then
+        return {
+            mob = "Royal Soldier",
+            questName = "SkyExp2Quest",
+            questNum = 2,
+            questCF = CFrame.new(-7902.67, 5635.96, -1411.72),
+            mobCF = CFrame.new(-7864.45, 5661.94, -1708.22),
+        }
+    elseif level < 650 then
+        return {
+            mob = "Galley Pirate",
+            questName = "FountainQuest",
+            questNum = 1,
+            questCF = CFrame.new(5254.60, 38.50, 4049.70),
+            mobCF = CFrame.new(5595.07, 41.50, 3961.47),
+        }
+    else
+        return {
+            mob = "Galley Captain",
+            questName = "FountainQuest",
+            questNum = 2,
+            questCF = CFrame.new(5254.60, 38.50, 4049.70),
+            mobCF = CFrame.new(5658.58, 38.54, 4928.94),
+        }
+    end
+end
+
+local function getMyLevel()
+    local ok, lv = pcall(function() return LP.Data.Level.Value end)
+    if ok and lv then return lv end
+    return 1
+end
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 360, 0, 420)
+frame.Size = UDim2.new(0, 370, 0, 430)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
@@ -39,7 +235,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v2.1"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v3.0 (Lv 1-700 Auto)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -49,8 +245,9 @@ closeBtn.Text = "X"; closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 1
 closeBtn.Parent = frame
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
 closeBtn.MouseButton1Click:Connect(function()
-    CFG.AUTO_ON = false
+    AUTO_ON = false
     _G.BF04_LOOP = nil
+    pcall(function() VU:Button1Up() end)
     pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
     sg:Destroy()
 end)
@@ -63,7 +260,7 @@ autoBtn.Parent = frame
 Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0,5)
 
 local copyBtn = Instance.new("TextButton")
-copyBtn.Size = UDim2.new(0, 150, 0, 30); copyBtn.Position = UDim2.new(0, 200, 0, 34)
+copyBtn.Size = UDim2.new(0, 160, 0, 30); copyBtn.Position = UDim2.new(0, 200, 0, 34)
 copyBtn.BackgroundColor3 = Color3.fromRGB(40,90,140); copyBtn.TextColor3 = Color3.new(1,1,1)
 copyBtn.Text = "Copy Log"; copyBtn.Font = Enum.Font.GothamBold; copyBtn.TextSize = 12; copyBtn.BorderSizePixel = 0
 copyBtn.Parent = frame
@@ -144,15 +341,20 @@ local function tp(cframe)
     return true
 end
 
+-- ถืออาวุธ Melee/Combat หรืออาวุธอะไรก็ได้ที่มี
 local function equipWeapon()
     local char, hrp, hum = getChar()
     if not char then return false end
-    local tool = char:FindFirstChild(CFG.WEAPON_NAME)
-    if not tool then
-        local bp = LP:FindFirstChild("Backpack")
-        tool = bp and bp:FindFirstChild(CFG.WEAPON_NAME)
-    end
-    if tool and tool:IsA("Tool") then
+    
+    -- ถ้าถืออยู่แล้วไม่ต้องทำอะไร
+    if char:FindFirstChildOfClass("Tool") then return true end
+    
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return false end
+    
+    -- หา Combat ก่อน หรือหยิบ Tool แรกในกระเป๋า
+    local tool = bp:FindFirstChild("Combat") or bp:FindFirstChildOfClass("Tool")
+    if tool then
         pcall(function() hum:EquipTool(tool) end)
         return true
     end
@@ -169,7 +371,6 @@ local function aimCam(mob)
     end
 end
 
--- ปิดหน้าต่างคุย NPC (ตัวร้ายที่ดูดคลิกไปกดปุ่มเควส)
 local function closeDialogue()
     pcall(function()
         local main = pg:FindFirstChild("Main")
@@ -181,8 +382,6 @@ local function closeDialogue()
     end)
 end
 
--- ⚔️ คลิก M1 เสมือน (แบบ v1.9 ที่พิสูจน์แล้วว่าฆ่ามอนได้)
--- VirtualUser คือคลิกระดับ engine ไม่ใช่ดึงเมาส์จริง และไม่ต้องอาศัย CombatFramework
 local function getClickPos()
     local ok, pos = pcall(function()
         local vp = Workspace.CurrentCamera.ViewportSize
@@ -217,6 +416,7 @@ local function attackDown()
         VU:Button1Down(pos)
     end)
 end
+
 local function attackUp()
     local pos = getClickPos()
     fireMouseSignal(false)
@@ -236,10 +436,11 @@ local function fastAttack()
             if hum then hum.Sit = false end
         end
     end)
-    closeDialogue()   -- สำคัญ: ปิดหน้าต่างคุยก่อนคลิกทุกครั้ง กันคลิกไปโดนปุ่มเควส
+    closeDialogue()
     attackDown()
     task.delay(0.07, attackUp)
 end
+
 local function attackOff()
     pcall(function() VU:Button1Up() end)
     fireMouseSignal(false)
@@ -247,22 +448,24 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v2.1 ===", "Y")
+    log("=== START AUTO v3.0 (Dynamic Quest) ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
-    log("โหมดตี: คลิกเสมือน v1.9 (ที่ฆ่ามอนได้) + ปิดหน้าต่างคุยทุก tick", "G")
 
-    while CFG.AUTO_ON and _G.BF04_LOOP and not getChar() do
+    while AUTO_ON and _G.BF04_LOOP and not getChar() do
         setState("รอตัวละคร spawn...", "S")
         task.wait(1)
     end
 
-    while CFG.AUTO_ON and _G.BF04_LOOP do
+    while AUTO_ON and _G.BF04_LOOP do
         task.wait(0.1)
         pcall(function()
             local char, hrp = getChar()
             if not char then setState("รอตัวละคร...", "S") return end
+
+            local currentLevel = getMyLevel()
+            local qdata = getQuestData(currentLevel)
 
             local UIQ = pg:FindFirstChild("Main") and pg.Main:FindFirstChild("Quest")
             if not UIQ then setState("หา Quest UI ไม่เจอ", "R") return end
@@ -270,41 +473,42 @@ local function mainLoop()
             local titleTxt = ""
             pcall(function() titleTxt = UIQ.Container.QuestTitle.Title.Text end)
 
-            if UIQ.Visible and titleTxt ~= "" and not string.find(titleTxt, CFG.MOB_NAME) then
-                setState("เควสไม่ใช่ Bandit → AbandonQuest", "Y")
+            -- ถ้ามีเควสค้างอยู่แต่ไม่ตรงกับเลเวลปัจจุบัน หรือไม่ใช่เควสที่ต้องการ → ยกเลิกเพื่อรับเควสใหม่ที่ดีกว่า
+            if UIQ.Visible and titleTxt ~= "" and not string.find(titleTxt, qdata.mob) then
+                setState("เควสไม่ตรงกับเลเวล " .. currentLevel .. " (" .. qdata.mob .. ") → AbandonQuest", "Y")
                 CommF:InvokeServer("AbandonQuest")
                 task.wait(0.5)
                 return
             end
 
-            -- 1. ยังไม่มีเควส → เทเลไป NPC → รับครั้งเดียว → รอ UI → บินหนีออกจาก NPC
+            -- 1. ยังไม่มีเควส → บินไปหา NPC ตามเลเวล → รับเควส
             if not UIQ.Visible then
-                local dist = (CFG.QUEST_CFRAME.Position - hrp.Position).Magnitude
+                attackOff()
+                local dist = (qdata.questCF.Position - hrp.Position).Magnitude
                 if dist > 15 then
-                    setState("เทเลไป NPC (ระยะ " .. math.floor(dist) .. ")", "B")
-                    tp(CFG.QUEST_CFRAME)
+                    setState("บินไปหา NPC Lv." .. currentLevel .. ": " .. qdata.mob .. " (ระยะ " .. math.floor(dist) .. ")", "B")
+                    tp(qdata.questCF)
                 else
-                    setState("รับเควส: StartQuest(" .. CFG.QUEST_NAME .. "," .. CFG.QUEST_NUM .. ")", "Y")
+                    setState("รับเควส: StartQuest(" .. qdata.questName .. "," .. qdata.questNum .. ") [Lv." .. currentLevel .. "]", "Y")
                     pcall(function()
-                        CommF:InvokeServer("StartQuest", CFG.QUEST_NAME, CFG.QUEST_NUM)
+                        CommF:InvokeServer("StartQuest", qdata.questName, qdata.questNum)
                     end)
 
-                    -- รอให้ UI เควสขึ้น (สูงสุด 2 วิ) — ไม่ยิง StartQuest เบิ้ลเด็ดขาด
                     local waited = 0
-                    while not UIQ.Visible and waited < 20 and CFG.AUTO_ON and _G.BF04_LOOP do
+                    while not UIQ.Visible and waited < 20 and AUTO_ON and _G.BF04_LOOP do
                         task.wait(0.1)
                         waited += 1
                         closeDialogue()
                     end
 
                     if UIQ.Visible then
-                        setState("รับเควสสำเร็จ ✓ → บินไปจุดมอนทันที", "G")
-                        tp(CFG.MOB_SPAWN_CF)   -- หนีออกจาก NPC กันหน้าต่างคุยเด้งซ้ำ
+                        setState("รับเควสสำเร็จ ✓ → บินไปจุดเกิดมอน", "G")
+                        tp(qdata.mobCF)
                         task.wait(0.3)
                     end
                 end
 
-            -- 2. มีเควสแล้ว → ล็อกมอน → คลิกเสมือนตี
+            -- 2. มีเควสแล้ว → ล็อกมอนตามเลเวลและตีจนตาย
             else
                 closeDialogue()
 
@@ -312,7 +516,8 @@ local function mainLoop()
                 local target = nil
                 if enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
-                        if v.Name == CFG.MOB_NAME and v:FindFirstChild("Humanoid")
+                        -- หาชื่อมอนที่ตรงกับเควส (รองรับทั้งชื่อเต็มและชื่อบางส่วน เช่น Bandit, Monkey, Gorilla)
+                        if string.find(v.Name, qdata.mob) and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             target = v
                             break
@@ -322,18 +527,18 @@ local function mainLoop()
 
                 if not target then
                     attackOff()
-                    setState("หามอนไม่เจอ (บินรอที่จุดเกิดมอน)...", "Y")
-                    tp(CFG.MOB_SPAWN_CF)
+                    setState("หามอน " .. qdata.mob .. " ไม่เจอ (รอที่จุดเกิด)...", "Y")
+                    tp(qdata.mobCF)
                     task.wait(0.5)
                     return
                 end
 
                 local v = target
-                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") — คลิกเสมือน", "Y")
+                setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ") [Lv." .. currentLevel .. "]", "Y")
 
                 equipWeapon()
 
-                while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and CFG.AUTO_ON and _G.BF04_LOOP do
+                while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04_LOOP do
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
                         tp(mhrp.CFrame * CFrame.new(0, 0, 5))
@@ -356,10 +561,10 @@ local function mainLoop()
 end
 
 autoBtn.MouseButton1Click:Connect(function()
-    CFG.AUTO_ON = not CFG.AUTO_ON
-    autoBtn.Text = "AUTO: " .. (CFG.AUTO_ON and "ON" or "OFF")
-    autoBtn.BackgroundColor3 = CFG.AUTO_ON and Color3.fromRGB(180,40,40) or Color3.fromRGB(30,120,50)
-    if CFG.AUTO_ON then
+    AUTO_ON = not AUTO_ON
+    autoBtn.Text = "AUTO: " .. (AUTO_ON and "ON" or "OFF")
+    autoBtn.BackgroundColor3 = AUTO_ON and Color3.fromRGB(180,40,40) or Color3.fromRGB(30,120,50)
+    if AUTO_ON then
         _G.BF04_LOOP = true
         lastState = ""
         task.spawn(mainLoop)
@@ -370,6 +575,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v2.1 พร้อม (คลิกเสมือน v1.9 + กันหน้าต่างคุยดูดคลิก)", "G")
-log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
-warn("[BF04] Auto Quest v2.1 loaded")
+log("BF04 v3.0 พร้อม (ระบบ Auto เลเวล 1-700 ครบทุกเกาะ)", "G")
+log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
+log("กด AUTO เพื่อเริ่มฟาร์มแบบอัตโนมัติต่อเนื่อง", "S")
+warn("[BF04] Auto Quest v3.0 loaded")
