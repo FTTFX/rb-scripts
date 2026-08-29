@@ -1,9 +1,8 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v3.0
--- v3.0: ระบบ Auto Quest เลเวล 1-700 ครบทั้ง First Sea (Old World)
---   - เช็คเลเวลอัตโนมัติจาก LP.Data.Level.Value
---   - เปลี่ยนเควส + NPC + เกาะ + มอน อัตโนมัติเมื่อเลเวลถึง
---   - ตีด้วยคลิกเสมือน + ปิดหน้าต่าง Dialogue ทุก tick
---   - สลับเกาะ: Bandit -> Monkey -> Gorilla -> Pirate -> Brute -> Desert -> Snow -> Marine -> Sky -> Colosseum -> Magma -> Fishman -> Fountain
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v3.1
+-- v3.1: ระบบบินข้ามเกาะ / ระยะไกลแบบ Smooth Fly (Tween สูง + ดันไป ไม่เร็วเกินไป ไม่โดน Anti-Teleport ดีดกลับ)
+--   - ถ้าระยะ < 50 studs (เช่น ตีมอนใกล้ๆ): วาร์ปประชิดตรงๆ ได้เลย
+--   - ถ้าระยะ >= 50 studs (ข้ามเกาะ / ไปหา NPC): บินยกตัวสูง (Y + 120) แล้วเลื่อนไปด้วยความเร็วที่ปลอดภัย (Tween)
+--   - เลเวล 1-700 Auto Quest ครบทั้ง First Sea (Old World)
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -235,7 +234,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v3.0 (Lv 1-700 Auto)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v3.1 (Smooth Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -247,6 +246,7 @@ Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
 closeBtn.MouseButton1Click:Connect(function()
     AUTO_ON = false
     _G.BF04_LOOP = nil
+    stopTween()
     pcall(function() VU:Button1Up() end)
     pcall(function() if _G.BF04_BV then _G.BF04_BV:Destroy() _G.BF04_BV = nil end end)
     sg:Destroy()
@@ -326,10 +326,17 @@ local function getChar()
     return nil
 end
 
-local function tp(cframe)
-    local char, hrp = getChar()
-    if not char then return false end
-    hrp.CFrame = cframe
+local TweenService = game:GetService("TweenService")
+local currentTween = nil
+
+local function stopTween()
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+        currentTween = nil
+    end
+end
+
+local function applyBodyVelocity(hrp)
     if not _G.BF04_BV or not _G.BF04_BV.Parent then
         local bv = Instance.new("BodyVelocity")
         bv.Name = "BF04_Noclip"
@@ -338,7 +345,71 @@ local function tp(cframe)
         bv.Velocity = Vector3.new(0, 0, 0)
         _G.BF04_BV = bv
     end
+end
+
+-- ระบบเคลื่อนที่อัจฉริยะ (Smart Travel):
+-- 1. ใกล้ (< 50 studs): วาร์ปประชิดตรงๆ รวดเร็ว
+-- 2. ไกล (>= 50 studs เช่น ข้ามเกาะ): ยกตัวขึ้นฟ้า (High Altitude) แล้ว Tween บินไปแบบปลอดภัย ไม่เร็วเกินไป ไม่ติดต้นไม้/สิ่งกีดขวาง ไม่โดน Anti-Cheat ดีดกลับ
+local function toTarget(targetCF)
+    local char, hrp, hum = getChar()
+    if not char then return false end
+    
+    applyBodyVelocity(hrp)
+    
+    local dist = (targetCF.Position - hrp.Position).Magnitude
+    
+    -- ระยะประชิด (ตีมอน) → วาร์ปตรงได้เลย
+    if dist < 50 then
+        stopTween()
+        hrp.CFrame = targetCF
+        return true
+    end
+    
+    -- ระยะไกล (ข้ามเกาะ / ไป NPC) → บินสูง + Tween แบบ Linear (ความเร็วปลอดภัย ~250 studs/sec)
+    stopTween()
+    
+    -- จุดบินยกสูงข้ามสิ่งกีดขวาง (ระดับความสูงปลอดภัย ~120-150 studs)
+    local highY = math.max(hrp.Position.Y, targetCF.Position.Y) + 120
+    if targetCF.Position.Y > 300 then -- เผื่อเกาะลอยฟ้า
+        highY = targetCF.Position.Y + 60
+    end
+    
+    local skyStartCF = CFrame.new(hrp.Position.X, highY, hrp.Position.Z)
+    local skyEndCF   = CFrame.new(targetCF.Position.X, highY, targetCF.Position.Z)
+    
+    -- Step 1: ลอยตัวขึ้นฟ้าตรงๆ ก่อน (เร็ว)
+    hrp.CFrame = skyStartCF
+    task.wait(0.05)
+    
+    -- Step 2: บินเลื่อนไปบนฟ้า (ความเร็วคงที่ ไม่เร็วเกินไป)
+    local flyDist = (skyEndCF.Position - skyStartCF.Position).Magnitude
+    local flySpeed = 260 -- studs per second (ความเร็วมาตรฐานของ Auto Farm ปลอดภัย)
+    local flyTime = math.max(flyDist / flySpeed, 0.3)
+    
+    local tweenInfo = TweenInfo.new(flyTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tw = TweenService:Create(hrp, tweenInfo, {CFrame = skyEndCF})
+    currentTween = tw
+    tw:Play()
+    
+    local waited = 0
+    while AUTO_ON and _G.BF04_LOOP and currentTween == tw and waited < (flyTime + 0.5) do
+        local curDist = (skyEndCF.Position - hrp.Position).Magnitude
+        if curDist <= 15 then break end
+        task.wait(0.1)
+        waited += 0.1
+    end
+    
+    -- Step 3: ร่อนลงสู่จุดเป้าหมาย
+    if AUTO_ON and _G.BF04_LOOP then
+        hrp.CFrame = targetCF
+    end
+    
+    stopTween()
     return true
+end
+
+local function tp(cframe)
+    return toTarget(cframe)
 end
 
 -- ถืออาวุธ Melee/Combat หรืออาวุธอะไรก็ได้ที่มี
@@ -570,12 +641,13 @@ autoBtn.MouseButton1Click:Connect(function()
         task.spawn(mainLoop)
     else
         _G.BF04_LOOP = nil
+        stopTween()
         attackOff()
         log("หยุดโดยผู้ใช้", "R")
     end
 end)
 
-log("BF04 v3.0 พร้อม (ระบบ Auto เลเวล 1-700 ครบทุกเกาะ)", "G")
+log("BF04 v3.1 พร้อม (ระบบบินสูง + บินลื่นข้ามเกาะ)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("กด AUTO เพื่อเริ่มฟาร์มแบบอัตโนมัติต่อเนื่อง", "S")
-warn("[BF04] Auto Quest v3.0 loaded")
+warn("[BF04] Auto Quest v3.1 loaded")
