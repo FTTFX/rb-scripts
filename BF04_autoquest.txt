@@ -1,10 +1,10 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v4.7
--- v4.7:
---   - เพิ่มปุ่ม BUY: Buso Haki (Enhancement 25k Beli) ซื้อทันทีไม่ต้องเดินหา NPC
---   - FRUIT Finder: สแกนหาผลปีศาจที่ตกทั่วแมพ บินไปเก็บอัตโนมัติ
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v4.8
+-- v4.8:
+--   - Bring All Mobs: ดึงมอนชื่อเดียวกันทั้งแมพมารวมกอง (ตี AoE ได้ 5-8 ตัวต่อจอ)
+--   - บินแบบกัน Anti-Teleport: วาร์ปได้ < 25 studs, บิน 150 studs/s, ไต่ระดับเป็นช่วง
+--   - ปุ่ม BUY: Buso Haki + FRUIT Finder + แก้บั๊ก scoping ปุ่มกดไม่ทำงาน
 --   - ฟอร์แมต AoE แท้จริง: RegisterHit:FireServer(mainPart, { {enemy1, head1}, ... })
---   - Mob Magnet ดึงมอนรวมกอง + ลอยสูง 18 studs + หันตัวเล็งมอน
---   - Smart Fly บินข้ามเกาะ + กรองบอส + เควส 1-700 ครบทั้ง First Sea
+--   - Mob Magnet + ลอยสูง 18 studs + หันตัวเล็งมอน + เควส 1-700 ครบ First Sea
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -323,6 +323,11 @@ local function setState(txt, col)
         log(txt, col)
     end
 end
+
+-- Forward declarations: ปุ่ม FRUIT / BUY ต้องเรียกฟังก์ชันที่ประกาศอยู่ด้านล่าง
+-- (ถ้าไม่ประกาศล่วงหน้า Lua จะมองหาเป็น global แล้วเจอ nil ตอนกดปุ่ม)
+local getCommF, getChar, tp
+
 copyBtn.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard or write_clipboard or (getgenv and getgenv().setclipboard)
     local ok = clip and pcall(clip, table.concat(logLines, "\n"))
@@ -419,7 +424,7 @@ hakiBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ── Helper ────────────────────────────────────────────────────────
-local function getCommF()
+function getCommF()
     local remotes = RS:FindFirstChild("Remotes")
     if remotes then
         for _, r in ipairs(remotes:GetDescendants()) do
@@ -444,7 +449,7 @@ local function getCombatRemotes()
     return RegisterAttack, RegisterHit
 end
 
-local function getChar()
+function getChar()
     local char = LP.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -531,7 +536,7 @@ local function toTarget(targetCF)
     return true
 end
 
-local function tp(cframe)
+function tp(cframe)
     return toTarget(cframe)
 end
 
@@ -589,7 +594,8 @@ local function boostSimulationRadius()
     end)
 end
 
--- รวมมอนสเตอร์ในรัศมีรอบๆ ตัวเป้าหมายมาไว้ที่จุดเดียวกัน
+-- รวมมอนสเตอร์ทุกตัวชื่อเดียวกัน "ทั่วทั้งแมพ" มาไว้ที่จุดเดียว (Bring All Mobs)
+-- ไม่จำกัดระยะ → ตี AoE ได้ครั้งละ 5-8 ตัว
 local function bringMobsToTarget(primaryTarget, mobName)
     if not primaryTarget or not primaryTarget.Parent then return end
     local pHrp = primaryTarget:FindFirstChild("HumanoidRootPart")
@@ -605,16 +611,16 @@ local function bringMobsToTarget(primaryTarget, mobName)
             local isBoss = string.find(otherMob.Name, "Boss") or string.find(otherMob.Name, "King")
             if not isBoss and otherMob:FindFirstChild("Humanoid") and otherMob:FindFirstChild("HumanoidRootPart") and otherMob.Humanoid.Health > 0 then
                 local oHrp = otherMob.HumanoidRootPart
-                local dist = (oHrp.Position - pHrp.Position).Magnitude
-                if dist <= 350 then -- รัศมี 350 studs ดึงมารวม
-                    pcall(function()
-                        otherMob.Humanoid.PlatformStand = true
-                        otherMob.Humanoid.Sit = true
-                        oHrp.CanCollide = false
-                        oHrp.Velocity = Vector3.new(0, 0, 0)
-                        oHrp.CFrame = pHrp.CFrame
-                    end)
-                end
+                pcall(function()
+                    otherMob.Humanoid.PlatformStand = true
+                    otherMob.Humanoid.Sit = true
+                    oHrp.CanCollide = false
+                    oHrp.Velocity = Vector3.new(0, 0, 0)
+                    oHrp.Anchored = false
+                    oHrp.CFrame = pHrp.CFrame * CFrame.new(
+                        math.random(-6, 6), 0, math.random(-6, 6)
+                    )
+                end)
             end
         end
     end
