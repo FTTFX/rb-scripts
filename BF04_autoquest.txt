@@ -1,5 +1,5 @@
--- BF04_autoquest.txt — Blox Fruits Auto Quest v1.7
--- v1.7: ใส่ FastAttack ผ่าน CombatFramework (หัวใจของสคริปต์ Blox Fruits — คลิก M1 เปล่าไม่พอ)
+-- BF04_autoquest.txt — Blox Fruits Auto Quest v1.8
+-- v1.8: แก้บั๊กค้าง (WaitForChild CombatFramework บล็อก) → โหลดแบบ non-blocking + สแปม M1 ทุก loop
 -- รับเควส → เทเลไป NPC → เทเลติดมอน → FastAttack + M1 ฆ่าทีละตัว → Loop
 
 local Players = game:GetService("Players")
@@ -37,7 +37,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v1.7"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
+titleLbl.Text = "BF04 Auto Quest v1.8"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 14
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -169,19 +169,21 @@ local function aimCam(mob)
 end
 
 -- ⭐ FastAttack — หัวใจสำคัญ (จาก MUXHUB): แก้ state ของ CombatFramework
+-- โหลดแบบ NON-BLOCKING (WaitForChild ที่บล็อกทำให้ v1.7 ค้างก่อนวิ่งตี)
 local CombatFramework = nil
 local function loadCombatFramework()
     if CombatFramework then return CombatFramework end
-    local ok, cf = pcall(function()
-        return require(LP.PlayerScripts:WaitForChild("CombatFramework"))
+    pcall(function()
+        local ps = LP:FindFirstChild("PlayerScripts")
+        local m = ps and ps:FindFirstChild("CombatFramework")
+        if m then
+            local ok, cf = pcall(function() return require(m) end)
+            if ok and cf then CombatFramework = cf end
+        end
     end)
-    if ok and cf then
-        CombatFramework = cf
-    end
     return CombatFramework
 end
 
-local m1Held = false
 local function fastAttack()
     -- ตั้งค่า CombatFramework ให้โจมตีได้ทันที
     pcall(function()
@@ -201,18 +203,12 @@ local function fastAttack()
             if hum then hum.Sit = false end
         end
     end)
-    -- คลิก M1
-    if not m1Held then
-        pcall(function() VU:CaptureController() end)
-        pcall(function() VU:Button1Down(Vector2.new(1280, 672)) end)
-        m1Held = true
-    end
+    -- คลิก M1 (สแปมทุก loop แบบ MUXHUB + รีเช็ค Controller)
+    pcall(function() VU:CaptureController() end)
+    pcall(function() VU:Button1Down(Vector2.new(1280, 672)) end)
 end
 local function attackOff()
-    if m1Held then
-        pcall(function() VU:Button1Up() end)
-        m1Held = false
-    end
+    pcall(function() VU:Button1Up() end)
 end
 
 local function readProgress()
@@ -232,7 +228,7 @@ local function mainLoop()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
     local cf = loadCombatFramework()
-    log(cf and "CombatFramework เจอ ✓" or "⚠️ CombatFramework ไม่เจอ (FastAttack จะไม่เต็มประสิทธิภาพ)", cf and "G" or "R")
+    log(cf and "CombatFramework เจอ ✓" or "⚠️ CombatFramework ยังไม่เจอ (รอเกมโหลด module แล้วจะรีเทรย์อัตโนมัติ)", cf and "G" or "R")
 
     while CFG.AUTO_ON and _G.BF04_LOOP and not getChar() do
         setState("รอตัวละคร spawn...", "S")
@@ -333,6 +329,6 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v1.7 พร้อม (FastAttack ผ่าน CombatFramework)", "G")
+log("BF04 v1.8 พร้อม (FastAttack แบบ non-blocking)", "G")
 log("กด AUTO เพื่อเริ่ม | กด Copy Log เพื่อส่ง debug", "S")
 warn("[BF04] Auto Quest v1.7 loaded")
