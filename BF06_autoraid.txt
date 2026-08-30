@@ -21,6 +21,7 @@ local pg = LP:WaitForChild("PlayerGui")
 local HOVER_Y      = 18     -- ลอยเหนือหัวมอนกี่ studs (ในไรด์พื้นอันตราย ห้ามลงพื้น)
 local ENGAGE_R     = 25     -- ระยะที่ถือว่าประชิดพอจะตี
 local ISLAND_R     = 1200   -- รัศมีจากใจกลางเกาะที่ยอมให้ตีมอน (กันไปเกาะอื่น)
+local ISLAND_SWITCH_WAIT = 4  -- เกาะว่างกี่วินาทีถึงจะย้ายด่าน (กันเด้งระหว่าง wave)
 local DRIFT_R      = 2000   -- ถ้าหลุดจากเกาะไกลเกินนี้ = โดนวาป ต้องบินกลับ
 local HP_RETREAT   = 0.15   -- เลือดต่ำกว่า 15% → ลอยหนี
 local HP_RESUME    = 0.60   -- ฟื้นถึง 60% → กลับลงไปตีต่อ
@@ -49,7 +50,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,160,80)
-titleLbl.Text = "BF06 Auto Raid v1.0"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF06 Auto Raid v1.1 (ย้ายเกาะเอง)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local closeBtn = Instance.new("TextButton")
@@ -441,6 +442,33 @@ local function inRaid()
     return #getIslands() > 0
 end
 
+-- นับมอนเป็นๆ ของแต่ละเกาะ ใช้ตัดสินว่าด่านไหนคือด่านที่ยังต้องเคลียร์
+local function countMobs(islandPos)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return 0 end
+    local n = 0
+    for _, e in ipairs(enemies:GetChildren()) do
+        local hum = e:FindFirstChild("Humanoid")
+        local ehrp = e:FindFirstChild("HumanoidRootPart")
+        if hum and ehrp and hum.Health > 0
+           and (ehrp.Position - islandPos).Magnitude <= ISLAND_R then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- เกาะที่ยังมีมอนเหลือ เลือกด่านหลังสุดก่อน เพราะไรด์เดินหน้าไปเรื่อยๆ
+-- (Island 5 คือด่านสุดท้าย ถ้ามันโผล่มาแล้วแปลว่าด่านก่อนหน้าเคลียร์ไปแล้ว)
+local function findIslandWithMobs()
+    local islands = getIslands()
+    for i = #islands, 1, -1 do
+        local isl = islands[i]
+        local n = countMobs(isl.Position)
+        if n > 0 then return isl, n end
+    end
+end
+
 -- มอนที่ใกล้ตัวที่สุด "ในรัศมีเกาะที่ล็อกไว้เท่านั้น"
 local function findTarget()
     local _, hrp = getChar()
@@ -545,15 +573,22 @@ local function raidLoop()
         return
     end
 
-    -- ล็อกเกาะที่ยืนอยู่ตอนกดเริ่ม ห้ามเปลี่ยนเองระหว่างทาง
-    local isl, d = findMyIsland()
-    if not isl then log("หาเกาะที่ยืนอยู่ไม่เจอ", "R") return end
+    -- ล็อกเกาะที่ยังมีมอนเหลือ ไม่ใช่เกาะที่ยืนอยู่เฉยๆ
+    -- (บางทีเกมวางตัวเราไว้ใกล้ด่านที่เคลียร์ไปแล้ว จะได้ไม่ล็อกผิด)
+    local isl, n = findIslandWithMobs()
+    if isl then
+        log(string.format("ล็อกเกาะ: %s (มอนเหลือ %d ตัว)", isl.Name, n), "G")
+    else
+        isl = findMyIsland()
+        if not isl then log("หาเกาะไม่เจอเลย", "R") return end
+        log("ยังไม่เห็นมอน → ล็อกเกาะที่ยืนอยู่: " .. isl.Name, "Y")
+    end
     LOCK_ISLAND = isl.Name
     LOCK_POS = isl.Position
-    log(string.format("ล็อกเกาะ: %s (ห่างตัว %.0f studs)", LOCK_ISLAND, d), "G")
-    log(string.format("  ตีเฉพาะมอนในรัศมี %d studs จากใจกลางเกาะนี้", ISLAND_R), "S")
+    log(string.format("  ตีเฉพาะมอนในรัศมี %d studs | เคลียร์แล้วย้ายเกาะเอง", ISLAND_R), "S")
 
     local kills = 0
+    local emptySince = nil
 
     while AUTO_ON and _G.BF06_LOOP do
         task.wait(0.1)
@@ -576,12 +611,37 @@ local function raidLoop()
 
                 local mob, dist = findTarget()
                 if not mob then
-                    setState("ไม่มีมอนในเกาะ รอ wave ถัดไป", "S")
+                    -- เกาะนี้ว่าง อาจเป็นแค่ช่วงรอ wave หรือด่านผ่านไปแล้ว
+                    -- รอสักพักก่อนตัดสินใจ ไม่งั้นจะเด้งไปเด้งมาระหว่าง wave
+                    emptySince = emptySince or os.clock()
+                    local waited = os.clock() - emptySince
+
+                    if waited >= ISLAND_SWITCH_WAIT then
+                        local nextIsl, n = findIslandWithMobs()
+                        if nextIsl and nextIsl.Name ~= LOCK_ISLAND then
+                            log(string.format("%s เคลียร์แล้ว → ย้ายไป %s (มอน %d ตัว)",
+                                LOCK_ISLAND, nextIsl.Name, n), "G")
+                            LOCK_ISLAND = nextIsl.Name
+                            LOCK_POS = nextIsl.Position
+                            emptySince = nil
+                            setState("ย้ายไป " .. LOCK_ISLAND, "G")
+                            tp(CFrame.new(LOCK_POS + Vector3.new(0, HOVER_Y + 30, 0)))
+                        else
+                            setState(string.format("%s ว่าง รอ wave (%.0fs)", LOCK_ISLAND, waited), "S")
+                        end
+                    else
+                        setState("ไม่มีมอนในเกาะ รอ wave ถัดไป", "S")
+                    end
+
                     -- ลอยรออยู่เหนือใจกลางเกาะ ห้ามลงพื้น พื้นในไรด์อันตราย
-                    hrp.CFrame = CFrame.new(LOCK_POS + Vector3.new(0, HOVER_Y + 30, 0))
-                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    local _, h = getChar()
+                    if h then
+                        h.CFrame = CFrame.new(LOCK_POS + Vector3.new(0, HOVER_Y + 30, 0))
+                        h.Velocity = Vector3.new(0, 0, 0)
+                    end
                     task.wait(1)
                 else
+                    emptySince = nil
                     local mhum = mob:FindFirstChild("Humanoid")
                     local mhrp = mob:FindFirstChild("HumanoidRootPart")
                     log(string.format("ล็อกมอน: %s (HP %.0f | ห่าง %.0f)",
@@ -682,8 +742,8 @@ task.spawn(function()
     end
 end)
 
-log("BF06 Auto Raid v1.0 พร้อม", "G")
+log("BF06 Auto Raid v1.1 พร้อม", "G")
 log("ปุ่ม 1 = บินไปแท่นเรียกไรด์ (เลือกชิพ/กดเริ่มเอง)", "S")
-log("ปุ่ม 2 = เข้าไรด์แล้วกด จะล็อกเกาะที่ยืนอยู่แล้วไล่ตี", "S")
+log("ปุ่ม 2 = กดครั้งเดียว จบไรด์ยาว — เคลียร์เกาะแล้วย้ายด่านเอง", "S")
 log(string.format("ลอยเหนือมอน %d studs | เลือด < %d%% ลอยหนี | ฟื้น %d%% กลับมาตี",
     HOVER_Y, HP_RETREAT * 100, HP_RESUME * 100), "S")
