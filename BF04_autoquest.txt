@@ -438,7 +438,7 @@ local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 370, 0, 514)
+frame.Size = UDim2.new(0, 370, 0, 486)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
@@ -447,7 +447,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v9.4 (FastAttack + AoE)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v9.5 (กลับมาใช้ระบบตีเดิม)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -541,24 +541,8 @@ seaBtn.Font = Enum.Font.GothamBold; seaBtn.TextSize = 12; seaBtn.BorderSizePixel
 seaBtn.Parent = frame
 Instance.new("UICorner", seaBtn).CornerRadius = UDim.new(0,5)
 
-local FAST_ON = true
-local fastBtn = Instance.new("TextButton")
-fastBtn.Size = UDim2.new(0, 350, 0, 24); fastBtn.Position = UDim2.new(0, 10, 0, 182)
-fastBtn.BackgroundColor3 = Color3.fromRGB(150,40,40); fastBtn.TextColor3 = Color3.new(1,1,1)
-fastBtn.Text = "FAST+AoE: ON (ตีรัวไม่มีคูลดาวน์ + โดนทุกตัวรัศมี 60)"
-fastBtn.Font = Enum.Font.GothamBold; fastBtn.TextSize = 12; fastBtn.BorderSizePixel = 0
-fastBtn.Parent = frame
-Instance.new("UICorner", fastBtn).CornerRadius = UDim.new(0,5)
-fastBtn.MouseButton1Click:Connect(function()
-    FAST_ON = not FAST_ON
-    fastBtn.Text = FAST_ON
-        and "FAST+AoE: ON (ตีรัวไม่มีคูลดาวน์ + โดนทุกตัวรัศมี 60)"
-        or "FAST+AoE: OFF (ใช้ระบบตีแบบเดิม RegisterAttack)"
-    fastBtn.BackgroundColor3 = FAST_ON and Color3.fromRGB(150,40,40) or Color3.fromRGB(50,50,70)
-end)
-
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-16,1,-220); scroll.Position = UDim2.new(0,8,0,212)
+scroll.Size = UDim2.new(1,-16,1,-192); scroll.Position = UDim2.new(0,8,0,184)
 scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -1270,86 +1254,6 @@ local function bringMobsToTarget(primaryTarget, mobName)
     end
 end
 
--- ── FastAttack + AoE ──────────────────────────────────────────────
--- แตะตัวแปรใน CombatFramework ฝั่งไคลเอนต์โดยตรง แทนการรอคูลดาวน์ของเกม
--- แล้วส่งผลการชนผ่าน RigControllerEvent ซึ่งรับมอนได้หลายตัวใน call เดียว
-local AOE_RADIUS = 60
-local CFW_CTRL = nil        -- activeController (cache ไว้ ดึงใหม่เมื่อ require ล้ม)
-local RIG_LIB = nil
-local RIG_EVENT = nil
-
-local function getCFW()
-    if CFW_CTRL and CFW_CTRL.activeController then return CFW_CTRL end
-    local ok = pcall(function()
-        local mod = LP.PlayerScripts:WaitForChild("CombatFramework", 5)
-        local ups = debug.getupvalues(require(mod))
-        for _, v in pairs(ups) do
-            if typeof(v) == "table" and v.activeController then CFW_CTRL = v break end
-        end
-        RIG_LIB = require(RS.CombatFramework.RigLib)
-        RIG_EVENT = RS:FindFirstChild("RigControllerEvent")
-    end)
-    if not ok then return nil end
-    return CFW_CTRL
-end
-
--- ปลดคูลดาวน์และขยายกล่องชน ต้องเซ็ตซ้ำทุกเฟรมเพราะเกมรีเซ็ตค่ากลับตลอด
-local function stripCooldown()
-    local cfw = getCFW()
-    local ac = cfw and cfw.activeController
-    if not ac then return false end
-    pcall(function()
-        ac.timeToNextAttack = 0
-        ac.timeToNextBlock = 0
-        ac.hitboxMagnitude = AOE_RADIUS
-        ac.attacking = false
-        ac.blocking = false
-        ac.increment = 1
-        ac.focusStart = 0
-    end)
-    return true
-end
-
-if not _G.BF04_FAST_CONN then
-    _G.BF04_FAST_CONN = RunService.RenderStepped:Connect(function()
-        if _G.BF04_LOOP or _G.BF04_SABER then pcall(stripCooldown) end
-    end)
-end
-
--- คืน true ถ้ายิงสำเร็จ เพื่อให้ผู้เรียกข้ามระบบตีแบบเดิมไป
-local function fastAoEAttack()
-    if not stripCooldown() then return false end
-    if not RIG_LIB or not RIG_EVENT then return false end
-
-    local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    local hits
-    local ok = pcall(function()
-        hits = RIG_LIB.getBladeHits(char, { hrp }, AOE_RADIUS)
-    end)
-    if not ok or not hits then return false end
-
-    -- getBladeHits คืน part ซ้ำหลายชิ้นต่อมอน 1 ตัว ต้องกรองให้เหลือตัวละชิ้น
-    local seen, targets = {}, {}
-    for _, part in pairs(hits) do
-        local model = part.Parent
-        if model and model:FindFirstChild("HumanoidRootPart") and not seen[model] then
-            seen[model] = true
-            table.insert(targets, part)
-        end
-    end
-    if #targets == 0 then return false end
-
-    local blade = CFW_CTRL.activeController.blades and CFW_CTRL.activeController.blades[1]
-    pcall(function()
-        if blade then RIG_EVENT:FireServer("weaponChange", tostring(blade)) end
-        RIG_EVENT:FireServer("hit", targets, 1, "")
-    end)
-    return true
-end
-
 -- ⚡ AttackNoCoolDown: รูปแบบที่พิสูจน์แล้วจากสคริปต์ที่ใช้งานได้จริง
 --   RegisterAttack:FireServer(0) → (1) → (2) → (3)   [อาร์กิวเมนต์เดียว = เลขคอมโบ]
 --   RegisterHit:FireServer(EnemyHead, OthersEnemies)
@@ -1372,8 +1276,6 @@ local function directRemoteAttack(mobTarget, mobName)
     -- ต้องถืออาวุธอยู่ในมือ ไม่งั้นเซิร์ฟเวอร์ปฏิเสธทุกกรณี
     local equipped = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
     if not equipped then return end
-
-    if FAST_ON and fastAoEAttack() then return end
 
     -- เก็บเป้าหมายทุกตัวในระยะ 100 studs ตามสคริปต์ต้นแบบ (ใช้ Head เป็นหลัก)
     local mainPart = nil
