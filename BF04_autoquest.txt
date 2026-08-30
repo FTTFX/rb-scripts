@@ -428,7 +428,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.9 (Sea 2 Travel + Island Hop)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v9.0 (Unequip Key Before Boss)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -868,6 +868,8 @@ seaBtn.MouseButton1Click:Connect(function()
         tp(CFrame.new(part.Position + Vector3.new(0, 6, 6)))
         FRUIT_MODE = false
         releaseControl()
+        -- ถือกุญแจอยู่จะตีบอสไม่ออก ต้องสลับเป็นอาวุธก่อน
+        if equipWeapon then pcall(equipWeapon) end
         log("ถึงแล้ว → " .. step.hint, "G")
 
         SEA_STEP = (SEA_STEP % #SEA_STEPS) + 1
@@ -1044,9 +1046,13 @@ end
 
 -- ของเควสที่ถือได้แต่ตีไม่ออก ต้องถอดก่อนสู้
 -- (เดิมเช็คแค่ว่า "มี Tool ในมือ" พอถือ Relic อยู่ก็ไม่สลับอาวุธ = ตีไม่โดน)
-local QUEST_ITEMS = { Relic = true, Cup = true, Torch = true }
+local QUEST_ITEMS = {
+    Relic = true, Cup = true, Torch = true,
+    Key = true, ["Special Key"] = true, ["Prison Key"] = true,
+}
 
-local function equipWeapon()
+-- global เพราะปุ่มย้ายทะเลที่ประกาศไว้ก่อนหน้าต้องเรียกใช้ด้วย
+function equipWeapon()
     local char, hrp, hum = getChar()
     if not char or not hum then return false end
 
@@ -1215,7 +1221,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.9 ===", "Y")
+    log("=== START AUTO v9.0 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1839,8 +1845,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.9 พร้อม (ปุ่มย้ายทะเล: บินไปเกาะก่อนแล้วหา NPC)", "G")
+log("BF04 v9.0 พร้อม (ถอดกุญแจก่อนสู้บอส + ปุ่มย้ายทะเล)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.9 loaded")
+warn("[BF04] Auto Quest v9.0 loaded")
