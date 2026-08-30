@@ -235,7 +235,7 @@ local function getQuestData(level)
             questCF = CFrame.new(5254.60, 38.50, 4049.70),
             mobCF = CFrame.new(5595.07, 41.50, 3961.47),
         }
-    else
+    elseif level < 700 then
         return {
             mob = "Galley Captain",
             questName = "FountainQuest",
@@ -243,6 +243,168 @@ local function getQuestData(level)
             questCF = CFrame.new(5254.60, 38.50, 4049.70),
             mobCF = CFrame.new(5658.58, 38.54, 4928.94),
         }
+    end
+
+    -- ── ทะเลที่ 2 (New World) Lv.700-1499 ──────────────────────────
+    if level < 725 then
+        return { mob = "Raider", questName = "Area1Quest", questNum = 1,
+            questCF = CFrame.new(-424.08, 73.01, 1836.92),
+            mobCF = CFrame.new(-737.03, 39.17, 2392.58) }
+    elseif level < 775 then
+        return { mob = "Mercenary", questName = "Area1Quest", questNum = 2,
+            questCF = CFrame.new(-424.08, 73.01, 1836.92),
+            mobCF = CFrame.new(-973.73, 95.87, 1836.47) }
+    elseif level < 875 then
+        return { mob = "Swan Pirate", questName = "Area2Quest", questNum = 1,
+            questCF = CFrame.new(632.70, 73.11, 918.67),
+            mobCF = CFrame.new(970.37, 142.65, 1217.37) }
+    elseif level < 900 then
+        return { mob = "Marine Lieutenant", questName = "MarineQuest3", questNum = 1,
+            questCF = CFrame.new(-2442.65, 73.05, -3219.12),
+            mobCF = CFrame.new(-2913.26, 73.00, -3162.20) }
+    elseif level < 950 then
+        return { mob = "Marine Captain", questName = "MarineQuest3", questNum = 2,
+            questCF = CFrame.new(-2442.65, 73.05, -3219.12),
+            mobCF = CFrame.new(-1868.68, 73.00, -3321.66) }
+    elseif level < 975 then
+        return { mob = "Zombie", questName = "ZombieQuest", questNum = 1,
+            questCF = CFrame.new(-5492.79, 48.52, -793.71),
+            mobCF = CFrame.new(-5634.84, 126.07, -697.67) }
+    elseif level < 1000 then
+        return { mob = "Vampire", questName = "ZombieQuest", questNum = 2,
+            questCF = CFrame.new(-5492.79, 48.52, -793.71),
+            mobCF = CFrame.new(-6030.32, 6.44, -1313.56) }
+    elseif level < 1050 then
+        return { mob = "Snow Trooper", questName = "SnowMountainQuest", questNum = 1,
+            questCF = CFrame.new(604.96, 401.46, -5371.69),
+            mobCF = CFrame.new(535.89, 401.46, -5329.70) }
+    elseif level < 1100 then
+        return { mob = "Winter Warrior", questName = "SnowMountainQuest", questNum = 2,
+            questCF = CFrame.new(604.96, 401.46, -5371.69),
+            mobCF = CFrame.new(1223.74, 454.58, -5170.02) }
+    elseif level < 1125 then
+        return { mob = "Lab Subordinate", questName = "IceSideQuest", questNum = 1,
+            questCF = CFrame.new(-6060.11, 15.99, -4904.79),
+            mobCF = CFrame.new(-5769.20, 37.93, -4468.39) }
+    elseif level < 1175 then
+        return { mob = "Horned Warrior", questName = "IceSideQuest", questNum = 2,
+            questCF = CFrame.new(-6060.11, 15.99, -4904.79),
+            mobCF = CFrame.new(-6400.86, 24.76, -5818.64) }
+    elseif level < 1200 then
+        return { mob = "Magma Ninja", questName = "FireSideQuest", questNum = 1,
+            questCF = CFrame.new(-5431.09, 15.99, -5296.53),
+            mobCF = CFrame.new(-5496.66, 58.69, -5929.77) }
+    elseif level < 1350 then
+        return { mob = "Lava Pirate", questName = "FireSideQuest", questNum = 2,
+            questCF = CFrame.new(-5431.09, 15.99, -5296.53),
+            mobCF = CFrame.new(-5169.72, 34.12, -4669.74) }
+    elseif level < 1375 then
+        return { mob = "Arctic Warrior", questName = "FrostQuest", questNum = 1,
+            questCF = CFrame.new(5669.44, 28.21, -6482.60),
+            mobCF = CFrame.new(5995.07, 57.32, -6183.47) }
+    elseif level < 1425 then
+        return { mob = "Snow Lurker", questName = "FrostQuest", questNum = 2,
+            questCF = CFrame.new(5669.44, 28.21, -6482.60),
+            mobCF = CFrame.new(5518.01, 60.56, -6828.81) }
+    elseif level < 1450 then
+        return { mob = "Sea Soldier", questName = "ForgottenQuest", questNum = 1,
+            questCF = CFrame.new(-3052.99, 236.88, -10148.19),
+            mobCF = CFrame.new(-3030.37, 191.13, -9859.80) }
+    elseif level < 1500 then
+        return { mob = "Water Fighter", questName = "ForgottenQuest", questNum = 2,
+            questCF = CFrame.new(-3052.99, 236.88, -10148.19),
+            mobCF = CFrame.new(-3436.77, 290.52, -10503.44) }
+    end
+
+    -- ── ทะเลที่ 3 (Third Sea) Lv.1500+ ────────────────────────────
+    if level < 1525 then
+        return { mob = "Pirate Millionaire", questName = "PiratePortQuest", questNum = 1,
+            questCF = CFrame.new(-290.07, 42.90, 5581.59),
+            mobCF = CFrame.new(81.16, 43.76, 5724.70) }
+    elseif level < 1575 then
+        return { mob = "Pistol Billionaire", questName = "PiratePortQuest", questNum = 2,
+            questCF = CFrame.new(-290.07, 42.90, 5581.59),
+            mobCF = CFrame.new(81.16, 43.76, 5724.70) }
+    elseif level < 1600 then
+        return { mob = "Dragon Crew Warrior", questName = "AmazonQuest", questNum = 1,
+            questCF = CFrame.new(5832.84, 51.68, -1101.52),
+            mobCF = CFrame.new(6242.00, 51.52, -1243.98) }
+    elseif level < 1625 then
+        return { mob = "Dragon Crew Archer", questName = "AmazonQuest", questNum = 2,
+            questCF = CFrame.new(5832.84, 51.68, -1101.52),
+            mobCF = CFrame.new(6488.92, 383.38, -110.66) }
+    elseif level < 1650 then
+        return { mob = "Female Islander", questName = "AmazonQuest2", questNum = 1,
+            questCF = CFrame.new(5448.86, 601.52, 751.13),
+            mobCF = CFrame.new(5825.22, 682.89, 704.58) }
+    elseif level < 1700 then
+        return { mob = "Giant Islander", questName = "AmazonQuest2", questNum = 2,
+            questCF = CFrame.new(5448.86, 601.52, 751.13),
+            mobCF = CFrame.new(4530.35, 656.76, -131.61) }
+    elseif level < 1725 then
+        return { mob = "Marine Commodore", questName = "MarineTreeIsland", questNum = 1,
+            questCF = CFrame.new(2180.54, 27.82, -6741.55),
+            mobCF = CFrame.new(2490.08, 190.42, -7160.05) }
+    elseif level < 1775 then
+        return { mob = "Marine Rear Admiral", questName = "MarineTreeIsland", questNum = 2,
+            questCF = CFrame.new(2180.54, 27.82, -6741.55),
+            mobCF = CFrame.new(3951.39, 229.12, -6912.82) }
+    elseif level < 1800 then
+        return { mob = "Fishman Raider", questName = "DeepForestIsland3", questNum = 1,
+            questCF = CFrame.new(-10581.66, 330.87, -8761.19),
+            mobCF = CFrame.new(-10322.40, 390.94, -8580.09) }
+    elseif level < 1825 then
+        return { mob = "Fishman Captain", questName = "DeepForestIsland3", questNum = 2,
+            questCF = CFrame.new(-10581.66, 330.87, -8761.19),
+            mobCF = CFrame.new(-11194.54, 442.03, -8608.81) }
+    elseif level < 1850 then
+        return { mob = "Forest Pirate", questName = "DeepForestIsland", questNum = 1,
+            questCF = CFrame.new(-13234.04, 331.49, -7625.40),
+            mobCF = CFrame.new(-13225.81, 428.19, -7753.12) }
+    elseif level < 1900 then
+        return { mob = "Mythological Pirate", questName = "DeepForestIsland", questNum = 2,
+            questCF = CFrame.new(-13234.04, 331.49, -7625.40),
+            mobCF = CFrame.new(-13869.17, 564.95, -7084.41) }
+    elseif level < 1925 then
+        return { mob = "Jungle Pirate", questName = "DeepForestIsland2", questNum = 1,
+            questCF = CFrame.new(-12680.38, 389.97, -9902.02),
+            mobCF = CFrame.new(-11982.22, 376.33, -10451.42) }
+    elseif level < 1975 then
+        return { mob = "Musketeer Pirate", questName = "DeepForestIsland2", questNum = 2,
+            questCF = CFrame.new(-12680.38, 389.97, -9902.02),
+            mobCF = CFrame.new(-13282.30, 496.24, -9565.15) }
+    elseif level < 2000 then
+        return { mob = "Reborn Skeleton", questName = "HauntedQuest1", questNum = 1,
+            questCF = CFrame.new(-9480.83, 142.13, 5566.07),
+            mobCF = CFrame.new(-8817.88, 191.17, 6298.66) }
+    elseif level < 2025 then
+        return { mob = "Living Zombie", questName = "HauntedQuest1", questNum = 2,
+            questCF = CFrame.new(-9480.83, 142.13, 5566.07),
+            mobCF = CFrame.new(-10125.23, 183.95, 6242.01) }
+    elseif level < 2050 then
+        return { mob = "Demonic Soul", questName = "HauntedQuest2", questNum = 1,
+            questCF = CFrame.new(-9516.99, 178.01, 6078.47),
+            mobCF = CFrame.new(-9712.03, 204.70, 6193.32) }
+    elseif level < 2075 then
+        return { mob = "Posessed Mummy", questName = "HauntedQuest2", questNum = 2,
+            questCF = CFrame.new(-9516.99, 178.01, 6078.47),
+            mobCF = CFrame.new(-9545.78, 69.62, 6339.56) }
+    elseif level < 2100 then
+        return { mob = "Peanut Scout", questName = "NutsIslandQuest", questNum = 1,
+            questCF = CFrame.new(-2104.36, 38.13, -10194.07),
+            mobCF = CFrame.new(-2126.41, 90.56, -10301.96) }
+    elseif level < 2125 then
+        return { mob = "Peanut President", questName = "NutsIslandQuest", questNum = 2,
+            questCF = CFrame.new(-2104.36, 38.13, -10194.07),
+            mobCF = CFrame.new(-2118.75, 70.30, -10509.32) }
+    elseif level < 2150 then
+        return { mob = "Ice Cream Chef", questName = "IceCreamIslandQuest", questNum = 1,
+            questCF = CFrame.new(-820.22, 65.85, -10966.17),
+            mobCF = CFrame.new(-685.29, 96.32, -10957.59) }
+    else
+        return { mob = "Ice Cream Commander", questName = "IceCreamIslandQuest", questNum = 2,
+            questCF = CFrame.new(-820.22, 65.85, -10966.17),
+            mobCF = CFrame.new(-635.74, 143.05, -11335.22) }
     end
 end
 
@@ -266,7 +428,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.5 (Boss Only Filler)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.6 (Sea 2 + Sea 3 Quests)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -970,7 +1132,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.5 ===", "Y")
+    log("=== START AUTO v8.6 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1013,6 +1175,15 @@ local function mainLoop()
                 CommF:InvokeServer("AbandonQuest")
                 task.wait(0.5)
                 return
+            end
+
+            -- เตือนเมื่อเลเวลถึงเควสของทะเลถัดไปแล้วแต่ยังไม่ได้นั่งเรือข้ามไป
+            -- (พิกัดของอีกทะเลใช้กับทะเลนี้ไม่ได้ ต้องย้ายทะเลเอง)
+            local needSea = (currentLevel < 700 and 1) or (currentLevel < 1500 and 2) or 3
+            if needSea ~= getSea() and not SEA_WARNED then
+                SEA_WARNED = true
+                log("⚠ เควส Lv." .. currentLevel .. " อยู่ทะเลที่ " .. needSea
+                    .. " แต่คุณอยู่ทะเลที่ " .. getSea() .. " → ต้องนั่งเรือข้ามไปก่อน", "R")
             end
 
             -- 1. ยังไม่มีเควส → บินไปหา NPC ตามเลเวล → รับเควส
@@ -1575,8 +1746,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.5 พร้อม (ไม่มีตัวหลัก → ตีแค่บอส + Noclip + จำจุดเกิด)", "G")
+log("BF04 v8.6 พร้อม (เพิ่มเควสทะเล 2 + ทะเล 3 ถึง Lv.2150)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.5 loaded")
+warn("[BF04] Auto Quest v8.6 loaded")
