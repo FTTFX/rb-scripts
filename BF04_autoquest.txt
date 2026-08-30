@@ -35,11 +35,6 @@ end
 
 local function getQuestData(level)
     level = level or 1
-    -- อยู่ทะเล 1 แต่เลเวลถึงเควสทะเล 2 แล้ว = บินไปไม่ได้ (ไกล 60,000+ studs)
-    -- ให้ฟาร์ม Military Spy ซึ่งเป็นมอนดีสุดของทะเล 1 ต่อไปจนกว่าจะนั่งเรือข้ามเอง
-    if getSea() == 1 and level >= 375 then
-        level = 374
-    end
     if level < 10 then
         return {
             mob = "Bandit",
@@ -271,7 +266,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.9 (Smooth Fly + Sea Detect)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.0 (Smooth Fly)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -686,12 +681,6 @@ local function toTarget(targetCF)
         return true
     end
 
-    -- ไกลระดับข้ามทะเล = คนละทะเล บินไปไม่ได้ (ต้องนั่งเรือ)
-    if dist > 25000 then
-        log(string.format("เป้าหมายอยู่คนละทะเล (%.0f studs) → ข้ามเควสนี้", dist), "R")
-        return false
-    end
-
     -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
     stopTween()
     
@@ -911,7 +900,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.9 ===", "Y")
+    log("=== START AUTO v8.0 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1443,8 +1432,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.9 พร้อม (แก้ตรวจทะเลด้วย PlaceId)", "G")
+log("BF04 v8.0 พร้อม (บินลื่นไม่กระตุก + ถอดตัวล็อกทะเลที่บล็อกเควสผิด)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.9 loaded")
+warn("[BF04] Auto Quest v8.0 loaded")
