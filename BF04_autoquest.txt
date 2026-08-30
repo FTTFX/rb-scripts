@@ -428,7 +428,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.8 (Sea 2 Travel Helper)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.9 (Sea 2 Travel + Island Hop)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -810,10 +810,13 @@ end
 -- ค้นหา NPC จากชื่อในเกมตอนรันจริง ไม่ฝังพิกัด เพราะพิกัดที่เดาเอาไว้เคยพาไปผิดที่
 local SEA_STEPS = {
     { label = "1/3 Military Detective (Prison)", find = "Military Detective",
+      island = CFrame.new(4854.16, 5.69, 740.19),
       hint = "คุยรับกุญแจจาก Detective (กด E)" },
     { label = "2/3 Ice Admiral (Frozen Village)", find = "Ice Admiral",
+      island = CFrame.new(1198.01, 27.01, -1211.73),
       hint = "เปิดประตูไม้ในถ้ำด้วยกุญแจ แล้วตีบอสให้ตาย" },
     { label = "3/3 Experienced Captain (Middle Town)", find = "Experienced Captain",
+      island = CFrame.new(-655.82, 7.89, 1436.68),
       hint = "คุยเลือกไปทะเล 2 (กด E)" },
 }
 local SEA_STEP = 1
@@ -842,14 +845,25 @@ end
 seaBtn.MouseButton1Click:Connect(function()
     task.spawn(function()
         local step = SEA_STEPS[SEA_STEP]
+        FRUIT_MODE = true            -- ใช้เป็นใบอนุญาตให้ระบบบินทำงาน
+
+        -- NPC จะโหลดเข้ามาเฉพาะเมื่ออยู่ใกล้เกาะ ต้องบินไปเกาะก่อนเสมอ
         local part, dist = findByName(step.find)
         if not part then
-            log("หา " .. step.find .. " ไม่เจอในแมพที่โหลดอยู่ → ต้องเข้าใกล้เกาะนั้นก่อน", "R")
+            log("ยังไม่เห็น " .. step.find .. " → บินไปเกาะก่อน", "B")
+            tp(step.island)
+            task.wait(1.5)
+            part, dist = findByName(step.find)
+        end
+
+        if not part then
+            FRUIT_MODE = false
+            releaseControl()
+            log("ถึงเกาะแล้วแต่ยังไม่เห็น " .. step.find .. " → เดินหาแถวนี้เอง", "Y")
             log("  " .. step.hint, "S")
             return
         end
 
-        FRUIT_MODE = true            -- ใช้เป็นใบอนุญาตให้ระบบบินทำงาน
         log("บินไปหา " .. step.find .. " (ห่าง " .. math.floor(dist) .. ")", "B")
         tp(CFrame.new(part.Position + Vector3.new(0, 6, 6)))
         FRUIT_MODE = false
@@ -1201,7 +1215,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.8 ===", "Y")
+    log("=== START AUTO v8.9 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1825,8 +1839,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.8 พร้อม (ปุ่มพาไปหา NPC ย้ายทะเล 1 → 2)", "G")
+log("BF04 v8.9 พร้อม (ปุ่มย้ายทะเล: บินไปเกาะก่อนแล้วหา NPC)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.8 loaded")
+warn("[BF04] Auto Quest v8.9 loaded")
