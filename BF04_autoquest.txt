@@ -20,6 +20,11 @@ _G.BF04_BV = nil
 local AUTO_ON = false
 local currentTween = nil
 
+-- Bypass TP: เดินทางไกลด้วยการปักจุดเกิดปลายทางแล้วให้เซิร์ฟเวอร์ย้ายเราเอง
+-- ประกาศไว้ตรงนี้เพราะปุ่มใน GUI ต้องอ้างถึงก่อนที่ฟังก์ชันเดินทางจะถูกสร้าง
+local BTP_ON = true
+local BTP_MIN_DIST = 3000   -- ไกลกว่านี้ถึงจะใช้ (ใกล้กว่านี้บินเร็วกว่า)
+
 -- ── Quest Database (First Sea / Old World) ─────────────────────────
 -- ทะเลที่อยู่ตอนนี้ (เควสข้ามทะเลบินไปไม่ได้ ต้องนั่งเรือ)
 -- แต่ละทะเลเป็น PlaceId แยกกัน แม่นกว่าการเช็คชื่อเกาะใน Workspace.Map
@@ -438,7 +443,7 @@ local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 370, 0, 486)
+frame.Size = UDim2.new(0, 370, 0, 514)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
@@ -447,7 +452,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v9.6 (Magnet ดึงทุกตัว + โฟกัสตัวหลัก)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v9.7 (Bypass TP)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -541,8 +546,32 @@ seaBtn.Font = Enum.Font.GothamBold; seaBtn.TextSize = 12; seaBtn.BorderSizePixel
 seaBtn.Parent = frame
 Instance.new("UICorner", seaBtn).CornerRadius = UDim.new(0,5)
 
+local btpBtn = Instance.new("TextButton")
+btpBtn.Size = UDim2.new(0, 230, 0, 24); btpBtn.Position = UDim2.new(0, 10, 0, 182)
+btpBtn.BackgroundColor3 = Color3.fromRGB(90,60,150); btpBtn.TextColor3 = Color3.new(1,1,1)
+btpBtn.Text = "BYPASS TP: ON (ไกลเกิน 3000 วาปแทนบิน)"
+btpBtn.Font = Enum.Font.GothamBold; btpBtn.TextSize = 11; btpBtn.BorderSizePixel = 0
+btpBtn.Parent = frame
+Instance.new("UICorner", btpBtn).CornerRadius = UDim.new(0,5)
+btpBtn.MouseButton1Click:Connect(function()
+    BTP_ON = not BTP_ON
+    btpBtn.Text = BTP_ON
+        and "BYPASS TP: ON (ไกลเกิน 3000 วาปแทนบิน)"
+        or "BYPASS TP: OFF (บินอย่างเดียว)"
+    btpBtn.BackgroundColor3 = BTP_ON and Color3.fromRGB(90,60,150) or Color3.fromRGB(50,50,70)
+end)
+
+-- ปักจุดเกิดใหม่ที่ตำแหน่งปัจจุบัน ใช้คืนจุดเกิดเดิมหลังฟาร์มเสร็จ
+local pinBtn = Instance.new("TextButton")
+pinBtn.Size = UDim2.new(0, 116, 0, 24); pinBtn.Position = UDim2.new(0, 244, 0, 182)
+pinBtn.BackgroundColor3 = Color3.fromRGB(120,100,20); pinBtn.TextColor3 = Color3.new(1,1,1)
+pinBtn.Text = "ปักจุดเกิดที่นี่"
+pinBtn.Font = Enum.Font.GothamBold; pinBtn.TextSize = 11; pinBtn.BorderSizePixel = 0
+pinBtn.Parent = frame
+Instance.new("UICorner", pinBtn).CornerRadius = UDim.new(0,5)
+
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-16,1,-192); scroll.Position = UDim2.new(0,8,0,184)
+scroll.Size = UDim2.new(1,-16,1,-220); scroll.Position = UDim2.new(0,8,0,212)
 scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -1070,6 +1099,92 @@ local function flySmooth(destCF, speed, report)
     return true
 end
 
+-- ── Bypass TP (SetSpawnPoint + TeleportToSpawn) ───────────────────
+-- เดินทางไกลๆ ด้วยการบินใช้เวลาเป็นนาทีและกระตุก
+-- ทริกนี้: กระแทก CFrame ไปให้ใกล้ปลายทางก่อน → ปักจุดเกิดที่นั่น
+-- → สั่ง TeleportToSpawn ให้เซิร์ฟเวอร์ย้ายเราเอง (ถูกกฎ ไม่โดนเด้ง)
+local function getSpawnName()
+    local ok, name = pcall(function()
+        return LP.Data.SpawnPoint.Value
+    end)
+    if ok and type(name) == "string" and name ~= "" then return name end
+end
+
+-- จำจุดเกิดเดิมไว้ตั้งแต่เริ่มสคริปต์ เพื่อบอกผู้เล่นว่าต้องกลับไปปักที่ไหน
+local ORIGINAL_SPAWN = getSpawnName()
+local SPAWN_CHANGED = false
+
+pinBtn.MouseButton1Click:Connect(function()
+    local CommF = getCommF()
+    if not CommF then log("หา CommF_ ไม่เจอ", "R") return end
+    pcall(function() CommF:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.3)
+    local now = getSpawnName()
+    log("ปักจุดเกิดใหม่: " .. tostring(now), "G")
+    if now == ORIGINAL_SPAWN then
+        SPAWN_CHANGED = false
+        log("กลับมาเป็นจุดเกิดเดิมแล้ว ✓", "G")
+    end
+    pinBtn.Text = "ปักแล้ว: " .. tostring(now)
+    task.delay(3, function() if pinBtn.Parent then pinBtn.Text = "ปักจุดเกิดที่นี่" end end)
+end)
+
+local function bypassTP(targetCF)
+    local char, hrp, hum = getChar()
+    if not char or not hrp or not hum then return false end
+
+    local CommF = getCommF()
+    if not CommF then return false end
+
+    local startDist = (targetCF.Position - hrp.Position).Magnitude
+    log(string.format("Bypass TP: %.0f studs → ปักจุดเกิดปลายทาง", startDist), "B")
+
+    -- กระแทกตำแหน่งซ้ำๆ จนเข้ามาในรัศมี 1500 (เซิร์ฟเวอร์ยอมรับเป็นช่วงๆ)
+    -- ChangeState(15) = PlatformStanding ล็อกร่างไม่ให้ฟิสิกส์ดึงกลับกลางทาง
+    local deadline = os.clock() + 15
+    repeat
+        pcall(function()
+            hum:ChangeState(15)
+            hrp.CFrame = targetCF
+            task.wait()
+            hrp.CFrame = targetCF
+        end)
+        task.wait(0.5)
+        local _, h = getChar()
+        if not h then return false end
+        hrp = h
+    until (targetCF.Position - hrp.Position).Magnitude <= 1500 or os.clock() > deadline
+
+    local left = (targetCF.Position - hrp.Position).Magnitude
+    if left > 1500 then
+        log(string.format("Bypass TP ไม่ผ่าน (เหลือ %.0f) → บินตามปกติ", left), "Y")
+        return false
+    end
+
+    -- ปักจุดเกิด 2 ครั้ง (ครั้งเดียวบางทีเซิร์ฟเวอร์ไม่รับ)
+    pcall(function() CommF:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.2)
+    pcall(function() CommF:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.2)
+
+    local newSpawn = getSpawnName()
+    if newSpawn and newSpawn ~= ORIGINAL_SPAWN then
+        SPAWN_CHANGED = true
+        log("จุดเกิดเปลี่ยนเป็น: " .. newSpawn .. " (เดิม: " .. tostring(ORIGINAL_SPAWN) .. ")", "Y")
+    end
+
+    -- ให้เซิร์ฟเวอร์ย้ายเราไปที่จุดเกิดเอง = ตำแหน่งถูกยืนยันฝั่งเซิร์ฟเวอร์
+    pcall(function() CommF:InvokeServer("TeleportToSpawn") end)
+    task.wait(1.5)
+
+    local _, h2 = getChar()
+    if h2 then
+        local final = (targetCF.Position - h2.Position).Magnitude
+        log(string.format("Bypass TP สำเร็จ ✓ เหลือ %.0f studs", final), "G")
+    end
+    return true
+end
+
 local function toTarget(targetCF)
     local char, hrp, hum = getChar()
     if not char then return false end
@@ -1090,6 +1205,23 @@ local function toTarget(targetCF)
     if dist < DIRECT_FLY_R then
         stopTween()
         return flySmooth(targetCF, 420, dist > 1500)
+    end
+
+    -- ระยะไกลมาก → ลอง Bypass TP ก่อน ประหยัดเวลาได้เป็นนาที
+    -- ถ้าไม่สำเร็จก็ตกไปใช้การบินขึ้นสูงตามปกติ
+    if BTP_ON and dist > BTP_MIN_DIST then
+        stopTween()
+        if bypassTP(targetCF) then
+            local _, h = getChar()
+            if h and (targetCF.Position - h.Position).Magnitude < DIRECT_FLY_R then
+                return flySmooth(targetCF, 420, false)
+            end
+            return true
+        end
+        local _, h = getChar()
+        if not h then return false end
+        dist = (targetCF.Position - h.Position).Magnitude
+        hrp = h
     end
 
     -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
@@ -1971,8 +2103,10 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v9.3 พร้อม (ตายแล้วแปลงร่างพระ กด Z + สลับดาบอัตโนมัติ)", "G")
+log("BF04 v9.7 พร้อม (Bypass TP: ปักจุดเกิดปลายทางแทนบินไกล)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
+log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
+log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v9.3 loaded")
+warn("[BF04] Auto Quest v9.7 loaded")
