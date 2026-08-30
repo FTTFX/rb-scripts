@@ -428,7 +428,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v9.0 (Unequip Key Before Boss)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v9.1 (Auto Buso Haki)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -710,6 +710,29 @@ function getChar()
     return nil
 end
 
+-- เปิด Buso Haki ค้างไว้: บอสสายผลไม้ธาตุ (เช่น Ice Admiral) มี elemental immunity
+-- ดาบกับหมัดทะลุผ่านตัวไปเลยถ้าไม่มี Buso เปิดอยู่
+-- HasBuso ในตัวละคร = กำลังเปิดอยู่ ถ้าไม่มีก็สั่งเปิดใหม่
+local function ensureBuso()
+    local char = LP.Character
+    if not char or char:FindFirstChild("HasBuso") then return end
+    local ok, CommF = pcall(function()
+        return RS:WaitForChild("Remotes"):WaitForChild("CommF_")
+    end)
+    if ok and CommF then
+        pcall(function() CommF:InvokeServer("Buso") end)
+    end
+end
+
+if not _G.BF04_BUSO_CONN then
+    _G.BF04_BUSO_CONN = task.spawn(function()
+        while true do
+            task.wait(1)
+            pcall(ensureBuso)
+        end
+    end)
+end
+
 -- Noclip: ปิดการชนของทุกชิ้นส่วนตัวละคร ระหว่างที่สคริปต์กำลังทำงาน
 -- ต้องตั้งซ้ำทุกเฟรม เพราะเกมรีเซ็ต CanCollide เองเป็นระยะ
 local function setNoclip(on)
@@ -870,6 +893,7 @@ seaBtn.MouseButton1Click:Connect(function()
         releaseControl()
         -- ถือกุญแจอยู่จะตีบอสไม่ออก ต้องสลับเป็นอาวุธก่อน
         if equipWeapon then pcall(equipWeapon) end
+        pcall(ensureBuso)
         log("ถึงแล้ว → " .. step.hint, "G")
 
         SEA_STEP = (SEA_STEP % #SEA_STEPS) + 1
@@ -1221,7 +1245,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v9.0 ===", "Y")
+    log("=== START AUTO v9.1 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1845,8 +1869,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v9.0 พร้อม (ถอดกุญแจก่อนสู้บอส + ปุ่มย้ายทะเล)", "G")
+log("BF04 v9.1 พร้อม (เปิด Buso Haki ค้างอัตโนมัติ = ตีบอสธาตุได้)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v9.0 loaded")
+warn("[BF04] Auto Quest v9.1 loaded")
