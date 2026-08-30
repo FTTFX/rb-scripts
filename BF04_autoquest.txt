@@ -12,6 +12,7 @@ local pg = LP:WaitForChild("PlayerGui")
 local RS = game:GetService("ReplicatedStorage")
 local Workspace = workspace
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 _G.BF04 = _G.BF04 or {}
 _G.BF04_LOOP = nil
@@ -20,8 +21,22 @@ local AUTO_ON = false
 local currentTween = nil
 
 -- ── Quest Database (First Sea / Old World) ─────────────────────────
+-- ทะเลที่อยู่ตอนนี้ (เควสข้ามทะเลบินไปไม่ได้ ต้องนั่งเรือ)
+local function getSea()
+    local m = Workspace:FindFirstChild("Map")
+    if not m then return 1 end
+    if m:FindFirstChild("Turtle") then return 3 end
+    if m:FindFirstChild("Cafe") then return 2 end
+    return 1
+end
+
 local function getQuestData(level)
     level = level or 1
+    -- อยู่ทะเล 1 แต่เลเวลถึงเควสทะเล 2 แล้ว = บินไปไม่ได้ (ไกล 60,000+ studs)
+    -- ให้ฟาร์ม Military Spy ซึ่งเป็นมอนดีสุดของทะเล 1 ต่อไปจนกว่าจะนั่งเรือข้ามเอง
+    if getSea() == 1 and level >= 375 then
+        level = 374
+    end
     if level < 10 then
         return {
             mob = "Bandit",
@@ -253,7 +268,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.7 (Fight Till Death, Respawn Repeat)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.8 (Smooth Fly + Sea Lock)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -621,6 +636,30 @@ local FLY_SPEED = 380
 local function moveOK()
     return (AUTO_ON and _G.BF04_LOOP) or (SABER_ON and _G.BF04_SABER) or FRUIT_MODE
 end
+-- บินแบบขยับทีละเฟรม แทน Tween ยาวๆ
+-- Tween ตั้งค่า CFrame สวนกับ physics ของเกม ทำให้ภาพกระตุกและถูกดึงกลับเป็นช่วงๆ
+local function flySmooth(destCF, speed, report)
+    local total
+    local nextReport = os.clock() + 5
+    while moveOK() do
+        local char, hrp = getChar()
+        if not char or not hrp then return false end
+        local delta = destCF.Position - hrp.Position
+        local left = delta.Magnitude
+        total = total or left
+        if left <= 8 then break end
+        local dt = RunService.Heartbeat:Wait()
+        local step = math.min(speed * dt, left)
+        hrp.CFrame = CFrame.new(hrp.Position + delta.Unit * step)
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        if report and total > 1500 and os.clock() >= nextReport then
+            nextReport = os.clock() + 5
+            log(string.format("  ...เหลือ %.0f studs", left), "S")
+        end
+    end
+    return true
+end
+
 local function toTarget(targetCF)
     local char, hrp, hum = getChar()
     if not char then return false end
@@ -640,18 +679,14 @@ local function toTarget(targetCF)
     -- ตัดขั้นตอนไต่ขึ้น-ลงออก ประหยัดเวลาต่อมอนได้หลายวินาที
     if dist < 650 then
         stopTween()
-        local flyTime = math.max(dist / 420, 0.15)
-        local tw = TweenService:Create(hrp, TweenInfo.new(flyTime, Enum.EasingStyle.Linear), {CFrame = targetCF})
-        currentTween = tw
-        tw:Play()
-        local waited = 0
-        while moveOK() and currentTween == tw and waited < (flyTime + 0.3) do
-            if (targetCF.Position - hrp.Position).Magnitude <= 10 then break end
-            task.wait(0.05)
-            waited += 0.05
-        end
-        stopTween()
+        flySmooth(targetCF, 420, false)
         return true
+    end
+
+    -- ไกลระดับข้ามทะเล = คนละทะเล บินไปไม่ได้ (ต้องนั่งเรือ)
+    if dist > 25000 then
+        log(string.format("เป้าหมายอยู่คนละทะเล (%.0f studs) → ข้ามเควสนี้", dist), "R")
+        return false
     end
 
     -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
@@ -673,30 +708,13 @@ local function toTarget(targetCF)
     local skyEndCF   = CFrame.new(targetCF.Position.X, highY, targetCF.Position.Z)
     
     local flyDist = (skyEndCF.Position - skyStartCF.Position).Magnitude
-    local flyTime = math.max(flyDist / FLY_SPEED, 0.3)
-    
-    local tweenInfo = TweenInfo.new(flyTime, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-    local tw = TweenService:Create(hrp, tweenInfo, {CFrame = skyEndCF})
-    currentTween = tw
-    tw:Play()
-    
-    -- บินข้ามทะเลใช้เวลาหลายสิบวินาที ถ้าไม่รายงานความคืบหน้าจะดูเหมือนสคริปต์ค้าง
+
+    -- บินไกลใช้เวลาหลายสิบวินาที ถ้าไม่รายงานความคืบหน้าจะดูเหมือนสคริปต์ค้าง
     if flyDist > 1500 then
-        log(string.format("บินข้ามทะเล %.0f studs (~%.0f วิ)", flyDist, flyTime), "B")
+        log(string.format("บินไกล %.0f studs (~%.0f วิ)", flyDist, flyDist / FLY_SPEED), "B")
     end
 
-    local waited = 0
-    local nextReport = 3
-    while moveOK() and currentTween == tw and waited < (flyTime + 0.5) do
-        local curDist = (skyEndCF.Position - hrp.Position).Magnitude
-        if curDist <= 15 then break end
-        if flyDist > 1500 and waited >= nextReport then
-            nextReport = waited + 5
-            log(string.format("  ...เหลือ %.0f studs", curDist), "S")
-        end
-        task.wait(0.1)
-        waited += 0.1
-    end
+    flySmooth(skyEndCF, FLY_SPEED, true)
     
     -- ไต่ระดับลงเป็นช่วงๆ เช่นกัน
     if moveOK() then
@@ -890,7 +908,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.7 ===", "Y")
+    log("=== START AUTO v7.8 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1422,7 +1440,7 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.7 พร้อม (สู้จนตาย → เกิดใหม่ → กลับไปสู้ต่อ ไม่ถอย)", "G")
+log("BF04 v7.8 พร้อม (บินลื่นไม่กระตุก + ไม่บินข้ามทะเล)", "G")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.7 loaded")
+warn("[BF04] Auto Quest v7.8 loaded")
