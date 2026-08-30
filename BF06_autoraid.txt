@@ -1,0 +1,689 @@
+--[[
+    BF06 Auto Raid v1.0 — Blox Fruits
+    ระบบช่วยตีไรด์ (ตี 3-5 เกาะ) สำหรับปลุกผล / เก็บ Fragment
+
+    แนวคิด: ผู้เล่นเป็นคนตัดสินใจเอง สคริปต์ทำแค่ "บิน" กับ "ตี"
+      ปุ่ม 1  บินไปจุดเข้าไรด์ → ปล่อยมือ ให้ผู้เล่นเลือกชิพ/กดเริ่มเอง
+      ปุ่ม 2  เข้าไปแล้วกดเริ่ม → ล็อกเกาะที่ยืนอยู่ แล้วไล่ตีเฉพาะในเกาะนั้น
+
+    ระบบบิน + ระบบตี ยกมาจาก BF04 ทั้งดุ้น (burst fly + RegisterAttack combo 0-3)
+    เพราะทดสอบแล้วว่าดีที่สุด ไม่โดน anti-cheat และดาเมจออกเต็ม
+]]
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = workspace
+local LP = Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+
+-- ── ค่าปรับแต่ง ────────────────────────────────────────────────────
+local HOVER_Y      = 18     -- ลอยเหนือหัวมอนกี่ studs (ในไรด์พื้นอันตราย ห้ามลงพื้น)
+local ENGAGE_R     = 25     -- ระยะที่ถือว่าประชิดพอจะตี
+local ISLAND_R     = 1200   -- รัศมีจากใจกลางเกาะที่ยอมให้ตีมอน (กันไปเกาะอื่น)
+local DRIFT_R      = 2000   -- ถ้าหลุดจากเกาะไกลเกินนี้ = โดนวาป ต้องบินกลับ
+local HP_RETREAT   = 0.15   -- เลือดต่ำกว่า 15% → ลอยหนี
+local HP_RESUME    = 0.60   -- ฟื้นถึง 60% → กลับลงไปตีต่อ
+local RETREAT_Y    = 300    -- ลอยหนีสูงกี่ studs
+local BURST_MOVE   = 1.0
+local BURST_REST   = 0.2
+local FLY_SPEED    = 380
+
+local AUTO_ON = false
+local TRAVEL_MODE = false   -- ใบอนุญาตให้บินตอนกดปุ่มพาไปจุดเข้าไรด์
+local LOCK_ISLAND = nil     -- ชื่อ Location ที่ล็อกไว้ เช่น "Island 3"
+local LOCK_POS = nil        -- ตำแหน่งใจกลางเกาะที่ล็อก
+
+-- ── GUI ────────────────────────────────────────────────────────────
+local old = pg:FindFirstChild("BF06GUI"); if old then old:Destroy() end
+local sg = Instance.new("ScreenGui")
+sg.Name = "BF06GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 370, 0, 420)
+frame.Position = UDim2.new(0, 400, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
+frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
+
+local titleLbl = Instance.new("TextLabel")
+titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
+titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,160,80)
+titleLbl.Text = "BF06 Auto Raid v1.0"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0,24,0,22); closeBtn.Position = UDim2.new(1,-28,0,3)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120,20,20); closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.Text = "X"; closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 12; closeBtn.BorderSizePixel = 0
+closeBtn.Parent = frame
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
+
+local gateBtn = Instance.new("TextButton")
+gateBtn.Size = UDim2.new(0, 350, 0, 30); gateBtn.Position = UDim2.new(0, 10, 0, 34)
+gateBtn.BackgroundColor3 = Color3.fromRGB(30,70,120); gateBtn.TextColor3 = Color3.new(1,1,1)
+gateBtn.Text = "1. บินไปจุดเข้าไรด์ (แล้วเลือกชิพ/กดเริ่มเอง)"
+gateBtn.Font = Enum.Font.GothamBold; gateBtn.TextSize = 12; gateBtn.BorderSizePixel = 0
+gateBtn.Parent = frame
+Instance.new("UICorner", gateBtn).CornerRadius = UDim.new(0,5)
+
+local raidBtn = Instance.new("TextButton")
+raidBtn.Size = UDim2.new(0, 350, 0, 30); raidBtn.Position = UDim2.new(0, 10, 0, 70)
+raidBtn.BackgroundColor3 = Color3.fromRGB(30,120,50); raidBtn.TextColor3 = Color3.new(1,1,1)
+raidBtn.Text = "2. AUTO RAID: OFF (เข้าไรด์แล้วค่อยกด)"
+raidBtn.Font = Enum.Font.GothamBold; raidBtn.TextSize = 13; raidBtn.BorderSizePixel = 0
+raidBtn.Parent = frame
+Instance.new("UICorner", raidBtn).CornerRadius = UDim.new(0,5)
+
+local clearBtn = Instance.new("TextButton")
+clearBtn.Size = UDim2.new(0, 170, 0, 26); clearBtn.Position = UDim2.new(0, 10, 0, 106)
+clearBtn.BackgroundColor3 = Color3.fromRGB(140,60,20); clearBtn.TextColor3 = Color3.new(1,1,1)
+clearBtn.Text = "ล้าง/ปลดล็อก"
+clearBtn.Font = Enum.Font.GothamBold; clearBtn.TextSize = 12; clearBtn.BorderSizePixel = 0
+clearBtn.Parent = frame
+Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,5)
+
+local copyBtn = Instance.new("TextButton")
+copyBtn.Size = UDim2.new(0, 170, 0, 26); copyBtn.Position = UDim2.new(0, 190, 0, 106)
+copyBtn.BackgroundColor3 = Color3.fromRGB(40,90,140); copyBtn.TextColor3 = Color3.new(1,1,1)
+copyBtn.Text = "Copy Log"; copyBtn.Font = Enum.Font.GothamBold; copyBtn.TextSize = 12; copyBtn.BorderSizePixel = 0
+copyBtn.Parent = frame
+Instance.new("UICorner", copyBtn).CornerRadius = UDim.new(0,5)
+
+local stateLbl = Instance.new("TextLabel")
+stateLbl.Size = UDim2.new(1,-20,0,20); stateLbl.Position = UDim2.new(0,10,0,138)
+stateLbl.BackgroundTransparency = 1; stateLbl.TextColor3 = Color3.fromRGB(150,200,255)
+stateLbl.Text = "สถานะ: รอคำสั่ง"; stateLbl.Font = Enum.Font.Gotham; stateLbl.TextSize = 12
+stateLbl.TextXAlignment = Enum.TextXAlignment.Left; stateLbl.Parent = frame
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-16,1,-170); scroll.Position = UDim2.new(0,8,0,162)
+scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+local padL = Instance.new("UIPadding"); padL.PaddingLeft = UDim.new(0,6); padL.PaddingTop = UDim.new(0,2); padL.Parent = scroll
+
+-- ── Log ────────────────────────────────────────────────────────────
+local logLines = {}
+local logOrder = 0
+local lastLogT = os.clock()
+local COL = {
+    W = Color3.fromRGB(220,220,220), G = Color3.fromRGB(120,255,140),
+    Y = Color3.fromRGB(255,220,120), R = Color3.fromRGB(255,120,120),
+    B = Color3.fromRGB(140,200,255), S = Color3.fromRGB(150,150,160),
+}
+local function log(txt, col)
+    local now = os.clock()
+    local line = string.format("[%s +%.2fs] %s", os.date("%H:%M:%S"), now - lastLogT, txt)
+    lastLogT = now
+    table.insert(logLines, line)
+    logOrder = logOrder + 1
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1,-10,0,0); lbl.AutomaticSize = Enum.AutomaticSize.Y
+    lbl.BackgroundTransparency = 1; lbl.TextColor3 = COL[col or "W"] or COL.W
+    lbl.Text = line; lbl.Font = Enum.Font.Code; lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.TextWrapped = true
+    lbl.LayoutOrder = logOrder; lbl.Parent = scroll
+    if #logLines > 200 then
+        table.remove(logLines, 1)
+        local kids = scroll:GetChildren()
+        for _, k in ipairs(kids) do
+            if k:IsA("TextLabel") and k.LayoutOrder == logOrder - 200 then k:Destroy() break end
+        end
+    end
+    task.defer(function() scroll.CanvasPosition = Vector2.new(0, scroll.AbsoluteCanvasSize.Y) end)
+end
+local function setState(txt, col)
+    stateLbl.Text = "สถานะ: " .. txt
+    stateLbl.TextColor3 = COL[col or "B"] or COL.B
+end
+copyBtn.MouseButton1Click:Connect(function()
+    local ok = pcall(function() setclipboard(table.concat(logLines, "\n")) end)
+    copyBtn.Text = ok and "คัดลอกแล้ว ✓" or "executor ไม่รองรับ"
+    task.delay(2, function() if copyBtn.Parent then copyBtn.Text = "Copy Log" end end)
+end)
+
+-- ── Helper ────────────────────────────────────────────────────────
+local function getChar()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if char and hrp and hum then return char, hrp, hum end
+    return nil
+end
+
+local function getCommF()
+    local remotes = RS:FindFirstChild("Remotes")
+    if remotes then
+        for _, r in ipairs(remotes:GetDescendants()) do
+            if r.Name == "CommF_" and r:IsA("RemoteFunction") then return r end
+        end
+    end
+end
+
+local RegisterAttack, RegisterHit
+local function getCombatRemotes()
+    if RegisterAttack and RegisterHit then return RegisterAttack, RegisterHit end
+    pcall(function()
+        local net = RS:FindFirstChild("Modules") and RS.Modules:FindFirstChild("Net")
+        if net then
+            RegisterAttack = net:FindFirstChild("RE/RegisterAttack")
+            RegisterHit = net:FindFirstChild("RE/RegisterHit")
+        end
+    end)
+    return RegisterAttack, RegisterHit
+end
+
+-- บอสไรด์หลายตัวเป็นสายผลธาตุ ไม่เปิด Buso = ตีทะลุไม่เข้าเลย
+local function ensureBuso()
+    local char = LP.Character
+    if not char or char:FindFirstChild("HasBuso") then return end
+    local CommF = getCommF()
+    if CommF then pcall(function() CommF:InvokeServer("Buso") end) end
+end
+if not _G.BF06_BUSO_CONN then
+    _G.BF06_BUSO_CONN = task.spawn(function()
+        while true do
+            task.wait(1)
+            if _G.BF06_LOOP then pcall(ensureBuso) end
+        end
+    end)
+end
+
+local function setNoclip()
+    local char = LP.Character
+    if not char then return end
+    for _, p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
+    end
+end
+if not _G.BF06_NOCLIP_CONN then
+    _G.BF06_NOCLIP_CONN = RunService.Stepped:Connect(function()
+        if _G.BF06_LOOP then pcall(setNoclip) end
+    end)
+end
+
+local function applyBodyVelocity(hrp)
+    if not _G.BF06_BV or not _G.BF06_BV.Parent then
+        local bv = Instance.new("BodyVelocity")
+        bv.Name = "BF06_Noclip"
+        bv.Parent = hrp
+        bv.MaxForce = Vector3.new(9e99, 9e99, 9e99)
+        bv.Velocity = Vector3.new(0, 0, 0)
+        _G.BF06_BV = bv
+    end
+end
+
+local BLOCKING_CLASSES = {
+    BodyVelocity = true, BodyGyro = true, BodyPosition = true,
+    BodyThrust = true, BodyAngularVelocity = true,
+    AlignPosition = true, AlignOrientation = true,
+    LinearVelocity = true, AngularVelocity = true, VectorForce = true,
+}
+local function releaseControl()
+    pcall(function()
+        if _G.BF06_BV then _G.BF06_BV:Destroy() _G.BF06_BV = nil end
+    end)
+    local char = LP.Character
+    if not char then return end
+    pcall(function()
+        for _, obj in ipairs(char:GetDescendants()) do
+            if BLOCKING_CLASSES[obj.ClassName] then obj:Destroy() end
+        end
+    end)
+    pcall(function()
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = false
+                if part.Name ~= "HumanoidRootPart" then part.CanCollide = true end
+            end
+        end
+    end)
+    pcall(function()
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+            hum.Sit = false
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            if hum.WalkSpeed <= 0 then hum.WalkSpeed = 16 end
+            if hum.JumpPower <= 0 then hum.JumpPower = 50 end
+            hum.AutoRotate = true
+        end
+    end)
+    pcall(function()
+        local pm = LP:FindFirstChild("PlayerScripts") and LP.PlayerScripts:FindFirstChild("PlayerModule")
+        if pm then require(pm):GetControls():Enable() end
+    end)
+end
+
+-- ── ระบบบิน (ยกมาจาก BF04 ทั้งดุ้น) ──────────────────────────────
+local function moveOK()
+    return (AUTO_ON and _G.BF06_LOOP) or TRAVEL_MODE
+end
+
+local function flySmooth(destCF, speed, report)
+    local total
+    local nextReport = os.clock() + 5
+    local burstT0 = os.clock()
+    local deadline
+    while moveOK() do
+        local char, hrp = getChar()
+        if not char or not hrp then return false end
+        local delta = destCF.Position - hrp.Position
+        local left = delta.Magnitude
+        total = total or left
+        deadline = deadline or (os.clock() + (total / speed) * 5 + 8)
+        if left <= 8 then break end
+        if os.clock() > deadline then
+            log(string.format("บินไม่ถึง (เหลือ %.0f studs)", left), "Y")
+            return false
+        end
+        if os.clock() - burstT0 >= BURST_MOVE then
+            local restEnd = os.clock() + BURST_REST
+            while os.clock() < restEnd do
+                local _, h = getChar()
+                if h then h.Velocity = Vector3.new(0, 0, 0) end
+                RunService.Heartbeat:Wait()
+            end
+            burstT0 = os.clock()
+        end
+        local dt = RunService.Heartbeat:Wait()
+        local step = math.min(speed * dt, left)
+        hrp.CFrame = CFrame.new(hrp.Position + delta.Unit * step)
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        if report and total > 1500 and os.clock() >= nextReport then
+            nextReport = os.clock() + 5
+            log(string.format("  ...เหลือ %.0f studs", left), "S")
+        end
+    end
+    return true
+end
+
+local function tp(targetCF)
+    local char, hrp = getChar()
+    if not char then return false end
+    applyBodyVelocity(hrp)
+    local dist = (targetCF.Position - hrp.Position).Magnitude
+    if dist < ENGAGE_R then
+        hrp.CFrame = targetCF
+        return true
+    end
+    if dist < 3000 then
+        return flySmooth(targetCF, 420, dist > 1500)
+    end
+
+    local highY = math.max(hrp.Position.Y, targetCF.Position.Y) + 120
+    local stepY = 40
+    local curY = hrp.Position.Y
+    while curY < highY - 5 do
+        curY = math.min(curY + stepY, highY)
+        hrp.CFrame = CFrame.new(hrp.Position.X, curY, hrp.Position.Z)
+        task.wait(0.08)
+    end
+    flySmooth(CFrame.new(targetCF.Position.X, highY, targetCF.Position.Z), FLY_SPEED, true)
+    if moveOK() then
+        local landY = hrp.Position.Y
+        while landY > targetCF.Position.Y + 25 do
+            landY = math.max(landY - stepY, targetCF.Position.Y + 25)
+            hrp.CFrame = CFrame.new(targetCF.Position.X, landY, targetCF.Position.Z)
+            task.wait(0.08)
+        end
+        hrp.CFrame = targetCF
+    end
+    return true
+end
+
+-- ── อาวุธ / โจมตี (ยกมาจาก BF04) ─────────────────────────────────
+local QUEST_ITEMS = {
+    Relic = true, Cup = true, Torch = true,
+    Key = true, ["Special Key"] = true, ["Prison Key"] = true,
+    ["Special Microchip"] = true, Microchip = true,
+}
+
+local function equipWeapon()
+    local char, _, hum = getChar()
+    if not char or not hum then return false end
+    local held = char:FindFirstChildOfClass("Tool")
+    if held and not QUEST_ITEMS[held.Name] then return true end
+    if held then
+        pcall(function() hum:UnequipTools() end)
+        task.wait(0.1)
+    end
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return false end
+    local tool = bp:FindFirstChild("Combat")
+    if not tool then
+        for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") and not QUEST_ITEMS[t.Name] then tool = t break end
+        end
+    end
+    if tool then
+        pcall(function() hum:EquipTool(tool) end)
+        return true
+    end
+    return false
+end
+
+local function directRemoteAttack()
+    local rAttack, rHit = getCombatRemotes()
+
+    pcall(function()
+        local char = LP.Character
+        if char then
+            if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Sit = false end
+        end
+    end)
+
+    local equipped = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+    if not equipped then return end
+
+    local mainPart, othersEnemies = nil, {}
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, enemy in ipairs(enemies:GetChildren()) do
+            local eHum = enemy:FindFirstChild("Humanoid")
+            local eHead = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
+            if eHum and eHead and eHum.Health > 0 and enemy ~= LP.Character then
+                if LP:DistanceFromCharacter(eHead.Position) < 100 then
+                    table.insert(othersEnemies, { enemy, eHead })
+                    mainPart = eHead
+                end
+            end
+        end
+    end
+    if not mainPart or #othersEnemies == 0 then return end
+
+    pcall(function()
+        if rAttack then
+            rAttack:FireServer(0)
+            rAttack:FireServer(1)
+            rAttack:FireServer(2)
+            rAttack:FireServer(3)
+        end
+    end)
+    pcall(function()
+        if rHit then rHit:FireServer(mainPart, othersEnemies) end
+    end)
+end
+
+-- ── ระบบเกาะไรด์ ──────────────────────────────────────────────────
+-- เกมสร้าง Location ชื่อ "Island 1".."Island 5" ใน _WorldOrigin ตอนอยู่ในไรด์
+-- ด่านหลังจะโผล่มาทับ ต้องล็อกไว้ว่าเรากำลังตีเกาะไหน ไม่งั้นสคริปต์จะวิ่งข้ามด่าน
+local function getIslands()
+    local out = {}
+    local wo = Workspace:FindFirstChild("_WorldOrigin")
+    local locs = wo and wo:FindFirstChild("Locations")
+    if not locs then return out end
+    for i = 1, 5 do
+        local isl = locs:FindFirstChild("Island " .. i)
+        if isl then out[#out+1] = isl end
+    end
+    return out
+end
+
+-- หาเกาะที่เรายืนอยู่จริง = เกาะที่ใกล้ตัวที่สุด
+local function findMyIsland()
+    local _, hrp = getChar()
+    if not hrp then return nil end
+    local best, bestD = nil, math.huge
+    for _, isl in ipairs(getIslands()) do
+        local d = (isl.Position - hrp.Position).Magnitude
+        if d < bestD then bestD = d; best = isl end
+    end
+    return best, bestD
+end
+
+local function inRaid()
+    return #getIslands() > 0
+end
+
+-- มอนที่ใกล้ตัวที่สุด "ในรัศมีเกาะที่ล็อกไว้เท่านั้น"
+local function findTarget()
+    local _, hrp = getChar()
+    if not hrp or not LOCK_POS then return nil end
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+
+    local best, bestD = nil, math.huge
+    for _, e in ipairs(enemies:GetChildren()) do
+        local hum = e:FindFirstChild("Humanoid")
+        local ehrp = e:FindFirstChild("HumanoidRootPart")
+        if hum and ehrp and hum.Health > 0 then
+            if (ehrp.Position - LOCK_POS).Magnitude <= ISLAND_R then
+                local d = (ehrp.Position - hrp.Position).Magnitude
+                if d < bestD then bestD = d; best = e end
+            end
+        end
+    end
+    return best, bestD
+end
+
+-- ── ปุ่ม 1: บินไปจุดเข้าไรด์ ──────────────────────────────────────
+-- แท่นเรียกไรด์: ทะเล 2 อยู่ CircleIsland / ทะเล 3 อยู่ Boat Castle
+-- RaidSummon2 = ไรด์ปกติ (Special Microchip) | RaidSummon = Law Dungeon (Microchip)
+local function findRaidButton()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return nil end
+    for _, islandName in ipairs({ "CircleIsland", "Boat Castle", "BoatCastle" }) do
+        local island = map:FindFirstChild(islandName)
+        if island then
+            for _, summonName in ipairs({ "RaidSummon2", "RaidSummon" }) do
+                local summon = island:FindFirstChild(summonName)
+                local btn = summon and summon:FindFirstChild("Button")
+                local main = btn and btn:FindFirstChild("Main")
+                if main and main:IsA("BasePart") then
+                    return main, islandName .. "." .. summonName
+                end
+            end
+        end
+    end
+end
+
+gateBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        local part, where = findRaidButton()
+        if not part then
+            log("ไม่เจอแท่นเรียกไรด์ในแมพนี้", "R")
+            log("  ต้องอยู่ทะเล 2 (Cafe/Circle Island) หรือทะเล 3 (Castle on the Sea)", "S")
+            return
+        end
+        log("เจอแท่นเรียกไรด์: " .. where, "G")
+        setState("กำลังบินไปแท่นเรียกไรด์", "B")
+
+        TRAVEL_MODE = true
+        tp(CFrame.new(part.Position + Vector3.new(0, 6, 6)))
+        TRAVEL_MODE = false
+        releaseControl()
+
+        log("ถึงแท่นแล้ว → เลือกชิพและกดเริ่มไรด์เองได้เลย", "G")
+        log("  เข้าไปในไรด์แล้วค่อยกดปุ่ม 2 (AUTO RAID)", "S")
+        setState("ถึงแท่นแล้ว รอผู้เล่นกดเริ่มไรด์", "G")
+    end)
+end)
+
+-- ── ปุ่ม 2: AUTO RAID ─────────────────────────────────────────────
+local function retreatIfLow()
+    local _, hrp, hum = getChar()
+    if not hrp or not hum then return false end
+    if hum.Health / math.max(hum.MaxHealth, 1) > HP_RETREAT then return false end
+
+    log(string.format("เลือดเหลือ %.0f%% → ลอยหนีขึ้นฟ้า", hum.Health / hum.MaxHealth * 100), "R")
+    setState("เลือดต่ำ กำลังลอยหนี", "R")
+
+    local safeY = hrp.Position.Y + RETREAT_Y
+    while AUTO_ON and _G.BF06_LOOP do
+        local _, h, hu = getChar()
+        if not h or not hu then break end
+        if hu.Health <= 0 then break end
+        h.CFrame = CFrame.new(h.Position.X, safeY, h.Position.Z)
+        h.Velocity = Vector3.new(0, 0, 0)
+        if hu.Health / math.max(hu.MaxHealth, 1) >= HP_RESUME then
+            log(string.format("เลือดฟื้นถึง %.0f%% → กลับไปตีต่อ",
+                hu.Health / hu.MaxHealth * 100), "G")
+            break
+        end
+        task.wait(0.5)
+    end
+    return true
+end
+
+local function raidLoop()
+    log("=== START AUTO RAID ===", "Y")
+
+    if not getCommF() then log("หา CommF_ ไม่เจอ (รอเกมโหลดแล้วรันใหม่)", "R") return end
+    local rA, rH = getCombatRemotes()
+    if not rA or not rH then log("หา Remote โจมตีไม่เจอ", "R") return end
+    log("Remote โจมตีเจอ ✓", "G")
+
+    if not inRaid() then
+        log("ยังไม่ได้อยู่ในไรด์ (ไม่เจอ Island 1-5)", "R")
+        log("  กดปุ่ม 1 ไปแท่น → เลือกชิพ → เริ่มไรด์ → ค่อยกดปุ่มนี้", "S")
+        return
+    end
+
+    -- ล็อกเกาะที่ยืนอยู่ตอนกดเริ่ม ห้ามเปลี่ยนเองระหว่างทาง
+    local isl, d = findMyIsland()
+    if not isl then log("หาเกาะที่ยืนอยู่ไม่เจอ", "R") return end
+    LOCK_ISLAND = isl.Name
+    LOCK_POS = isl.Position
+    log(string.format("ล็อกเกาะ: %s (ห่างตัว %.0f studs)", LOCK_ISLAND, d), "G")
+    log(string.format("  ตีเฉพาะมอนในรัศมี %d studs จากใจกลางเกาะนี้", ISLAND_R), "S")
+
+    local kills = 0
+
+    while AUTO_ON and _G.BF06_LOOP do
+        task.wait(0.1)
+
+        local char, hrp, hum = getChar()
+        if not char or not hrp or not hum then
+            log("ตาย → รอเกิดใหม่", "R")
+            LP.CharacterAdded:Wait()
+            task.wait(3)
+            pcall(equipWeapon)
+        else
+            -- โดนวาปออกนอกเกาะที่ล็อกไว้ ต้องบินกลับ ไม่ใช่ไปตีเกาะอื่น
+            local fromIsland = (hrp.Position - LOCK_POS).Magnitude
+            if fromIsland > DRIFT_R then
+                log(string.format("หลุดจาก %s ไป %.0f studs → บินกลับ", LOCK_ISLAND, fromIsland), "Y")
+                setState("โดนวาปออก กำลังบินกลับเกาะ", "Y")
+                tp(CFrame.new(LOCK_POS + Vector3.new(0, HOVER_Y + 30, 0)))
+            elseif not retreatIfLow() then
+                pcall(equipWeapon)
+
+                local mob, dist = findTarget()
+                if not mob then
+                    setState("ไม่มีมอนในเกาะ รอ wave ถัดไป", "S")
+                    -- ลอยรออยู่เหนือใจกลางเกาะ ห้ามลงพื้น พื้นในไรด์อันตราย
+                    hrp.CFrame = CFrame.new(LOCK_POS + Vector3.new(0, HOVER_Y + 30, 0))
+                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    task.wait(1)
+                else
+                    local mhum = mob:FindFirstChild("Humanoid")
+                    local mhrp = mob:FindFirstChild("HumanoidRootPart")
+                    log(string.format("ล็อกมอน: %s (HP %.0f | ห่าง %.0f)",
+                        mob.Name, mhum.Health, dist), "B")
+                    setState("กำลังตี " .. mob.Name, "B")
+
+                    local t0 = os.clock()
+                    local shots = 0
+                    local hp0 = mhum.Health
+
+                    while AUTO_ON and _G.BF06_LOOP and mob.Parent
+                          and mhum.Health > 0 and mhrp.Parent do
+                        local _, myHrp, myHum = getChar()
+                        if not myHrp or not myHum or myHum.Health <= 0 then break end
+                        if myHum.Health / math.max(myHum.MaxHealth, 1) <= HP_RETREAT then break end
+
+                        -- ลอยเหนือหัวมอนตลอด ไม่แตะพื้น
+                        local above = mhrp.Position + Vector3.new(0, HOVER_Y, 0)
+                        local gap = (above - myHrp.Position).Magnitude
+                        if gap > ENGAGE_R then
+                            if not flySmooth(CFrame.new(above), 420, false) then break end
+                        else
+                            myHrp.CFrame = CFrame.new(above, mhrp.Position)
+                            myHrp.Velocity = Vector3.new(0, 0, 0)
+                        end
+
+                        directRemoteAttack()
+                        shots = shots + 1
+                        task.wait(0.1)
+                    end
+
+                    if mhum.Health <= 0 then
+                        kills = kills + 1
+                        local dt = os.clock() - t0
+                        log(string.format("มอนตาย ✓ #%d | %.2fs | ยิง %d ครั้ง | %.0f dmg/s",
+                            kills, dt, shots, (hp0 - 0) / math.max(dt, 0.01)), "G")
+                    end
+                end
+            end
+        end
+    end
+
+    log(string.format("=== STOP AUTO RAID === (ฆ่าไป %d ตัว)", kills), "Y")
+    releaseControl()
+end
+
+raidBtn.MouseButton1Click:Connect(function()
+    AUTO_ON = not AUTO_ON
+    if AUTO_ON then
+        _G.BF06_LOOP = true
+        raidBtn.Text = "2. AUTO RAID: ON (กำลังตี)"
+        raidBtn.BackgroundColor3 = Color3.fromRGB(150,40,40)
+        task.spawn(function()
+            local ok, err = pcall(raidLoop)
+            if not ok then log("ผิดพลาด: " .. tostring(err), "R") end
+            AUTO_ON = false
+            _G.BF06_LOOP = nil
+            raidBtn.Text = "2. AUTO RAID: OFF (เข้าไรด์แล้วค่อยกด)"
+            raidBtn.BackgroundColor3 = Color3.fromRGB(30,120,50)
+            setState("หยุดแล้ว", "S")
+        end)
+    else
+        _G.BF06_LOOP = nil
+        log("หยุดโดยผู้ใช้", "Y")
+    end
+end)
+
+clearBtn.MouseButton1Click:Connect(function()
+    AUTO_ON = false
+    TRAVEL_MODE = false
+    _G.BF06_LOOP = nil
+    LOCK_ISLAND, LOCK_POS = nil, nil
+    releaseControl()
+    raidBtn.Text = "2. AUTO RAID: OFF (เข้าไรด์แล้วค่อยกด)"
+    raidBtn.BackgroundColor3 = Color3.fromRGB(30,120,50)
+    setState("ล้างสถานะแล้ว ขยับตัวได้ปกติ", "G")
+    log("🧹 ล้างสถานะทั้งหมดแล้ว", "G")
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+    AUTO_ON = false
+    TRAVEL_MODE = false
+    _G.BF06_LOOP = nil
+    releaseControl()
+    sg:Destroy()
+end)
+
+-- แสดงเกาะปัจจุบันตลอดเวลา ให้เห็นว่าด่านเปลี่ยนหรือยัง
+task.spawn(function()
+    while sg.Parent do
+        task.wait(2)
+        if not AUTO_ON then
+            if inRaid() then
+                local isl = findMyIsland()
+                if isl then setState("อยู่ในไรด์: " .. isl.Name .. " (พร้อมกด AUTO RAID)", "G") end
+            end
+        end
+    end
+end)
+
+log("BF06 Auto Raid v1.0 พร้อม", "G")
+log("ปุ่ม 1 = บินไปแท่นเรียกไรด์ (เลือกชิพ/กดเริ่มเอง)", "S")
+log("ปุ่ม 2 = เข้าไรด์แล้วกด จะล็อกเกาะที่ยืนอยู่แล้วไล่ตี", "S")
+log(string.format("ลอยเหนือมอน %d studs | เลือด < %d%% ลอยหนี | ฟื้น %d%% กลับมาตี",
+    HOVER_Y, HP_RETREAT * 100, HP_RESUME * 100), "S")
