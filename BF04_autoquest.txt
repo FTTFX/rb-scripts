@@ -419,7 +419,7 @@ local old = pg:FindFirstChild("BF04GUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 370, 0, 458)
+frame.Size = UDim2.new(0, 370, 0, 486)
 frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
@@ -428,7 +428,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.7 (Sea Guard + Sea 2/3 Quests)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.8 (Sea 2 Travel Helper)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -513,8 +513,17 @@ clearBtn.Font = Enum.Font.GothamBold; clearBtn.TextSize = 11; clearBtn.BorderSiz
 clearBtn.Parent = frame
 Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,5)
 
+-- พาไปหา NPC สายย้ายทะเล ทีละจุด (คุยกับ NPC เองตามขั้น)
+local seaBtn = Instance.new("TextButton")
+seaBtn.Size = UDim2.new(0, 350, 0, 24); seaBtn.Position = UDim2.new(0, 10, 0, 154)
+seaBtn.BackgroundColor3 = Color3.fromRGB(30,70,120); seaBtn.TextColor3 = Color3.new(1,1,1)
+seaBtn.Text = "ไปทะเล 2: กดเพื่อบินไปจุดถัดไป (1/3 Detective)"
+seaBtn.Font = Enum.Font.GothamBold; seaBtn.TextSize = 12; seaBtn.BorderSizePixel = 0
+seaBtn.Parent = frame
+Instance.new("UICorner", seaBtn).CornerRadius = UDim.new(0,5)
+
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1,-16,1,-164); scroll.Position = UDim2.new(0,8,0,156)
+scroll.Size = UDim2.new(1,-16,1,-192); scroll.Position = UDim2.new(0,8,0,184)
 scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -791,6 +800,66 @@ local function releaseControl()
         end
     end)
 end
+
+-- ── ผู้ช่วยย้ายทะเล 1 → 2 ─────────────────────────────────────────
+-- ขั้นตอนจริง (จากวิกิ): Lv.700+ → คุย Military Detective ที่ Prison รับกุญแจ
+-- → เปิดประตูไม้ในถ้ำ Frozen Village ฆ่า Ice Admiral
+-- → คุย Experienced Captain ที่ Middle Town เพื่อเทเลพอร์ตไปทะเล 2
+-- (ไม่ต้องกลับไปคุย Detective ซ้ำ สิทธิ์ปลดล็อกทันทีที่บอสตาย)
+--
+-- ค้นหา NPC จากชื่อในเกมตอนรันจริง ไม่ฝังพิกัด เพราะพิกัดที่เดาเอาไว้เคยพาไปผิดที่
+local SEA_STEPS = {
+    { label = "1/3 Military Detective (Prison)", find = "Military Detective",
+      hint = "คุยรับกุญแจจาก Detective (กด E)" },
+    { label = "2/3 Ice Admiral (Frozen Village)", find = "Ice Admiral",
+      hint = "เปิดประตูไม้ในถ้ำด้วยกุญแจ แล้วตีบอสให้ตาย" },
+    { label = "3/3 Experienced Captain (Middle Town)", find = "Experienced Captain",
+      hint = "คุยเลือกไปทะเล 2 (กด E)" },
+}
+local SEA_STEP = 1
+
+local function findByName(name)
+    local best, bestDist = nil, math.huge
+    local _, myHrp = getChar()
+    for _, folderName in ipairs({ "NPCs", "Enemies", "Map" }) do
+        local folder = Workspace:FindFirstChild(folderName)
+        if folder then
+            for _, obj in ipairs(folder:GetDescendants()) do
+                if obj:IsA("Model") and string.find(obj.Name, name) then
+                    local part = obj:FindFirstChild("HumanoidRootPart")
+                        or obj:FindFirstChildWhichIsA("BasePart")
+                    if part then
+                        local d = myHrp and (part.Position - myHrp.Position).Magnitude or 0
+                        if d < bestDist then bestDist = d; best = part end
+                    end
+                end
+            end
+        end
+    end
+    return best, bestDist
+end
+
+seaBtn.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        local step = SEA_STEPS[SEA_STEP]
+        local part, dist = findByName(step.find)
+        if not part then
+            log("หา " .. step.find .. " ไม่เจอในแมพที่โหลดอยู่ → ต้องเข้าใกล้เกาะนั้นก่อน", "R")
+            log("  " .. step.hint, "S")
+            return
+        end
+
+        FRUIT_MODE = true            -- ใช้เป็นใบอนุญาตให้ระบบบินทำงาน
+        log("บินไปหา " .. step.find .. " (ห่าง " .. math.floor(dist) .. ")", "B")
+        tp(CFrame.new(part.Position + Vector3.new(0, 6, 6)))
+        FRUIT_MODE = false
+        releaseControl()
+        log("ถึงแล้ว → " .. step.hint, "G")
+
+        SEA_STEP = (SEA_STEP % #SEA_STEPS) + 1
+        seaBtn.Text = "ไปทะเล 2: กดเพื่อบินไปจุดถัดไป (" .. SEA_STEPS[SEA_STEP].label .. ")"
+    end)
+end)
 
 clearBtn.MouseButton1Click:Connect(function()
     AUTO_ON = false
@@ -1132,7 +1201,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.7 ===", "Y")
+    log("=== START AUTO v8.8 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1756,8 +1825,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.7 พร้อม (อยู่ผิดทะเล = หยุดรอ ไม่บินเหวี่ยง)", "G")
+log("BF04 v8.8 พร้อม (ปุ่มพาไปหา NPC ย้ายทะเล 1 → 2)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.7 loaded")
+warn("[BF04] Auto Quest v8.8 loaded")
