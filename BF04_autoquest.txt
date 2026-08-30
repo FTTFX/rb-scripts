@@ -22,12 +22,15 @@ local currentTween = nil
 
 -- ── Quest Database (First Sea / Old World) ─────────────────────────
 -- ทะเลที่อยู่ตอนนี้ (เควสข้ามทะเลบินไปไม่ได้ ต้องนั่งเรือ)
+-- แต่ละทะเลเป็น PlaceId แยกกัน แม่นกว่าการเช็คชื่อเกาะใน Workspace.Map
+-- (เช็คชื่อเกาะไม่ได้ เพราะทะเล 2 มีเกาะชื่อซ้ำกับที่ใช้เช็คทะเล 1)
+local SEA_PLACE = {
+    [2753915549] = 1,
+    [4442272183] = 2,
+    [7449423635] = 3,
+}
 local function getSea()
-    local m = Workspace:FindFirstChild("Map")
-    if not m then return 1 end
-    if m:FindFirstChild("Turtle") then return 3 end
-    if m:FindFirstChild("Cafe") then return 2 end
-    return 1
+    return SEA_PLACE[game.PlaceId] or 1
 end
 
 local function getQuestData(level)
@@ -268,7 +271,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v7.8 (Smooth Fly + Sea Lock)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v7.9 (Smooth Fly + Sea Detect)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -908,7 +911,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v7.8 ===", "Y")
+    log("=== START AUTO v7.9 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1440,7 +1443,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v7.8 พร้อม (บินลื่นไม่กระตุก + ไม่บินข้ามทะเล)", "G")
+log("BF04 v7.9 พร้อม (แก้ตรวจทะเลด้วย PlaceId)", "G")
+log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v7.8 loaded")
+warn("[BF04] Auto Quest v7.9 loaded")
