@@ -266,7 +266,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.4 (Noclip + Spawn Memory)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.5 (Boss Only Filler)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -970,7 +970,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.4 ===", "Y")
+    log("=== START AUTO v8.5 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1100,13 +1100,15 @@ local function mainLoop()
                     end
                 end
 
-                -- ไม่มีตัวหลักเลย → ตีตัวอะไรก็ได้ที่อยู่ในระยะไปก่อน (รวมบอส)
-                -- ไม่เสียเวลายืนรอ respawn เฉยๆ พอตัวหลักเกิดจะกลับไปตีตัวหลักเอง
+                -- ไม่มีตัวหลัก → ตีเฉพาะบอสถ้ามีในระยะ (มอนธรรมดาไม่ตี ไม่ได้นับเควส)
+                -- พอตัวหลักเกิดจะสลับกลับไปตีตัวหลักทันที
                 local fillerMode = false
                 if not target and enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
-                        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart")
-                           and v.Humanoid.Health > 0 then
+                        local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
+                            or string.find(v.Name, "Expert") or string.find(v.Name, "Leader")
+                        if isBoss and v:FindFirstChild("Humanoid")
+                           and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
                             if d < bestDist and d < SEARCH_R then
                                 bestDist = d
@@ -1116,8 +1118,8 @@ local function mainLoop()
                     end
                     if target then
                         fillerMode = true
-                        setState("ไม่มี " .. qdata.mob .. " → ตีตัวรอง: " .. target.Name
-                            .. " (ห่าง " .. math.floor(bestDist) .. ")", "S")
+                        setState("ไม่มี " .. qdata.mob .. " → เจอบอส: " .. target.Name
+                            .. " (ห่าง " .. math.floor(bestDist) .. ") → เข้าตี", "Y")
                     end
                 end
 
@@ -1573,8 +1575,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.4 พร้อม (Noclip ตอนบิน + จำจุดเกิดมอน + ตีตัวรอง)", "G")
+log("BF04 v8.5 พร้อม (ไม่มีตัวหลัก → ตีแค่บอส + Noclip + จำจุดเกิด)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.4 loaded")
+warn("[BF04] Auto Quest v8.5 loaded")
