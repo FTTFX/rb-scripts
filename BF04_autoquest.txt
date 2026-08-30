@@ -266,7 +266,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.1 (Burst Fly, Anti-CheatSafe)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.2 (Search 3000 + Filler Target)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -642,6 +642,10 @@ end
 local BURST_MOVE = 1.0
 local BURST_REST = 0.2
 
+-- รัศมีค้นหามอน และระยะที่ยังบินตรงได้ (ไม่ต้องไต่ขึ้นฟ้า)
+SEARCH_R = 3000
+local DIRECT_FLY_R = 3000
+
 local function flySmooth(destCF, speed, report)
     local total
     local nextReport = os.clock() + 5
@@ -700,9 +704,9 @@ local function toTarget(targetCF)
     
     -- ระยะกลาง (< 650 studs, อยู่เกาะเดียวกัน) → พุ่งตรงไปเลย ไม่ต้องไต่ขึ้นฟ้า
     -- ตัดขั้นตอนไต่ขึ้น-ลงออก ประหยัดเวลาต่อมอนได้หลายวินาที
-    if dist < 650 then
+    if dist < DIRECT_FLY_R then
         stopTween()
-        flySmooth(targetCF, 420, false)
+        flySmooth(targetCF, 420, dist > 1500)
         return true
     end
 
@@ -925,7 +929,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.1 ===", "Y")
+    log("=== START AUTO v8.2 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1024,7 +1028,7 @@ local function mainLoop()
                         if isMatch and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
-                            if d < bestDist and d < 400 then
+                            if d < bestDist and d < SEARCH_R then
                                 bestDist = d
                                 target = v
                             end
@@ -1032,7 +1036,7 @@ local function mainLoop()
                     end
                 end
 
-                -- ไม่มีตัวไหนในระยะ 400 → หาใหม่แบบไม่จำกัดระยะ แล้วบินไปหา
+                -- ไม่มีตัวไหนในระยะค้นหา → หาใหม่แบบไม่จำกัดระยะ แล้วบินไปหา
                 -- (จุดเกิดที่บันทึกไว้อาจไม่ตรง ยืนรอเฉยๆ จะไม่เจอมอนเลย)
                 if not target and enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
@@ -1048,6 +1052,27 @@ local function mainLoop()
                     if target then
                         setState("เจอ " .. qdata.mob .. " ไกล " .. math.floor(bestDist) .. " → บินไปหา", "B")
                         tp(CFrame.new(target.HumanoidRootPart.Position + Vector3.new(0, 20, 0)))
+                    end
+                end
+
+                -- ไม่มีตัวหลักเลย → ตีตัวอะไรก็ได้ที่อยู่ในระยะไปก่อน (รวมบอส)
+                -- ไม่เสียเวลายืนรอ respawn เฉยๆ พอตัวหลักเกิดจะกลับไปตีตัวหลักเอง
+                local fillerMode = false
+                if not target and enemies then
+                    for _, v in ipairs(enemies:GetChildren()) do
+                        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart")
+                           and v.Humanoid.Health > 0 then
+                            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                            if d < bestDist and d < SEARCH_R then
+                                bestDist = d
+                                target = v
+                            end
+                        end
+                    end
+                    if target then
+                        fillerMode = true
+                        setState("ไม่มี " .. qdata.mob .. " → ตีตัวรอง: " .. target.Name
+                            .. " (ห่าง " .. math.floor(bestDist) .. ")", "S")
                     end
                 end
 
@@ -1080,7 +1105,10 @@ local function mainLoop()
                     LAST_MOB_NAME = qdata.mob
                     PATROL_I = 0
                 end
-                LAST_MOB_POS = v.HumanoidRootPart.Position
+                -- จำจุดเกิดเฉพาะตัวหลัก ตัวรองอยู่คนละจุด จะทำให้จุดเกิดเพี้ยน
+                if not fillerMode then
+                    LAST_MOB_POS = v.HumanoidRootPart.Position
+                end
                 setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health)
                     .. " | ห่าง " .. math.floor(bestDist) .. ")"
                     .. (MAGNET_ON and " — Magnet + Remote" or " — ตีระยะไกล (ไม่วาป)"), "Y")
@@ -1091,7 +1119,34 @@ local function mainLoop()
                 local hitCount = 0
                 -- ระยะตอนล็อกเป้า ใช้เทียบว่ามอน "กระเด็น" (ถูกย้ายกลับจุดเกิด) จริงหรือแค่อยู่ไกล
                 local lockDist = bestDist
+                local nextMainCheck = os.clock() + 1
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04_LOOP do
+                    -- ตายแล้วรอเกิดใหม่ แล้วค่อยเริ่มรอบใหม่ (ไม่ถอย ไม่หนี)
+                    local myChar, _, myHum = getChar()
+                    if not myChar or (myHum and myHum.Health <= 0) then
+                        setState("ตาย → รอเกิดใหม่แล้วกลับไปตีต่อ", "R")
+                        LP.CharacterAdded:Wait()
+                        task.wait(3)
+                        break
+                    end
+
+                    -- ตีตัวรองอยู่ → คอยดูว่าตัวหลักเกิดแล้วหรือยัง เกิดแล้วสลับกลับทันที
+                    if fillerMode and os.clock() >= nextMainCheck then
+                        nextMainCheck = os.clock() + 1
+                        local found = false
+                        for _, e in ipairs(enemies:GetChildren()) do
+                            if string.find(e.Name, qdata.mob) and e:FindFirstChild("Humanoid")
+                               and e.Humanoid.Health > 0 then
+                                found = true
+                                break
+                            end
+                        end
+                        if found then
+                            setState(qdata.mob .. " เกิดแล้ว → สลับกลับไปตีตัวหลัก", "G")
+                            break
+                        end
+                    end
+
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
                         local char, hrp = getChar()
@@ -1122,7 +1177,7 @@ local function mainLoop()
                         end
                     end
 
-                    directRemoteAttack(v, qdata.mob)
+                    directRemoteAttack(v, fillerMode and v.Name or qdata.mob)
                     hitCount += 1
                     task.wait(0.05)
                 end
@@ -1457,8 +1512,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.1 พร้อม (บินเป็นช่วง 1 วิ พัก 0.2 วิ กัน anti-cheat + กันบินค้าง)", "G")
+log("BF04 v8.2 พร้อม (ค้นหา/บิน 3000 studs + ไม่มีตัวหลักตีตัวรอง + ตายแล้วกลับไปตี)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.1 loaded")
+warn("[BF04] Auto Quest v8.2 loaded")
