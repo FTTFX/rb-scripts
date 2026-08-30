@@ -447,7 +447,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v9.5 (กลับมาใช้ระบบตีเดิม)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v9.6 (Magnet ดึงทุกตัว + โฟกัสตัวหลัก)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -510,7 +510,7 @@ Instance.new("UICorner", magnetBtn).CornerRadius = UDim.new(0,5)
 magnetBtn.MouseButton1Click:Connect(function()
     MAGNET_ON = not MAGNET_ON
     magnetBtn.Text = MAGNET_ON
-        and "MAGNET: ON (ดึงมอนมารวมกอง)"
+        and "MAGNET: ON (ดึงทุกตัวมากอง + โฟกัสตัวหลัก)"
         or "MAGNET: OFF (ปิดไว้ = ตีมอนตัวเดียวแต่โดนชัวร์)"
     magnetBtn.BackgroundColor3 = MAGNET_ON and Color3.fromRGB(90,60,150) or Color3.fromRGB(50,50,70)
 end)
@@ -1220,28 +1220,37 @@ local function boostSimulationRadius()
     end)
 end
 
--- รวมมอนสเตอร์ทุกตัวชื่อเดียวกัน "ทั่วทั้งแมพ" มาไว้ที่จุดเดียว (Bring All Mobs)
--- ไม่จำกัดระยะ → ตี AoE ได้ครั้งละ 5-8 ตัว
+-- รวมมอนสเตอร์ "ทุกชนิด" ทั่วทั้งแมพมากองที่ตัวเรา (Bring All Mobs)
+-- ไม่จำกัดระยะ ไม่จำกัดชื่อ → ยิง RegisterHit ทีเดียวโดนทั้งกอง
+-- แต่เป้าหมายที่เราตีเพื่อนับเควสยังเป็นตัวหลักเสมอ (ตัวอื่นเป็นดาเมจแถม)
+-- ข้ามบอสเสมอ เพราะดึงบอสมารุมแล้วเราตายก่อน
+local MAGNET_STAT = { t = 0, pulled = 0, far = 0 }
 local function bringMobsToTarget(primaryTarget, mobName)
     if not primaryTarget or not primaryTarget.Parent then return end
     -- ยึดตำแหน่งตัวละครเราเป็นจุดรวมกอง (เดิมใช้ตำแหน่งมอนเป้าหมายซึ่งขยับหนีตลอด)
     local _, myHrp = getChar()
     local pHrp = myHrp or primaryTarget:FindFirstChild("HumanoidRootPart")
     if not pHrp then return end
-    
+
     boostSimulationRadius()
-    
+
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return end
-    
+
+    local pulled, farthest = 0, 0
     for _, otherMob in ipairs(enemies:GetChildren()) do
-        if otherMob ~= primaryTarget and string.find(otherMob.Name, mobName) then
-            local isBoss = string.find(otherMob.Name, "Boss") or string.find(otherMob.Name, "King")
-            if not isBoss and otherMob:FindFirstChild("Humanoid") and otherMob:FindFirstChild("HumanoidRootPart") and otherMob.Humanoid.Health > 0 then
-                local oHrp = otherMob.HumanoidRootPart
+        if otherMob ~= primaryTarget and otherMob ~= LP.Character then
+            local isBoss = string.find(otherMob.Name, "Boss")
+                or string.find(otherMob.Name, "King")
+                or string.find(otherMob.Name, "Expert")
+                or string.find(otherMob.Name, "Leader")
+            local oHum = otherMob:FindFirstChild("Humanoid")
+            local oHrp = otherMob:FindFirstChild("HumanoidRootPart")
+            if not isBoss and oHum and oHrp and oHum.Health > 0 then
+                local before = (oHrp.Position - pHrp.Position).Magnitude
                 pcall(function()
-                    otherMob.Humanoid.PlatformStand = true
-                    otherMob.Humanoid.Sit = true
+                    oHum.PlatformStand = true
+                    oHum.Sit = true
                     oHrp.CanCollide = false
                     oHrp.Velocity = Vector3.new(0, 0, 0)
                     oHrp.Anchored = false
@@ -1249,8 +1258,25 @@ local function bringMobsToTarget(primaryTarget, mobName)
                         math.random(-6, 6), 0, math.random(-6, 6)
                     )
                 end)
+                -- ดึงสำเร็จจริงเมื่อเซิร์ฟเวอร์ยอมรับตำแหน่งใหม่ (ไม่ดีดกลับ)
+                if (oHrp.Position - pHrp.Position).Magnitude < 30 then
+                    pulled = pulled + 1
+                    if before > farthest then farthest = before end
+                end
             end
         end
+    end
+
+    -- รายงานทุก 5 วิ เพื่อวัดเพดานระยะดึงจริงของเซิร์ฟเวอร์
+    MAGNET_STAT.pulled = math.max(MAGNET_STAT.pulled, pulled)
+    MAGNET_STAT.far = math.max(MAGNET_STAT.far, farthest)
+    if os.clock() - MAGNET_STAT.t >= 5 then
+        MAGNET_STAT.t = os.clock()
+        if MAGNET_STAT.pulled > 0 then
+            log(string.format("Magnet: ดึงได้ %d ตัว | ไกลสุด %.0f studs",
+                MAGNET_STAT.pulled, MAGNET_STAT.far), "S")
+        end
+        MAGNET_STAT.pulled, MAGNET_STAT.far = 0, 0
     end
 end
 
@@ -1277,23 +1303,27 @@ local function directRemoteAttack(mobTarget, mobName)
     local equipped = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
     if not equipped then return end
 
-    -- เก็บเป้าหมายทุกตัวในระยะ 100 studs ตามสคริปต์ต้นแบบ (ใช้ Head เป็นหลัก)
-    local mainPart = nil
-    local othersEnemies = {}
+    -- เป้าหลักต้องเป็นตัวที่เราล็อกไว้เสมอ ไม่ใช่ตัวสุดท้ายที่วนเจอ
+    -- (เดิมปล่อยให้ลูปทับค่าไปเรื่อยๆ ดาเมจก้อนหลักเลยไปตกที่มอนตัวอื่นแบบสุ่ม)
+    local mainPart = mobTarget:FindFirstChild("Head")
+        or mobTarget:FindFirstChild("HumanoidRootPart")
+    if not mainPart then return end
+
+    -- ตัวที่กองอยู่รอบๆ ใส่ไปด้วย เพื่อให้ดาเมจกระจายโดนทั้งกองใน call เดียว
+    local othersEnemies = { { mobTarget, mainPart } }
     local enemies = Workspace:FindFirstChild("Enemies")
     if enemies then
         for _, enemy in ipairs(enemies:GetChildren()) do
             local eHum = enemy:FindFirstChild("Humanoid")
             local eHead = enemy:FindFirstChild("Head") or enemy:FindFirstChild("HumanoidRootPart")
-            if eHum and eHead and eHum.Health > 0 and enemy ~= LP.Character then
+            if eHum and eHead and eHum.Health > 0
+               and enemy ~= LP.Character and enemy ~= mobTarget then
                 if LP:DistanceFromCharacter(eHead.Position) < 100 then
                     table.insert(othersEnemies, { enemy, eHead })
-                    mainPart = eHead
                 end
             end
         end
     end
-    if not mainPart or #othersEnemies == 0 then return end
 
     -- 1. ไล่คอมโบ 0-3 (อาร์กิวเมนต์เดียว) เพื่อรีเซ็ตคูลดาวน์ฝั่งเซิร์ฟเวอร์
     pcall(function()
