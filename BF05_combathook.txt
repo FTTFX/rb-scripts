@@ -1,4 +1,4 @@
--- BF05_combathook.txt — Blox Fruits Combat & Attack Spy v1.0
+ๅ-- BF05_combathook.txt — Blox Fruits Combat & Attack Spy v1.0
 -- เป้าหมาย: ดักจับ Remote / Function / Event ตอนเรากดคลิกโจมตีเอง (M1 / Tool Attack / Skills)
 -- วิธีใช้:
 --   1. รันสคริปต์นี้ในเกม
