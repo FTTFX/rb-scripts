@@ -266,7 +266,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v8.2 (Search 3000 + Filler Target)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v8.3 (Spawn Memory + Filler Target)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -646,6 +646,26 @@ local BURST_REST = 0.2
 SEARCH_R = 3000
 local DIRECT_FLY_R = 3000
 
+-- คลังจุดเกิดที่เรียนรู้เอง: บันทึกตำแหน่งมอน "ทุกชนิด" ที่เคยเห็น
+-- พิกัดที่ฝังไว้บางเควสผิด (เช่น Fishman Commando อยู่ลึกกว่า Warrior)
+-- พอเลเวลขึ้นเปลี่ยนเควส จะมีจุดเกิดของมอนตัวใหม่รออยู่แล้ว ไม่ต้องตระเวนมั่ว
+SPAWN_DB = SPAWN_DB or {}
+local function rememberSpawn(name, pos)
+    local list = SPAWN_DB[name]
+    if not list then
+        list = {}
+        SPAWN_DB[name] = list
+    end
+    for _, p in ipairs(list) do
+        if (p - pos).Magnitude < 200 then return end
+    end
+    if #list < 8 then
+        table.insert(list, pos)
+        log(string.format("จำจุดเกิด %s #%d: %.0f, %.0f, %.0f",
+            name, #list, pos.X, pos.Y, pos.Z), "S")
+    end
+end
+
 local function flySmooth(destCF, speed, report)
     local total
     local nextReport = os.clock() + 5
@@ -658,7 +678,9 @@ local function flySmooth(destCF, speed, report)
         local left = delta.Magnitude
         total = total or left
         -- ถ้าถูกดึงกลับตลอด ระยะจะไม่ลด วนไม่จบ ต้องมีเวลาสูงสุด
-        deadline = deadline or (os.clock() + (total / speed) * 2.5 + 5)
+        -- ความเร็วจริงต่ำกว่าที่ตั้งไว้ราว 2-3 เท่า เพราะเซิร์ฟเวอร์หน่วงตำแหน่ง
+        -- เผื่อเวลาให้พอ ไม่งั้นตัดทิ้งกลางทางแม้กำลังไปได้เรื่อยๆ
+        deadline = deadline or (os.clock() + (total / speed) * 5 + 8)
         if left <= 8 then break end
         if os.clock() > deadline then
             log(string.format("บินไม่ถึง (เหลือ %.0f studs) → เริ่มรอบใหม่", left), "Y")
@@ -706,8 +728,7 @@ local function toTarget(targetCF)
     -- ตัดขั้นตอนไต่ขึ้น-ลงออก ประหยัดเวลาต่อมอนได้หลายวินาที
     if dist < DIRECT_FLY_R then
         stopTween()
-        flySmooth(targetCF, 420, dist > 1500)
-        return true
+        return flySmooth(targetCF, 420, dist > 1500)
     end
 
     -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
@@ -929,7 +950,7 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v8.2 ===", "Y")
+    log("=== START AUTO v8.3 ===", "Y")
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1016,6 +1037,10 @@ local function mainLoop()
                 local bestDist = math.huge
                 if enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
+                        -- เก็บจุดเกิดของมอนทุกชนิดที่เห็น ไว้ใช้ตอนเควสเปลี่ยน
+                        if v:FindFirstChild("HumanoidRootPart") then
+                            rememberSpawn(v.Name, v.HumanoidRootPart.Position)
+                        end
                         local isMatch = string.find(v.Name, qdata.mob)
                         local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
                         
@@ -1082,6 +1107,20 @@ local function mainLoop()
                     -- (พิกัดฝังไว้บางเควสตกทะเล ตระเวนวนเปล่าเสียเวลาหลายวินาที)
                     local sameMob = (LAST_MOB_NAME == qdata.mob)
                     local anchor = (sameMob and LAST_MOB_POS) or qdata.mobCF.Position
+
+                    -- มีจุดเกิดที่เคยเห็นของมอนตัวนี้ → วนไปยืนตามจุดพวกนั้น
+                    -- มอนเกิดเมื่อมีคนอยู่ใกล้ ยืนตรงจุดจริงจะเรียกให้เกิดได้เร็วกว่าตระเวนมั่ว
+                    local known = SPAWN_DB[qdata.mob]
+                    if not (sameMob and LAST_MOB_POS) and known and #known > 0 then
+                        PATROL_I = (PATROL_I or 0) + 1
+                        local p = known[(PATROL_I % #known) + 1]
+                        setState("ไปยืนที่จุดเกิดที่จำไว้ของ " .. qdata.mob
+                            .. " (" .. ((PATROL_I % #known) + 1) .. "/" .. #known .. ")", "B")
+                        tp(CFrame.new(p + Vector3.new(0, 15, 0)))
+                        task.wait(0.5)
+                        return
+                    end
+
                     if sameMob and LAST_MOB_POS then
                         setState("มอนตายหมด → ลอยรอ respawn ที่จุดเกิดจริง", "S")
                         tp(CFrame.new(anchor + Vector3.new(0, 20, 0)))
@@ -1167,7 +1206,9 @@ local function mainLoop()
                             -- (tp จะวาร์ปตรงเมื่อ < 25 studs อยู่แล้ว ไม่เข้าเกณฑ์ anti-cheat)
                             if dist > 25 then
                                 setState("ขยับเข้าระยะ (" .. math.floor(dist) .. ")", "B")
-                                tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0)))
+                                if not tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0))) then
+                                    break
+                                end
                             end
                         end
                         aimCam(v)
@@ -1512,8 +1553,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v8.2 พร้อม (ค้นหา/บิน 3000 studs + ไม่มีตัวหลักตีตัวรอง + ตายแล้วกลับไปตี)", "G")
+log("BF04 v8.3 พร้อม (จำจุดเกิดมอนทุกชนิด + ตีตัวรอง + ค้นหา/บิน 3000)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v8.2 loaded")
+warn("[BF04] Auto Quest v8.3 loaded")
