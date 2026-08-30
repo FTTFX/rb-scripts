@@ -447,7 +447,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v9.2 (Sea Detect Fix)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v9.3 (Buddha Combo on Respawn)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -750,6 +750,57 @@ if not _G.BF04_BUSO_CONN then
             pcall(ensureBuso)
         end
     end)
+end
+
+-- หา Tool จากป้าย ToolTip ("Blox Fruit" / "Sword" / "Melee" / "Gun")
+-- เชื่อถือได้กว่าการเดาลำดับช่องในกระเป๋า เพราะลำดับสลับได้ตลอด
+local function getToolByTip(tip)
+    local char = LP.Character
+    local bp = LP:FindFirstChild("Backpack")
+    for _, src in ipairs({ char, bp }) do
+        if src then
+            for _, t in ipairs(src:GetChildren()) do
+                if t:IsA("Tool") and t.ToolTip == tip then return t end
+            end
+        end
+    end
+end
+
+-- คอมโบร่างพระ: ใส่ผลพระ กด Z ครั้งเดียวให้ร่างใหญ่ (ตีไกลขึ้น กินดาเมจน้อยลง)
+-- แล้วสลับกลับมาถือดาบ ร่างใหญ่จะค้างอยู่ = ตีไกลและแรงกว่าเดิม
+local function buddhaCombo()
+    local char, _, hum = getChar()
+    if not char or not hum then return false end
+
+    local fruit = getToolByTip("Blox Fruit")
+    if not fruit then
+        log("ไม่มีผลปีศาจในกระเป๋า → ข้ามคอมโบร่างพระ", "Y")
+        return false
+    end
+
+    pcall(function() hum:EquipTool(fruit) end)
+    task.wait(0.4)
+
+    local vim = nil
+    pcall(function() vim = game:GetService("VirtualInputManager") end)
+    if vim then
+        pcall(function()
+            vim:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+            task.wait(0.1)
+            vim:SendKeyEvent(false, Enum.KeyCode.Z, false, game)
+        end)
+        log("กด Z แปลงร่างพระแล้ว", "G")
+    else
+        log("executor ไม่มี VirtualInputManager → กด Z เองนะ", "Y")
+    end
+
+    task.wait(0.8)
+    local sword = getToolByTip("Sword")
+    if sword then
+        pcall(function() hum:EquipTool(sword) end)
+        log("สลับกลับมาถือดาบ: " .. sword.Name, "G")
+    end
+    return true
 end
 
 -- Noclip: ปิดการชนของทุกชิ้นส่วนตัวละคร ระหว่างที่สคริปต์กำลังทำงาน
@@ -1264,7 +1315,8 @@ end
 
 -- ── Main Loop ─────────────────────────────────────────────────────
 local function mainLoop()
-    log("=== START AUTO v9.2 ===", "Y")
+    log("=== START AUTO v9.3 ===", "Y")
+    pcall(buddhaCombo)
     local CommF = getCommF()
     if not CommF then log("หา CommF_ ไม่เจอ! (รอเกมโหลดแล้วรันใหม่)", "R") return end
     log("CommF_ เจอ ✓", "G")
@@ -1501,6 +1553,7 @@ local function mainLoop()
                         setState("ตาย → รอเกิดใหม่แล้วกลับไปตีต่อ", "R")
                         LP.CharacterAdded:Wait()
                         task.wait(3)
+                        pcall(buddhaCombo)
                         break
                     end
 
@@ -1888,8 +1941,8 @@ autoBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-log("BF04 v9.2 พร้อม (แก้ตรวจทะเล: รู้จักทะเล 2 ตัวใหม่ + สำรองด้วยชื่อเกาะ)", "G")
+log("BF04 v9.3 พร้อม (ตายแล้วแปลงร่างพระ กด Z + สลับดาบอัตโนมัติ)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v9.2 loaded")
+warn("[BF04] Auto Quest v9.3 loaded")
