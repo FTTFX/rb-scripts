@@ -452,7 +452,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v10.0 (+ ปุ่มย้ายทะเล 3)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v10.1 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -574,7 +574,7 @@ Instance.new("UICorner", pinBtn).CornerRadius = UDim.new(0,5)
 local sea3Btn = Instance.new("TextButton")
 sea3Btn.Size = UDim2.new(0, 350, 0, 24); sea3Btn.Position = UDim2.new(0, 10, 0, 210)
 sea3Btn.BackgroundColor3 = Color3.fromRGB(100,40,110); sea3Btn.TextColor3 = Color3.new(1,1,1)
-sea3Btn.Text = "ไปทะเล 3: กดเพื่อทำขั้นถัดไป (ต้อง Lv.1500)"
+sea3Btn.Text = "ไปทะเล 3: OFF (กดเพื่อทำเควสอัตโนมัติ)"
 sea3Btn.Font = Enum.Font.GothamBold; sea3Btn.TextSize = 12; sea3Btn.BorderSizePixel = 0
 sea3Btn.Parent = frame
 Instance.new("UICorner", sea3Btn).CornerRadius = UDim.new(0,5)
@@ -2114,7 +2114,8 @@ local COLO_CODE = {
     CFrame.new(-1813.51843, 14.8604736, 1724.79541),
 }
 
-local SEA3_BUSY = false
+local SEA3_RUN = false
+local COLO_PUZZLE_T = 0
 
 local function findEnemy(namePart)
     local enemies = Workspace:FindFirstChild("Enemies")
@@ -2130,15 +2131,21 @@ local function findEnemy(namePart)
 end
 
 -- ตีจนตาย/จนหมดเวลา ใช้ท่าเดียวกับฟาร์มปกติ (ลอยเหนือหัว 18 studs)
-local function fightBoss(mob, label, timeout)
+-- quiet = โหมดเก็บมอนเป็นกอง (ไม่ log ทุกตัว ไม่ปล่อยการบินระหว่างตัว)
+local function fightBoss(mob, label, timeout, quiet)
     local t0 = os.clock()
-    log("เข้าตี " .. label .. " (จะตีจนตาย หรือเลิกที่ " .. (timeout or 240) .. "s)", "Y")
+    if not quiet then
+        log("เข้าตี " .. label .. " (จะตีจนตาย หรือเลิกที่ " .. (timeout or 240) .. "s)", "Y")
+    end
     FRUIT_MODE = true
     while mob and mob.Parent and mob:FindFirstChild("Humanoid") and mob.Humanoid.Health > 0 do
+        if not SEA3_RUN then return false end
         if os.clock() - t0 > (timeout or 240) then
-            FRUIT_MODE = false
-            releaseControl()
-            log("ตี " .. label .. " ไม่จบในเวลา → หยุดไว้ กดปุ่มซ้ำเพื่อไปต่อ", "R")
+            if not quiet then
+                FRUIT_MODE = false
+                releaseControl()
+                log("ตี " .. label .. " ไม่จบในเวลา → ข้ามไปตัวถัดไป", "R")
+            end
             return false
         end
         local _, hrp = getChar()
@@ -2152,9 +2159,11 @@ local function fightBoss(mob, label, timeout)
         directRemoteAttack(mob, mob.Name)
         task.wait(0.1)
     end
-    FRUIT_MODE = false
-    releaseControl()
-    log(label .. " ตายแล้ว ✓", "G")
+    if not quiet then
+        FRUIT_MODE = false
+        releaseControl()
+        log(label .. " ตายแล้ว ✓", "G")
+    end
     return true
 end
 
@@ -2164,6 +2173,7 @@ local function sea3Step()
 
     if getSea() ~= 2 then
         log("ปุ่มนี้ใช้ได้เฉพาะตอนอยู่ทะเล 2 (ตอนนี้อยู่ทะเล " .. getSea() .. ")", "R")
+        SEA3_RUN = false
         return
     end
 
@@ -2175,38 +2185,73 @@ local function sea3Step()
     if colo ~= 3 then
         if lvl < 850 then
             log("Colosseum Quest ต้อง Lv.850+ (ตอนนี้ " .. lvl .. ") → ไปฟาร์มก่อน", "R")
+            SEA3_RUN = false
             return
         end
         FRUIT_MODE = true
         if colo == 0 then
-            local mob = findEnemy("Swan Pirate")
+            -- ต้องอยู่ตีให้ครบ 50 ตัวในรอบนี้เอง ห้ามปล่อยมือ
+            -- (เดิมโยนให้ AUTO เก็บต่อ แต่ AUTO ที่ Lv.1500+ มองว่าเควสตัวเองอยู่ทะเล 3
+            --  มันจะค้างรอย้ายทะเลแล้วไม่ตี Swan Pirates ให้เลย)
             local questOn = false
-            pcall(function()
-                questOn = LP.PlayerGui.Main.Quest.Visible
-            end)
+            pcall(function() questOn = LP.PlayerGui.Main.Quest.Visible end)
             if not questOn then
                 log("ขั้น 1/6: บินไปรับเควสจาก Bartilo ที่ Cafe", "B")
                 tp(BARTILO_CF)
                 task.wait(1.2)
                 pcall(function() CommF:InvokeServer("StartQuest", "BartiloQuest", 1) end)
-                FRUIT_MODE = false
-                releaseControl()
-                log("รับเควสแล้ว → กดปุ่มซ้ำเพื่อไปฆ่า Swan Pirates 50 ตัว", "G")
-                return
+                task.wait(1)
+                log("รับเควสแล้ว → บินไปเก็บ Swan Pirates 50 ตัวต่อเลย", "G")
             end
-            if not mob then
-                log("ขั้น 1/6: บินไปโซน Swan Pirates (ตี 50 ตัว)", "B")
-                tp(SWANPIRATE_CF)
-                task.wait(1.5)
-                mob = findEnemy("Swan Pirate")
+
+            local killed, lastReport = 0, os.clock()
+            while SEA3_RUN do
+                local cur = 0
+                pcall(function()
+                    cur = CommF:InvokeServer("BartiloQuestProgress", "Bartilo") or 0
+                end)
+                if cur ~= 0 then
+                    log("ครบ 50 ตัวแล้ว ✓ (รอบนี้เก็บไป " .. killed .. " ตัว) → ไปขั้น Jeremy", "G")
+                    break
+                end
+
+                -- เควสหลุด (ตาย/ยกเลิก) ต้องรับใหม่ ไม่งั้นตีไปก็ไม่นับ
+                local on = false
+                pcall(function() on = LP.PlayerGui.Main.Quest.Visible end)
+                if not on then
+                    log("เควสหลุด → บินกลับไปรับจาก Bartilo ใหม่", "Y")
+                    FRUIT_MODE = true
+                    tp(BARTILO_CF)
+                    task.wait(1.2)
+                    pcall(function() CommF:InvokeServer("StartQuest", "BartiloQuest", 1) end)
+                    task.wait(1)
+                end
+
+                local mob = findEnemy("Swan Pirate")
+                if not mob then
+                    FRUIT_MODE = true
+                    tp(SWANPIRATE_CF)
+                    task.wait(2)
+                    mob = findEnemy("Swan Pirate")
+                    if not mob then
+                        setState("รอ Swan Pirate เกิด (เก็บไปแล้ว " .. killed .. " ตัว)", "S")
+                        task.wait(2)
+                    end
+                end
+
+                if mob then
+                    if fightBoss(mob, "Swan Pirate", 60, true) then
+                        killed = killed + 1
+                    end
+                end
+
+                if os.clock() - lastReport >= 10 then
+                    lastReport = os.clock()
+                    log("Swan Pirates: เก็บได้ " .. killed .. " ตัวแล้ว (ต้องครบ 50)", "S")
+                end
             end
             FRUIT_MODE = false
             releaseControl()
-            if mob then
-                log("ถึงโซน Swan Pirates แล้ว → เปิด AUTO ให้มันเก็บ 50 ตัวเอง", "G")
-            else
-                log("ยังไม่เห็น Swan Pirate แถวนี้ → ขยับหาเองรอบๆ", "Y")
-            end
             return
         elseif colo == 1 then
             local jer = findEnemy("Jeremy")
@@ -2225,19 +2270,24 @@ local function sea3Step()
             else
                 FRUIT_MODE = false
                 releaseControl()
-                log("ยังไม่เห็น Jeremy (อาจยังไม่เกิด) → รอสักครู่แล้วกดซ้ำ", "Y")
+                log("ยังไม่เห็น Jeremy (อาจยังไม่เกิด) → รออีกหน่อย", "Y")
+                task.wait(3)
             end
             return
         elseif colo == 2 then
+            -- ไขรหัสรอบละ 8 วิ ถ้าเซิร์ฟไม่รับต้องเว้นก่อนลองใหม่ ไม่งั้นวาปรัวจนโดน anti-cheat
+            if os.clock() - COLO_PUZZLE_T < 20 then task.wait(2) return end
+            COLO_PUZZLE_T = os.clock()
             log("ขั้น 3/6: ไขรหัสปุ่ม 8 จุดใต้ Colosseum", "B")
             for i, cf in ipairs(COLO_CODE) do
+                if not SEA3_RUN then break end
                 tp(cf)
                 log("  เหยียบปุ่มที่ " .. i .. "/8", "S")
                 task.wait(1)
             end
             FRUIT_MODE = false
             releaseControl()
-            log("ไขรหัสครบ → กดปุ่มซ้ำเพื่อไปต่อ (ถ้ายังค้างให้กดไขรหัสอีกรอบ)", "G")
+            log("ไขรหัสครบรอบ → เช็คผลอีกครั้ง", "G")
             return
         end
     end
@@ -2256,6 +2306,7 @@ local function sea3Step()
         end)
         if not picked then
             log("ในกระเป๋าไม่มีผลราคา 1M+ → ต้องไปซื้อ/หาผลระดับ Legendary มาก่อน", "R")
+            SEA3_RUN = false
             return
         end
         FRUIT_MODE = true
@@ -2296,6 +2347,7 @@ local function sea3Step()
     -- ── King Red Head / rip_indra ──
     if lvl < 1500 then
         log("ขั้นต่อไปต้อง Lv.1500 (ตอนนี้ " .. lvl .. ") → ฟาร์มก่อน", "R")
+        SEA3_RUN = false
         return
     end
 
@@ -2341,25 +2393,55 @@ local function sea3Step()
     pcall(function() CommF:InvokeServer("ZQuestProgress", "Zou") end)
     task.wait(0.5)
     pcall(function() CommF:InvokeServer("TravelZou") end)
-    log("ส่งคำสั่งย้ายทะเลแล้ว ถ้าไม่ขยับให้กดซ้ำอีกครั้ง", "G")
+    log("ส่งคำสั่งย้ายทะเลแล้ว ถ้าไม่ขยับให้กดปุ่มใหม่อีกครั้ง", "G")
+    SEA3_RUN = false
+end
+
+local function sea3Off()
+    sea3Btn.Text = "ไปทะเล 3: OFF (กดเพื่อทำเควสอัตโนมัติ)"
+    sea3Btn.BackgroundColor3 = Color3.fromRGB(100,40,110)
 end
 
 sea3Btn.MouseButton1Click:Connect(function()
-    if SEA3_BUSY then log("ขั้นก่อนหน้ายังทำอยู่ รอให้จบก่อน", "Y") return end
-    SEA3_BUSY = true
-    task.spawn(function()
-        local ok, err = pcall(sea3Step)
-        if not ok then log("ปุ่มทะเล 3 พลาด: " .. tostring(err), "R") end
+    SEA3_RUN = not SEA3_RUN
+    if not SEA3_RUN then
         FRUIT_MODE = false
         pcall(releaseControl)
-        SEA3_BUSY = false
+        sea3Off()
+        log("หยุดสายเควสทะเล 3", "R")
+        return
+    end
+
+    -- AUTO ฟาร์มจะดึงตัวละครสวนทาง และที่ Lv.1500+ มันค้างรอย้ายทะเลอยู่แล้ว ตีอะไรให้ไม่ได้
+    if AUTO_ON then
+        AUTO_ON = false
+        _G.BF04_LOOP = nil
+        autoBtn.Text = "AUTO: OFF"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(30,120,50)
+        log("ปิด AUTO ฟาร์มชั่วคราว (ทำเควสทะเล 3 ก่อน)", "S")
+    end
+
+    sea3Btn.Text = "ไปทะเล 3: ON (กำลังทำเควส...)"
+    sea3Btn.BackgroundColor3 = Color3.fromRGB(200,140,20)
+    task.spawn(function()
+        while SEA3_RUN do
+            local ok, err = pcall(sea3Step)
+            if not ok then
+                log("สายเควสทะเล 3 พลาด: " .. tostring(err), "R")
+                task.wait(2)
+            end
+            task.wait(1)
+        end
+        FRUIT_MODE = false
+        pcall(releaseControl)
+        sea3Off()
     end)
 end)
 
-log("BF04 v10.0 พร้อม (เพิ่มปุ่มย้ายทะเล 2 → 3)", "G")
+log("BF04 v10.1 พร้อม (ปุ่มทะเล 3 เป็น ON/OFF ตีเองจนครบทุกขั้น)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
 log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v10.0 loaded")
+warn("[BF04] Auto Quest v10.1 loaded")
