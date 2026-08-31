@@ -452,7 +452,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v10.1 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v10.2 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -2116,6 +2116,58 @@ local COLO_CODE = {
 
 local SEA3_RUN = false
 local COLO_PUZZLE_T = 0
+local COLO_PARTS = nil
+
+-- แผ่นสัญลักษณ์หน้าห้องขังเป็นของที่ต้อง "คลิก" ไม่ใช่เหยียบ
+-- วาปไปยืนใกล้เฉยๆ เซิร์ฟไม่นับ ต้องยิง ClickDetector/Touch ที่ตัว instance จริง
+-- ไม่ฝังชื่อ instance เพราะยังไม่รู้โครงสร้าง → สแกนหาของที่กดได้ในโซนนั้นเอง
+local function scanColoParts()
+    local out = {}
+    local map = Workspace:FindFirstChild("Map")
+    local root = map and (map:FindFirstChild("Colosseum") or map)
+    if not root then return out end
+    local center = COLO_CODE[1].Position
+    for _, d in ipairs(root:GetDescendants()) do
+        if d:IsA("BasePart") and (d.Position - center).Magnitude < 300 then
+            if d:FindFirstChildOfClass("ClickDetector")
+               or d:FindFirstChildOfClass("TouchTransmitter") then
+                table.insert(out, d)
+            end
+        end
+    end
+    return out
+end
+
+local function pressColoButton(cf, idx)
+    tp(cf)
+    task.wait(0.4)
+
+    local _, hrp = getChar()
+    local hit, hitD = nil, math.huge
+    for _, p in ipairs(COLO_PARTS or {}) do
+        local d = (p.Position - cf.Position).Magnitude
+        if d < hitD and d <= 20 then hitD, hit = d, p end
+    end
+
+    if not hit then
+        log("  ปุ่ม " .. idx .. "/8: ไม่เจอของที่กดได้ในรัศมี 20 studs", "Y")
+        return false
+    end
+
+    local cd = hit:FindFirstChildOfClass("ClickDetector")
+    if cd and fireclickdetector then
+        pcall(fireclickdetector, cd)
+        pcall(fireclickdetector, cd, 1)
+    end
+    if hrp and firetouchinterest then
+        pcall(firetouchinterest, hrp, hit, 0)
+        task.wait(0.1)
+        pcall(firetouchinterest, hrp, hit, 1)
+    end
+    log("  ปุ่ม " .. idx .. "/8 → " .. hit:GetFullName()
+        .. (cd and " [คลิก]" or " [แตะ]"), "S")
+    return true
+end
 
 local function findEnemy(namePart)
     local enemies = Workspace:FindFirstChild("Enemies")
@@ -2279,15 +2331,30 @@ local function sea3Step()
             if os.clock() - COLO_PUZZLE_T < 20 then task.wait(2) return end
             COLO_PUZZLE_T = os.clock()
             log("ขั้น 3/6: ไขรหัสปุ่ม 8 จุดใต้ Colosseum", "B")
+
+            -- ต้องอยู่ในโซนก่อน ของถึงจะโหลดเข้ามาให้สแกนเจอ
+            if not COLO_PARTS or #COLO_PARTS == 0 then
+                tp(COLO_CODE[1])
+                task.wait(1)
+                COLO_PARTS = scanColoParts()
+                log("สแกนโซน Colosseum: เจอของที่กดได้ " .. #COLO_PARTS .. " ชิ้น",
+                    (#COLO_PARTS > 0) and "G" or "R")
+                if #COLO_PARTS == 0 then
+                    log("ไม่เจอเลย → พิกัดอาจเปลี่ยน ส่ง log นี้มาให้ผมดู", "R")
+                end
+            end
+
+            local pressed = 0
             for i, cf in ipairs(COLO_CODE) do
                 if not SEA3_RUN then break end
-                tp(cf)
-                log("  เหยียบปุ่มที่ " .. i .. "/8", "S")
-                task.wait(1)
+                if pressColoButton(cf, i) then pressed = pressed + 1 end
+                task.wait(0.7)
             end
             FRUIT_MODE = false
             releaseControl()
-            log("ไขรหัสครบรอบ → เช็คผลอีกครั้ง", "G")
+            log("ไขรหัสครบรอบ (กดติด " .. pressed .. "/8) → เช็คผลอีกครั้ง",
+                (pressed == 8) and "G" or "Y")
+            COLO_PARTS = nil
             return
         end
     end
@@ -2438,10 +2505,10 @@ sea3Btn.MouseButton1Click:Connect(function()
     end)
 end)
 
-log("BF04 v10.1 พร้อม (ปุ่มทะเล 3 เป็น ON/OFF ตีเองจนครบทุกขั้น)", "G")
+log("BF04 v10.2 พร้อม (ไขรหัส Colosseum ด้วยการยิง ClickDetector)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
 log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v10.1 loaded")
+warn("[BF04] Auto Quest v10.2 loaded")
