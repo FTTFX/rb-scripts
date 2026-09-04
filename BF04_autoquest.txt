@@ -600,6 +600,9 @@ local logColors = {
 -- เวลาเริ่มสคริปต์ ใช้คำนวณ [เวลานาฬิกา +วินาทีที่ผ่านไป] หน้าทุกบรรทัด log
 local SCRIPT_T0 = os.clock()
 local lastLogT = SCRIPT_T0
+local MAX_LOG = 200          -- เก็บแค่นี้ เกินมาลบทิ้ง (label กองพอก = เฟรมเรตตก)
+local logLabels = {}
+
 local function log(txt, col)
     local c = logColors[col] or logColors.S
     local now = os.clock()
@@ -611,13 +614,28 @@ local function log(txt, col)
     l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
     l.TextColor3 = c; l.Text = txt; l.LayoutOrder = logOrder; l.Parent = scroll
     table.insert(logLines, txt)
+    table.insert(logLabels, l)
+    while #logLabels > MAX_LOG do
+        local oldL = table.remove(logLabels, 1)
+        if oldL then oldL:Destroy() end
+    end
+    while #logLines > MAX_LOG do table.remove(logLines, 1) end
     scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
 end
+
+-- กันสถานะที่เปลี่ยนทุกเฟรม (HP/ระยะในลูปตีมอน) สร้าง log รัวๆ 20 ครั้งต่อวินาที
+-- ข้ามช่วงสั้นๆ แล้วค่อยล็อกสถานะล่าสุด (ไม่ลอกรัว แต่สถานะไม่ค้างเก่า)
+local lastStateT = 0
 local function setState(txt, col)
-    if txt ~= lastState then
+    if txt == lastState then return end
+    local now = os.clock()
+    if now - lastStateT < 0.3 then
         lastState = txt
-        log(txt, col)
+        return
     end
+    lastState = txt
+    lastStateT = now
+    log(txt, col)
 end
 
 -- Forward declarations: ปุ่ม FRUIT / BUY ต้องเรียกฟังก์ชันที่ประกาศอยู่ด้านล่าง
@@ -687,8 +705,8 @@ fruitBtn.MouseButton1Click:Connect(function()
                         task.wait(5)
                     end
                 end)
-                if not gotOne then task.wait(0.5) end
-                task.wait(0.2)
+                if not gotOne then task.wait(1.5) end
+                task.wait(1.5)
             end
             PAUSED_FOR_FRUIT = false
             setState("FRUIT OFF", "S")
@@ -842,36 +860,62 @@ local function buddhaCombo()
 end
 
 -- Noclip: ปิดการชนของทุกชิ้นส่วนตัวละคร ระหว่างที่สคริปต์กำลังทำงาน
--- ต้องตั้งซ้ำทุกเฟรม เพราะเกมรีเซ็ต CanCollide เองเป็นระยะ
+-- รายการชิ้นส่วนถูกเก็บไว้แล้ว (refresh ทุก 2 วิ) — วิ่ง GetDescendants ทุกเฟรมกินเฟรมเรต
+-- เกมเพิ่มชิ้นส่วนใหม่ (อาวุธ/ร่าง) ให้สคริปต์ไปจับ DescendantAdded เอง
+local noclipParts, noclipChar, noclipRefreshed = {}, nil, 0
+
 local function setNoclip(on)
     local char = LP.Character
     if not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") and p.CanCollide == on then
-            p.CanCollide = not on
+    local now = os.clock()
+    if char ~= noclipChar or now - noclipRefreshed > 2 then
+        noclipChar = char
+        noclipRefreshed = now
+        table.clear(noclipParts)
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then table.insert(noclipParts, p) end
+        end
+    end
+    for i = #noclipParts, 1, -1 do
+        local p = noclipParts[i]
+        if p.Parent then
+            if p.CanCollide == on then p.CanCollide = not on end
+        else
+            table.remove(noclipParts, i)
         end
     end
 end
 
 if not _G.BF04_NOCLIP_CONN then
-    _G.BF04_NOCLIP_CONN = RunService.Stepped:Connect(function()
-        -- รวม FRUIT_MODE (โหมดบินของปุ่มทะเล 3) เพราะ Tween วิ่งทะลุกำแพงไม่ได้
-        -- ต้องตั้ง CanCollide=false ทุกเฟรมไม่งั้น tween ชนกำแพงแล้วค้าง
-        if _G.BF04_LOOP or _G.BF04_SABER or FRUIT_MODE then
-            pcall(setNoclip, true)
+    -- throttle 0.2 วิ (เดิม Stepped = ทุก physics frame ~60/s หนักเกินจำเป็น)
+    _G.BF04_NOCLIP_CONN = task.spawn(function()
+        while true do
+            task.wait(0.2)
+            if _G.BF04_LOOP or _G.BF04_SABER or FRUIT_MODE then
+                pcall(setNoclip, true)
+            end
         end
     end)
 end
 
+-- BodyVelocity ถูก deprecate + MaxForce 9e99 ทำให้ physics solver หนัก → เปลี่ยนเป็น LinearVelocity
+-- (ตัวบังคับฟิสิกส์สมัยใหม่ เบากว่า ไม่กวน physics step)
 local function applyBodyVelocity(hrp)
-    if not _G.BF04_BV or not _G.BF04_BV.Parent then
-        local bv = Instance.new("BodyVelocity")
-        bv.Name = "BF04_Noclip"
-        bv.Parent = hrp
-        bv.MaxForce = Vector3.new(9e99, 9e99, 9e99)
-        bv.Velocity = Vector3.new(0, 0, 0)
-        _G.BF04_BV = bv
+    if _G.BF04_BV and _G.BF04_BV.Parent then return end
+    local att = hrp:FindFirstChild("BF04_Att")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "BF04_Att"
+        att.Parent = hrp
     end
+    local lv = Instance.new("LinearVelocity")
+    lv.Name = "BF04_Noclip"
+    lv.Attachment0 = att
+    lv.MaxForce = 1e6          -- พอให้ลอยนิ่ง ไม่ต้องอนันต์
+    lv.VectorVelocity = Vector3.new(0, 0, 0)
+    lv.RelativeTo = Enum.ActuatorRelativeTo.World
+    lv.Parent = hrp
+    _G.BF04_BV = lv
 end
 
 -- ล้างสถานะทั้งหมดที่สคริปต์ไปยุ่งกับตัวละคร แล้วคืนการควบคุมให้ผู้เล่น
@@ -1251,17 +1295,13 @@ function equipWeapon()
     return false
 end
 
+-- หันมุมกล้องมองลงไปที่มอน (ให้ผู้ใช้เห็นเป้า)
+-- เดิม snap hrp.CFrame + cam.CFrame พร้อมกันทุก 0.05 วิ → สองสิ่งเขียนตำแหน่งสวนกัน = ภาพกระตุก
+-- RegisterHit ไม่ได้ใช้ทิศทางตัวละครในการคำนวจ ละการหมุน hrp ทิ้งได้เลย
+-- กล้องเป็นสิ่งเดียวที่ผู้ใช้มองเห็น → อัพเดตได้ตามปกติ
 local function aimCam(mob)
-    local char, hrp = getChar()
     local mhrp = mob and (mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Head"))
-    if not char or not mhrp then return end
-    
-    -- หมุนตัวละครให้หันหน้าลงไปหามอน
-    pcall(function()
-        hrp.CFrame = CFrame.lookAt(hrp.Position, mhrp.Position)
-    end)
-    
-    -- หันมุมกล้องมองลงไปที่มอน
+    if not mhrp then return end
     local cam = Workspace.CurrentCamera
     if cam then
         cam.CFrame = CFrame.lookAt(cam.CFrame.Position, mhrp.Position)
@@ -1282,7 +1322,12 @@ end
 -- 🧲 ระบบ Mob Magnet / รวมมอนสเตอร์รอบข้าง
 -- ขยาย SimulationRadius เพื่อให้เราเป็นเจ้าของฟิสิกส์มอน (Network Ownership)
 -- ถ้าไม่ทำเซาะตรงนี้ CFrame ที่เราตั้งจะไม่ replicate ไปเซิร์ฟ = มอนไม่ขยับจริง
-local function boostSimulationRadius()
+-- ยิงทุก 5 วิพอ (เดิมยิงทุก 0.05 วิ = 20 ครั้ง/วินาที ไม่ได้ช่วยอะไรเพิ่ม แถมกินเฟรมเรต)
+local SIM_RADIUS_T = 0
+local function boostSimulationRadius(force)
+    local now = os.clock()
+    if not force and now - SIM_RADIUS_T < 5 then return end
+    SIM_RADIUS_T = now
     pcall(function()
         -- วิธีของสคริปต์ใหญ่ (MUXHUB): setsimulationradius ทรงพลังกว่า sethiddenproperty เฉยๆ
         if setsimulationradius then
@@ -1432,7 +1477,8 @@ local function mainLoop()
     end
 
     while AUTO_ON and _G.BF04_LOOP do
-        task.wait(0.1)
+        -- 0.1 → 0.25 วิ: รอบหลักแค่เช็คสถานะเควส/หาเป้า ไม่ได้ตีมอน (การตีอยู่ในลูปย่อย 0.05 วิ)
+        task.wait(0.25)
         -- ⏸️ ถ้า FRUIT กำลังบินไปเก็บผล → AUTO หยุดรอ (ไม่ดึงตัวละครสวนทาง)
         if PAUSED_FOR_FRUIT then
             setState("AUTO พักชั่วคราว (FRUIT กำลังเก็บผล...)", "S")
@@ -1623,6 +1669,8 @@ local function mainLoop()
 
                 local killT0 = os.clock()
                 local hitCount = 0
+                -- จังหวะอัพเดตกล้อง/แม่เหล็ก แยกจากจังหวะยิง (0.05 วิ) เพื่อลดภาระของเฟรม
+                local lastCamT, lastMagnetT = 0, 0
                 -- ระยะตอนล็อกเป้า ใช้เทียบว่ามอน "กระเด็น" (ถูกย้ายกลับจุดเกิด) จริงหรือแค่อยู่ไกล
                 local lockDist = bestDist
                 local nextMainCheck = os.clock() + 1
@@ -1656,7 +1704,7 @@ local function mainLoop()
 
                     local mhrp = v:FindFirstChild("HumanoidRootPart")
                     if mhrp then
-                        local char, hrp = getChar()
+                        local hrp = myChar:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             applyBodyVelocity(hrp)
                             -- ❌ ไม่วาปเข้าหามอนทุกเฟรมแล้ว (โดน anti-cheat)
@@ -1679,9 +1727,14 @@ local function mainLoop()
                                 end
                             end
                         end
-                        aimCam(v)
+                        -- อัพเดตกล้องแค่ 5 ครั้ง/วิ (จ้องทุก 0.05 วิไม่ได้ช่วยให้ตีแรงขึ้น)
+                        if os.clock() - lastCamT >= 0.2 then
+                            lastCamT = os.clock()
+                            aimCam(v)
+                        end
 
-                        if MAGNET_ON then
+                        if MAGNET_ON and os.clock() - lastMagnetT >= 0.25 then
+                            lastMagnetT = os.clock()
                             bringMobsToTarget(v, qdata.mob)
                         end
                     end
