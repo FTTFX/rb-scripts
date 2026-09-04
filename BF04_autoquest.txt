@@ -452,7 +452,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v10.3 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v10.4 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -2100,6 +2100,8 @@ local BARTILO_CF = CFrame.new(-456.28952, 73.0200958, 299.895966)
 local SWANPIRATE_CF = CFrame.new(932.624451, 156.106079, 1180.27466)
 local JEREMY_CF  = CFrame.new(2099.88159, 448.931, 648.997375)
 local TREVOR_CF  = CFrame.new(-341.498322, 331.886444, 643.024963)
+-- ยอดคฤหาสน์ Flamingo Mansion — Don Swan จะ stream-in เฉพาะเมื่อผู้เล่นอยู่แถวนี้
+local SWAN_MANSION_CF = CFrame.new(-483.73370361328, 332.0383605957, 595.32708740234)
 local KRH_CF     = CFrame.new(-1926.3221435547, 12.819851875305, 1738.3092041016)
 
 -- ปุ่มไขรหัสหน้าห้องขัง King Red Head ต้องเหยียบตามลำดับนี้เท่านั้น
@@ -2483,9 +2485,24 @@ local function sea3Step()
     local zq = 0
     pcall(function() zq = CommF:InvokeServer("ZQuestProgress", "General") or 0 end)
     if zq == 0 then
+        -- Don Swan stream-in เฉพาะเมื่อผู้เล่นอยู่ใกล้คฤหาสน์ อยู่ไกล (เช่นที่ Colosseum)
+        -- ตัวจะไม่โหลดให้เห็นใน Workspace.Enemies เลย — ต้องบินไปรอที่ยอดคฤหาสน์ก่อน
         local swan = findEnemy("Don Swan")
+        if not swan then
+            log("บินไป Flamingo Mansion (ที่เกิด Don Swan) เพื่อดึงตัวโหลด", "B")
+            FRUIT_MODE = true
+            tp(SWAN_MANSION_CF)
+            task.wait(1.5)
+            FRUIT_MODE = false
+            releaseControl()
+            pcall(equipWeapon)
+            pcall(ensureBuso)
+            local t0 = os.clock()
+            repeat task.wait(1) swan = findEnemy("Don Swan")
+            until swan or os.clock() - t0 > 10
+        end
         if swan then
-            log("ขั้น 4/6: เจอ Don Swan → เข้าตีก่อน (ต้องล้มก่อนคุย King Red Head)", "B")
+            log("เจอ Don Swan → เข้าตี (ต้องล้มก่อนคุย King Red Head)", "G")
             fightBoss(swan, "Don Swan", 300)
             return
         end
@@ -2563,10 +2580,10 @@ sea3Btn.MouseButton1Click:Connect(function()
     end)
 end)
 
-log("BF04 v10.3 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
+log("BF04 v10.4 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
 log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v10.3 loaded")
+warn("[BF04] Auto Quest v10.4 loaded")
