@@ -452,7 +452,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v10.5 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v10.6 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -855,7 +855,9 @@ end
 
 if not _G.BF04_NOCLIP_CONN then
     _G.BF04_NOCLIP_CONN = RunService.Stepped:Connect(function()
-        if _G.BF04_LOOP or _G.BF04_SABER then
+        -- รวม FRUIT_MODE (โหมดบินของปุ่มทะเล 3) เพราะ Tween วิ่งทะลุกำแพงไม่ได้
+        -- ต้องตั้ง CanCollide=false ทุกเฟรมไม่งั้น tween ชนกำแพงแล้วค้าง
+        if _G.BF04_LOOP or _G.BF04_SABER or FRUIT_MODE then
             pcall(setNoclip, true)
         end
     end)
@@ -1024,32 +1026,20 @@ clearBtn.MouseButton1Click:Connect(function()
     log("🧹 ล้างสถานะทั้งหมดแล้ว — ขยับตัวได้ตามปกติ", "G")
 end)
 
--- ระบบ Smart Travel (บินสูงข้ามเกาะ)
+-- ระบบ Smart Travel (บินด้วย TweenService ตามสไตล์สคริปต์ยอดนิยม)
 -- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
---    บินด้วยความเร็ว 150 studs/sec (เกมรับได้ ไม่ trigger anti-teleport)
 local FLY_SPEED = 380
--- โหมดเควสทะเล 3 บินช้ากว่าปกติ และเว้นจังหวะพุ่งนานขึ้น
--- (ความเร็วเดิม 420 กระโดดทีละช่วงใหญ่ เวลาเดินไล่ NPC/ไขปุ่มดูกระตุกมาก)
--- ประกาศไว้ตรงนี้เพราะ toTarget/flySmooth ถูกนิยามก่อน SEA3_RUN ตัวจริง
+-- โหมดเควสทะเล 3 บินช้ากว่าปกติให้ภาพนุ่ม (ปิดปุ่ม = กลับความเร็วปกติ)
 local SEA3_RUN = false
 local QUEST_FLY_SPEED = 230
-local QUEST_BURST_REST = 0.4
 -- ระบบไหนก็ได้ที่กำลังทำงาน = อนุญาตให้บินต่อ
 -- (เดิมเช็ค AUTO_ON เท่านั้น พอ AUTO SABER ทำงานลูปบินจะหลุดกลางทาง = ค้างบนฟ้า)
 local function moveOK()
     return (AUTO_ON and _G.BF04_LOOP) or (SABER_ON and _G.BF04_SABER) or FRUIT_MODE
 end
--- บินแบบขยับทีละเฟรม แทน Tween ยาวๆ
--- Tween ตั้งค่า CFrame สวนกับ physics ของเกม ทำให้ภาพกระตุกและถูกดึงกลับเป็นช่วงๆ
--- พุ่งเป็นช่วง: ขยับ BURST_MOVE วิ แล้วหยุดนิ่ง BURST_REST วิ
--- การขยับต่อเนื่องยาวๆ คือสิ่งที่ anti-cheat จับ การหยุดสั้นๆ ให้เซิร์ฟเวอร์
--- ยืนยันตำแหน่งก่อนพุ่งต่อ ทำให้ไม่ถูกดึงกลับ
-local BURST_MOVE = 1.0
-local BURST_REST = 0.2
 
--- รัศมีค้นหามอน และระยะที่ยังบินตรงได้ (ไม่ต้องไต่ขึ้นฟ้า)
+-- รัศมีค้นหามอน
 SEARCH_R = 3000
-local DIRECT_FLY_R = 3000
 
 -- คลังจุดเกิดที่เรียนรู้เอง: บันทึกตำแหน่งมอน "ทุกชนิด" ที่เคยเห็น
 -- พิกัดที่ฝังไว้บางเควสผิด (เช่น Fishman Commando อยู่ลึกกว่า Warrior)
@@ -1072,46 +1062,38 @@ local function rememberSpawn(name, pos)
 end
 
 local function flySmooth(destCF, speed, report)
-    local total
-    local nextReport = os.clock() + 5
-    local burstT0 = os.clock()
-    local deadline
-    while moveOK() do
-        local char, hrp = getChar()
-        if not char or not hrp then return false end
-        local delta = destCF.Position - hrp.Position
-        local left = delta.Magnitude
-        total = total or left
-        -- ถ้าถูกดึงกลับตลอด ระยะจะไม่ลด วนไม่จบ ต้องมีเวลาสูงสุด
-        -- ความเร็วจริงต่ำกว่าที่ตั้งไว้ราว 2-3 เท่า เพราะเซิร์ฟเวอร์หน่วงตำแหน่ง
-        -- เผื่อเวลาให้พอ ไม่งั้นตัดทิ้งกลางทางแม้กำลังไปได้เรื่อยๆ
-        deadline = deadline or (os.clock() + (total / speed) * 5 + 8)
-        if left <= 8 then break end
-        if os.clock() > deadline then
-            log(string.format("บินไม่ถึง (เหลือ %.0f studs) → เริ่มรอบใหม่", left), "Y")
-            return false
-        end
+    -- สไตล์สคริปต์ยอดนิยม (Infinite/CrackSwitch): ใช้ TweenService ให้เอนจินขยับ
+    -- HumanoidRootPart เองทีละเฟรม — ภาพนุ่ม ไม่กระตุก ไม่ต้อง snap CFrame เอง
+    -- การ snap เองทุกเฟรม (โค้ดเดิม) สวน physics เกม เป็นสาเหตุที่ทำให้สะดุดตลอดทาง
+    stopTween()
+    local char, hrp = getChar()
+    if not char or not hrp then return false end
 
-        if os.clock() - burstT0 >= BURST_MOVE then
-            local restLen = SEA3_RUN and QUEST_BURST_REST or BURST_REST
-            local restEnd = os.clock() + restLen
-            while os.clock() < restEnd do
-                local _, h = getChar()
-                if h then h.Velocity = Vector3.new(0, 0, 0) end
-                RunService.Heartbeat:Wait()
-            end
-            burstT0 = os.clock()
-        end
+    local dist = (destCF.Position - hrp.Position).Magnitude
+    if dist < 10 then return true end
 
-        local dt = RunService.Heartbeat:Wait()
-        local spd = SEA3_RUN and math.min(speed, QUEST_FLY_SPEED) or speed
-        local step = math.min(spd * dt, left)
-        hrp.CFrame = CFrame.new(hrp.Position + delta.Unit * step)
-        hrp.Velocity = Vector3.new(0, 0, 0)
-        if report and total > 1500 and os.clock() >= nextReport then
-            nextReport = os.clock() + 5
-            log(string.format("  ...เหลือ %.0f studs", left), "S")
-        end
+    -- ความเร็วแบ่งตามระยะ เหมือนสคริปต์อ้างอิง (ไกลช้าลง ใกล้เร็วขึ้น)
+    local spd = speed
+    if SEA3_RUN then spd = math.min(spd, QUEST_FLY_SPEED) end
+    if dist >= 1000 then spd = math.min(spd, 250)
+    elseif dist >= 500 then spd = math.min(spd, 300)
+    elseif dist >= 250 then spd = math.min(spd, 600) end
+
+    -- คำนวณเวลา แล้ว Play — เอนจินทำงานแทนเราจบเอง
+    local tween = TweenService:Create(hrp,
+        TweenInfo.new(dist / spd, Enum.EasingStyle.Linear),
+        { CFrame = destCF })
+    currentTween = tween
+    tween:Play()
+    tween.Completed:Wait()
+    currentTween = nil
+
+    local _, h2 = getChar()
+    if not h2 then return false end
+    local left = (destCF.Position - h2.Position).Magnitude
+    if left > 25 then
+        log(string.format("บินไม่ถึง (เหลือ %.0f studs) → เริ่มรอบใหม่", left), "Y")
+        return false
     end
     return true
 end
@@ -1205,82 +1187,27 @@ end
 local function toTarget(targetCF)
     local char, hrp, hum = getChar()
     if not char then return false end
-    
-    applyBodyVelocity(hrp)
-    
+
     local dist = (targetCF.Position - hrp.Position).Magnitude
-    
+
     -- ระยะประชิด (< 25 studs) → วาร์ปตรง (ไม่เกินเพดานที่เกมยอมรับ)
     if dist < 25 then
         stopTween()
         hrp.CFrame = targetCF
         return true
     end
-    
-    -- ระยะกลาง (< 650 studs, อยู่เกาะเดียวกัน) → พุ่งตรงไปเลย ไม่ต้องไต่ขึ้นฟ้า
-    -- ตัดขั้นตอนไต่ขึ้น-ลงออก ประหยัดเวลาต่อมอนได้หลายวินาที
-    if dist < DIRECT_FLY_R then
-        stopTween()
-        return flySmooth(targetCF, 420, dist > 1500)
-    end
 
     -- ระยะไกลมาก → ลอง Bypass TP ก่อน ประหยัดเวลาได้เป็นนาที
-    -- ถ้าไม่สำเร็จก็ตกไปใช้การบินขึ้นสูงตามปกติ
-    if BTP_ON and dist > BTP_MIN_DIST then
+    if BTP_ON and dist > 3000 then
         stopTween()
         if bypassTP(targetCF) then
-            local _, h = getChar()
-            if h and (targetCF.Position - h.Position).Magnitude < DIRECT_FLY_R then
-                return flySmooth(targetCF, 420, false)
-            end
             return true
         end
-        local _, h = getChar()
-        if not h then return false end
-        dist = (targetCF.Position - h.Position).Magnitude
-        hrp = h
     end
 
-    -- ระยะไกล (ข้ามเกาะ) → บินขึ้นสูงก่อน (ระยะสั้นๆ ไม่วาร์ป)
-    stopTween()
-    
-    local highY = math.max(hrp.Position.Y, targetCF.Position.Y) + 120
-    if targetCF.Position.Y > 300 then highY = targetCF.Position.Y + 60 end
-    
-    -- ไต่ระดับขึ้นเป็นช่วงๆ ไม่กระโดดสูงทีเดียว (กัน anti-teleport แนวตั้ง)
-    local stepY = 40
-    local curY = hrp.Position.Y
-    while curY < highY - 5 do
-        curY = math.min(curY + stepY, highY)
-        hrp.CFrame = CFrame.new(hrp.Position.X, curY, hrp.Position.Z)
-        task.wait(0.08)
-    end
-    
-    local skyStartCF = CFrame.new(hrp.Position.X, highY, hrp.Position.Z)
-    local skyEndCF   = CFrame.new(targetCF.Position.X, highY, targetCF.Position.Z)
-    
-    local flyDist = (skyEndCF.Position - skyStartCF.Position).Magnitude
-
-    -- บินไกลใช้เวลาหลายสิบวินาที ถ้าไม่รายงานความคืบหน้าจะดูเหมือนสคริปต์ค้าง
-    if flyDist > 1500 then
-        log(string.format("บินไกล %.0f studs (~%.0f วิ)", flyDist, flyDist / FLY_SPEED), "B")
-    end
-
-    flySmooth(skyEndCF, FLY_SPEED, true)
-    
-    -- ไต่ระดับลงเป็นช่วงๆ เช่นกัน
-    if moveOK() then
-        local landY = hrp.Position.Y
-        while landY > targetCF.Position.Y + 25 do
-            landY = math.max(landY - stepY, targetCF.Position.Y + 25)
-            hrp.CFrame = CFrame.new(targetCF.Position.X, landY, targetCF.Position.Z)
-            task.wait(0.08)
-        end
-        hrp.CFrame = targetCF
-    end
-    
-    stopTween()
-    return true
+    -- สไตล์สคริปต์ยอดนิยม: tween ตรงไปปลายทางเลย ไม่ต้องไต่ขึ้นฟ้าเป็นขั้น ๆ
+    -- (การวาร์ปยกความสูงทีละ 40 + snap ทุกเฟรมคือสาเหตุของอาการกระตุก)
+    return flySmooth(targetCF, 420, dist > 1500)
 end
 
 function tp(cframe)
@@ -2587,10 +2514,10 @@ sea3Btn.MouseButton1Click:Connect(function()
     end)
 end)
 
-log("BF04 v10.5 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
+log("BF04 v10.6 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
 log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v10.5 loaded")
+warn("[BF04] Auto Quest v10.6 loaded")
