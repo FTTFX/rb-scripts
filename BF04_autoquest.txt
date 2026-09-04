@@ -2474,10 +2474,17 @@ local function sea3Step()
     if zq == 0 then
         -- Don Swan ไม่อยู่ยอดคฤหาสน์ — เขาอยู่ใน Swan's Room (ใต้ Jeremy spawn)
         -- เข้าทางประตูในคฤหาสน์ (ปลายบันได) ซึ่งเปิดแล้วจะวาปเราเข้าไปเอง
-        -- โดนผิงไปข้าไม่ได้ — เดินไปเปิดประตูเอง แล้วรอให้ตัวโผล่
+        -- โดนผิงไปข้าไม่ได้ → พาบินไปยอดคฤหาสน์ (ใกล้จุดทางเข้า) แล้วคืนควบคุมให้เดินเอง
         local swan = findEnemy("Don Swan")
         if not swan then
-            log("ขั้น 5/6: เดินไปเปิดประตูในคฤหาสน์เอง (ปลายบันได) → ประตูจะวาปไป Swan's Room", "Y")
+            log("ขั้น 5/6: บินไปยอดคฤหาสน์แล้วเดินลงมา → เปิดประตูในคฤหาสน์เอง (ประตูจะวาปไป Swan's Room)", "Y")
+            FRUIT_MODE = true
+            tp(SWAN_MANSION_CF)
+            task.wait(1.2)
+            FRUIT_MODE = false
+            releaseControl()
+            pcall(equipWeapon)
+            pcall(ensureBuso)
             local t0 = os.clock()
             repeat task.wait(1) swan = findEnemy("Don Swan")
             until swan or not SEA3_RUN or os.clock() - t0 > 180
