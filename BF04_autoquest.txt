@@ -452,7 +452,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v10.4 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v10.5 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -1028,6 +1028,12 @@ end)
 -- ⚠️ กัน Anti-Cheat: ระยะประชิดวาร์ปได้แค่ < 25 studs (เกินนี้โดนเด้งกลับ)
 --    บินด้วยความเร็ว 150 studs/sec (เกมรับได้ ไม่ trigger anti-teleport)
 local FLY_SPEED = 380
+-- โหมดเควสทะเล 3 บินช้ากว่าปกติ และเว้นจังหวะพุ่งนานขึ้น
+-- (ความเร็วเดิม 420 กระโดดทีละช่วงใหญ่ เวลาเดินไล่ NPC/ไขปุ่มดูกระตุกมาก)
+-- ประกาศไว้ตรงนี้เพราะ toTarget/flySmooth ถูกนิยามก่อน SEA3_RUN ตัวจริง
+local SEA3_RUN = false
+local QUEST_FLY_SPEED = 230
+local QUEST_BURST_REST = 0.4
 -- ระบบไหนก็ได้ที่กำลังทำงาน = อนุญาตให้บินต่อ
 -- (เดิมเช็ค AUTO_ON เท่านั้น พอ AUTO SABER ทำงานลูปบินจะหลุดกลางทาง = ค้างบนฟ้า)
 local function moveOK()
@@ -1087,7 +1093,8 @@ local function flySmooth(destCF, speed, report)
         end
 
         if os.clock() - burstT0 >= BURST_MOVE then
-            local restEnd = os.clock() + BURST_REST
+            local restLen = SEA3_RUN and QUEST_BURST_REST or BURST_REST
+            local restEnd = os.clock() + restLen
             while os.clock() < restEnd do
                 local _, h = getChar()
                 if h then h.Velocity = Vector3.new(0, 0, 0) end
@@ -1097,7 +1104,8 @@ local function flySmooth(destCF, speed, report)
         end
 
         local dt = RunService.Heartbeat:Wait()
-        local step = math.min(speed * dt, left)
+        local spd = SEA3_RUN and math.min(speed, QUEST_FLY_SPEED) or speed
+        local step = math.min(spd * dt, left)
         hrp.CFrame = CFrame.new(hrp.Position + delta.Unit * step)
         hrp.Velocity = Vector3.new(0, 0, 0)
         if report and total > 1500 and os.clock() >= nextReport then
@@ -2116,7 +2124,6 @@ local COLO_CODE = {
     CFrame.new(-1813.51843, 14.8604736, 1724.79541),
 }
 
-local SEA3_RUN = false
 local COLO_PUZZLE_T = 0
 local COLO_PARTS = nil
 
@@ -2580,10 +2587,10 @@ sea3Btn.MouseButton1Click:Connect(function()
     end)
 end)
 
-log("BF04 v10.4 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
+log("BF04 v10.5 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
 log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v10.4 loaded")
+warn("[BF04] Auto Quest v10.5 loaded")
