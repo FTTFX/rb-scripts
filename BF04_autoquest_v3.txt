@@ -36,11 +36,11 @@ local function getQuestData(level)
         return { mob = "Pistol Billionaire", qName = "PiratePortQuest", qNum = 2,
             npc = CFrame.new(-290, 44, 5580), mobCF = CFrame.new(-83, 127, 6097) }
     elseif level < 1600 then
-        return { mob = "Dragon Crew Warrior", qName = "AmazonQuest", qNum = 1,
-            npc = CFrame.new(5832.84, 51.68, -1101.52), mobCF = CFrame.new(6242.00, 51.52, -1243.98) }
+        return { mob = "Dragon Crew Warrior", qName = "DragonCrewQuest", qNum = 1,
+            npc = CFrame.new(6735.11, 126.99, -711.10), mobCF = CFrame.new(6919.08, 55.07, -940.84) }
     elseif level < 1625 then
-        return { mob = "Dragon Crew Archer", qName = "AmazonQuest", qNum = 2,
-            npc = CFrame.new(5832.84, 51.68, -1101.52), mobCF = CFrame.new(6488.92, 383.38, -110.66) }
+        return { mob = "Dragon Crew Archer", qName = "DragonCrewQuest", qNum = 2,
+            npc = CFrame.new(6735.11, 126.99, -711.10), mobCF = CFrame.new(6919.08, 55.07, -940.84) }
     elseif level < 1650 then
         return { mob = "Female Islander", qName = "AmazonQuest2", qNum = 1,
             npc = CFrame.new(5448, 605, 749), mobCF = CFrame.new(5801, 825, 994) }
