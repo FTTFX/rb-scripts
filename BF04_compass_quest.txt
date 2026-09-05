@@ -392,50 +392,108 @@ local function findMob(mobName)
     return best, bestD
 end
 
-local function equipWeapon()
+local VIM
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+
+local function pressKey(key, hold)
+    if not VIM then return false end
+    pcall(function()
+        VIM:SendKeyEvent(true, key, false, game)
+        task.wait(hold or 0.08)
+        VIM:SendKeyEvent(false, key, false, game)
+    end)
+    return true
+end
+
+local function getToolByTip(tip)
+    local char = LP.Character
+    local bp = LP:FindFirstChild("Backpack")
+    for _, src in ipairs({ char, bp }) do
+        if src then
+            for _, t in ipairs(src:GetChildren()) do
+                if t:IsA("Tool") and tostring(t.ToolTip or "") == tip then return t end
+            end
+        end
+    end
+end
+
+local function equipSword()
     local char, _, hum = getChar()
     if not char or not hum then return false end
     local held = char:FindFirstChildOfClass("Tool")
-    if held then
-        local tip = tostring(held.ToolTip or "")
-        if tip == "Melee" or tip == "Sword" then return true end
-        -- ถือผลอยู่ → เก็บก่อน (ร่างขยายค้างได้ แต่ถือผลจะกวนรับเควส/ตี)
-        if tip == "Blox Fruit" then
-            pcall(function() hum:UnequipTools() end)
-            task.wait(0.15)
-        end
-    end
-    local bp = LP:FindFirstChild("Backpack")
-    if not bp then return false end
-    local best
-    for _, t in ipairs(bp:GetChildren()) do
-        if t:IsA("Tool") then
-            local tip = tostring(t.ToolTip or "")
-            if tip == "Melee" then best = t; break
-            elseif tip == "Sword" and not best then best = t
-            elseif not best and tip ~= "Blox Fruit" and tip ~= "Gun" then best = t end
-        end
-    end
-    if best then
-        pcall(function() hum:EquipTool(best) end)
+    if held and tostring(held.ToolTip or "") == "Sword" then return true end
+    local sword = getToolByTip("Sword")
+    if sword then
+        pcall(function() hum:EquipTool(sword) end)
+        task.wait(0.15)
         return true
     end
-    return false
+    -- fallback กด 3 ตามที่ใช้อยู่
+    pressKey(Enum.KeyCode.Three, 0.08)
+    task.wait(0.2)
+    held = char:FindFirstChildOfClass("Tool")
+    return held ~= nil
 end
 
--- ร่างขยาย (Buddha ฯลฯ): HRP ใหญ่ / ระยะรับเควสเพี้ยน
 local function isBigForm()
     local _, hrp = getChar()
     if not hrp then return false end
     return hrp.Size.Magnitude >= 5 or hrp.Size.Y >= 3.5
 end
 
+-- คอมโบผู้ใช้: กด 2 (ผล) → Z (ขยาย) → กด 3 (ดาบ) ร่างค้าง
+local lastBuddhaT = 0
+local function ensureBuddhaSword(force)
+    if isBigForm() then
+        return equipSword()
+    end
+    if not force and os.clock() - lastBuddhaT < 10 then
+        return equipSword()
+    end
+    lastBuddhaT = os.clock()
+    local char, _, hum = getChar()
+    if not char or not hum then return false end
+
+    log("คอมโบร่างพระ: 2 → Z → 3", "Y")
+    local fruit = getToolByTip("Blox Fruit")
+    if fruit then
+        pcall(function() hum:EquipTool(fruit) end)
+        task.wait(0.35)
+    else
+        pressKey(Enum.KeyCode.Two, 0.08)
+        task.wait(0.35)
+    end
+
+    if not pressKey(Enum.KeyCode.Z, 0.12) then
+        log("กด Z ไม่ได้ (ไม่มี VIM) → กด Z เองครั้งเดียว", "O")
+    end
+    task.wait(0.9)
+
+    if not isBigForm() then
+        pressKey(Enum.KeyCode.Z, 0.12)
+        task.wait(0.7)
+    end
+
+    equipSword()
+    if isBigForm() then
+        log("ร่างพระพร้อม + ถือดาบ ✓", "G")
+        return true
+    end
+    log("ยังไม่ใหญ่ — ถือดาบไว้ก่อน (กด Z เองได้)", "O")
+    return equipSword()
+end
+
+local function equipWeapon()
+    return equipSword()
+end
+
+-- ร่างพระตีไกล → ลอยสูงขึ้น hitbox กว้าง
 local function attackHeight()
-    return isBigForm() and 28 or 10
+    return isBigForm() and 22 or 10
 end
 
 local function attackMob(mob)
-    equipWeapon()
+    equipSword()
     local rA, rH = getCombatRemotes()
     local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
     if not part then return end
@@ -448,6 +506,8 @@ local function attackMob(mob)
         if rH then rH:FireServer(part, { { mob, part } }) end
         VirtualUser:CaptureController()
         VirtualUser:Button1Down(Vector2.new(1280, 672))
+        task.wait(0.03)
+        VirtualUser:Button1Up(Vector2.new(1280, 672))
     end)
 end
 
@@ -540,6 +600,7 @@ local function mainLoop()
     local cf = getCommF()
     if not cf then log("ไม่มี CommF_", "R") return end
     getCombatRemotes()
+    pcall(function() ensureBuddhaSword(true) end)
 
     while _G.BF04C_ON do
         local ok, err = pcall(function()
@@ -567,14 +628,12 @@ local function mainLoop()
                 end
                 local _, hrp = getChar()
                 local dist = hrp and (hrp.Position - pos).Magnitude or 9999
-                -- ร่างใหญ่: ระยะเพี้ยน → ยอมรับใกล้ที่กว้างกว่า + วาร์ปชิดก่อนรับ
                 local nearDist = isBigForm() and 55 or 28
                 if dist > nearDist then
                     flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/" .. src)
                     return
                 end
-                equipWeapon() -- ไม่ถือผลตอนรับเควส
-                -- วาร์ปชิด NPC ซ้ำ (ร่างขยายมักเด้งออก)
+                equipSword() -- ถือดาบ ไม่ถือผล ตอนรับเควส
                 for _ = 1, 4 do
                     local _, h = getChar()
                     if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
@@ -597,13 +656,12 @@ local function mainLoop()
                 if questUIVisible() then
                     log("รับเควสสำเร็จ: " .. questTitle(), "G")
                 else
-                    log("ยังไม่เปิด UI (ลองใหม่) — ถ้าร่างขยายแล้วรับไม่ได้ ลองถอดร่าง/ถือดาบ", "R")
+                    log("ยังไม่เปิด UI (ลองใหม่)", "R")
                     task.wait(1.2)
                 end
                 return
             end
 
-            -- ── มีเควสแล้ว → เช็คว่าตรงมอนไหม ──
             local titleTxt = questTitle()
             if titleTxt ~= "" and not titleTxt:lower():find(quest.mob:lower():sub(1, 8), 1, true)
                and not titleTxt:find(quest.displayName or "", 1, true) then
@@ -613,7 +671,9 @@ local function mainLoop()
                 return
             end
 
-            -- ── ตีมอน: บินเข้าใกล้ก่อน แล้วค่อยล็อกตี ──
+            -- ก่อนตี: ให้มีร่างพระ + ดาบ
+            ensureBuddhaSword(false)
+
             local mob, md = findMob(quest.mob)
             if not mob then
                 log("ไม่เจอ " .. quest.mob .. " ใน Enemies → รอโหลด", "Y")
@@ -624,7 +684,7 @@ local function mainLoop()
             local mhum = mob:FindFirstChildOfClass("Humanoid")
             if not mhrp or not mhum then return end
 
-            if (md or 999) > 70 then
+            if (md or 999) > 80 then
                 flyTo(mhrp.CFrame * CFrame.new(0, attackHeight(), 0), "มอน")
                 return
             end
@@ -641,10 +701,11 @@ local function mainLoop()
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
                 if not mhrp then break end
                 setNoclip()
-                equipWeapon()
+                equipSword()
+                -- ร่างพระ: ลอยเหนือหัว + ชิดกลางตัวมอน
                 myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
                 pcall(function()
-                    mhrp.Size = Vector3.new(60, 60, 60)
+                    mhrp.Size = Vector3.new(70, 70, 70)
                     mhrp.CanCollide = false
                     mhum.PlatformStand = true
                     mhum.Sit = true
@@ -667,13 +728,13 @@ local function mainLoop()
                 task.wait()
             end
             log(mob.Name .. " จบรอบ", "G")
-            task.wait(0.35)
+            task.wait(0.3)
         end)
         if not ok then
             log("Loop error: " .. tostring(err), "R")
             task.wait(1)
         else
-            task.wait(0.2)
+            task.wait(0.15)
         end
     end
     log("=== STOP ===", "R")
