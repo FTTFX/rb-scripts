@@ -1499,7 +1499,7 @@ local function mainLoop()
 
             -- ถ้ามีเควสค้างอยู่แต่ไม่ตรงกับเลเวลปัจจุบัน หรือไม่ใช่เควสที่ต้องการ → ยกเลิกเพื่อรับเควสใหม่ที่ดีกว่า
             if UIQ.Visible and titleTxt ~= "" and not string.find(titleTxt, qdata.mob) then
-                setState("เควสไม่ตรงกับเลเวล " .. currentLevel .. " (" .. qdata.mob .. ") → AbandonQuest", "Y")
+                setState("เควสไม่ตรง (" .. titleTxt .. ") → AbandonQuest", "Y")
                 CommF:InvokeServer("AbandonQuest")
                 task.wait(0.5)
                 return
@@ -1662,8 +1662,7 @@ local function mainLoop()
                     LAST_MOB_POS = v.HumanoidRootPart.Position
                 end
                 setState("ล็อกมอน: " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health)
-                    .. " | ห่าง " .. math.floor(bestDist) .. ")"
-                    .. (MAGNET_ON and " — Magnet + Remote" or " — ตีระยะไกล (ไม่วาป)"), "Y")
+                    .. " | ห่าง " .. math.floor(bestDist) .. ")", "Y")
 
                 equipWeapon()
 
