@@ -22,12 +22,12 @@ local REF = {
       npc=CFrame.new(-290.07, 42.90, 5581.59), mobCF=CFrame.new(81.16, 43.76, 5724.70) },
     { lvMin=1525, lvMax=1574, mob="Pistol Billionaire", q="PiratePortQuest", n=2,
       npc=CFrame.new(-290.07, 42.90, 5581.59), mobCF=CFrame.new(81.16, 43.76, 5724.70) },
-    { lvMin=1575, lvMax=1599, mob="Dragon Crew Warrior", q="AmazonQuest", n=1,
-      npc=CFrame.new(6797.66, 55.78, -738.74), mobCF=CFrame.new(6797.66, 55.78, -738.74),
-      note="NPC จริงยืนยัน 2026-09-05 (MARK ใกล้ Quest Giver 9m) — mobCF ยังรอสแกน" },
-    { lvMin=1600, lvMax=1624, mob="Dragon Crew Archer", q="AmazonQuest", n=2,
-      npc=CFrame.new(6797.66, 55.78, -738.74), mobCF=CFrame.new(6488.92, 383.38, -110.66),
-      note="NPC ใช้จุดเดียวกับ Warrior (ยืนยันบางส่วน) — mobCF ยังเป็นของเก่า" },
+    { lvMin=1575, lvMax=1599, mob="Dragon Crew Warrior", q="DragonCrewQuest", n=1,
+      npc=CFrame.new(6735.11, 126.99, -711.10), mobCF=CFrame.new(6919.08, 55.07, -940.84),
+      note="ยืนยัน 2026-09-05: NPC=Dragon Crew Quest Giver | ชื่อเควสใหม่ DragonCrewQuest (ไม่ใช่ AmazonQuest)" },
+    { lvMin=1600, lvMax=1624, mob="Dragon Crew Archer", q="DragonCrewQuest", n=2,
+      npc=CFrame.new(6735.11, 126.99, -711.10), mobCF=CFrame.new(6919.08, 55.07, -940.84),
+      note="NPC เดียวกับ Warrior | mobCF Archer ยังรอสแกน (ชั่วคราวใช้จุด Warrior)" },
     { lvMin=1625, lvMax=1649, mob="Female Islander", q="AmazonQuest2", n=1,
       npc=CFrame.new(5448.86, 601.52, 751.13), mobCF=CFrame.new(5825.22, 682.89, 704.58) },
     { lvMin=1650, lvMax=1699, mob="Giant Islander", q="AmazonQuest2", n=2,
@@ -513,15 +513,34 @@ local function dumpQuestModule()
     for k in pairs(data) do keys[#keys+1] = tostring(k) end
     table.sort(keys)
     log("  keys ทั้งหมด (" .. #keys .. "): " .. table.concat(keys, ", "), "B")
-    -- โฟกัส Amazon / Hydra / selected
     local want = {}
     if selected then want[selected.q] = true end
-    want["AmazonQuest"] = true
-    want["AmazonQuest2"] = true
+    want["DragonCrewQuest"] = true
+    want["VenomCrewQuest"] = true
     for _, k in ipairs(keys) do
         local kl = k:lower()
-        if want[k] or kl:find("amazon") or kl:find("hydra") or kl:find("dragon") then
+        if want[k] or kl:find("dragon") or kl:find("venom") or kl:find("hydra")
+           or kl:find("tiki") or kl:find("submerged") or kl:find("pirateport") then
             log("  ★ [" .. k .. "] = " .. shortVal(data[k]), "G")
+        end
+    end
+    log("── เควส LevelReq >= 1500 ──", "Y")
+    for _, k in ipairs(keys) do
+        local entry = data[k]
+        if type(entry) == "table" then
+            for num, sub in pairs(entry) do
+                if type(sub) == "table" and type(sub.LevelReq) == "number" and sub.LevelReq >= 1500 then
+                    local tasks = {}
+                    if type(sub.Task) == "table" then
+                        for tn, tc in pairs(sub.Task) do
+                            tasks[#tasks+1] = tn .. "x" .. tostring(tc)
+                        end
+                    end
+                    log(string.format("  %s#%s Lv%d %s | %s",
+                        k, tostring(num), sub.LevelReq, tostring(sub.Name or ""),
+                        table.concat(tasks, ", ")), "B")
+                end
+            end
         end
     end
 end
