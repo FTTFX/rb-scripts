@@ -677,8 +677,8 @@ local function directRemoteAttack(mobTarget, mobName)
     -- แบบที่ 1: มาตรฐาน Blox Fruits RE Remotes (RegisterAttack + RegisterHit)
     pcall(function()
         if rAttack then
-            rAttack:FireServer(1e-9)
             rAttack:FireServer(0)
+            rAttack:FireServer(1)
         end
         if rHit then
             rHit:FireServer(mainPart, othersEnemies)
@@ -816,9 +816,26 @@ local function mainLoop()
                 end
 
                 if not target then
+                    local totalEnemies = (enemies and #enemies:GetChildren()) or 0
+                    local mobNamesInMap = {}
+                    if enemies then
+                        for _, e in ipairs(enemies:GetChildren()) do
+                            local eName = tostring(e.Name)
+                            mobNamesInMap[eName] = (mobNamesInMap[eName] or 0) + 1
+                        end
+                    end
+                    local summary = ""
+                    for name, count in pairs(mobNamesInMap) do
+                        summary = summary .. name .. "(" .. count .. ") "
+                    end
+                    if summary == "" then summary = "ไม่มีมอนใน Workspace.Enemies" end
+
                     local sameMob = (LAST_MOB_NAME == qdata.mob)
                     local anchor = (sameMob and LAST_MOB_POS) or qdata.mobCF.Position
                     local known = SPAWN_DB[qdata.mob]
+
+                    log("[หาไม่เจอ] เควส: " .. qdata.mob .. " | ในแมพมี: " .. summary, "R")
+
                     if not (sameMob and LAST_MOB_POS) and known and #known > 0 then
                         PATROL_I = (PATROL_I or 0) + 1
                         local p = known[(PATROL_I % #known) + 1]
@@ -835,7 +852,7 @@ local function mainLoop()
                         local ang = PATROL_I * 1.2
                         local r = 60 + (PATROL_I % 6) * 50
                         local off = Vector3.new(math.cos(ang) * r, 15, math.sin(ang) * r)
-                        setState("ตระเวนหา " .. qdata.mob, "Y")
+                        setState("ตระเวนหา " .. qdata.mob .. " (" .. math.floor((anchor - hrp.Position).Magnitude) .. "s)", "Y")
                         tp(CFrame.new(anchor + off))
                     end
                     task.wait(0.5)
@@ -851,8 +868,10 @@ local function mainLoop()
                 setState("สู้ " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ")", "Y")
 
                 equipWeapon()
-                local lastCamT, lastMagnetT = 0, 0
-                local lockDist = bestDist
+                local lastCamT, lastMagnetT, lastHpCheckT = 0, 0, os.clock()
+                local initialHp = v.Humanoid.Health
+                local lastHp = initialHp
+                local attackTicks = 0
 
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04V3_LOOP do
                     local myChar, _, myHum = getChar()
@@ -882,6 +901,22 @@ local function mainLoop()
                     end
 
                     directRemoteAttack(v, qdata.mob)
+                    attackTicks += 1
+
+                    -- Log เช็คว่าเลือดลดหรือไม่ ทุก 2 วินาที
+                    if os.clock() - lastHpCheckT >= 2 then
+                        local curHp = v.Humanoid.Health
+                        local tool = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+                        local toolName = tool and tool.Name or "มือเปล่า/ไม่มีอาวุธ"
+                        if curHp >= lastHp then
+                            log(string.format("[ตีไม่เข้า] HP นิ่ง %.0f/%.0f (ยิง %d ครั้ง) ถือ: %s", curHp, v.Humanoid.MaxHealth, attackTicks, toolName), "R")
+                        else
+                            log(string.format("[ตีโดน ✓] HP: %.0f -> %.0f (-%.0f)", lastHp, curHp, lastHp - curHp), "G")
+                        end
+                        lastHp = curHp
+                        lastHpCheckT = os.clock()
+                    end
+
                     task.wait(0.05)
                 end
             end
