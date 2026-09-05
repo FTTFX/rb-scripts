@@ -279,25 +279,27 @@ local function dumpValue(v, depth)
     return tostring(v)
 end
 
--- อ่าน UI เข็มทิศ / เควสแนะนำ (ข้อความระยะ + ชื่อ)
+-- อ่าน UI เข็มทิศ / เควสแนะนำ (กรอง noise จาก settings)
 local function readCompassUI()
     local info = { texts = {}, distance = nil, title = nil }
     local main = pg:FindFirstChild("Main")
     if not main then return info end
-    -- หาข้อความที่มี "เมตร" / "Find" / "Quest"
     for _, d in ipairs(main:GetDescendants()) do
         if d:IsA("TextLabel") or d:IsA("TextButton") then
             local t = tostring(d.Text or "")
-            if t ~= "" and (#t < 120) then
+            if t ~= "" and #t < 100 then
                 local tl = t:lower()
-                if tl:find("เมตร") or tl:find("meter") or tl:find("find the")
-                   or tl:find("quest giver") or tl:find("เควสแนะนำ")
-                   or tl:find("track") or tl:find("recommended") then
+                if tl:find("mobile") or tl:find("robux") or tl:find("lag")
+                   or tl:find("fury") or tl:find("restore data") or tl:find("material") then
+                    -- skip
+                elseif tl:find("find the") or tl:find("quest giver")
+                    or t == "Recommended Quest" or t == "Track"
+                    or tl:find("เควสแนะนำ") or tl:find("เมตร") then
                     info.texts[#info.texts+1] = t
                     local meters = t:match("(%d+)%s*เมตร") or t:match("(%d+)%s*[Mm]eter")
                     if meters then info.distance = tonumber(meters) end
-                    if tl:find("find") or tl:find("quest") or tl:find("เควส") then
-                        info.title = info.title or t
+                    if tl:find("find the") or tl:find("quest giver") then
+                        info.title = t
                     end
                 end
             end
@@ -346,10 +348,18 @@ local function findQuestGiver(quest)
     return best, bestD
 end
 
--- รวมแหล่งหาเป้า NPC
+-- รวมแหล่งหาเป้า NPC (NPCs ก่อน — GetBestQuestNPC ค้างบ่อย)
 local function resolveNpcTarget(quest)
-    -- 1) GetBestQuestNPC
-    local res, err = tryGetBestQuestNPC()
+    local part, dist = findQuestGiver(quest)
+    if part then
+        log(string.format("เจอ NPC: %s (%.0f studs)", part.Parent and part.Parent.Name or part.Name, dist or 0), "G")
+        return part.Position, "workspace.NPCs"
+    end
+
+    local ui = readCompassUI()
+    if ui.title then log("เข็มทิศ UI: " .. ui.title, "O") end
+
+    local res, err = tryGetBestQuestNPC(1.5)
     if res ~= nil then
         log("GetBestQuestNPC → " .. dumpValue(res), "G")
         local p = posFromAny(res)
@@ -357,24 +367,11 @@ local function resolveNpcTarget(quest)
             p = posFromAny(res.NPC or res.npc or res.Object or res.Position or res.CFrame)
         end
         if p then return p, "GetBestQuestNPC" end
-    else
-        log("GetBestQuestNPC: " .. tostring(err), "S")
+    elseif err then
+        log("GetBestQuestNPC ข้าม: " .. tostring(err), "S")
     end
 
-    -- 2) NPCs ในแมพ (โหลดแล้ว)
-    local part, dist = findQuestGiver(quest)
-    if part then
-        log(string.format("เจอ NPC ในแมพ: %s (%.0f studs)", part.Parent and part.Parent.Name or part.Name, dist), "G")
-        return part.Position, "workspace.NPCs"
-    end
-
-    -- 3) UI เข็มทิศ (อย่างน้อยบอกว่าระบบแนะนำอะไร)
-    local ui = readCompassUI()
-    if #ui.texts > 0 then
-        log("UI เข็มทิศ: " .. table.concat(ui.texts, " | "), "O")
-    end
-
-    return nil, "ยังหาเป้าไม่ได้ (NPC ยังไม่โหลด/เข็มทิศยังไม่ชี้)"
+    return nil, "NPC ยังไม่โหลด — จะบินใกล้มอนเพื่อสตรีมเกาะ"
 end
 
 local function findMob(mobName)
