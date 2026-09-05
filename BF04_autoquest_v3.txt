@@ -669,6 +669,22 @@ end
 local function directRemoteAttack(mobTarget, mobName)
     if not mobTarget or not mobTarget.Parent then return end
     local rAttack, rHit = getCombatRemotes()
+
+    -- ⭐ สไตล์ MUXHUB: ขยาย Hitbox มอนเป้าหมายให้ใหญ่ 50x50x50 + ห้ามขยับ
+    -- แล้วลอยเหนือหัว 40 studs ก็ยังตีโดน (ระยะ hitbox ครอบคลุม)
+    pcall(function()
+        local mhum = mobTarget:FindFirstChildOfClass("Humanoid")
+        local mhrp = mobTarget:FindFirstChild("HumanoidRootPart")
+        if mhum then
+            mhum.PlatformStand = true
+            mhum.Sit = true
+        end
+        if mhrp then
+            mhrp.CanCollide = false
+            mhrp.Size = Vector3.new(50, 50, 50)
+        end
+    end)
+
     pcall(function()
         local char = LP.Character
         if char then
@@ -741,6 +757,47 @@ local LAST_MOB_NAME = ""
 local LAST_MOB_POS = nil
 local PATROL_I = 0
 local IGNORE_MOBS = {}
+
+-- ⭐ FastAttack สไตล์ MUXHUB: ปลดล็อค CombatFramework แล้วปลอมคลิก
+-- ให้เกมยิง RegisterAttack/RegisterHit ผ่าน pipeline ปกติเอง = เซิร์ฟเวอร์รับดาเมจแน่นอน
+local FAST_ATTACK_ON = false
+task.spawn(function()
+    local okCF, CombatFrameworkR = pcall(function()
+        return require(LP.PlayerScripts:WaitForChild("CombatFramework", 10))
+    end)
+    local okCS, CameraShakerR = pcall(function()
+        return require(RS:WaitForChild("Util"):WaitForChild("CameraShaker", 10))
+    end)
+    if not okCF or not CombatFrameworkR or not CombatFrameworkR.activeController then
+        log("CombatFramework require ไม่ได้ → ใช้ remote ยิงตรงแทน", "Y")
+        return
+    end
+    log("FastAttack Engine พร้อม ✓", "G")
+    local vu = game:GetService("VirtualUser")
+    while true do
+        task.wait()
+        if FAST_ATTACK_ON and AUTO_ON and _G.BF04V3_LOOP then
+            pcall(function()
+                local c = CombatFrameworkR.activeController
+                c.attacking = false
+                c.blocking = false
+                c.timeToNextAttack = tick() - 1
+                c.timeToNextBlock = 0
+                c.increment = 3
+                c.hitboxMagnitude = 120
+                local char = LP.Character
+                if char then
+                    if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then hum.Sit = false end
+                end
+                vu:CaptureController()
+                vu:Button1Down(Vector2.new(1280, 672))
+                if okCS and CameraShakerR then CameraShakerR:Stop() end
+            end)
+        end
+    end
+end)
 
 local function mainLoop()
     log("=== START AUTO V3 Sea 3 ===", "Y")
@@ -908,6 +965,7 @@ local function mainLoop()
                 local lastHp = initialHp
                 local attackTicks = 0
                 local stuckNoDmgCount = 0
+                FAST_ATTACK_ON = true
 
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04V3_LOOP do
                     local myChar, _, myHum = getChar()
@@ -923,8 +981,8 @@ local function mainLoop()
                         local hrpNow = myChar:FindFirstChild("HumanoidRootPart")
                         if hrpNow then
                             applyBodyVelocity(hrpNow)
-                            -- เกาะเหนือหัวมอน 4-5 studs เพื่อให้อยู่ใน Hitbox ระยะอาวุธ
-                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 5, 0)
+                            -- ลอยเหนือหัวมอน 40 studs (hitbox มอนถูกขยาย 50 แล้ว ตีโดนแน่นอน)
+                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 40, 0)
                         end
                         if os.clock() - lastCamT >= 0.2 then
                             lastCamT = os.clock()
@@ -936,7 +994,6 @@ local function mainLoop()
                         end
                     end
 
-                    directRemoteAttack(v, qdata.mob)
                     attackTicks += 1
 
                     -- Log เช็คว่าเลือดลดหรือไม่ ทุก 1.5 วินาที
@@ -963,11 +1020,13 @@ local function mainLoop()
 
                     task.wait(0.05)
                 end
+                FAST_ATTACK_ON = false
             end
         end)
     end
     stopTween()
     releaseControl()
+    FAST_ATTACK_ON = false
     log("=== STOP AUTO ===", "R")
 end
 
