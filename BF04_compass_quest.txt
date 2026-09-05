@@ -1,0 +1,636 @@
+--[[ ═══════════════════════════════════════════════════════════════════
+    BF04 Compass Quest — ต้นแบบฟาร์มตามเข็มทิศเกม (ไม่ฝังพิกัดเกาะ)
+    แนวคิด:
+      1) อ่าน RS.Quests → เลือกเควสที่ LevelReq ตรงเลเวลเรา
+      2) ถามเกม GetBestQuestNPC / อ่าน UI เข็มทิศ / หา Quest Giver ใน NPCs
+      3) บินไปตามทิศ → StartQuest
+      4) ตีมอนตาม Task ในเควส
+      5) ครบแล้ววนใหม่
+    ถ้าใช้ได้ = ใช้ได้ทั้งเกม ไม่ต้องอัปพิกัดทุกแพตช์
+    ═══════════════════════════════════════════════════════════════════ ]]
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local VirtualUser = game:GetService("VirtualUser")
+
+local LP = Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+_G.BF04C_ON = false
+local FLY_SPEED = 180
+
+-- ── GUI ────────────────────────────────────────────────────────────
+local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
+local sg = Instance.new("ScreenGui")
+sg.Name = "BF04CompassGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 380, 0, 420); frame.Position = UDim2.new(0, 10, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(12, 14, 20); frame.BorderSizePixel = 0
+frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -40, 0, 24); title.Position = UDim2.new(0, 10, 0, 2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(255, 200, 100)
+title.Text = "BF04 Compass Quest (ต้นแบบตามเข็มทิศ)"
+title.Font = Enum.Font.GothamBold; title.TextSize = 12
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 20); closeBtn.Position = UDim2.new(1, -28, 0, 3)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120, 20, 20); closeBtn.TextColor3 = Color3.new(1, 1, 1)
+closeBtn.Text = "X"; closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 12
+closeBtn.BorderSizePixel = 0; closeBtn.Parent = frame
+
+local function mkBtn(txt, x, y, w, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, w, 0, 28); b.Position = UDim2.new(0, x, 0, y)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 12
+    b.BorderSizePixel = 0; b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
+    return b
+end
+
+local autoBtn = mkBtn("AUTO: OFF", 8, 30, 120, Color3.fromRGB(30, 120, 50))
+local dumpBtn = mkBtn("Dump เข็มทิศ/Data", 134, 30, 140, Color3.fromRGB(100, 80, 40))
+local copyBtn = mkBtn("Copy", 280, 30, 90, Color3.fromRGB(30, 100, 50))
+
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 64)
+statusLbl.BackgroundTransparency = 1; statusLbl.TextColor3 = Color3.fromRGB(200, 200, 210)
+statusLbl.Text = "..."; statusLbl.Font = Enum.Font.Code; statusLbl.TextSize = 11
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left; statusLbl.TextWrapped = true
+statusLbl.Parent = frame
+
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -16, 1, -112); scroll.Position = UDim2.new(0, 8, 0, 104)
+scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 14); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+local lay = Instance.new("UIListLayout"); lay.SortOrder = Enum.SortOrder.LayoutOrder; lay.Parent = scroll
+
+local copyLines, order = {}, 0
+local cols = {
+    G = Color3.fromRGB(80, 255, 120), Y = Color3.fromRGB(255, 210, 0),
+    R = Color3.fromRGB(255, 80, 80),  B = Color3.fromRGB(140, 160, 255),
+    S = Color3.fromRGB(150, 150, 160), O = Color3.fromRGB(255, 160, 50),
+}
+local function log(txt, c)
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -8, 0, 14); l.BackgroundTransparency = 1
+    l.Font = Enum.Font.Code; l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextColor3 = cols[c] or cols.S
+    l.Text = string.format("[%s] %s", os.date("%H:%M:%S"), txt)
+    l.LayoutOrder = order; l.Parent = scroll
+    table.insert(copyLines, l.Text)
+    scroll.CanvasPosition = Vector2.new(0, lay.AbsoluteContentSize.Y)
+end
+
+-- ── Helpers ────────────────────────────────────────────────────────
+local function getChar()
+    local c = LP.Character
+    local h = c and c:FindFirstChild("HumanoidRootPart")
+    local hum = c and c:FindFirstChildOfClass("Humanoid")
+    if c and h and hum and hum.Health > 0 then return c, h, hum end
+end
+
+local function getLevel()
+    local ok, lv = pcall(function() return LP.Data.Level.Value end)
+    return (ok and lv) or 1
+end
+
+local CommF
+local function getCommF()
+    if CommF and CommF.Parent then return CommF end
+    local ok, r = pcall(function()
+        return RS:WaitForChild("Remotes", 5):WaitForChild("CommF_", 5)
+    end)
+    if ok then CommF = r end
+    return CommF
+end
+
+local RegisterAttack, RegisterHit
+local function getCombatRemotes()
+    if RegisterAttack and RegisterHit then return RegisterAttack, RegisterHit end
+    pcall(function()
+        local net = RS:FindFirstChild("Modules") and RS.Modules:FindFirstChild("Net")
+        if net then
+            RegisterAttack = net:FindFirstChild("RE/RegisterAttack")
+            RegisterHit = net:FindFirstChild("RE/RegisterHit")
+        end
+    end)
+    return RegisterAttack, RegisterHit
+end
+
+local function setNoclip()
+    local c = LP.Character
+    if not c then return end
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("BasePart") then p.CanCollide = false end
+    end
+end
+
+local currentTween
+local function flyTo(posOrCF, label)
+    local _, hrp = getChar()
+    if not hrp then return false end
+    setNoclip()
+    local dest = typeof(posOrCF) == "CFrame" and posOrCF
+        or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
+    local dist = (hrp.Position - dest.Position).Magnitude
+    log(string.format("บิน→%s %.0f studs", label or "เป้า", dist), "B")
+    if dist < 18 then
+        hrp.CFrame = dest
+        return true
+    end
+    local spd = FLY_SPEED
+    if dist > 1200 then spd = 150 end
+    if currentTween then pcall(function() currentTween:Cancel() end) end
+    local tw = TweenService:Create(hrp,
+        TweenInfo.new(dist / spd, Enum.EasingStyle.Linear), { CFrame = dest })
+    currentTween = tw
+    tw:Play()
+    tw.Completed:Wait()
+    currentTween = nil
+    local _, h2 = getChar()
+    if not h2 then return false end
+    local left = (h2.Position - dest.Position).Magnitude
+    if left <= 40 then
+        h2.CFrame = dest
+        return true
+    end
+    log(string.format("ยังไม่ถึง (เหลือ %.0f)", left), "Y")
+    return false
+end
+
+-- ── อ่าน RS.Quests → เลือกเควสตามเลเวล ─────────────────────────────
+local QuestsMod
+local function getQuests()
+    if QuestsMod then return QuestsMod end
+    local ok, m = pcall(function() return require(RS:WaitForChild("Quests", 5)) end)
+    if ok and type(m) == "table" then QuestsMod = m end
+    return QuestsMod
+end
+
+-- คืน { qName, qNum, mob, need, levelReq, displayName }
+local function pickQuestForLevel(lv)
+    local data = getQuests()
+    if not data then return nil end
+    local best = nil
+    for qName, entry in pairs(data) do
+        if type(entry) == "table" then
+            for num, sub in pairs(entry) do
+                if type(sub) == "table" and type(sub.LevelReq) == "number"
+                   and sub.LevelReq <= lv and type(sub.Task) == "table" then
+                    local mob, need = next(sub.Task)
+                    if mob and type(need) == "number" then
+                        local cand = {
+                            qName = qName,
+                            qNum = tonumber(num) or num,
+                            mob = mob,
+                            need = need,
+                            levelReq = sub.LevelReq,
+                            displayName = sub.Name or mob,
+                        }
+                        if not best or cand.levelReq > best.levelReq
+                           or (cand.levelReq == best.levelReq and cand.qNum > best.qNum) then
+                            best = cand
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- ── หาเป้าเข็มทิศ / NPC ────────────────────────────────────────────
+local function tryGetBestQuestNPC()
+    local rem = RS:FindFirstChild("Remotes") and RS.Remotes:FindFirstChild("GetBestQuestNPC")
+    if not rem then return nil, "ไม่มี GetBestQuestNPC" end
+    local ok, res = pcall(function() return rem:InvokeServer() end)
+    if not ok then return nil, "Invoke error: " .. tostring(res) end
+    return res, nil
+end
+
+local function posFromAny(v)
+    if typeof(v) == "Vector3" then return v end
+    if typeof(v) == "CFrame" then return v.Position end
+    if typeof(v) == "Instance" then
+        if v:IsA("Model") then
+            local h = v:FindFirstChild("HumanoidRootPart") or v:FindFirstChildWhichIsA("BasePart")
+            return h and h.Position
+        elseif v:IsA("BasePart") then
+            return v.Position
+        end
+    end
+    if type(v) == "table" then
+        if typeof(v.Position) == "Vector3" then return v.Position end
+        if typeof(v.CFrame) == "CFrame" then return v.CFrame.Position end
+        if v[1] and typeof(v[1]) == "number" and v[3] then
+            return Vector3.new(v[1], v[2], v[3])
+        end
+    end
+end
+
+local function dumpValue(v, depth)
+    depth = depth or 0
+    if depth > 2 then return "..." end
+    local t = typeof(v)
+    if t == "Instance" then
+        local p = posFromAny(v)
+        local extra = p and string.format(" @%.0f,%.0f,%.0f", p.X, p.Y, p.Z) or ""
+        return v.ClassName .. ":" .. v.Name .. extra
+    elseif t == "Vector3" then
+        return string.format("V3(%.1f,%.1f,%.1f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then
+        local p = v.Position
+        return string.format("CF(%.1f,%.1f,%.1f)", p.X, p.Y, p.Z)
+    elseif t == "table" then
+        local parts = {}
+        local n = 0
+        for k, vv in pairs(v) do
+            n += 1
+            if n > 10 then parts[#parts+1] = "..." break end
+            parts[#parts+1] = tostring(k) .. "=" .. dumpValue(vv, depth + 1)
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    end
+    return tostring(v)
+end
+
+-- อ่าน UI เข็มทิศ / เควสแนะนำ (ข้อความระยะ + ชื่อ)
+local function readCompassUI()
+    local info = { texts = {}, distance = nil, title = nil }
+    local main = pg:FindFirstChild("Main")
+    if not main then return info end
+    -- หาข้อความที่มี "เมตร" / "Find" / "Quest"
+    for _, d in ipairs(main:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local t = tostring(d.Text or "")
+            if t ~= "" and (#t < 120) then
+                local tl = t:lower()
+                if tl:find("เมตร") or tl:find("meter") or tl:find("find the")
+                   or tl:find("quest giver") or tl:find("เควสแนะนำ")
+                   or tl:find("track") or tl:find("recommended") then
+                    info.texts[#info.texts+1] = t
+                    local meters = t:match("(%d+)%s*เมตร") or t:match("(%d+)%s*[Mm]eter")
+                    if meters then info.distance = tonumber(meters) end
+                    if tl:find("find") or tl:find("quest") or tl:find("เควส") then
+                        info.title = info.title or t
+                    end
+                end
+            end
+        end
+    end
+    return info
+end
+
+-- หา Quest Giver ใน workspace.NPCs ที่ชื่อเกี่ยวกับเควส/มอน
+local function findQuestGiver(quest)
+    local folder = Workspace:FindFirstChild("NPCs")
+    if not folder then return nil end
+    local _, myHrp = getChar()
+    local best, bestD = nil, math.huge
+    local keys = {}
+    if quest then
+        -- "Dragon Crew Warrior" → ลอง "Dragon Crew"
+        local mob = quest.mob or ""
+        local words = {}
+        for w in mob:gmatch("%S+") do words[#words+1] = w end
+        if #words >= 2 then
+            keys[#keys+1] = words[1] .. " " .. words[2]
+        end
+        keys[#keys+1] = mob
+        keys[#keys+1] = quest.displayName or ""
+        keys[#keys+1] = quest.qName or ""
+    end
+    keys[#keys+1] = "Quest Giver"
+    for _, npc in ipairs(folder:GetChildren()) do
+        local nl = npc.Name:lower()
+        local hit = nl:find("quest giver", 1, true) or nl:find("questgiver", 1, true)
+        if not hit and quest then
+            for _, k in ipairs(keys) do
+                if k ~= "" and nl:find(k:lower(), 1, true) then hit = true break end
+            end
+        end
+        if hit then
+            local part = npc:FindFirstChild("HumanoidRootPart")
+                or npc:FindFirstChildWhichIsA("BasePart")
+            if part then
+                local d = myHrp and (part.Position - myHrp.Position).Magnitude or 0
+                if d < bestD then bestD = d; best = part end
+            end
+        end
+    end
+    return best, bestD
+end
+
+-- รวมแหล่งหาเป้า NPC
+local function resolveNpcTarget(quest)
+    -- 1) GetBestQuestNPC
+    local res, err = tryGetBestQuestNPC()
+    if res ~= nil then
+        log("GetBestQuestNPC → " .. dumpValue(res), "G")
+        local p = posFromAny(res)
+        if not p and type(res) == "table" then
+            p = posFromAny(res.NPC or res.npc or res.Object or res.Position or res.CFrame)
+        end
+        if p then return p, "GetBestQuestNPC" end
+    else
+        log("GetBestQuestNPC: " .. tostring(err), "S")
+    end
+
+    -- 2) NPCs ในแมพ (โหลดแล้ว)
+    local part, dist = findQuestGiver(quest)
+    if part then
+        log(string.format("เจอ NPC ในแมพ: %s (%.0f studs)", part.Parent and part.Parent.Name or part.Name, dist), "G")
+        return part.Position, "workspace.NPCs"
+    end
+
+    -- 3) UI เข็มทิศ (อย่างน้อยบอกว่าระบบแนะนำอะไร)
+    local ui = readCompassUI()
+    if #ui.texts > 0 then
+        log("UI เข็มทิศ: " .. table.concat(ui.texts, " | "), "O")
+    end
+
+    return nil, "ยังหาเป้าไม่ได้ (NPC ยังไม่โหลด/เข็มทิศยังไม่ชี้)"
+end
+
+local function findMob(mobName)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+    local _, myHrp = getChar()
+    local best, bestD = nil, math.huge
+    for _, e in ipairs(enemies:GetChildren()) do
+        if e.Name:find(mobName, 1, true) then
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            local hrp = e:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+                local d = myHrp and (hrp.Position - myHrp.Position).Magnitude or 0
+                if d < bestD then bestD = d; best = e end
+            end
+        end
+    end
+    return best, bestD
+end
+
+local function equipWeapon()
+    local char, _, hum = getChar()
+    if not char or not hum then return end
+    if char:FindFirstChildOfClass("Tool") then return end
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return end
+    for _, t in ipairs(bp:GetChildren()) do
+        if t:IsA("Tool") then
+            local tip = tostring(t.ToolTip or "")
+            if tip == "Melee" or tip == "Sword" or tip == "" then
+                pcall(function() hum:EquipTool(t) end)
+                return
+            end
+        end
+    end
+end
+
+local function attackMob(mob)
+    equipWeapon()
+    local rA, rH = getCombatRemotes()
+    local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
+    if not part then return end
+    pcall(function()
+        if rA then
+            rA:FireServer(0); rA:FireServer(1); rA:FireServer(2); rA:FireServer(3)
+        end
+        if rH then rH:FireServer(part, { { mob, part } }) end
+        VirtualUser:CaptureController()
+        VirtualUser:Button1Down(Vector2.new(1280, 672))
+    end)
+end
+
+local function questUIVisible()
+    local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
+    return ok and vis
+end
+
+local function questTitle()
+    local ok, t = pcall(function() return pg.Main.Quest.Container.QuestTitle.Title.Text end)
+    return (ok and t) or ""
+end
+
+local function refreshStatus(quest)
+    local lv = getLevel()
+    local q = quest and string.format("%s#%s %s", quest.qName, tostring(quest.qNum), quest.mob) or "-"
+    local ui = questUIVisible() and ("ON:" .. questTitle()) or "OFF"
+    statusLbl.Text = string.format("Lv.%d | QuestUI %s\nเป้า: %s", lv, ui, q)
+end
+
+-- ── Dump ───────────────────────────────────────────────────────────
+local function dumpCompass()
+    log("════ Dump เข็มทิศ / Data ════", "Y")
+    local lv = getLevel()
+    log("Level=" .. lv .. " PlaceId=" .. tostring(game.PlaceId), "B")
+    local quest = pickQuestForLevel(lv)
+    if quest then
+        log(string.format("เลือกจาก RS.Quests: %s#%s LvReq=%d mob=%s x%d",
+            quest.qName, tostring(quest.qNum), quest.levelReq, quest.mob, quest.need), "G")
+    else
+        log("เลือกเควสจาก RS.Quests ไม่ได้", "R")
+    end
+    local res, err = tryGetBestQuestNPC()
+    if res ~= nil then
+        log("GetBestQuestNPC raw = " .. dumpValue(res), "G")
+    else
+        log("GetBestQuestNPC: " .. tostring(err), "R")
+    end
+    local ui = readCompassUI()
+    if #ui.texts == 0 then
+        log("UI เข็มทิศ: ไม่เจอข้อความ (อาจยังไม่เปิด Track)", "O")
+    else
+        for _, t in ipairs(ui.texts) do log("  UI: " .. t, "O") end
+        if ui.distance then log("  ระยะจาก UI ≈ " .. ui.distance .. " ม.", "O") end
+    end
+    local part = findQuestGiver(quest)
+    if part then
+        local p = part.Position
+        log(string.format("NPC ในแมพ: %s @ %.1f, %.1f, %.1f",
+            part.Parent and part.Parent.Name or "?", p.X, p.Y, p.Z), "G")
+    else
+        log("ยังไม่มี Quest Giver ใน workspace.NPCs", "Y")
+    end
+    -- QuestTracingLine effect?
+    pcall(function()
+        local qtl = RS:FindFirstChild("Effect") and RS.Effect:FindFirstChild("Container")
+            and RS.Effect.Container:FindFirstChild("QuestTracingLine")
+        if qtl then
+            log("มี Effect.QuestTracingLine [" .. qtl.ClassName .. "]", "B")
+        end
+    end)
+    log("════ จบ Dump ════", "Y")
+end
+
+-- ── Main loop ──────────────────────────────────────────────────────
+local function mainLoop()
+    log("=== START Compass Auto ===", "Y")
+    local cf = getCommF()
+    if not cf then log("ไม่มี CommF_", "R") return end
+    getCombatRemotes()
+
+    while _G.BF04C_ON do
+        local ok, err = pcall(function()
+            local lv = getLevel()
+            local quest = pickQuestForLevel(lv)
+            if not quest then
+                log("ไม่มีเควสที่ LevelReq <= " .. lv, "R")
+                task.wait(3)
+                return
+            end
+            refreshStatus(quest)
+
+            -- ── ยังไม่มีเควส → หา NPC ตามเข็มทิศ/Data ──
+            if not questUIVisible() then
+                local pos, src = resolveNpcTarget(quest)
+                if not pos then
+                    log("รอเป้า NPC... (" .. tostring(src) .. ")", "Y")
+                    -- ลองบินไปมอนเผื่อเกาะโหลด NPC
+                    local mob, md = findMob(quest.mob)
+                    if mob and md and md > 80 then
+                        local mhrp = mob:FindFirstChild("HumanoidRootPart")
+                        if mhrp then flyTo(mhrp.CFrame * CFrame.new(0, 20, 0), "ใกล้เกาะมอน") end
+                    end
+                    task.wait(1.5)
+                    return
+                end
+                local _, hrp = getChar()
+                local dist = hrp and (hrp.Position - pos).Magnitude or 9999
+                if dist > 22 then
+                    flyTo(CFrame.new(pos + Vector3.new(0, 4, 0)), "NPC/" .. src)
+                    return
+                end
+                -- ใกล้แล้ว รับเควส
+                if hrp then hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
+                task.wait(0.35)
+                log(string.format("StartQuest(%s, %s)", quest.qName, tostring(quest.qNum)), "Y")
+                local iok, ires = pcall(function()
+                    return cf:InvokeServer("StartQuest", quest.qName, quest.qNum)
+                end)
+                log("ผล: ok=" .. tostring(iok) .. " res=" .. tostring(ires), "B")
+                local w = 0
+                while not questUIVisible() and w < 20 and _G.BF04C_ON do
+                    task.wait(0.1); w += 1
+                end
+                if questUIVisible() then
+                    log("รับเควสสำเร็จ: " .. questTitle(), "G")
+                else
+                    log("ยังไม่เปิด UI — รอ/ลองใหม่", "R")
+                    task.wait(1.5)
+                end
+                return
+            end
+
+            -- ── มีเควสแล้ว → เช็คว่าตรงมอนไหม ──
+            local titleTxt = questTitle()
+            if titleTxt ~= "" and not titleTxt:lower():find(quest.mob:lower():sub(1, 8), 1, true)
+               and not titleTxt:find(quest.displayName or "", 1, true) then
+                log("เควสไม่ตรง (" .. titleTxt .. ") → Abandon", "Y")
+                pcall(function() cf:InvokeServer("AbandonQuest") end)
+                task.wait(0.8)
+                return
+            end
+
+            -- ── ตีมอน ──
+            local mob, md = findMob(quest.mob)
+            if not mob then
+                log("ไม่เจอ " .. quest.mob .. " ใน Enemies → รอโหลด", "Y")
+                task.wait(1.2)
+                return
+            end
+            local mhrp = mob:FindFirstChild("HumanoidRootPart")
+            local mhum = mob:FindFirstChildOfClass("Humanoid")
+            if not mhrp or not mhum then return end
+
+            log(string.format("สู้ %s HP%.0f (d=%.0f)", mob.Name, mhum.Health, md or 0), "Y")
+            while mob.Parent and mhum.Parent and mhum.Health > 0
+                  and questUIVisible() and _G.BF04C_ON do
+                local _, myHrp = getChar()
+                if not myHrp then break end
+                mhrp = mob:FindFirstChild("HumanoidRootPart")
+                if not mhrp then break end
+                setNoclip()
+                myHrp.CFrame = mhrp.CFrame * CFrame.new(0, 12, 0)
+                pcall(function()
+                    mhrp.Size = Vector3.new(40, 40, 40)
+                    mhrp.CanCollide = false
+                    mhum.PlatformStand = true
+                end)
+                attackMob(mob)
+                task.wait()
+            end
+            log(mob.Name .. " จบรอบ", "G")
+            task.wait(0.4)
+        end)
+        if not ok then
+            log("Loop error: " .. tostring(err), "R")
+            task.wait(1)
+        else
+            task.wait(0.2)
+        end
+    end
+    log("=== STOP ===", "R")
+end
+
+-- ── ปุ่ม ───────────────────────────────────────────────────────────
+closeBtn.MouseButton1Click:Connect(function()
+    _G.BF04C_ON = false
+    sg:Destroy()
+end)
+
+autoBtn.MouseButton1Click:Connect(function()
+    _G.BF04C_ON = not _G.BF04C_ON
+    autoBtn.Text = _G.BF04C_ON and "AUTO: ON" or "AUTO: OFF"
+    autoBtn.BackgroundColor3 = _G.BF04C_ON
+        and Color3.fromRGB(180, 40, 40) or Color3.fromRGB(30, 120, 50)
+    if _G.BF04C_ON then
+        task.spawn(mainLoop)
+    end
+end)
+
+dumpBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpCompass)
+end)
+
+copyBtn.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard
+    local body = table.concat({
+        "=== BF04 Compass Quest Report ===",
+        "Time: " .. os.date("%Y-%m-%d %H:%M:%S"),
+        "PlaceId: " .. tostring(game.PlaceId),
+        "Level: " .. getLevel(),
+        "",
+    }, "\n") .. "\n" .. table.concat(copyLines, "\n")
+    local ok = clip and pcall(clip, body)
+    copyBtn.Text = ok and "OK!" or "fail"
+    task.delay(1.2, function() if copyBtn.Parent then copyBtn.Text = "Copy" end end)
+end)
+
+task.spawn(function()
+    while sg.Parent do
+        if not _G.BF04C_ON then
+            refreshStatus(pickQuestForLevel(getLevel()))
+        end
+        task.wait(2)
+    end
+end)
+
+log("โหลด Compass Quest แล้ว", "G")
+log("1) กด Dump เข็มทิศ/Data ก่อน → Copy ส่งมาดู", "Y")
+log("2) ถ้าข้อมูลโอเค กด AUTO ทดลองวน", "Y")
+refreshStatus(pickQuestForLevel(getLevel()))
