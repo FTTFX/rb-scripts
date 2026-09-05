@@ -1442,6 +1442,31 @@ local function directRemoteAttack(mobTarget, mobName)
     -- (เควสนับแค่ตัวหลัก ดาเมจที่หลุดไปตัวอื่นคือเวลาที่เสียเปล่า)
     local othersEnemies = { { mobTarget, mainPart } }
 
+    -- Magnet เปิด = มอนถูกดึงมากองแล้ว → ยิง AoE ทั้งกองใน call เดียว
+    -- (เดิมยิงตัวเดียว มอนที่ดึงมาไม่โดนสักตัว รุมตีเราตายแทน — เควสทะเล 3 นับทุกตัวที่ตาย)
+    -- เซิร์ฟเวอร์เช็คระยะ 100 studs เทียบกับ part ที่ส่งไป กองที่ดึงมาอยู่ < 30 studs = โดนหมด
+    if MAGNET_ON then
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, e in ipairs(enemies:GetChildren()) do
+                if #othersEnemies >= 8 then break end
+                if e ~= mobTarget then
+                    local isBoss = string.find(e.Name, "Boss")
+                        or string.find(e.Name, "King")
+                        or string.find(e.Name, "Expert")
+                        or string.find(e.Name, "Leader")
+                    local eHum = e:FindFirstChild("Humanoid")
+                    local ePart = e:FindFirstChild("Head") or e:FindFirstChild("HumanoidRootPart")
+                    if not isBoss and eHum and eHum.Health > 0 and ePart
+                       and (not mobName or string.find(e.Name, mobName))
+                       and (ePart.Position - mainPart.Position).Magnitude < 100 then
+                        othersEnemies[#othersEnemies + 1] = { e, ePart }
+                    end
+                end
+            end
+        end
+    end
+
     -- 1. ไล่คอมโบ 0-3 (อาร์กิวเมนต์เดียว) เพื่อรีเซ็ตคูลดาวน์ฝั่งเซิร์ฟเวอร์
     pcall(function()
         if rAttack then
