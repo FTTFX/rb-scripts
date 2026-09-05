@@ -26,85 +26,125 @@ _G.BF04V3_ON = false          -- main toggle
 _G.BF04V3_MAGNET = false
 local FASTATTACK_ON = false
 
--- ── Quest Data (Sea 3: 1500-2600) ตรงกับ Xenon Hub ────────────────
+-- ── Quest Data: อ่านจาก RS.Quests ตอนรัน (ไม่ฝังชื่อเก่า) ────────
+-- พิกัด: หา NPC/มอนในแมพจริง | fallback เฉพาะที่สปายยืนยันแล้ว
+local QuestsCache = nil
+local function loadQuests()
+    if QuestsCache then return QuestsCache end
+    local ok, m = pcall(function() return require(RS:WaitForChild("Quests", 8)) end)
+    if ok and type(m) == "table" then QuestsCache = m end
+    return QuestsCache
+end
+
+-- พิกัดที่ยืนยันจาก Spy 2026-09-05 (แมพ Sea3 ใหม่) — นอกนั้นหาสด
+local KNOWN = {
+    ["Dragon Crew Warrior"] = {
+        npc = CFrame.new(6735.11, 126.99, -711.10),
+        mobCF = CFrame.new(6919.08, 55.07, -940.84),
+    },
+    ["Dragon Crew Archer"] = {
+        npc = CFrame.new(6735.11, 126.99, -711.10),
+        mobCF = CFrame.new(6919.08, 55.07, -940.84),
+    },
+}
+
+local function findLiveMobCF(mobName)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+    for _, e in ipairs(enemies:GetChildren()) do
+        if e.Name:find(mobName, 1, true) then
+            local hrp = e:FindFirstChild("HumanoidRootPart")
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            if hrp and hum and hum.Health > 0 then
+                return hrp.CFrame
+            end
+        end
+    end
+end
+
+local function findLiveNpcCF(mobName, qName)
+    local folder = Workspace:FindFirstChild("NPCs")
+    if not folder then return nil end
+    local keys = { "Quest Giver" }
+    if mobName then
+        local w = {}
+        for part in mobName:gmatch("%S+") do w[#w+1] = part end
+        if #w >= 2 then keys[#keys+1] = w[1] .. " " .. w[2] end
+        keys[#keys+1] = mobName
+    end
+    if qName then keys[#keys+1] = qName end
+    for _, npc in ipairs(folder:GetChildren()) do
+        local nl = npc.Name:lower()
+        for _, k in ipairs(keys) do
+            if k ~= "" and nl:find(k:lower(), 1, true) then
+                local p = npc:FindFirstChild("HumanoidRootPart")
+                    or npc:FindFirstChildWhichIsA("BasePart")
+                if p then return p.CFrame end
+            end
+        end
+    end
+end
+
+-- เลือกเควส LevelReq สูงสุดที่ <= level (ข้ามบอส Task=1 ถ้ามีตัวเลือกฟาร์ม)
 local function getQuestData(level)
     level = level or 1500
-    if level < 1525 then
-        return { mob = "Pirate Millionaire", qName = "PiratePortQuest", qNum = 1,
-            npc = CFrame.new(-290, 44, 5580), mobCF = CFrame.new(-194, 56, 5756) }
-    elseif level < 1575 then
-        return { mob = "Pistol Billionaire", qName = "PiratePortQuest", qNum = 2,
-            npc = CFrame.new(-290, 44, 5580), mobCF = CFrame.new(-83, 127, 6097) }
-    elseif level < 1600 then
-        return { mob = "Dragon Crew Warrior", qName = "DragonCrewQuest", qNum = 1,
-            npc = CFrame.new(6735.11, 126.99, -711.10), mobCF = CFrame.new(6919.08, 55.07, -940.84) }
-    elseif level < 1625 then
-        return { mob = "Dragon Crew Archer", qName = "DragonCrewQuest", qNum = 2,
-            npc = CFrame.new(6735.11, 126.99, -711.10), mobCF = CFrame.new(6919.08, 55.07, -940.84) }
-    elseif level < 1650 then
-        return { mob = "Female Islander", qName = "AmazonQuest2", qNum = 1,
-            npc = CFrame.new(5448, 605, 749), mobCF = CFrame.new(5801, 825, 994) }
-    elseif level < 1700 then
-        return { mob = "Giant Islander", qName = "AmazonQuest2", qNum = 2,
-            npc = CFrame.new(5448, 605, 749), mobCF = CFrame.new(4902, 670, 39) }
-    elseif level < 1725 then
-        return { mob = "Marine Commodore", qName = "MarineTreeIsland", qNum = 1,
-            npc = CFrame.new(2178, 29, -6739), mobCF = CFrame.new(2401, 123, -7589) }
-    elseif level < 1775 then
-        return { mob = "Marine Rear Admiral", qName = "MarineTreeIsland", qNum = 2,
-            npc = CFrame.new(2178, 29, -6739), mobCF = CFrame.new(3588, 229, -7085) }
-    elseif level < 1800 then
-        return { mob = "Fishman Raider", qName = "DeepForestIsland3", qNum = 1,
-            npc = CFrame.new(-10585, 332, -8759), mobCF = CFrame.new(-10941, 332, -8760) }
-    elseif level < 1825 then
-        return { mob = "Fishman Captain", qName = "DeepForestIsland3", qNum = 2,
-            npc = CFrame.new(-10585, 332, -8759), mobCF = CFrame.new(-11035, 332, -9087) }
-    elseif level < 1850 then
-        return { mob = "Forest Pirate", qName = "DeepForestIsland", qNum = 1,
-            npc = CFrame.new(-13233, 332, -7631), mobCF = CFrame.new(-13446, 413, -7760) }
-    elseif level < 1900 then
-        return { mob = "Mythological Pirate", qName = "DeepForestIsland", qNum = 2,
-            npc = CFrame.new(-13233, 332, -7631), mobCF = CFrame.new(-13510, 584, -6987) }
-    elseif level < 1975 then
-        return { mob = "Jungle Pirate", qName = "DeepForestIsland2", qNum = 1,
-            npc = CFrame.new(-12684, 391, -9900), mobCF = CFrame.new(-11778, 426, -10592) }
-    elseif level < 2000 then
-        return { mob = "Reborn Skeleton", qName = "HauntedQuest1", qNum = 1,
-            npc = CFrame.new(-9482, 142, 5565), mobCF = CFrame.new(-8764, 142, 5963) }
-    elseif level < 2025 then
-        return { mob = "Living Zombie", qName = "HauntedQuest1", qNum = 2,
-            npc = CFrame.new(-9482, 142, 5565), mobCF = CFrame.new(-10227, 421, 6161) }
-    elseif level < 2050 then
-        return { mob = "Demonic Soul", qName = "HauntedQuest2", qNum = 1,
-            npc = CFrame.new(-9518, 172, 6076), mobCF = CFrame.new(-9580, 6, 6194) }
-    elseif level < 2075 then
-        return { mob = "Posessed Mummy", qName = "HauntedQuest2", qNum = 2,
-            npc = CFrame.new(-9518, 172, 6076), mobCF = CFrame.new(-9580, 6, 6194) }
-    elseif level < 2100 then
-        return { mob = "Peanut Scout", qName = "NutsIslandQuest", qNum = 1,
-            npc = CFrame.new(-2103, 38, -10192), mobCF = CFrame.new(-1993, 187, -10103) }
-    elseif level < 2150 then
-        return { mob = "Peanut President", qName = "NutsIslandQuest", qNum = 2,
-            npc = CFrame.new(-2103, 38, -10192), mobCF = CFrame.new(-2215, 159, -10474) }
-    elseif level < 2200 then
-        return { mob = "Ice Cream Chef", qName = "IceCreamIslandQuest", qNum = 1,
-            npc = CFrame.new(-822, 66, -10964), mobCF = CFrame.new(-877, 118, -11032) }
-    elseif level < 2225 then
-        return { mob = "Ice Cream Commander", qName = "IceCreamIslandQuest", qNum = 2,
-            npc = CFrame.new(-822, 66, -10964), mobCF = CFrame.new(-877, 118, -11032) }
-    elseif level < 2250 then
-        return { mob = "Cookie Crafter", qName = "CakeQuest1", qNum = 1,
-            npc = CFrame.new(-2021, 38, -12028), mobCF = CFrame.new(-2322, 37, -12217) }
-    elseif level < 2275 then
-        return { mob = "Cake Guard", qName = "CakeQuest1", qNum = 2,
-            npc = CFrame.new(-2024, 38, -12026), mobCF = CFrame.new(-1418, 37, -12256) }
-    elseif level < 2300 then
-        return { mob = "Baking Staff", qName = "CakeQuest2", qNum = 1,
-            npc = CFrame.new(-1932, 38, -12848), mobCF = CFrame.new(-1980, 37, -12984) }
-    else
-        return { mob = "Head Baker", qName = "CakeQuest2", qNum = 2,
-            npc = CFrame.new(-1932, 38, -12848), mobCF = CFrame.new(-2252, 52, -13033) }
+    local data = loadQuests()
+    local bestFarm, bestBoss = nil, nil
+    if data then
+        for qName, entry in pairs(data) do
+            if type(entry) == "table" then
+                for num, sub in pairs(entry) do
+                    if type(sub) == "table" and type(sub.LevelReq) == "number"
+                       and sub.LevelReq <= level and type(sub.Task) == "table" then
+                        local mob, need = next(sub.Task)
+                        if mob and type(need) == "number" then
+                            local cand = {
+                                mob = mob,
+                                qName = qName,
+                                qNum = tonumber(num) or num,
+                                need = need,
+                                levelReq = sub.LevelReq,
+                            }
+                            if need <= 1 then
+                                if not bestBoss or cand.levelReq > bestBoss.levelReq then
+                                    bestBoss = cand
+                                end
+                            else
+                                if not bestFarm or cand.levelReq > bestFarm.levelReq
+                                   or (cand.levelReq == bestFarm.levelReq and cand.qNum > bestFarm.qNum) then
+                                    bestFarm = cand
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
     end
+    local pick = bestFarm or bestBoss
+    if not pick then
+        -- fallback ถ้า require ไม่ได้
+        return { mob = "Dragon Crew Warrior", qName = "DragonCrewQuest", qNum = 1,
+            npc = KNOWN["Dragon Crew Warrior"].npc, mobCF = KNOWN["Dragon Crew Warrior"].mobCF }
+    end
+
+    local known = KNOWN[pick.mob]
+    local npcCF = findLiveNpcCF(pick.mob, pick.qName)
+        or (known and known.npc)
+        or CFrame.new()
+    local mobCF = findLiveMobCF(pick.mob)
+        or (known and known.mobCF)
+        or npcCF
+
+    return {
+        mob = pick.mob,
+        qName = pick.qName,
+        qNum = pick.qNum,
+        npc = npcCF,
+        mobCF = mobCF,
+        need = pick.need,
+        levelReq = pick.levelReq,
+    }
 end
 
 local function getMyLevel()
