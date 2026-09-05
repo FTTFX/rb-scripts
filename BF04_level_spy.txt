@@ -116,7 +116,7 @@ local sg = Instance.new("ScreenGui")
 sg.Name = "BF04SpyGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 420, 0, 520); frame.Position = UDim2.new(0, 12, 0, 12)
+frame.Size = UDim2.new(0, 420, 0, 560); frame.Position = UDim2.new(0, 12, 0, 12)
 frame.BackgroundColor3 = Color3.fromRGB(14, 14, 20); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
 frame.Parent = sg
@@ -223,9 +223,13 @@ local btnSnapNpc = mkBtn("บันทึกเป็น NPC จริง", 8, y
 local btnSnapMob = mkBtn("บันทึกเป็น MOB จริง", 154, y0+64, 140, Color3.fromRGB(70, 70, 100))
 local btnRefresh = mkBtn("รีเฟรชสถานะ", 300, y0+64, 112, Color3.fromRGB(50, 50, 70))
 
+local btnDumpData = mkBtn("หาใน Data เกม", 8, y0+96, 130, Color3.fromRGB(160, 90, 30))
+local btnListNpc = mkBtn("ลิสต์ NPCs ทั้งหมด", 144, y0+96, 130, Color3.fromRGB(160, 90, 30))
+local btnAllMobs = mkBtn("มอนทั้งแมพ", 280, y0+96, 132, Color3.fromRGB(160, 90, 30))
+
 -- log
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -16, 1, -320); scroll.Position = UDim2.new(0, 8, 0, 320)
+scroll.Size = UDim2.new(1, -16, 1, -352); scroll.Position = UDim2.new(0, 8, 0, 352)
 scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -447,6 +451,224 @@ btnRefresh.MouseButton1Click:Connect(function()
     log("รีเฟรชสถานะแล้ว", "S")
 end)
 
+-- เก็บ NPC ที่พบจาก Data เพื่อบินไปได้
+local foundNpcs = {} -- { {name=, pos=} }
+
+local function shortVal(v, depth)
+    depth = depth or 0
+    if depth > 3 then return "..." end
+    local t = typeof(v)
+    if t == "string" then
+        if #v > 80 then return '"' .. v:sub(1, 80) .. '..."' end
+        return '"' .. v .. '"'
+    elseif t == "number" or t == "boolean" then
+        return tostring(v)
+    elseif t == "Vector3" then
+        return string.format("V3(%.1f,%.1f,%.1f)", v.X, v.Y, v.Z)
+    elseif t == "CFrame" then
+        local p = v.Position
+        return string.format("CF(%.1f,%.1f,%.1f)", p.X, p.Y, p.Z)
+    elseif t == "table" then
+        local parts = {}
+        local n = 0
+        for k, vv in pairs(v) do
+            n += 1
+            if n > 12 then parts[#parts+1] = "..." break end
+            parts[#parts+1] = tostring(k) .. "=" .. shortVal(vv, depth + 1)
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    elseif t == "Instance" then
+        return v.ClassName .. ":" .. v.Name
+    end
+    return t
+end
+
+local function dumpQuestModule()
+    log("── ReplicatedStorage.Quests (require) ──", "Y")
+    local mod = RS:FindFirstChild("Quests")
+    if not mod then
+        -- หาชื่อคล้าย
+        for _, c in ipairs(RS:GetChildren()) do
+            if c.Name:lower():find("quest") then
+                log("  เจอใกล้เคียง: " .. c.ClassName .. " " .. c.Name, "O")
+            end
+        end
+        log("  ✗ ไม่มี RS.Quests", "R")
+        return
+    end
+    log("  ✓ มี " .. mod.ClassName .. ":Quests", "G")
+    local ok, data = pcall(require, mod)
+    if not ok then
+        log("  require ล้ม: " .. tostring(data), "R")
+        return
+    end
+    if type(data) ~= "table" then
+        log("  require ได้ แต่ไม่ใช่ table: " .. typeof(data), "O")
+        return
+    end
+    -- ลิสต์ key ทั้งหมด (สั้น)
+    local keys = {}
+    for k in pairs(data) do keys[#keys+1] = tostring(k) end
+    table.sort(keys)
+    log("  keys ทั้งหมด (" .. #keys .. "): " .. table.concat(keys, ", "), "B")
+    -- โฟกัส Amazon / Hydra / selected
+    local want = {}
+    if selected then want[selected.q] = true end
+    want["AmazonQuest"] = true
+    want["AmazonQuest2"] = true
+    for _, k in ipairs(keys) do
+        local kl = k:lower()
+        if want[k] or kl:find("amazon") or kl:find("hydra") or kl:find("dragon") then
+            log("  ★ [" .. k .. "] = " .. shortVal(data[k]), "G")
+        end
+    end
+end
+
+local function listAllNpcs(filterOnly)
+    foundNpcs = {}
+    log("── workspace.NPCs ──", "Y")
+    local folder = Workspace:FindFirstChild("NPCs")
+    if not folder then
+        log("  ✗ ไม่มี workspace.NPCs", "R")
+        -- ลองหา folder อื่น
+        for _, name in ipairs({"NPC", "Npcs", "QuestNPCs", "Characters"}) do
+            if Workspace:FindFirstChild(name) then
+                log("  มี Workspace." .. name .. " แทน", "O")
+            end
+        end
+        return
+    end
+    local kids = folder:GetChildren()
+    log("  จำนวน NPC: " .. #kids, "B")
+    local keywords = { "amazon", "hydra", "dragon", "quest", "island", "crew", "warrior", "archer" }
+    local shown = 0
+    for _, n in ipairs(kids) do
+        local part = n:FindFirstChild("HumanoidRootPart")
+            or n:FindFirstChildWhichIsA("BasePart", true)
+        local pos = part and part.Position
+        local nl = n.Name:lower()
+        local hit = not filterOnly
+        if filterOnly then
+            for _, kw in ipairs(keywords) do
+                if nl:find(kw, 1, true) then hit = true break end
+            end
+            if selected and nl:find(selected.mob:lower():sub(1, 6), 1, true) then hit = true end
+        end
+        if hit then
+            shown += 1
+            if pos then
+                foundNpcs[#foundNpcs+1] = { name = n.Name, pos = pos }
+                log(string.format("  • %s @ %.1f, %.1f, %.1f", n.Name, pos.X, pos.Y, pos.Z), "G")
+                log("    CFrame.new(" .. string.format("%.2f, %.2f, %.2f", pos.X, pos.Y, pos.Z) .. ")", "S")
+            else
+                log("  • " .. n.Name .. " (ไม่มี BasePart)", "O")
+            end
+        end
+    end
+    if filterOnly and shown == 0 then
+        log("  ไม่เจอชื่อที่เกี่ยวกับ Amazon/Hydra/Dragon — กด 'ลิสต์ NPCs ทั้งหมด'", "R")
+    elseif not filterOnly then
+        log("  แสดงครบ " .. shown .. " ตัว", "B")
+    else
+        log("  ตรงคีย์เวิร์ด " .. shown .. " ตัว (จาก " .. #kids .. ")", "B")
+    end
+end
+
+local function listAllMobs()
+    log("── workspace.Enemies ทั้งแมพ ──", "Y")
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then
+        log("  ✗ ไม่มี Enemies", "R")
+        return
+    end
+    local counts = {}
+    local samples = {}
+    for _, e in ipairs(enemies:GetChildren()) do
+        local hum = e:FindFirstChildOfClass("Humanoid")
+        local hrp = e:FindFirstChild("HumanoidRootPart")
+        if hum and hum.Health > 0 then
+            counts[e.Name] = (counts[e.Name] or 0) + 1
+            if hrp and not samples[e.Name] then
+                samples[e.Name] = hrp.Position
+            end
+        end
+    end
+    local names = {}
+    for n, c in pairs(counts) do names[#names+1] = n end
+    table.sort(names)
+    if #names == 0 then
+        log("  ไม่มีมอนใน Enemies ตอนนี้เลย (streaming/ไกลเกาะ?)", "R")
+        return
+    end
+    log("  ชนิดมอน: " .. #names, "B")
+    for _, n in ipairs(names) do
+        local p = samples[n]
+        if p then
+            log(string.format("  %s x%d @ %.0f, %.0f, %.0f", n, counts[n], p.X, p.Y, p.Z), "G")
+            log("    CFrame.new(" .. string.format("%.2f, %.2f, %.2f", p.X, p.Y, p.Z) .. ")", "S")
+        else
+            log(string.format("  %s x%d", n, counts[n]), "G")
+        end
+    end
+    if selected then
+        local found = false
+        for _, n in ipairs(names) do
+            if n:find(selected.mob, 1, true) then found = true break end
+        end
+        if found then
+            log("✓ มี '" .. selected.mob .. "' ในแมพ — พิกัดเก่าผิด/ไกล", "G")
+        else
+            log("✗ ไม่มี '" .. selected.mob .. "' ใน Enemies ตอนนี้", "R")
+        end
+    end
+end
+
+local function dumpGameData()
+    log("════ หาใน Data เกม ════", "Y")
+    log("PlaceId=" .. tostring(game.PlaceId) .. " Sea=" .. tostring(getSea()) .. " Lv=" .. getLevel(), "B")
+    -- 1 Quests module
+    pcall(dumpQuestModule)
+    -- 2 NPCs related
+    pcall(function() listAllNpcs(true) end)
+    -- 3 All mobs
+    pcall(listAllMobs)
+    -- 4 LP.Data quest-ish
+    log("── LP.Data (คีย์ที่เกี่ยวกับเควส) ──", "Y")
+    pcall(function()
+        local data = LP:FindFirstChild("Data")
+        if not data then log("  ไม่มี LP.Data", "R") return end
+        for _, c in ipairs(data:GetChildren()) do
+            local nl = c.Name:lower()
+            if nl:find("quest") or nl:find("spawn") or nl:find("level") or nl:find("sea") then
+                local extra = c:IsA("ValueBase") and (" = " .. tostring(c.Value)) or ""
+                log("  " .. c.Name .. " [" .. c.ClassName .. "]" .. extra, "G")
+            end
+        end
+    end)
+    -- 5 RS children with quest in name
+    log("── RS ที่มีชื่อ quest ──", "Y")
+    pcall(function()
+        for _, c in ipairs(RS:GetDescendants()) do
+            if c.Name:lower():find("quest") and (c:IsA("ModuleScript") or c:IsA("Folder") or c:IsA("RemoteEvent") or c:IsA("RemoteFunction")) then
+                log("  " .. c.ClassName .. " " .. c:GetFullName():gsub("ReplicatedStorage%.", "RS."), "S")
+            end
+        end
+    end)
+    log("════ จบ Data dump — Copy ส่งมาได้ ════", "Y")
+end
+
+btnDumpData.MouseButton1Click:Connect(function()
+    task.spawn(dumpGameData)
+end)
+
+btnListNpc.MouseButton1Click:Connect(function()
+    task.spawn(function() listAllNpcs(false) end)
+end)
+
+btnAllMobs.MouseButton1Click:Connect(function()
+    task.spawn(listAllMobs)
+end)
+
 btnCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard or write_clipboard
     local header = {
@@ -473,7 +695,8 @@ task.defer(function()
     log("2) บิน→NPC / บิน→มอน แล้วดูว่าถึงไหม มีมอนไหม", "S")
     log("3) สแกนรอบตัว / สแกนที่จุดมอน", "S")
     log("4) ลอง StartQuest ถ้าใกล้ NPC", "S")
-    log("5) เจอจุดจริง → บันทึกเป็น NPC/MOB จริง → Copy รายงานส่งมา", "S")
+    log("5) กด 'หาใน Data เกม' / 'มอนทั้งแมพ' / 'ลิสต์ NPCs'", "S")
+    log("6) เจอจุดจริง → บันทึก → Copy รายงานส่งมา", "S")
     local lv = getLevel()
     for _, row in ipairs(REF) do
         if lv >= row.lvMin and lv <= row.lvMax then
