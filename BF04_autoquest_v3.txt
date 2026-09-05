@@ -558,22 +558,49 @@ function tp(cframe) return toTarget(cframe) end
 
 local QUEST_ITEMS = {
     Relic = true, Cup = true, Torch = true, Key = true,
+    ["Special Key"] = true, ["Prison Key"] = true,
+    ["Water Key"] = true, ["Library Key"] = true,
+    ["God's Chalice"] = true, ["Fist of Darkness"] = true,
+    ["Sweet Chalice"] = true, ["Hallow Essence"] = true,
+    ["Holy Torch"] = true,
 }
+
+local function isWeaponTool(tool)
+    if not tool or not tool:IsA("Tool") then return false end
+    if QUEST_ITEMS[tool.Name] then return false end
+    local tip = tostring(tool.ToolTip or "")
+    if tip == "Melee" or tip == "Sword" or tip == "Blox Fruit" or tip == "Gun" then
+        return true
+    end
+    -- ถ้า ToolTip ว่าง ให้ดูชื่อที่ไม่ใช่ของเควส
+    return true
+end
+
 function equipWeapon()
     local char, _, hum = getChar()
     if not char or not hum then return false end
     local held = char:FindFirstChildOfClass("Tool")
-    if held and not QUEST_ITEMS[held.Name] then return true end
-    if held then pcall(function() hum:UnequipTools() end); task.wait(0.1) end
+    if held and isWeaponTool(held) then return true end
+
     local bp = LP:FindFirstChild("Backpack")
     if not bp then return false end
-    local tool = bp:FindFirstChild("Combat")
-    if not tool then
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and not QUEST_ITEMS[t.Name] then tool = t break end
+
+    -- ค้นหาอาวุธตามลำดับ Melee -> Sword -> Blox Fruit -> อื่นๆ
+    local bestTool = nil
+    for _, t in ipairs(bp:GetChildren()) do
+        if t:IsA("Tool") and not QUEST_ITEMS[t.Name] then
+            local tip = tostring(t.ToolTip or "")
+            if tip == "Melee" then bestTool = t; break
+            elseif tip == "Sword" and (not bestTool or bestTool.ToolTip ~= "Melee") then bestTool = t
+            elseif tip == "Blox Fruit" and not bestTool then bestTool = t
+            elseif not bestTool then bestTool = t end
         end
     end
-    if tool then pcall(function() hum:EquipTool(tool) end); return true end
+
+    if bestTool then
+        pcall(function() hum:EquipTool(bestTool) end)
+        return true
+    end
     return false
 end
 
@@ -674,11 +701,13 @@ local function directRemoteAttack(mobTarget, mobName)
         end
     end
 
-    -- แบบที่ 1: มาตรฐาน Blox Fruits RE Remotes (RegisterAttack + RegisterHit)
+    -- 1. ไล่คอมโบ 0-3 (อาร์กิวเมนต์เดียว) เพื่อรีเซ็ตคูลดาวน์ฝั่งเซิร์ฟเวอร์
     pcall(function()
         if rAttack then
             rAttack:FireServer(0)
             rAttack:FireServer(1)
+            rAttack:FireServer(2)
+            rAttack:FireServer(3)
         end
         if rHit then
             rHit:FireServer(mainPart, othersEnemies)
@@ -887,8 +916,8 @@ local function mainLoop()
                         local hrpNow = myChar:FindFirstChild("HumanoidRootPart")
                         if hrpNow then
                             applyBodyVelocity(hrpNow)
-                            -- เกาะเหนือหัวมอน 8-10 studs เพื่อให้อยู่ใน Hitbox ระยะอาวุธ
-                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 9, 0)
+                            -- เกาะเหนือหัวมอน 4-5 studs เพื่อให้อยู่ใน Hitbox ระยะอาวุธ
+                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 5, 0)
                         end
                         if os.clock() - lastCamT >= 0.2 then
                             lastCamT = os.clock()
