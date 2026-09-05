@@ -361,6 +361,38 @@ local function compassWorldDir(arrowRot)
     return Vector3.new(dir.X, 0, dir.Z).Unit
 end
 
+-- พิกัดจริงอยู่ที่ workspace.NPCs ตอนโหลด — ไม่มี remote พิกัดที่ใช้ได้
+-- cache ตอนเจอ + จุดที่ยืนยันจาก Spy (Dragon Crew)
+local NPC_CACHE = {} -- lowerName -> Vector3
+local KNOWN_NPC = {
+    ["dragon crew quest giver"] = Vector3.new(6735.11, 126.99, -711.10),
+}
+local compassStuck = 0
+local lastMeter = nil
+
+local function rememberNpc(part)
+    if not part then return end
+    local name = (part.Parent and part.Parent.Name) or part.Name
+    NPC_CACHE[name:lower()] = part.Position
+end
+
+local function npcFromTitle(title)
+    if not title then return nil end
+    local t = title:lower()
+    -- "Find the Dragon Crew Quest Giver."
+    local who = t:match("find the%s+(.+)") or t
+    who = who:gsub("%.%s*$", ""):gsub("%s+$", "")
+    if NPC_CACHE[who] then return NPC_CACHE[who], "cache:" .. who end
+    if KNOWN_NPC[who] then return KNOWN_NPC[who], "known:" .. who end
+    for k, v in pairs(NPC_CACHE) do
+        if who:find(k, 1, true) or k:find(who, 1, true) then return v, "cache:" .. k end
+    end
+    for k, v in pairs(KNOWN_NPC) do
+        if who:find(k, 1, true) or k:find(who, 1, true) then return v, "known:" .. k end
+    end
+    return nil
+end
+
 local function dumpCompassDeep()
     log("════ Spy เข็มทิศ / ระยะเมตร ════", "Y")
     local info = readCompassUI()
@@ -414,55 +446,85 @@ local function dumpCompassDeep()
 end
 
 -- บินทีละก้าวตามเข็มทิศ — ตรวจว่า UI เมตรลดจริง
+-- หมายเหตุ: ลูกศร = ทิศเทียบกล้อง ไม่ใช่พิกัดโลก | พิกัดจริง = NPCs ตอนโหลด
 local function flyByCompassStep()
     local ui = readCompassUI()
     local d0 = ui.distance
     local rot = ui.arrowAbs or ui.arrowRot
     if not d0 or rot == nil then return false, "ไม่มีระยะ/ลูกศรจาก Guide UI" end
-    if d0 <= 25 then return false, "ใกล้แล้ว (" .. d0 .. "ม.) รอ NPC โหลด" end
+
+    -- ใกล้ / วนเมตรไม่ลด → ใช้พิกัด cache/known แทนเดาลูกศร
+    local cached, csrc = npcFromTitle(ui.title)
+    if d0 <= 90 and cached then
+        log(string.format("ใกล้ %dม. → ใช้พิกัดจริง (%s)", d0, csrc), "G")
+        flyTo(CFrame.new(cached + Vector3.new(0, 6, 0)), "NPC/" .. csrc)
+        compassStuck = 0
+        return true, 0
+    end
+    if compassStuck >= 3 and cached then
+        log("เข็มทิศวน — บินตรงไป " .. csrc, "Y")
+        flyTo(CFrame.new(cached + Vector3.new(0, 8, 0)), "NPC/stuck→" .. csrc)
+        compassStuck = 0
+        return true, 0
+    end
+    if d0 <= 25 then
+        if cached then
+            flyTo(CFrame.new(cached + Vector3.new(0, 6, 0)), "NPC/near")
+            return true, 0
+        end
+        return false, "ใกล้แล้ว (" .. d0 .. "ม.) รอ NPC โหลด"
+    end
 
     if ui.navigateBtn then
-        pcall(function()
-            firesignal(ui.navigateBtn.MouseButton1Click)
-        end)
-        pcall(function()
-            local vim = game:GetService("VirtualInputManager")
-            local abs = ui.navigateBtn.AbsolutePosition
-            local sz = ui.navigateBtn.AbsoluteSize
-            vim:SendMouseButtonEvent(abs.X + sz.X/2, abs.Y + sz.Y/2, 0, true, game, 1)
-            task.wait(0.05)
-            vim:SendMouseButtonEvent(abs.X + sz.X/2, abs.Y + sz.Y/2, 0, false, game, 1)
-        end)
+        pcall(function() firesignal(ui.navigateBtn.MouseButton1Click) end)
     end
 
     local dir = compassWorldDir(rot)
     local _, hrp = getChar()
     if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร" end
 
-    local hopStuds = math.clamp(d0 * 3 * 0.35, 60, 280)
+    -- ก้าวเล็กลงเมื่อใกล้ (กันบินเลยเป้าแล้ววน)
+    local hopStuds
+    if d0 > 150 then
+        hopStuds = math.clamp(d0 * 3 * 0.32, 80, 260)
+    elseif d0 > 100 then
+        hopStuds = math.clamp(d0 * 3 * 0.22, 45, 120)
+    else
+        hopStuds = math.clamp(d0 * 3 * 0.15, 28, 70)
+    end
+
     local dest = hrp.Position + dir * hopStuds + Vector3.new(0, 35, 0)
     log(string.format("ตามเข็มทิศ: %dม. → ก้าว %.0f studs (rot=%.0f)", d0, hopStuds, rot), "B")
     flyTo(CFrame.new(dest), "เข็มทิศ")
-    task.wait(0.35)
+    task.wait(0.4)
     local ui2 = readCompassUI()
     local d1 = ui2.distance
-    if d1 and d1 < d0 then
+    if d1 and d1 < d0 - 1 then
         log(string.format("เมตรลด %d → %d ✓", d0, d1), "G")
+        compassStuck = 0
+        lastMeter = d1
         return true, d1
     end
-    if d1 and d1 > d0 then
-        log(string.format("เมตรเพิ่ม %d → %d ลองทิศกลับ", d0, d1), "O")
+    if d1 and d1 >= d0 then
+        log(string.format("เมตรไม่ลด %d → %d ลองทิศกลับ", d0, d1), "O")
         local _, h2 = getChar()
         if h2 then
-            local back = h2.Position - dir * hopStuds * 1.2 + Vector3.new(0, 35, 0)
+            local back = h2.Position - dir * hopStuds + Vector3.new(0, 35, 0)
             flyTo(CFrame.new(back), "เข็มทิศกลับ")
-            task.wait(0.25)
+            task.wait(0.3)
             local ui3 = readCompassUI()
-            if ui3.distance and ui3.distance < d1 then
+            if ui3.distance and ui3.distance < d0 - 1 then
                 log(string.format("ทิศกลับแล้วเมตร=%d ✓", ui3.distance), "G")
+                compassStuck = 0
+                lastMeter = ui3.distance
                 return true, ui3.distance
             end
         end
+        if lastMeter and d1 and math.abs(d1 - lastMeter) <= 4 then
+            compassStuck += 1
+            log("วนเมตร≈" .. tostring(d1) .. " stuck=" .. compassStuck, "Y")
+        end
+        lastMeter = d1 or d0
     end
     return true, d1 or d0
 end
@@ -511,6 +573,7 @@ end
 local function resolveNpcTarget(quest)
     local part, dist = findQuestGiver(quest)
     if part then
+        rememberNpc(part)
         log(string.format("เจอ NPC: %s (%.0f studs)", part.Parent and part.Parent.Name or part.Name, dist or 0), "G")
         return part.Position, "workspace.NPCs"
     end
@@ -521,12 +584,20 @@ local function resolveNpcTarget(quest)
         log(string.format("เข็มทิศระยะ: %d ม.", ui.distance), "O")
     end
 
-    -- มีระยะจาก Subtitle2 → บินทีละก้าวให้เมตรลด (ไม่ต้องมี NPC ในแมพ)
+    -- พิกัดจาก cache/known (ไม่ใช่ remote — GetBestQuestNPC ค้าง)
+    local cached, csrc = npcFromTitle(ui.title)
+    if cached and (not ui.distance or ui.distance <= 120 or compassStuck >= 2) then
+        log("ใช้พิกัด " .. tostring(csrc) .. " @ "
+            .. string.format("%.0f,%.0f,%.0f", cached.X, cached.Y, cached.Z), "G")
+        return cached, csrc
+    end
+
     local rot = ui.arrowAbs or ui.arrowRot
     if ui.distance and rot ~= nil and ui.distance > 5 then
         return "COMPASS_STEP", "compassUI"
     end
 
+    if cached then return cached, csrc end
     return nil, "NPC ยังไม่โหลด — เปิด Recommended Quest / กด Spy เข็มทิศ"
 end
 
@@ -746,8 +817,28 @@ local function dumpCompass()
             and RS.Effect.Container:FindFirstChild("QuestTracingLine")
         if qtl then
             log("มี Effect.QuestTracingLine [" .. qtl.ClassName .. "]", "B")
+            for name, val in pairs(qtl:GetAttributes()) do
+                log(string.format("  attr %s=%s", name, tostring(val)), "S")
+            end
+            for _, c in ipairs(qtl:GetDescendants()) do
+                if c:IsA("Attachment") or c:IsA("Beam") or c:IsA("BasePart") then
+                    local p = posFromAny(c)
+                    log(string.format("  %s:%s%s", c.ClassName, c.Name,
+                        p and string.format(" @%.0f,%.0f,%.0f", p.X, p.Y, p.Z) or ""), "B")
+                end
+            end
+        else
+            log("ไม่มี QuestTracingLine ใน Effect.Container", "O")
         end
     end)
+    local ui2 = readCompassUI()
+    local knownP, knownS = npcFromTitle(ui2.title)
+    if knownP then
+        log(string.format("พิกัดจาก cache/known (%s): %.1f, %.1f, %.1f",
+            knownS, knownP.X, knownP.Y, knownP.Z), "G")
+    else
+        log("ยังไม่มีพิกัด cache สำหรับหัวข้อนี้ (จะจำตอนเจอใน NPCs)", "O")
+    end
     log("════ จบ Dump — Copy ส่งมาได้ ════", "Y")
 end
 
