@@ -29,7 +29,7 @@ local sg = Instance.new("ScreenGui")
 sg.Name = "BF04CompassGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 380, 0, 450); frame.Position = UDim2.new(0, 10, 0, 10)
+frame.Size = UDim2.new(0, 420, 0, 450); frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12, 14, 20); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
 frame.Parent = sg
@@ -58,10 +58,11 @@ local function mkBtn(txt, x, y, w, col)
     return b
 end
 
-local autoBtn = mkBtn("AUTO: OFF", 8, 30, 100, Color3.fromRGB(30, 120, 50))
-local dumpBtn = mkBtn("Spy เข็มทิศ", 114, 30, 100, Color3.fromRGB(100, 80, 40))
-local rangeBtn = mkBtn("Spy ระยะตี", 220, 30, 90, Color3.fromRGB(140, 70, 40))
-local copyBtn = mkBtn("Copy", 316, 30, 56, Color3.fromRGB(30, 100, 50))
+local autoBtn = mkBtn("AUTO: OFF", 8, 30, 78, Color3.fromRGB(30, 120, 50))
+local dumpBtn = mkBtn("Spy เข็ม", 90, 30, 72, Color3.fromRGB(100, 80, 40))
+local mobSpyBtn = mkBtn("Spy มอน", 166, 30, 72, Color3.fromRGB(160, 90, 30))
+local rangeBtn = mkBtn("Spy ตี", 242, 30, 72, Color3.fromRGB(140, 70, 40))
+local copyBtn = mkBtn("Copy", 318, 30, 90, Color3.fromRGB(30, 100, 50))
 
 local statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 64)
@@ -367,6 +368,12 @@ local NPC_CACHE = {} -- lowerName -> Vector3
 local KNOWN_NPC = {
     ["dragon crew quest giver"] = Vector3.new(6735.11, 126.99, -711.10),
 }
+-- จุดเกาะมอน (Spy ยืนยัน Warrior; Archer ใช้จุดใกล้กันจนกว่า Spy มอนจะเจอ)
+local MOB_CACHE = {} -- lowerName -> Vector3
+local KNOWN_MOB = {
+    ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
+    ["dragon crew archer"] = Vector3.new(6919.08, 55.07, -940.84),
+}
 local compassStuck = 0
 local lastMeter = nil
 
@@ -612,11 +619,161 @@ local function findMob(mobName)
             local hrp = e:FindFirstChild("HumanoidRootPart")
             if hum and hrp and hum.Health > 0 then
                 local d = myHrp and (hrp.Position - myHrp.Position).Magnitude or 0
-                if d < bestD then bestD = d; best = e end
+                if d < bestD then
+                    bestD = d; best = e
+                    MOB_CACHE[mobName:lower()] = hrp.Position
+                end
             end
         end
     end
     return best, bestD
+end
+
+local function mobSpawnHint(mobName)
+    local key = (mobName or ""):lower()
+    if MOB_CACHE[key] then return MOB_CACHE[key], "cache" end
+    if KNOWN_MOB[key] then return KNOWN_MOB[key], "known" end
+    return nil
+end
+
+-- Spy: สแกนว่ามอนเกิด/โหลดที่ไหน
+local function dumpMobSpawn()
+    log("════ Spy มอน / จุดเกิด ════", "Y")
+    local lv = getLevel()
+    local quest = pickQuestForLevel(lv)
+    local want = quest and quest.mob or "?"
+    log("เป้าเควส: " .. want .. " (Lv." .. lv .. ")", "B")
+
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then
+        log("✗ ไม่มี workspace.Enemies", "R")
+    else
+        local kids = enemies:GetChildren()
+        log("Enemies โหลดอยู่: " .. #kids .. " ตัว", "B")
+
+        -- รวมชื่อ + นับ + ตัวอย่างพิกัด
+        local byName = {}
+        for _, e in ipairs(kids) do
+            local hrp = e:FindFirstChild("HumanoidRootPart")
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            local alive = hum and hum.Health > 0
+            local bag = byName[e.Name]
+            if not bag then
+                bag = { n = 0, alive = 0, samples = {} }
+                byName[e.Name] = bag
+            end
+            bag.n += 1
+            if alive then bag.alive += 1 end
+            if hrp and #bag.samples < 3 then
+                bag.samples[#bag.samples+1] = hrp.Position
+            end
+        end
+
+        log("── รายชื่อมอนในแมพตอนนี้ ──", "Y")
+        local names = {}
+        for name in pairs(byName) do names[#names+1] = name end
+        table.sort(names)
+        if #names == 0 then
+            log("  (ว่าง — ไกลเกาะ / ยังไม่สตรีม)", "O")
+        else
+            for _, name in ipairs(names) do
+                local bag = byName[name]
+                local mark = (want ~= "?" and name:find(want, 1, true)) and " ★" or ""
+                log(string.format("  %s x%d (alive %d)%s", name, bag.n, bag.alive, mark),
+                    mark ~= "" and "G" or "S")
+                for _, p in ipairs(bag.samples) do
+                    log(string.format("    CFrame.new(%.2f, %.2f, %.2f)", p.X, p.Y, p.Z), "G")
+                    if mark ~= "" then MOB_CACHE[want:lower()] = p end
+                end
+            end
+        end
+
+        -- หาเป้าตรงๆ
+        log("── หา '" .. want .. "' ──", "Y")
+        local found = 0
+        for _, e in ipairs(kids) do
+            if want ~= "?" and e.Name:find(want, 1, true) then
+                local hrp = e:FindFirstChild("HumanoidRootPart")
+                local hum = e:FindFirstChildOfClass("Humanoid")
+                if hrp then
+                    found += 1
+                    log(string.format("  ✓ %s HP=%.0f @ %.1f, %.1f, %.1f",
+                        e.Name, hum and hum.Health or -1, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "G")
+                    MOB_CACHE[want:lower()] = hrp.Position
+                end
+            end
+        end
+        if found == 0 then
+            log("  ✗ ไม่เจอใน Enemies ตอนนี้", "O")
+        end
+    end
+
+    -- ค้นชื่อคล้ายใน Workspace นอก Enemies
+    log("── สแกนชื่อคล้ายใน Workspace (นอก Enemies) ──", "Y")
+    local extra = 0
+    local needle = want ~= "?" and want:lower() or "dragon crew"
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if extra >= 15 then break end
+        if obj:IsA("Model") and obj.Name:lower():find(needle, 1, true) then
+            local underEnemies = enemies and obj:IsDescendantOf(enemies)
+            local p = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+            if not underEnemies and p and p:IsA("BasePart") then
+                extra += 1
+                log(string.format("  %s @ %.0f,%.0f,%.0f  %s",
+                    obj.Name, p.Position.X, p.Position.Y, p.Position.Z,
+                    obj:GetFullName():gsub("Workspace%.", "WS.")), "B")
+            end
+        end
+    end
+    if extra == 0 then log("  ไม่เจอนอก Enemies", "S") end
+
+    local hint, src = mobSpawnHint(want)
+    if hint then
+        log(string.format("จุดเดา/จำ (%s): %.1f, %.1f, %.1f", src, hint.X, hint.Y, hint.Z), "Y")
+        log("  CFrame.new(" .. string.format("%.2f, %.2f, %.2f", hint.X, hint.Y, hint.Z) .. ")", "S")
+        log("→ บินไปจุดนี้เพื่อบังคับสตรีมมอน...", "B")
+        flyTo(CFrame.new(hint + Vector3.new(0, 45, 0)), "Spyจุดมอน")
+        task.wait(1.2)
+        local mob2, md2 = findMob(want)
+        if mob2 then
+            local h = mob2:FindFirstChild("HumanoidRootPart")
+            if h then
+                log(string.format("หลังบินเจอแล้ว! d=%.0f @ %.1f, %.1f, %.1f",
+                    md2 or 0, h.Position.X, h.Position.Y, h.Position.Z), "G")
+                log("  CFrame.new(" .. string.format("%.2f, %.2f, %.2f", h.Position.X, h.Position.Y, h.Position.Z) .. ")", "G")
+                MOB_CACHE[want:lower()] = h.Position
+            end
+        else
+            log("บินถึงจุดแล้วยังไม่เจอ — อาจชื่อมอนเปลี่ยน / เกาะผิด", "R")
+            -- สแกนรอบตัวหลังบิน
+            local _, hrp = getChar()
+            if hrp and enemies then
+                log("── มอนในรัศมี 400 หลังบิน ──", "Y")
+                local near = 0
+                for _, e in ipairs(enemies:GetChildren()) do
+                    local eh = e:FindFirstChild("HumanoidRootPart")
+                    if eh and (eh.Position - hrp.Position).Magnitude < 400 then
+                        near += 1
+                        if near <= 12 then
+                            log(string.format("  %s d=%.0f @ %.0f,%.0f,%.0f",
+                                e.Name, (eh.Position - hrp.Position).Magnitude,
+                                eh.Position.X, eh.Position.Y, eh.Position.Z), "B")
+                        end
+                    end
+                end
+                if near == 0 then log("  ไม่มีมอนในรัศมี 400", "O") end
+            end
+        end
+    else
+        log("ยังไม่มีจุด known — บินใกล้ NPC เกาะแล้ว Spy ใหม่", "O")
+        local npcP = KNOWN_NPC["dragon crew quest giver"]
+        if npcP then
+            flyTo(CFrame.new(npcP + Vector3.new(0, 40, 0)), "ใกล้NPCเกาะ")
+            task.wait(1)
+        end
+    end
+
+    log("════ จบ Spy มอน — Copy ส่งมาได้ ════", "Y")
 end
 
 local VIM
@@ -936,7 +1093,18 @@ local function mainLoop()
             local mob, md = findMob(quest.mob)
             if not mob then
                 log("ไม่เจอ " .. quest.mob .. " ใน Enemies → รอโหลด", "Y")
-                task.wait(1.2)
+                local hint, src = mobSpawnHint(quest.mob)
+                if hint then
+                    log("บินไปจุดมอน (" .. src .. ") บังคับสตรีม", "B")
+                    flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "จุดมอน/" .. src)
+                else
+                    local npcP = select(1, npcFromTitle("Find the Dragon Crew Quest Giver"))
+                        or KNOWN_NPC["dragon crew quest giver"]
+                    if npcP then
+                        flyTo(CFrame.new(npcP + Vector3.new(80, 40, -80)), "ใกล้เกาะNPC")
+                    end
+                end
+                task.wait(1.0)
                 return
             end
             local mhrp = mob:FindFirstChild("HumanoidRootPart")
@@ -1199,6 +1367,10 @@ end)
 
 dumpBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpCompassDeep)
+end)
+
+mobSpyBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpMobSpawn)
 end)
 
 rangeBtn.MouseButton1Click:Connect(function()
