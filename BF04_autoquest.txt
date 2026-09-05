@@ -2472,28 +2472,43 @@ local function sea3Step()
     local zq = 0
     pcall(function() zq = CommF:InvokeServer("ZQuestProgress", "General") or 0 end)
     if zq == 0 then
-        -- Don Swan ไม่อยู่ยอดคฤหาสน์ — เขาอยู่ใน Swan's Room (ใต้ Jeremy spawn)
-        -- เข้าทางประตูในคฤหาสน์ (ปลายบันได) ซึ่งเปิดแล้วจะวาปเราเข้าไปเอง
-        -- โดนผิงไปข้าไม่ได้ → พาบินไปยอดคฤหาสน์ (ใกล้จุดทางเข้า) แล้วคืนควบคุมให้เดินเอง
+        -- Don Swan อยู่ใน Swan's Room (ใต้ Jeremy spawn) เข้าทางประตูในคฤหาสน์เท่านั้น
+        -- ถ้ายังไม่ล้ม Don Swan → พาไปหน้าประตู รอเดินเปิดเอง แล้วตี
+        -- ล้มแล้ว → ตรงไป King Red Head (ห้ามกลับมาหา Don Swan อีก เพราะตายแล้วหาไม่เจอ
+        --   เดิมมัน return แล้ว loop กลับมาใหม่ = บินกลับยอดคฤหาสน์ซ้ำไม่รู้จบ)
         local swan = findEnemy("Don Swan")
-        if not swan then
-            log("ขั้น 5/6: บินไปยอดคฤหาสน์แล้วเดินลงมา → เปิดประตูในคฤหาสน์เอง (ประตูจะวาปไป Swan's Room)", "Y")
-            FRUIT_MODE = true
-            tp(SWAN_MANSION_CF)
-            task.wait(1.2)
-            FRUIT_MODE = false
-            releaseControl()
-            pcall(equipWeapon)
-            pcall(ensureBuso)
-            local t0 = os.clock()
-            repeat task.wait(1) swan = findEnemy("Don Swan")
-            until swan or not SEA3_RUN or os.clock() - t0 > 180
+
+        if not _G.BF04_SWAN_DEAD then
+            if not swan then
+                log("ขั้น 5/6: บินไปยอดคฤหาสน์ → เดินลงเปิดประตูในคฤหาสน์เอง (วาปไป Swan's Room)", "Y")
+                FRUIT_MODE = true
+                tp(SWAN_MANSION_CF)
+                task.wait(1.2)
+                FRUIT_MODE = false
+                releaseControl()
+                pcall(equipWeapon)
+                pcall(ensureBuso)
+                local t0 = os.clock()
+                repeat task.wait(1) swan = findEnemy("Don Swan")
+                until swan or not SEA3_RUN or os.clock() - t0 > 180
+            end
+
+            if swan then
+                log("เจอ Don Swan → เข้าตี (ต้องล้มก่อนคุย King Red Head)", "G")
+                fightBoss(swan, "Don Swan", 300)
+                if findEnemy("Don Swan") then
+                    -- ยังมีชีวิต (หลุดออกจากห้อง / หมดเวลา) → กลับไปเข้าประตูใหม่รอบหน้า
+                    log("Don Swan ยังอยู่ → รอรอบใหม่ (ถ้าหลุดจากห้องให้เดินเปิดประตูอีกครั้ง)", "Y")
+                    return
+                end
+                _G.BF04_SWAN_DEAD = true
+                log("Don Swan ล้มแล้ว ✓ → ไปคุย King Red Head ต่อ", "G")
+            else
+                -- ยังไม่เจอ Don Swan เลย (เดินไม่ทัน / เข้าไม่ถึง) → รอรอบใหม่ อย่าไป KRH ก่อน
+                return
+            end
         end
-        if swan then
-            log("เจอ Don Swan → เข้าตี (ต้องล้มก่อนคุย King Red Head)", "G")
-            fightBoss(swan, "Don Swan", 300)
-            return
-        end
+
         log("ขั้น 5/6: บินไปคุย King Red Head ใต้ Colosseum", "B")
         FRUIT_MODE = true
         tp(KRH_CF)
@@ -2541,6 +2556,8 @@ sea3Btn.MouseButton1Click:Connect(function()
         log("หยุดสายเควสทะเล 3", "R")
         return
     end
+
+    _G.BF04_SWAN_DEAD = nil   -- รีเซ็ตธงล้มบอสทุกครั้งที่กดปุ่มเริ่มใหม่
 
     -- AUTO ฟาร์มจะดึงตัวละครสวนทาง และที่ Lv.1500+ มันค้างรอย้ายทะเลอยู่แล้ว ตีอะไรให้ไม่ได้
     if AUTO_ON then
