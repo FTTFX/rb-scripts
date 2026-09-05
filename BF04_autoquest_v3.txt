@@ -209,31 +209,52 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- ── totarget: สไตล์ MUXHUB — tween ธรรมดา วน repeat จนถึงระยะ 20 ──
+-- ── totarget: บินช้า + ไม่สร้าง tween ทับ (กันกระตุก) ─────────────
+local FLY_SPEED = 160 -- studs/sec (เดิม 300 → ช้าลง กันวาปหลุด)
+local activeTween = nil
+local activeTweenDest = nil
+
 local function totarget(cf)
     local _, hrp = getChar()
     if not hrp then return end
     local dist = (hrp.Position - cf.Position).Magnitude
-    if dist <= 20 then return end
+    if dist <= 30 then return end
+
+    -- ถ้า tween เดิมยังเล่นอยู่ไปจุดเดิม → อย่าสร้างใหม่ (ตัวการกระตุก)
+    if activeTween and activeTween.PlaybackState == Enum.PlaybackState.Playing
+       and activeTweenDest
+       and (activeTweenDest.Position - cf.Position).Magnitude < 5 then
+        return
+    end
+
+    if activeTween then
+        pcall(function() activeTween:Cancel() end)
+        activeTween = nil
+    end
+
     local tween = TweenService:Create(
         hrp,
-        TweenInfo.new(dist / 300, Enum.EasingStyle.Linear),
+        TweenInfo.new(math.max(dist / FLY_SPEED, 0.3), Enum.EasingStyle.Linear),
         { CFrame = cf }
     )
+    activeTween = tween
+    activeTweenDest = cf
     tween:Play()
 end
 
 local function gotoAndWait(cf)
     local t0 = os.clock()
-    while _G.BF04V3_ON and os.clock() - t0 < 120 do
+    while _G.BF04V3_ON and os.clock() - t0 < 180 do
         local _, hrp = getChar()
         if not hrp then return false end
         local d = (hrp.Position - cf.Position).Magnitude
-        if d <= 20 then
+        if d <= 30 then
+            if activeTween then pcall(function() activeTween:Cancel() end) end
+            activeTween, activeTweenDest = nil, nil
             return true
         end
-        totarget(cf) -- เรียกซ้ำได้ tween ใหม่ทุกรอบ (แก้ tween ค้าง/หลุด)
-        task.wait(0.1)
+        totarget(cf)
+        task.wait(0.35) -- เช็คนานขึ้น ไม่รีสตาร์ท tween รัวๆ
     end
     return false
 end
