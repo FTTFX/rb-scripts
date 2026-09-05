@@ -740,6 +740,7 @@ end
 local LAST_MOB_NAME = ""
 local LAST_MOB_POS = nil
 local PATROL_I = 0
+local IGNORE_MOBS = {}
 
 local function mainLoop()
     log("=== START AUTO V3 Sea 3 ===", "Y")
@@ -806,17 +807,21 @@ local function mainLoop()
                 local enemies = Workspace:FindFirstChild("Enemies")
                 local target = nil
                 local bestDist = math.huge
+                local nowClock = os.clock()
+
                 if enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
                         if v:FindFirstChild("HumanoidRootPart") then
                             rememberSpawn(v.Name, v.HumanoidRootPart.Position)
                         end
+                        -- ข้ามตัวที่ติดบั๊กตีไม่เข้า (บล็อกชั่วคราว 45 วิ)
+                        local isIgnored = IGNORE_MOBS[v] and (nowClock < IGNORE_MOBS[v])
                         local isMatch = string.find(v.Name, qdata.mob)
                         local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
                         if not string.find(qdata.mob, "King") and not string.find(qdata.mob, "Boss") and isBoss then
                             isMatch = false
                         end
-                        if isMatch and v:FindFirstChild("Humanoid")
+                        if not isIgnored and isMatch and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
                             if d < bestDist and d < SEARCH_R then
@@ -829,10 +834,11 @@ local function mainLoop()
 
                 if not target and enemies then
                     for _, v in ipairs(enemies:GetChildren()) do
+                        local isIgnored = IGNORE_MOBS[v] and (nowClock < IGNORE_MOBS[v])
                         local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
                         local isMatch = string.find(v.Name, qdata.mob) and not
                             (isBoss and not string.find(qdata.mob, "King") and not string.find(qdata.mob, "Boss"))
-                        if isMatch and v:FindFirstChild("Humanoid")
+                        if not isIgnored and isMatch and v:FindFirstChild("Humanoid")
                            and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
                             local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
                             if d < bestDist then bestDist = d; target = v end
@@ -901,6 +907,7 @@ local function mainLoop()
                 local initialHp = v.Humanoid.Health
                 local lastHp = initialHp
                 local attackTicks = 0
+                local stuckNoDmgCount = 0
 
                 while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04V3_LOOP do
                     local myChar, _, myHum = getChar()
@@ -932,14 +939,22 @@ local function mainLoop()
                     directRemoteAttack(v, qdata.mob)
                     attackTicks += 1
 
-                    -- Log เช็คว่าเลือดลดหรือไม่ ทุก 2 วินาที
-                    if os.clock() - lastHpCheckT >= 2 then
+                    -- Log เช็คว่าเลือดลดหรือไม่ ทุก 1.5 วินาที
+                    if os.clock() - lastHpCheckT >= 1.5 then
                         local curHp = v.Humanoid.Health
                         local tool = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-                        local toolName = tool and tool.Name or "มือเปล่า/ไม่มีอาวุธ"
+                        local toolName = tool and tool.Name or "มือเปล่า"
                         if curHp >= lastHp then
-                            log(string.format("[ตีไม่เข้า] HP นิ่ง %.0f/%.0f (ยิง %d ครั้ง) ถือ: %s", curHp, v.Humanoid.MaxHealth, attackTicks, toolName), "R")
+                            stuckNoDmgCount += 1
+                            log(string.format("[ตีไม่เข้า #%d] HP นิ่ง %.0f/%.0f ถือ: %s", stuckNoDmgCount, curHp, v.Humanoid.MaxHealth, toolName), "R")
+                            -- ตีไม่เข้าติดกัน 3 ครั้ง (4.5 วิ) → มอนบั๊ก ให้ข้ามไปตีตัวอื่นทันที
+                            if stuckNoDmgCount >= 3 then
+                                log("⚠️ ตัวนี้บั๊กตีไม่เข้า → ข้ามไปหาตัวอื่น (แบน 45 วิ)", "Y")
+                                IGNORE_MOBS[v] = os.clock() + 45
+                                break
+                            end
                         else
+                            stuckNoDmgCount = 0
                             log(string.format("[ตีโดน ✓] HP: %.0f -> %.0f (-%.0f)", lastHp, curHp, lastHp - curHp), "G")
                         end
                         lastHp = curHp
