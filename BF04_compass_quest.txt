@@ -214,11 +214,22 @@ local function pickQuestForLevel(lv)
 end
 
 -- ── หาเป้าเข็มทิศ / NPC ────────────────────────────────────────────
-local function tryGetBestQuestNPC()
+local function tryGetBestQuestNPC(timeoutSec)
+    timeoutSec = timeoutSec or 3
     local rem = RS:FindFirstChild("Remotes") and RS.Remotes:FindFirstChild("GetBestQuestNPC")
     if not rem then return nil, "ไม่มี GetBestQuestNPC" end
-    local ok, res = pcall(function() return rem:InvokeServer() end)
-    if not ok then return nil, "Invoke error: " .. tostring(res) end
+    local done, res, err = false, nil, nil
+    task.spawn(function()
+        local ok, r = pcall(function() return rem:InvokeServer() end)
+        done = true
+        if ok then res = r else err = tostring(r) end
+    end)
+    local t0 = os.clock()
+    while not done and os.clock() - t0 < timeoutSec do
+        task.wait(0.05)
+    end
+    if not done then return nil, "timeout " .. timeoutSec .. "s (ค้าง?)" end
+    if err then return nil, err end
     return res, nil
 end
 
@@ -438,6 +449,7 @@ local function dumpCompass()
     log("════ Dump เข็มทิศ / Data ════", "Y")
     local lv = getLevel()
     log("Level=" .. lv .. " PlaceId=" .. tostring(game.PlaceId), "B")
+
     local quest = pickQuestForLevel(lv)
     if quest then
         log(string.format("เลือกจาก RS.Quests: %s#%s LvReq=%d mob=%s x%d",
@@ -445,12 +457,16 @@ local function dumpCompass()
     else
         log("เลือกเควสจาก RS.Quests ไม่ได้", "R")
     end
-    local res, err = tryGetBestQuestNPC()
+
+    log("→ เรียก GetBestQuestNPC (timeout 3s)...", "S")
+    local res, err = tryGetBestQuestNPC(3)
     if res ~= nil then
         log("GetBestQuestNPC raw = " .. dumpValue(res), "G")
     else
         log("GetBestQuestNPC: " .. tostring(err), "R")
     end
+
+    log("→ อ่าน UI เข็มทิศ...", "S")
     local ui = readCompassUI()
     if #ui.texts == 0 then
         log("UI เข็มทิศ: ไม่เจอข้อความ (อาจยังไม่เปิด Track)", "O")
@@ -458,15 +474,32 @@ local function dumpCompass()
         for _, t in ipairs(ui.texts) do log("  UI: " .. t, "O") end
         if ui.distance then log("  ระยะจาก UI ≈ " .. ui.distance .. " ม.", "O") end
     end
+
+    log("→ หา Quest Giver ใน NPCs...", "S")
     local part = findQuestGiver(quest)
     if part then
         local p = part.Position
         log(string.format("NPC ในแมพ: %s @ %.1f, %.1f, %.1f",
             part.Parent and part.Parent.Name or "?", p.X, p.Y, p.Z), "G")
+        log("  CFrame.new(" .. string.format("%.2f, %.2f, %.2f", p.X, p.Y, p.Z) .. ")", "S")
     else
         log("ยังไม่มี Quest Giver ใน workspace.NPCs", "Y")
     end
-    -- QuestTracingLine effect?
+
+    log("→ มอนใน Enemies...", "S")
+    if quest then
+        local mob, md = findMob(quest.mob)
+        if mob then
+            local h = mob:FindFirstChild("HumanoidRootPart")
+            if h then
+                log(string.format("มอน: %s d=%.0f @ %.1f, %.1f, %.1f",
+                    mob.Name, md or 0, h.Position.X, h.Position.Y, h.Position.Z), "G")
+            end
+        else
+            log("ไม่เจอ " .. quest.mob .. " ใน Enemies ตอนนี้", "Y")
+        end
+    end
+
     pcall(function()
         local qtl = RS:FindFirstChild("Effect") and RS.Effect:FindFirstChild("Container")
             and RS.Effect.Container:FindFirstChild("QuestTracingLine")
@@ -474,7 +507,7 @@ local function dumpCompass()
             log("มี Effect.QuestTracingLine [" .. qtl.ClassName .. "]", "B")
         end
     end)
-    log("════ จบ Dump ════", "Y")
+    log("════ จบ Dump — Copy ส่งมาได้ ════", "Y")
 end
 
 -- ── Main loop ──────────────────────────────────────────────────────
