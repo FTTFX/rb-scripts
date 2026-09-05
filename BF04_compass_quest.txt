@@ -29,7 +29,7 @@ local sg = Instance.new("ScreenGui")
 sg.Name = "BF04CompassGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 380, 0, 420); frame.Position = UDim2.new(0, 10, 0, 10)
+frame.Size = UDim2.new(0, 380, 0, 450); frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12, 14, 20); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
 frame.Parent = sg
@@ -58,9 +58,10 @@ local function mkBtn(txt, x, y, w, col)
     return b
 end
 
-local autoBtn = mkBtn("AUTO: OFF", 8, 30, 120, Color3.fromRGB(30, 120, 50))
-local dumpBtn = mkBtn("Dump เข็มทิศ/Data", 134, 30, 140, Color3.fromRGB(100, 80, 40))
-local copyBtn = mkBtn("Copy", 280, 30, 90, Color3.fromRGB(30, 100, 50))
+local autoBtn = mkBtn("AUTO: OFF", 8, 30, 100, Color3.fromRGB(30, 120, 50))
+local dumpBtn = mkBtn("Dump Data", 114, 30, 90, Color3.fromRGB(100, 80, 40))
+local rangeBtn = mkBtn("Spy ระยะตี", 210, 30, 100, Color3.fromRGB(140, 70, 40))
+local copyBtn = mkBtn("Copy", 316, 30, 56, Color3.fromRGB(30, 100, 50))
 
 local statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 64)
@@ -740,6 +741,114 @@ local function mainLoop()
     log("=== STOP ===", "R")
 end
 
+-- ── Spy ระยะตีร่างพระ: ไล่ระยะแนวนอน ยิงดาเมจ ดูว่าระยะไหนโดน ──
+local spyBusy = false
+local function spyAttackRange()
+    if spyBusy then log("กำลังวัดอยู่ รอจบก่อน", "Y") return end
+    spyBusy = true
+    local ok, err = pcall(function()
+        log("════ Spy ระยะตี (ร่างพระ+ดาบ) ════", "Y")
+        _G.BF04C_ON = false
+        autoBtn.Text = "AUTO: OFF"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50)
+
+        ensureBuddhaSword(true)
+        local _, hrp = getChar()
+        if hrp then
+            log(string.format("HRP Size=%.1f,%.1f,%.1f | big=%s",
+                hrp.Size.X, hrp.Size.Y, hrp.Size.Z, tostring(isBigForm())), "B")
+        end
+        if not isBigForm() then
+            log("⚠ ยังไม่ใช่ร่างใหญ่ — ผลอาจไม่แม่น (กด Z เองแล้วกด Spy อีกครั้งได้)", "O")
+        end
+
+        local quest = pickQuestForLevel(getLevel())
+        local mobName = quest and quest.mob or nil
+        local mob, md = mobName and findMob(mobName) or nil, nil
+        if not mob then
+            -- หามอนใกล้สุดใดๆ
+            local enemies = Workspace:FindFirstChild("Enemies")
+            local bestD = math.huge
+            if enemies then
+                local _, my = getChar()
+                for _, e in ipairs(enemies:GetChildren()) do
+                    local hum = e:FindFirstChildOfClass("Humanoid")
+                    local eh = e:FindFirstChild("HumanoidRootPart")
+                    if hum and eh and hum.Health > 0 and my then
+                        local d = (eh.Position - my.Position).Magnitude
+                        if d < bestD then bestD = d; mob = e; md = d end
+                    end
+                end
+            end
+        end
+        if not mob then
+            log("ไม่เจอมอนใน Enemies — บินใกล้มอนก่อนแล้วกด Spy อีกครั้ง", "R")
+            return
+        end
+
+        local mhrp = mob:FindFirstChild("HumanoidRootPart")
+        local mhum = mob:FindFirstChildOfClass("Humanoid")
+        if not mhrp or not mhum then log("มอนไม่มี HRP", "R") return end
+        log(string.format("เป้า: %s HP%.0f (เริ่ม d=%.0f)", mob.Name, mhum.Health, md or 0), "G")
+
+        -- ไม่ขยาย hitbox มอน (วัดระยะจริงของเกม)
+        local height = isBigForm() and 18 or 8
+        local maxHit, minMiss = 0, nil
+        -- ไล่จากใกล้ → ไกล
+        for dist = 5, 120, 5 do
+            if not mob.Parent or not mhum.Parent or mhum.Health <= 0 then
+                log("มอนตายกลางทาง หยุดวัด", "Y")
+                break
+            end
+            local _, myHrp = getChar()
+            if not myHrp then break end
+            setNoclip()
+            equipSword()
+            -- วางห่างแนวนอน dist studs ระดับความสูงคงที่
+            local base = mhrp.CFrame
+            myHrp.CFrame = base * CFrame.new(0, height, dist)
+            task.wait(0.15)
+            local hp0 = mhum.Health
+            -- ยิงหลายครั้งในระยะนี้
+            for _ = 1, 8 do
+                attackMob(mob)
+                task.wait(0.06)
+            end
+            task.wait(0.35)
+            local hp1 = mhum.Health
+            local dmg = hp0 - hp1
+            local realD = (myHrp.Position - mhrp.Position).Magnitude
+            if dmg > 0 then
+                maxHit = math.max(maxHit, realD)
+                log(string.format("✓ โดน @ ตั้ง%.0f จริง=%.0f ดาเมจ=-%.0f", dist, realD, dmg), "G")
+            else
+                if not minMiss then minMiss = realD end
+                log(string.format("✗ ไม่โดน @ ตั้ง%.0f จริง=%.0f", dist, realD), "S")
+                -- ถ้าพลาดติดกันหลังเคยโดนแล้ว หยุดเร็วได้
+                if maxHit > 0 and dist >= maxHit + 15 then
+                    log("พลาดต่อเนื่องหลังระยะโดน → จบ", "Y")
+                    break
+                end
+            end
+        end
+
+        log("──────── สรุป ────────", "Y")
+        log(string.format("ร่างใหญ่=%s | ความสูงทดสอบ=%.0f", tostring(isBigForm()), height), "B")
+        if maxHit > 0 then
+            log(string.format("★ ระยะตีโดนสูงสุด ≈ %.0f studs", maxHit), "G")
+            log(string.format("  แนะนำล็อกตีที่ระยะ ≤ %.0f studs", math.floor(maxHit * 0.85)), "G")
+        else
+            log("ไม่โดนเลยทั้งช่วง — เช็คดาบ/RegisterHit/ร่างพระ", "R")
+        end
+        if minMiss then
+            log(string.format("เริ่มพลาดประมาณ %.0f studs", minMiss), "O")
+        end
+        log("════ จบ Spy ระยะตี — Copy ส่งมาได้ ════", "Y")
+    end)
+    if not ok then log("Spy error: " .. tostring(err), "R") end
+    spyBusy = false
+end
+
 -- ── ปุ่ม ───────────────────────────────────────────────────────────
 closeBtn.MouseButton1Click:Connect(function()
     _G.BF04C_ON = false
@@ -758,6 +867,10 @@ end)
 
 dumpBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpCompass)
+end)
+
+rangeBtn.MouseButton1Click:Connect(function()
+    task.spawn(spyAttackRange)
 end)
 
 copyBtn.MouseButton1Click:Connect(function()
