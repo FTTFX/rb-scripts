@@ -78,12 +78,11 @@ local function getLevel()
 end
 
 local function getSea()
-    local p = Workspace:FindFirstChild("Map")
-    if Workspace:FindFirstChild("BoatProxy") or (p and p:FindFirstChild("Waterfall")) then end
-    local ok, placeId = pcall(function() return game.PlaceId end)
-    -- Blox Fruits seas by PlaceId roughly; fallback by Y/Z later
     local ids = {
-        [2753915549] = 1, [4442272183] = 2, [7449423635] = 3,
+        [2753915549] = 1,
+        [4442272183] = 2,
+        [7449423635] = 3,           -- Sea3 เก่า
+        [100117331123089] = 3,      -- Sea3 ใหม่ (ยืนยัน 2026-09-05)
     }
     return ids[game.PlaceId] or "?"
 end
