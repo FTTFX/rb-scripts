@@ -37,10 +37,10 @@ local function getQuestData(level)
             npc = CFrame.new(-290, 44, 5580), mobCF = CFrame.new(-83, 127, 6097) }
     elseif level < 1600 then
         return { mob = "Dragon Crew Warrior", qName = "AmazonQuest", qNum = 1,
-            npc = CFrame.new(5830, 51, -1100), mobCF = CFrame.new(6320, 52, -1282) }
+            npc = CFrame.new(5832.84, 51.68, -1101.52), mobCF = CFrame.new(6242.00, 51.52, -1243.98) }
     elseif level < 1625 then
         return { mob = "Dragon Crew Archer", qName = "AmazonQuest", qNum = 2,
-            npc = CFrame.new(5830, 51, -1100), mobCF = CFrame.new(6625, 378, 244) }
+            npc = CFrame.new(5832.84, 51.68, -1101.52), mobCF = CFrame.new(6488.92, 383.38, -110.66) }
     elseif level < 1650 then
         return { mob = "Female Islander", qName = "AmazonQuest2", qNum = 1,
             npc = CFrame.new(5448, 605, 749), mobCF = CFrame.new(5801, 825, 994) }
@@ -199,7 +199,7 @@ local function getChar()
     return nil
 end
 
--- Noclip แบบ BF04: ปิด CanCollide ทุกชิ้นส่วน + ChangeState(11) ตอนบิน
+-- Noclip: ปิด CanCollide เท่านั้น (ไม่ ChangeState ทุกเฟรม — กันเด้งตำแหน่ง)
 local noclipParts, noclipChar, noclipRefreshed = {}, nil, 0
 local function setNoclip(on)
     local char = LP.Character
@@ -216,69 +216,109 @@ local function setNoclip(on)
     for i = #noclipParts, 1, -1 do
         local p = noclipParts[i]
         if p.Parent then
-            if on then
-                p.CanCollide = false
-            end
+            if on then p.CanCollide = false end
         else
             table.remove(noclipParts, i)
         end
     end
 end
 
-RunService.Stepped:Connect(function()
-    if not _G.BF04V3_ON then return end
-    pcall(function()
-        setNoclip(true)
-        local char, hrp, hum = getChar()
-        if hum then
-            hum:ChangeState(11) -- Physics / บินทะลุ
-            hum.Sit = false
-            hum.PlatformStand = false
-        end
-        if hrp then
-            hrp.CanCollide = false
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.AssemblyAngularVelocity = Vector3.zero
-        end
-    end)
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if _G.BF04V3_ON then pcall(setNoclip, true) end
+    end
 end)
 
--- ── totarget: บินช้า + ทะลุกำแพง + ไม่สร้าง tween ทับ ─────────────
-local FLY_SPEED = 160 -- studs/sec
-local activeTween = nil
-local activeTweenDest = nil
+-- ── บินแบบ BF04: Tween จบรอบเดียว + Bypass TP ระยะไกล ───────────
+local currentTween = nil
+local function stopTween()
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+        currentTween = nil
+    end
+end
 
-local function totarget(cf)
-    local char, hrp, hum = getChar()
-    if not hrp then return end
+local function flySmooth(destCF, speed)
+    stopTween()
+    local _, hrp = getChar()
+    if not hrp then return false end
     setNoclip(true)
-    if hum then hum:ChangeState(11) end
-    hrp.CanCollide = false
-
-    local dist = (hrp.Position - cf.Position).Magnitude
-    if dist <= 30 then return end
-
-    if activeTween and activeTween.PlaybackState == Enum.PlaybackState.Playing
-       and activeTweenDest
-       and (activeTweenDest.Position - cf.Position).Magnitude < 5 then
-        return
+    local dist = (destCF.Position - hrp.Position).Magnitude
+    if dist < 12 then
+        hrp.CFrame = destCF
+        return true
     end
-
-    if activeTween then
-        pcall(function() activeTween:Cancel() end)
-        activeTween = nil
+    local spd = speed or 200
+    if dist >= 1000 then spd = math.min(spd, 180)
+    elseif dist >= 500 then spd = math.min(spd, 220)
     end
-
-    -- ปลายทางยกขึ้น 8 studs กันติดพื้น/กำแพง
-    local dest = cf + Vector3.new(0, 8, 0)
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(math.max(dist / FLY_SPEED, 0.3), Enum.EasingStyle.Linear),
-        { CFrame = dest }
-    )
-    activeTween = tween
-    activeTweenDest = cf
+    local tween = TweenService:Create(hrp,
+        TweenInfo.new(dist / spd, Enum.EasingStyle.Linear),
+        { CFrame = destCF })
+    currentTween = tween
     tween:Play()
+    tween.Completed:Wait()
+    currentTween = nil
+    local _, h2 = getChar()
+    if not h2 then return false end
+    local left = (destCF.Position - h2.Position).Magnitude
+    if left > 30 then
+        log(string.format("บินไม่ถึง (เหลือ %.0f) → รอบใหม่", left), "Y")
+        return false
+    end
+    return true
+end
+
+local function bypassTP(targetCF)
+    local char, hrp, hum = getChar()
+    if not char or not hrp or not hum then return false end
+    local cf = getCommF()
+    if not cf then return false end
+    local startDist = (targetCF.Position - hrp.Position).Magnitude
+    log(string.format("Bypass TP %.0f studs...", startDist), "B")
+    local deadline = os.clock() + 12
+    repeat
+        pcall(function()
+            hum:ChangeState(15)
+            hrp.CFrame = targetCF
+            task.wait()
+            hrp.CFrame = targetCF
+        end)
+        task.wait(0.4)
+        local c2, h2, hum2 = getChar()
+        if not h2 then return false end
+        hrp, hum = h2, hum2
+    until (targetCF.Position - hrp.Position).Magnitude <= 1500 or os.clock() > deadline
+    if (targetCF.Position - hrp.Position).Magnitude > 1500 then return false end
+    pcall(function() cf:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.25)
+    pcall(function() cf:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.25)
+    pcall(function() cf:InvokeServer("TeleportToSpawn") end)
+    task.wait(1.2)
+    return true
+end
+
+local function tp(destCF)
+    local _, hrp = getChar()
+    if not hrp then return false end
+    local dist = (destCF.Position - hrp.Position).Magnitude
+    if dist < 25 then
+        stopTween()
+        hrp.CFrame = destCF
+        return true
+    end
+    if dist > 2500 then
+        stopTween()
+        if bypassTP(destCF) then
+            _, hrp = getChar()
+            if hrp and (destCF.Position - hrp.Position).Magnitude <= 80 then
+                return true
+            end
+        end
+    end
+    return flySmooth(destCF, 200)
 end
 
 local function gotoAndWait(cf)
@@ -286,18 +326,33 @@ local function gotoAndWait(cf)
     while _G.BF04V3_ON and os.clock() - t0 < 180 do
         local _, hrp = getChar()
         if not hrp then return false end
-        setNoclip(true)
         local d = (hrp.Position - cf.Position).Magnitude
-        if d <= 30 then
-            if activeTween then pcall(function() activeTween:Cancel() end) end
-            activeTween, activeTweenDest = nil, nil
+        if d <= 25 then
             hrp.CFrame = cf
             return true
         end
-        totarget(cf)
-        task.wait(0.35)
+        if d > 80 then
+            log(string.format("บิน %.0f studs...", d), "B")
+        end
+        tp(cf)
+        task.wait(0.2)
+        _, hrp = getChar()
+        if hrp and (hrp.Position - cf.Position).Magnitude <= 25 then
+            return true
+        end
     end
     return false
+end
+
+local function closeDialogue()
+    pcall(function()
+        local main = pg:FindFirstChild("Main")
+        if not main then return end
+        for _, name in ipairs({"Dialogue", "Conversations", "Talk", "NPCDialog"}) do
+            local d = main:FindFirstChild(name)
+            if d and d:IsA("GuiObject") and d.Visible then d.Visible = false end
+        end
+    end)
 end
 
 -- ── Weapon ─────────────────────────────────────────────────────────
@@ -522,32 +577,58 @@ local function mainLoop()
             local UIQ = pg.Main:FindFirstChild("Quest")
             if not UIQ then return end
 
-            -- ═══ ยังไม่มีเควส → บินไป NPC → StartQuest ═══
+            -- ═══ ยังไม่มีเควส → บินไป NPC (ใกล้แล้วค่อย StartQuest) ═══
             if not UIQ.Visible then
                 FASTATTACK_ON = false
-                setState("บินไปรับเควส: " .. qdata.mob, "B")
-                local arrived = gotoAndWait(qdata.npc)
-                if not _G.BF04V3_ON then return end
                 local _, hrpNow = getChar()
-                local nearNpc = hrpNow and (hrpNow.Position - qdata.npc.Position).Magnitude <= 40
-                if not arrived and not nearNpc then
-                    log("ยังไม่ถึง NPC (ระยะไกล) ลองบินใหม่...", "Y")
-                    task.wait(1)
+                if not hrpNow then return end
+                local distNpc = (hrpNow.Position - qdata.npc.Position).Magnitude
+                local lv = getMyLevel()
+
+                if distNpc > 20 then
+                    setState(string.format("บินไป NPC %s (%.0f studs) Lv.%d", qdata.mob, distNpc, lv), "B")
+                    tp(qdata.npc)
+                    return -- รอบหน้าค่อยเช็คระยะอีกครั้ง (แบบ BF04)
+                end
+
+                -- ใกล้ NPC จริงแล้ว → ยืนนิ่ง + รับเควส
+                stopTween()
+                hrpNow.CFrame = qdata.npc
+                task.wait(0.35)
+                -- เช็คอีกครั้งว่ายังอยู่ใกล้ (กันเด้ง anti-cheat)
+                local _, hCheck = getChar()
+                if not hCheck or (hCheck.Position - qdata.npc.Position).Magnitude > 35 then
+                    log("ตำแหน่งเด้งกลับ → บินใหม่", "Y")
+                    task.wait(0.5)
                     return
                 end
-                -- บังคับยืนจุด NPC ก่อนรับ
-                if hrpNow then hrpNow.CFrame = qdata.npc end
-                task.wait(0.4)
-                setState("StartQuest: " .. qdata.qName .. " #" .. qdata.qNum, "Y")
-                CommF:InvokeServer("StartQuest", qdata.qName, qdata.qNum)
-                CommF:InvokeServer("SetSpawnPoint")
-                task.wait(0.8)
+
+                setState(string.format("StartQuest %s #%d (ระยะ %.0f)", qdata.qName, qdata.qNum,
+                    (hCheck.Position - qdata.npc.Position).Magnitude), "Y")
+                local invokeOk, invokeResult = pcall(function()
+                    return CommF:InvokeServer("StartQuest", qdata.qName, qdata.qNum)
+                end)
+                if not invokeOk then
+                    log("StartQuest error: " .. tostring(invokeResult), "R")
+                end
+                pcall(function() CommF:InvokeServer("SetSpawnPoint") end)
+
+                local waited = 0
+                while not UIQ.Visible and waited < 25 and _G.BF04V3_ON do
+                    task.wait(0.1)
+                    waited += 1
+                    closeDialogue()
+                end
+
                 if UIQ.Visible then
-                    log("รับเควสสำเร็จ ✓", "G")
-                    gotoAndWait(qdata.mobCF)
+                    log("รับเควสสำเร็จ ✓ → ไปจุดมอน", "G")
+                    tp(qdata.mobCF)
                 else
-                    log("เซิร์ฟเวอร์ไม่เปิดเควส รอแล้วลองใหม่...", "R")
-                    task.wait(2)
+                    local _, hFail = getChar()
+                    local dFail = hFail and (hFail.Position - qdata.npc.Position).Magnitude or -1
+                    log(string.format("ไม่เปิดเควส | Lv.%d | ระยะ %.0f | ตอบ: %s",
+                        lv, dFail, tostring(invokeResult)), "R")
+                    task.wait(1.5)
                 end
                 return
             end
