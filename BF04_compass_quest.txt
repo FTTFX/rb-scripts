@@ -488,9 +488,11 @@ local function equipWeapon()
     return equipSword()
 end
 
--- ร่างพระตีไกล → ลอยสูงขึ้น hitbox กว้าง
+-- ร่างพระตีไกล → จาก Spy 2026-09-05: โดนสูงสุด ≈40 | แนะนำ ≤34
+-- ความสูง 18 = ระยะแนวตั้ง ≈18 (อยู่ในช่วงโดน) ไม่ต้องเยื้องด้าน
+local SAFE_HIT_RANGE = 34
 local function attackHeight()
-    return isBigForm() and 22 or 10
+    return isBigForm() and 18 or 8
 end
 
 local function attackMob(mob)
@@ -685,7 +687,7 @@ local function mainLoop()
             local mhum = mob:FindFirstChildOfClass("Humanoid")
             if not mhrp or not mhum then return end
 
-            if (md or 999) > 80 then
+            if (md or 999) > SAFE_HIT_RANGE then
                 flyTo(mhrp.CFrame * CFrame.new(0, attackHeight(), 0), "มอน")
                 return
             end
@@ -703,10 +705,16 @@ local function mainLoop()
                 if not mhrp then break end
                 setNoclip()
                 equipSword()
-                -- ร่างพระ: ลอยเหนือหัว + ชิดกลางตัวมอน
+                -- ล็อกเหนือหัว → ระยะจริง ≈ attackHeight (≤34 จาก Spy)
                 myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
+                local nowD = (myHrp.Position - mhrp.Position).Magnitude
+                if nowD > SAFE_HIT_RANGE then
+                    -- เด้งออกนอกระยะ → วาร์ปกลับทันที
+                    myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
+                end
                 pcall(function()
-                    mhrp.Size = Vector3.new(70, 70, 70)
+                    -- hitbox เสริมเล็กน้อย (ไม่พึ่งเป็นหลัก — Spy วัดโดยไม่ขยาย)
+                    mhrp.Size = Vector3.new(25, 25, 25)
                     mhrp.CanCollide = false
                     mhum.PlatformStand = true
                     mhum.Sit = true
