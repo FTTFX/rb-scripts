@@ -199,28 +199,65 @@ local function getChar()
     return nil
 end
 
--- Noclip ระหว่างบิน (Humanoid:ChangeState(11) = Physics แบบ MUXHUB)
-RunService.Stepped:Connect(function()
-    if _G.BF04V3_ON then
-        pcall(function()
-            local char, _, hum = getChar()
-            if hum then hum:ChangeState(11) end
-        end)
+-- Noclip แบบ BF04: ปิด CanCollide ทุกชิ้นส่วน + ChangeState(11) ตอนบิน
+local noclipParts, noclipChar, noclipRefreshed = {}, nil, 0
+local function setNoclip(on)
+    local char = LP.Character
+    if not char then return end
+    local now = os.clock()
+    if char ~= noclipChar or now - noclipRefreshed > 2 then
+        noclipChar = char
+        noclipRefreshed = now
+        table.clear(noclipParts)
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then table.insert(noclipParts, p) end
+        end
     end
+    for i = #noclipParts, 1, -1 do
+        local p = noclipParts[i]
+        if p.Parent then
+            if on then
+                p.CanCollide = false
+            end
+        else
+            table.remove(noclipParts, i)
+        end
+    end
+end
+
+RunService.Stepped:Connect(function()
+    if not _G.BF04V3_ON then return end
+    pcall(function()
+        setNoclip(true)
+        local char, hrp, hum = getChar()
+        if hum then
+            hum:ChangeState(11) -- Physics / บินทะลุ
+            hum.Sit = false
+            hum.PlatformStand = false
+        end
+        if hrp then
+            hrp.CanCollide = false
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+        end
+    end)
 end)
 
--- ── totarget: บินช้า + ไม่สร้าง tween ทับ (กันกระตุก) ─────────────
-local FLY_SPEED = 160 -- studs/sec (เดิม 300 → ช้าลง กันวาปหลุด)
+-- ── totarget: บินช้า + ทะลุกำแพง + ไม่สร้าง tween ทับ ─────────────
+local FLY_SPEED = 160 -- studs/sec
 local activeTween = nil
 local activeTweenDest = nil
 
 local function totarget(cf)
-    local _, hrp = getChar()
+    local char, hrp, hum = getChar()
     if not hrp then return end
+    setNoclip(true)
+    if hum then hum:ChangeState(11) end
+    hrp.CanCollide = false
+
     local dist = (hrp.Position - cf.Position).Magnitude
     if dist <= 30 then return end
 
-    -- ถ้า tween เดิมยังเล่นอยู่ไปจุดเดิม → อย่าสร้างใหม่ (ตัวการกระตุก)
     if activeTween and activeTween.PlaybackState == Enum.PlaybackState.Playing
        and activeTweenDest
        and (activeTweenDest.Position - cf.Position).Magnitude < 5 then
@@ -232,10 +269,12 @@ local function totarget(cf)
         activeTween = nil
     end
 
+    -- ปลายทางยกขึ้น 8 studs กันติดพื้น/กำแพง
+    local dest = cf + Vector3.new(0, 8, 0)
     local tween = TweenService:Create(
         hrp,
         TweenInfo.new(math.max(dist / FLY_SPEED, 0.3), Enum.EasingStyle.Linear),
-        { CFrame = cf }
+        { CFrame = dest }
     )
     activeTween = tween
     activeTweenDest = cf
@@ -247,14 +286,16 @@ local function gotoAndWait(cf)
     while _G.BF04V3_ON and os.clock() - t0 < 180 do
         local _, hrp = getChar()
         if not hrp then return false end
+        setNoclip(true)
         local d = (hrp.Position - cf.Position).Magnitude
         if d <= 30 then
             if activeTween then pcall(function() activeTween:Cancel() end) end
             activeTween, activeTweenDest = nil, nil
+            hrp.CFrame = cf
             return true
         end
         totarget(cf)
-        task.wait(0.35) -- เช็คนานขึ้น ไม่รีสตาร์ท tween รัวๆ
+        task.wait(0.35)
     end
     return false
 end
@@ -485,18 +526,28 @@ local function mainLoop()
             if not UIQ.Visible then
                 FASTATTACK_ON = false
                 setState("บินไปรับเควส: " .. qdata.mob, "B")
-                gotoAndWait(qdata.npc)
+                local arrived = gotoAndWait(qdata.npc)
                 if not _G.BF04V3_ON then return end
-                task.wait(0.3)
+                local _, hrpNow = getChar()
+                local nearNpc = hrpNow and (hrpNow.Position - qdata.npc.Position).Magnitude <= 40
+                if not arrived and not nearNpc then
+                    log("ยังไม่ถึง NPC (ระยะไกล) ลองบินใหม่...", "Y")
+                    task.wait(1)
+                    return
+                end
+                -- บังคับยืนจุด NPC ก่อนรับ
+                if hrpNow then hrpNow.CFrame = qdata.npc end
+                task.wait(0.4)
                 setState("StartQuest: " .. qdata.qName .. " #" .. qdata.qNum, "Y")
                 CommF:InvokeServer("StartQuest", qdata.qName, qdata.qNum)
                 CommF:InvokeServer("SetSpawnPoint")
-                task.wait(0.5)
+                task.wait(0.8)
                 if UIQ.Visible then
                     log("รับเควสสำเร็จ ✓", "G")
                     gotoAndWait(qdata.mobCF)
                 else
-                    log("เซิร์ฟเวอร์ไม่เปิดเควส ลองซ้ำ...", "R")
+                    log("เซิร์ฟเวอร์ไม่เปิดเควส รอแล้วลองใหม่...", "R")
+                    task.wait(2)
                 end
                 return
             end
