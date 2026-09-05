@@ -394,19 +394,44 @@ end
 
 local function equipWeapon()
     local char, _, hum = getChar()
-    if not char or not hum then return end
-    if char:FindFirstChildOfClass("Tool") then return end
+    if not char or not hum then return false end
+    local held = char:FindFirstChildOfClass("Tool")
+    if held then
+        local tip = tostring(held.ToolTip or "")
+        if tip == "Melee" or tip == "Sword" then return true end
+        -- ถือผลอยู่ → เก็บก่อน (ร่างขยายค้างได้ แต่ถือผลจะกวนรับเควส/ตี)
+        if tip == "Blox Fruit" then
+            pcall(function() hum:UnequipTools() end)
+            task.wait(0.15)
+        end
+    end
     local bp = LP:FindFirstChild("Backpack")
-    if not bp then return end
+    if not bp then return false end
+    local best
     for _, t in ipairs(bp:GetChildren()) do
         if t:IsA("Tool") then
             local tip = tostring(t.ToolTip or "")
-            if tip == "Melee" or tip == "Sword" or tip == "" then
-                pcall(function() hum:EquipTool(t) end)
-                return
-            end
+            if tip == "Melee" then best = t; break
+            elseif tip == "Sword" and not best then best = t
+            elseif not best and tip ~= "Blox Fruit" and tip ~= "Gun" then best = t end
         end
     end
+    if best then
+        pcall(function() hum:EquipTool(best) end)
+        return true
+    end
+    return false
+end
+
+-- ร่างขยาย (Buddha ฯลฯ): HRP ใหญ่ / ระยะรับเควสเพี้ยน
+local function isBigForm()
+    local _, hrp = getChar()
+    if not hrp then return false end
+    return hrp.Size.Magnitude >= 5 or hrp.Size.Y >= 3.5
+end
+
+local function attackHeight()
+    return isBigForm() and 28 or 10
 end
 
 local function attackMob(mob)
@@ -415,6 +440,8 @@ local function attackMob(mob)
     local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
     if not part then return end
     pcall(function()
+        local char = LP.Character
+        if char and char:FindFirstChild("Stun") then char.Stun.Value = 0 end
         if rA then
             rA:FireServer(0); rA:FireServer(1); rA:FireServer(2); rA:FireServer(3)
         end
@@ -525,12 +552,11 @@ local function mainLoop()
             end
             refreshStatus(quest)
 
-            -- ── ยังไม่มีเควส → หา NPC ตามเข็มทิศ/Data ──
+            -- ── ยังไม่มีเควส → หา NPC ──
             if not questUIVisible() then
                 local pos, src = resolveNpcTarget(quest)
                 if not pos then
                     log("รอเป้า NPC... (" .. tostring(src) .. ")", "Y")
-                    -- ลองบินไปมอนเผื่อเกาะโหลด NPC
                     local mob, md = findMob(quest.mob)
                     if mob and md and md > 80 then
                         local mhrp = mob:FindFirstChild("HumanoidRootPart")
@@ -541,27 +567,38 @@ local function mainLoop()
                 end
                 local _, hrp = getChar()
                 local dist = hrp and (hrp.Position - pos).Magnitude or 9999
-                if dist > 22 then
-                    flyTo(CFrame.new(pos + Vector3.new(0, 4, 0)), "NPC/" .. src)
+                -- ร่างใหญ่: ระยะเพี้ยน → ยอมรับใกล้ที่กว้างกว่า + วาร์ปชิดก่อนรับ
+                local nearDist = isBigForm() and 55 or 28
+                if dist > nearDist then
+                    flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/" .. src)
                     return
                 end
-                -- ใกล้แล้ว รับเควส
-                if hrp then hrp.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end
-                task.wait(0.35)
-                log(string.format("StartQuest(%s, %s)", quest.qName, tostring(quest.qNum)), "Y")
+                equipWeapon() -- ไม่ถือผลตอนรับเควส
+                -- วาร์ปชิด NPC ซ้ำ (ร่างขยายมักเด้งออก)
+                for _ = 1, 4 do
+                    local _, h = getChar()
+                    if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
+                    task.wait(0.12)
+                end
+                local _, hNow = getChar()
+                local dNow = hNow and (hNow.Position - pos).Magnitude or -1
+                log(string.format("StartQuest(%s, %s) ร่างใหญ่=%s ระยะ=%.0f",
+                    quest.qName, tostring(quest.qNum), tostring(isBigForm()), dNow), "Y")
                 local iok, ires = pcall(function()
                     return cf:InvokeServer("StartQuest", quest.qName, quest.qNum)
                 end)
                 log("ผล: ok=" .. tostring(iok) .. " res=" .. tostring(ires), "B")
                 local w = 0
-                while not questUIVisible() and w < 20 and _G.BF04C_ON do
+                while not questUIVisible() and w < 25 and _G.BF04C_ON do
+                    local _, h = getChar()
+                    if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
                     task.wait(0.1); w += 1
                 end
                 if questUIVisible() then
                     log("รับเควสสำเร็จ: " .. questTitle(), "G")
                 else
-                    log("ยังไม่เปิด UI — รอ/ลองใหม่", "R")
-                    task.wait(1.5)
+                    log("ยังไม่เปิด UI (ลองใหม่) — ถ้าร่างขยายแล้วรับไม่ได้ ลองถอดร่าง/ถือดาบ", "R")
+                    task.wait(1.2)
                 end
                 return
             end
@@ -576,7 +613,7 @@ local function mainLoop()
                 return
             end
 
-            -- ── ตีมอน ──
+            -- ── ตีมอน: บินเข้าใกล้ก่อน แล้วค่อยล็อกตี ──
             local mob, md = findMob(quest.mob)
             if not mob then
                 log("ไม่เจอ " .. quest.mob .. " ใน Enemies → รอโหลด", "Y")
@@ -587,7 +624,16 @@ local function mainLoop()
             local mhum = mob:FindFirstChildOfClass("Humanoid")
             if not mhrp or not mhum then return end
 
-            log(string.format("สู้ %s HP%.0f (d=%.0f)", mob.Name, mhum.Health, md or 0), "Y")
+            if (md or 999) > 70 then
+                flyTo(mhrp.CFrame * CFrame.new(0, attackHeight(), 0), "มอน")
+                return
+            end
+
+            log(string.format("สู้ %s HP%.0f (d=%.0f big=%s)",
+                mob.Name, mhum.Health, md or 0, tostring(isBigForm())), "Y")
+            local lastHp = mhum.Health
+            local lastCheck = os.clock()
+            local noDmg = 0
             while mob.Parent and mhum.Parent and mhum.Health > 0
                   and questUIVisible() and _G.BF04C_ON do
                 local _, myHrp = getChar()
@@ -595,17 +641,33 @@ local function mainLoop()
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
                 if not mhrp then break end
                 setNoclip()
-                myHrp.CFrame = mhrp.CFrame * CFrame.new(0, 12, 0)
+                equipWeapon()
+                myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
                 pcall(function()
-                    mhrp.Size = Vector3.new(40, 40, 40)
+                    mhrp.Size = Vector3.new(60, 60, 60)
                     mhrp.CanCollide = false
                     mhum.PlatformStand = true
+                    mhum.Sit = true
                 end)
                 attackMob(mob)
+                if os.clock() - lastCheck >= 1.2 then
+                    lastCheck = os.clock()
+                    local hp = mhum.Health
+                    if hp >= lastHp then
+                        noDmg += 1
+                        if noDmg >= 3 then
+                            log("ตีไม่เข้า → ข้ามตัวนี้", "Y")
+                            break
+                        end
+                    else
+                        noDmg = 0
+                        lastHp = hp
+                    end
+                end
                 task.wait()
             end
             log(mob.Name .. " จบรอบ", "G")
-            task.wait(0.4)
+            task.wait(0.35)
         end)
         if not ok then
             log("Loop error: " .. tostring(err), "R")
