@@ -34,14 +34,18 @@ local SEA_PLACE = {
     [4442272183] = 2,
     [7449423635] = 3,
     [79091703265657] = 2,   -- ทะเล 2 หลังเกมย้าย place (ค่าเก่าใช้ไม่ได้แล้ว)
+    [100117331123089] = 3,  -- ทะเล 3 place ใหม่ (เจอจริง 5 ก.ย. 2026)
 }
 
 -- PlaceId เปลี่ยนได้เมื่อเกมอัปเดต ต้องมีตัวสำรองที่ดูจากเกาะในแมพจริง
 -- เกาะเหล่านี้มีเฉพาะทะเลนั้นๆ
 local SEA_ISLANDS = {
-    [3] = { "Port Town", "Hydra Island", "Great Tree", "Castle on the Sea" },
-    [2] = { "Kingdom of Rose", "Green Zone", "Graveyard Island", "Cafe" },
-    [1] = { "Middle Town", "Jungle", "Pirate Village" },
+    [3] = { "Port Town", "Hydra Island", "Great Tree", "Castle on the Sea",
+            "PortTown", "HydraIsland", "GreatTree", "CastleOnTheSea", "Turtle" },
+    [2] = { "Kingdom of Rose", "Green Zone", "Graveyard Island", "Cafe",
+            "KingdomOfRose", "GreenZone", "GraveyardIsland", "Colosseum", "Fountain City" },
+    [1] = { "Middle Town", "Jungle", "Pirate Village",
+            "MiddleTown", "PirateVillage", "Frozen Village", "Desert" },
 }
 local function getSea()
     local byPlace = SEA_PLACE[game.PlaceId]
