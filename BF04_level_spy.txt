@@ -1,0 +1,492 @@
+--[[ ═══════════════════════════════════════════════════════════════════
+    BF04 Level Spy — Sea 3 (1500-2600)  ตัวสอดแนมข้อมูลเควส/พิกัด
+    เป้าหมาย: เทียบโค้ดเก่า กับของจริงในเกม ก่อนแก้ autoquest
+      - เลือกเควสตามเลเวล → บินไป NPC / บินไปจุดมอน (จากตารางเก่า)
+      - สแกนศัตรูรอบตัว + ชื่อมอนที่คาดหวัง
+      - ลอง StartQuest แล้วดูผล
+      - กด Copy ส่งรายงานมาวางในแชทได้
+    ═══════════════════════════════════════════════════════════════════ ]]
+
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local LP = Players.LocalPlayer
+local pg = LP:WaitForChild("PlayerGui")
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+-- ── ตารางอ้างอิงจาก BF04_autoquest (โค้ดเก่า) ──────────────────────
+-- lvMin = เริ่มใช้เควสนี้ | source = "BF04"
+local REF = {
+    { lvMin=1500, lvMax=1524, mob="Pirate Millionaire", q="PiratePortQuest", n=1,
+      npc=CFrame.new(-290.07, 42.90, 5581.59), mobCF=CFrame.new(81.16, 43.76, 5724.70) },
+    { lvMin=1525, lvMax=1574, mob="Pistol Billionaire", q="PiratePortQuest", n=2,
+      npc=CFrame.new(-290.07, 42.90, 5581.59), mobCF=CFrame.new(81.16, 43.76, 5724.70) },
+    { lvMin=1575, lvMax=1599, mob="Dragon Crew Warrior", q="AmazonQuest", n=1,
+      npc=CFrame.new(5832.84, 51.68, -1101.52), mobCF=CFrame.new(6242.00, 51.52, -1243.98) },
+    { lvMin=1600, lvMax=1624, mob="Dragon Crew Archer", q="AmazonQuest", n=2,
+      npc=CFrame.new(5832.84, 51.68, -1101.52), mobCF=CFrame.new(6488.92, 383.38, -110.66) },
+    { lvMin=1625, lvMax=1649, mob="Female Islander", q="AmazonQuest2", n=1,
+      npc=CFrame.new(5448.86, 601.52, 751.13), mobCF=CFrame.new(5825.22, 682.89, 704.58) },
+    { lvMin=1650, lvMax=1699, mob="Giant Islander", q="AmazonQuest2", n=2,
+      npc=CFrame.new(5448.86, 601.52, 751.13), mobCF=CFrame.new(4530.35, 656.76, -131.61) },
+    { lvMin=1700, lvMax=1724, mob="Marine Commodore", q="MarineTreeIsland", n=1,
+      npc=CFrame.new(2180.54, 27.82, -6741.55), mobCF=CFrame.new(2490.08, 190.42, -7160.05) },
+    { lvMin=1725, lvMax=1774, mob="Marine Rear Admiral", q="MarineTreeIsland", n=2,
+      npc=CFrame.new(2180.54, 27.82, -6741.55), mobCF=CFrame.new(3951.39, 229.12, -6912.82) },
+    { lvMin=1775, lvMax=1799, mob="Fishman Raider", q="DeepForestIsland3", n=1,
+      npc=CFrame.new(-10581.66, 330.87, -8761.19), mobCF=CFrame.new(-10322.40, 390.94, -8580.09) },
+    { lvMin=1800, lvMax=1824, mob="Fishman Captain", q="DeepForestIsland3", n=2,
+      npc=CFrame.new(-10581.66, 330.87, -8761.19), mobCF=CFrame.new(-11194.54, 442.03, -8608.81) },
+    { lvMin=1825, lvMax=1849, mob="Forest Pirate", q="DeepForestIsland", n=1,
+      npc=CFrame.new(-13234.04, 331.49, -7625.40), mobCF=CFrame.new(-13225.81, 428.19, -7753.12) },
+    { lvMin=1850, lvMax=1899, mob="Mythological Pirate", q="DeepForestIsland", n=2,
+      npc=CFrame.new(-13234.04, 331.49, -7625.40), mobCF=CFrame.new(-13869.17, 564.95, -7084.41) },
+    { lvMin=1900, lvMax=1924, mob="Jungle Pirate", q="DeepForestIsland2", n=1,
+      npc=CFrame.new(-12680.38, 389.97, -9902.02), mobCF=CFrame.new(-11982.22, 376.33, -10451.42) },
+    { lvMin=1925, lvMax=1974, mob="Musketeer Pirate", q="DeepForestIsland2", n=2,
+      npc=CFrame.new(-12680.38, 389.97, -9902.02), mobCF=CFrame.new(-13282.30, 496.24, -9565.15) },
+    { lvMin=1975, lvMax=1999, mob="Reborn Skeleton", q="HauntedQuest1", n=1,
+      npc=CFrame.new(-9480.83, 142.13, 5566.07), mobCF=CFrame.new(-8817.88, 191.17, 6298.66) },
+    { lvMin=2000, lvMax=2024, mob="Living Zombie", q="HauntedQuest1", n=2,
+      npc=CFrame.new(-9480.83, 142.13, 5566.07), mobCF=CFrame.new(-10125.23, 183.95, 6242.01) },
+    { lvMin=2025, lvMax=2049, mob="Demonic Soul", q="HauntedQuest2", n=1,
+      npc=CFrame.new(-9516.99, 178.01, 6078.47), mobCF=CFrame.new(-9712.03, 204.70, 6193.32) },
+    { lvMin=2050, lvMax=2074, mob="Posessed Mummy", q="HauntedQuest2", n=2,
+      npc=CFrame.new(-9516.99, 178.01, 6078.47), mobCF=CFrame.new(-9545.78, 69.62, 6339.56) },
+    { lvMin=2075, lvMax=2099, mob="Peanut Scout", q="NutsIslandQuest", n=1,
+      npc=CFrame.new(-2104.36, 38.13, -10194.07), mobCF=CFrame.new(-2126.41, 90.56, -10301.96) },
+    { lvMin=2100, lvMax=2124, mob="Peanut President", q="NutsIslandQuest", n=2,
+      npc=CFrame.new(-2104.36, 38.13, -10194.07), mobCF=CFrame.new(-2118.75, 70.30, -10509.32) },
+    { lvMin=2125, lvMax=2149, mob="Ice Cream Chef", q="IceCreamIslandQuest", n=1,
+      npc=CFrame.new(-820.22, 65.85, -10966.17), mobCF=CFrame.new(-685.29, 96.32, -10957.59) },
+    { lvMin=2150, lvMax=2199, mob="Ice Cream Commander", q="IceCreamIslandQuest", n=2,
+      npc=CFrame.new(-820.22, 65.85, -10966.17), mobCF=CFrame.new(-635.74, 143.05, -11335.22) },
+    { lvMin=2200, lvMax=2224, mob="Cookie Crafter", q="CakeQuest1", n=1,
+      npc=CFrame.new(-2021.00, 38.00, -12028.00), mobCF=CFrame.new(-2322.00, 37.00, -12217.00), note="พิกัด cake จาก Xenon ไม่ใช่ BF04" },
+    { lvMin=2225, lvMax=2249, mob="Cake Guard", q="CakeQuest1", n=2,
+      npc=CFrame.new(-2024.00, 38.00, -12026.00), mobCF=CFrame.new(-1418.00, 37.00, -12256.00), note="พิกัด cake จาก Xenon ไม่ใช่ BF04" },
+    { lvMin=2250, lvMax=2274, mob="Baking Staff", q="CakeQuest2", n=1,
+      npc=CFrame.new(-1932.00, 38.00, -12848.00), mobCF=CFrame.new(-1980.00, 37.00, -12984.00), note="พิกัด cake จาก Xenon ไม่ใช่ BF04" },
+    { lvMin=2275, lvMax=2600, mob="Head Baker", q="CakeQuest2", n=2,
+      npc=CFrame.new(-1932.00, 38.00, -12848.00), mobCF=CFrame.new(-2252.00, 52.00, -13033.00), note="พิกัด cake จาก Xenon ไม่ใช่ BF04" },
+}
+
+local function getLevel()
+    local ok, lv = pcall(function() return LP.Data.Level.Value end)
+    return (ok and lv) or 0
+end
+
+local function getSea()
+    local p = Workspace:FindFirstChild("Map")
+    if Workspace:FindFirstChild("BoatProxy") or (p and p:FindFirstChild("Waterfall")) then end
+    local ok, placeId = pcall(function() return game.PlaceId end)
+    -- Blox Fruits seas by PlaceId roughly; fallback by Y/Z later
+    local ids = {
+        [2753915549] = 1, [4442272183] = 2, [7449423635] = 3,
+    }
+    return ids[game.PlaceId] or "?"
+end
+
+local function getChar()
+    local c = LP.Character
+    local h = c and c:FindFirstChild("HumanoidRootPart")
+    local hum = c and c:FindFirstChildOfClass("Humanoid")
+    if c and h and hum then return c, h, hum end
+end
+
+local function getCommF()
+    local ok, r = pcall(function()
+        return RS:WaitForChild("Remotes", 5):WaitForChild("CommF_", 5)
+    end)
+    return ok and r or nil
+end
+
+local function fmtCF(cf)
+    local p = cf.Position
+    return string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z)
+end
+
+local function fmtPos(v)
+    return string.format("%.1f, %.1f, %.1f", v.X, v.Y, v.Z)
+end
+
+-- ── GUI ────────────────────────────────────────────────────────────
+local old = pg:FindFirstChild("BF04SpyGUI"); if old then old:Destroy() end
+local sg = Instance.new("ScreenGui")
+sg.Name = "BF04SpyGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 420, 0, 520); frame.Position = UDim2.new(0, 12, 0, 12)
+frame.BackgroundColor3 = Color3.fromRGB(14, 14, 20); frame.BorderSizePixel = 0
+frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
+frame.Parent = sg
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -40, 0, 24); title.Position = UDim2.new(0, 10, 0, 2)
+title.BackgroundTransparency = 1; title.TextColor3 = Color3.fromRGB(120, 200, 255)
+title.Text = "BF04 Level Spy (Sea3) — เทียบของเก่า vs ของจริง"
+title.Font = Enum.Font.GothamBold; title.TextSize = 12
+title.TextXAlignment = Enum.TextXAlignment.Left; title.Parent = frame
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 24, 0, 20); closeBtn.Position = UDim2.new(1, -28, 0, 3)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120, 20, 20); closeBtn.TextColor3 = Color3.new(1, 1, 1)
+closeBtn.Text = "X"; closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 12
+closeBtn.BorderSizePixel = 0; closeBtn.Parent = frame
+
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.new(1, -16, 0, 32); statusLbl.Position = UDim2.new(0, 8, 0, 28)
+statusLbl.BackgroundTransparency = 1; statusLbl.TextColor3 = Color3.fromRGB(200, 200, 210)
+statusLbl.Text = "..."; statusLbl.Font = Enum.Font.Code; statusLbl.TextSize = 11
+statusLbl.TextXAlignment = Enum.TextXAlignment.Left; statusLbl.TextYAlignment = Enum.TextYAlignment.Top
+statusLbl.TextWrapped = true; statusLbl.Parent = frame
+
+-- รายการเควส
+local list = Instance.new("ScrollingFrame")
+list.Size = UDim2.new(1, -16, 0, 150); list.Position = UDim2.new(0, 8, 0, 64)
+list.BackgroundColor3 = Color3.fromRGB(8, 8, 14); list.BorderSizePixel = 0
+list.ScrollBarThickness = 4; list.CanvasSize = UDim2.new(0, 0, 0, 0)
+list.AutomaticCanvasSize = Enum.AutomaticSize.Y; list.Parent = frame
+local listLayout = Instance.new("UIListLayout")
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder; listLayout.Parent = list
+
+local selected = nil
+local function refreshStatus()
+    local lv = getLevel()
+    local _, hrp = getChar()
+    local pos = hrp and fmtPos(hrp.Position) or "no char"
+    local qVis, qTitle = false, "-"
+    pcall(function()
+        local q = pg.Main.Quest
+        qVis = q.Visible
+        qTitle = q.Container.QuestTitle.Title.Text
+    end)
+    statusLbl.Text = string.format(
+        "Lv.%d | Sea:%s | Pos:%s\nQuestUI:%s | %s",
+        lv, tostring(getSea()), pos, qVis and "ON" or "OFF", qTitle
+    )
+end
+
+local function selectRow(row)
+    selected = row
+    for _, child in ipairs(list:GetChildren()) do
+        if child:IsA("TextButton") then
+            child.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
+        end
+    end
+    if row and row._btn then
+        row._btn.BackgroundColor3 = Color3.fromRGB(50, 90, 60)
+    end
+    log("เลือก: Lv." .. row.lvMin .. "-" .. row.lvMax .. " " .. row.mob
+        .. " | " .. row.q .. "#" .. row.n, "Y")
+    log("  NPCเก่า: " .. fmtCF(row.npc), "S")
+    log("  MOBเก่า: " .. fmtCF(row.mobCF), "S")
+end
+
+for i, row in ipairs(REF) do
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -4, 0, 18)
+    b.BackgroundColor3 = Color3.fromRGB(28, 28, 40)
+    b.TextColor3 = Color3.fromRGB(210, 210, 220)
+    b.Text = string.format("%d-%d  %s  [%s#%d]", row.lvMin, row.lvMax, row.mob, row.q, row.n)
+    b.Font = Enum.Font.Code; b.TextSize = 10
+    b.TextXAlignment = Enum.TextXAlignment.Left
+    b.BorderSizePixel = 0; b.LayoutOrder = i; b.Parent = list
+    row._btn = b
+    b.MouseButton1Click:Connect(function() selectRow(row) end)
+end
+
+-- ปุ่มแอคชัน
+local function mkBtn(txt, x, y, w, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, w, 0, 26); b.Position = UDim2.new(0, x, 0, y)
+    b.BackgroundColor3 = col; b.TextColor3 = Color3.new(1, 1, 1)
+    b.Text = txt; b.Font = Enum.Font.GothamBold; b.TextSize = 11
+    b.BorderSizePixel = 0; b.Parent = frame
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+    return b
+end
+
+local y0 = 222
+local btnMyLv   = mkBtn("เควสตาม Lv ฉัน", 8, y0, 130, Color3.fromRGB(40, 100, 140))
+local btnFlyNpc = mkBtn("บิน→NPC", 144, y0, 88, Color3.fromRGB(50, 90, 160))
+local btnFlyMob = mkBtn("บิน→มอน", 238, y0, 88, Color3.fromRGB(90, 70, 140))
+local btnMark   = mkBtn("จำตำแหน่ง", 332, y0, 80, Color3.fromRGB(100, 80, 40))
+
+local btnScan   = mkBtn("สแกนรอบตัว", 8, y0+32, 100, Color3.fromRGB(40, 120, 70))
+local btnScanMob= mkBtn("สแกนที่จุดมอน", 114, y0+32, 110, Color3.fromRGB(40, 120, 70))
+local btnQuest  = mkBtn("ลอง StartQuest", 230, y0+32, 110, Color3.fromRGB(140, 70, 40))
+local btnCopy   = mkBtn("Copy รายงาน", 346, y0+32, 66, Color3.fromRGB(30, 100, 50))
+
+local btnSnapNpc = mkBtn("บันทึกเป็น NPC จริง", 8, y0+64, 140, Color3.fromRGB(70, 70, 100))
+local btnSnapMob = mkBtn("บันทึกเป็น MOB จริง", 154, y0+64, 140, Color3.fromRGB(70, 70, 100))
+local btnRefresh = mkBtn("รีเฟรชสถานะ", 300, y0+64, 112, Color3.fromRGB(50, 50, 70))
+
+-- log
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -16, 1, -320); scroll.Position = UDim2.new(0, 8, 0, 320)
+scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 14); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+local lay = Instance.new("UIListLayout"); lay.SortOrder = Enum.SortOrder.LayoutOrder; lay.Parent = scroll
+
+local copyLines, order = {}, 0
+local cols = {
+    G = Color3.fromRGB(80, 255, 120), Y = Color3.fromRGB(255, 210, 0),
+    R = Color3.fromRGB(255, 80, 80),  B = Color3.fromRGB(140, 160, 255),
+    S = Color3.fromRGB(150, 150, 160), O = Color3.fromRGB(255, 160, 50),
+}
+function log(txt, c)
+    order += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -8, 0, 14); l.BackgroundTransparency = 1
+    l.Font = Enum.Font.Code; l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.TextColor3 = cols[c] or cols.S
+    l.Text = string.format("[%s] %s", os.date("%H:%M:%S"), txt)
+    l.LayoutOrder = order; l.Parent = scroll
+    table.insert(copyLines, l.Text)
+    scroll.CanvasPosition = Vector2.new(0, lay.AbsoluteContentSize.Y)
+end
+
+-- noclip เบาๆ ตอนบิน
+local function setNoclip()
+    local c = LP.Character
+    if not c then return end
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("BasePart") then p.CanCollide = false end
+    end
+end
+
+local function flyTo(cf, label)
+    local _, hrp = getChar()
+    if not hrp then log("ไม่มีตัวละคร", "R") return false end
+    setNoclip()
+    local dist = (hrp.Position - cf.Position).Magnitude
+    log(string.format("บิน→%s ระยะ %.0f | เป้า %s", label, dist, fmtCF(cf)), "B")
+    if dist < 20 then
+        hrp.CFrame = cf
+        log("ถึงแล้ว (ใกล้)", "G")
+        refreshStatus()
+        return true
+    end
+    local spd = 200
+    if dist > 1000 then spd = 160 end
+    local tw = TweenService:Create(hrp, TweenInfo.new(dist / spd, Enum.EasingStyle.Linear), { CFrame = cf })
+    tw:Play()
+    tw.Completed:Wait()
+    local _, h2 = getChar()
+    local left = h2 and (h2.Position - cf.Position).Magnitude or 9999
+    if left <= 35 then
+        log(string.format("ถึงแล้ว (เหลือ %.0f)", left), "G")
+        if h2 then h2.CFrame = cf end
+    else
+        log(string.format("ยังไม่ถึง (เหลือ %.0f) — อาจโดนเด้ง/ติดแมพ", left), "R")
+    end
+    refreshStatus()
+    return left <= 35
+end
+
+local function countMobs(filterName, nearPos, radius)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    local counts, samples = {}, {}
+    if not enemies then return counts, samples, 0 end
+    local total = 0
+    for _, e in ipairs(enemies:GetChildren()) do
+        local hum = e:FindFirstChildOfClass("Humanoid")
+        local hrp = e:FindFirstChild("HumanoidRootPart")
+        if hum and hrp and hum.Health > 0 then
+            if nearPos and (hrp.Position - nearPos).Magnitude > (radius or 250) then
+                -- skip far
+            else
+                total += 1
+                counts[e.Name] = (counts[e.Name] or 0) + 1
+                if #samples < 8 then
+                    table.insert(samples, {
+                        name = e.Name,
+                        hp = math.floor(hum.Health),
+                        pos = fmtPos(hrp.Position),
+                        d = nearPos and math.floor((hrp.Position - nearPos).Magnitude) or 0,
+                    })
+                end
+            end
+        end
+    end
+    if filterName then
+        -- also report exact match count
+    end
+    return counts, samples, total
+end
+
+local function scanAround(center, radius, tag)
+    local _, hrp = getChar()
+    center = center or (hrp and hrp.Position)
+    if not center then log("ไม่มีตำแหน่ง", "R") return end
+    log("── สแกน " .. tag .. " รัศมี " .. radius .. " ──", "Y")
+    log("ศูนย์กลาง: " .. fmtPos(center), "S")
+    local counts, samples, total = countMobs(nil, center, radius)
+    log("ศัตรูทั้งหมดในรัศมี: " .. total, total > 0 and "G" or "R")
+    local names = {}
+    for n, c in pairs(counts) do
+        table.insert(names, n .. "(" .. c .. ")")
+    end
+    table.sort(names)
+    if #names == 0 then
+        log("ไม่พบมอนในรัศมีนี้", "R")
+    else
+        log("รายชื่อ: " .. table.concat(names, ", "), "B")
+    end
+    for _, s in ipairs(samples) do
+        log(string.format("  • %s HP%d d=%d @ %s", s.name, s.hp, s.d, s.pos), "S")
+    end
+    if selected then
+        local expect = selected.mob
+        local found = 0
+        for n, c in pairs(counts) do
+            if n:find(expect, 1, true) then found += c end
+        end
+        if found > 0 then
+            log("✓ เจอมอนที่คาดหวัง '" .. expect .. "' = " .. found .. " ตัว", "G")
+        else
+            log("✗ ไม่เจอ '" .. expect .. "' ในรัศมี — พิกัดเก่าอาจผิด/มอนย้าย", "R")
+        end
+    end
+end
+
+-- ── ปุ่ม ───────────────────────────────────────────────────────────
+closeBtn.MouseButton1Click:Connect(function() sg:Destroy() end)
+
+btnMyLv.MouseButton1Click:Connect(function()
+    local lv = getLevel()
+    local hit = nil
+    for _, row in ipairs(REF) do
+        if lv >= row.lvMin and lv <= row.lvMax then hit = row break end
+    end
+    if hit then
+        selectRow(hit)
+        log("Lv ฉัน = " .. lv .. " → ใช้ช่วง " .. hit.lvMin .. "-" .. hit.lvMax, "G")
+    else
+        log("Lv." .. lv .. " ไม่อยู่ในช่วงตาราง Sea3 (1500-2600)", "R")
+    end
+    refreshStatus()
+end)
+
+btnFlyNpc.MouseButton1Click:Connect(function()
+    if not selected then log("เลือกเควสก่อน", "R") return end
+    task.spawn(function() flyTo(selected.npc, "NPC") end)
+end)
+
+btnFlyMob.MouseButton1Click:Connect(function()
+    if not selected then log("เลือกเควสก่อน", "R") return end
+    task.spawn(function() flyTo(selected.mobCF, "MOB") end)
+end)
+
+btnMark.MouseButton1Click:Connect(function()
+    local _, hrp = getChar()
+    if not hrp then return end
+    log("MARK ตำแหน่งปัจจุบัน: " .. fmtPos(hrp.Position), "O")
+    log("  CFrame.new(" .. string.format("%.2f, %.2f, %.2f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z) .. ")", "O")
+end)
+
+btnScan.MouseButton1Click:Connect(function()
+    local _, hrp = getChar()
+    if not hrp then return end
+    scanAround(hrp.Position, 300, "รอบตัว")
+end)
+
+btnScanMob.MouseButton1Click:Connect(function()
+    if not selected then log("เลือกเควสก่อน", "R") return end
+    scanAround(selected.mobCF.Position, 350, "จุดมอนเก่า")
+end)
+
+btnQuest.MouseButton1Click:Connect(function()
+    if not selected then log("เลือกเควสก่อน", "R") return end
+    local CommF = getCommF()
+    if not CommF then log("หา CommF_ ไม่เจอ", "R") return end
+    local _, hrp = getChar()
+    local dist = hrp and (hrp.Position - selected.npc.Position).Magnitude or -1
+    log(string.format("StartQuest(%s, %d) ระยะจาก NPC เก่า=%.0f", selected.q, selected.n, dist), "Y")
+    local ok, res = pcall(function()
+        return CommF:InvokeServer("StartQuest", selected.q, selected.n)
+    end)
+    log("invoke ok=" .. tostring(ok) .. " result=" .. tostring(res), ok and "B" or "R")
+    task.wait(0.6)
+    local qVis, qTitle = false, "-"
+    pcall(function()
+        local q = pg.Main.Quest
+        qVis = q.Visible
+        qTitle = q.Container.QuestTitle.Title.Text
+    end)
+    if qVis then
+        log("✓ Quest UI เปิด: " .. qTitle, "G")
+    else
+        log("✗ Quest UI ยังไม่เปิด — ชื่อเควส/ระยะ/เลเวลอาจผิด", "R")
+    end
+    refreshStatus()
+end)
+
+btnSnapNpc.MouseButton1Click:Connect(function()
+    local _, hrp = getChar()
+    if not hrp or not selected then log("เลือกเควส + ยืนจุดที่ถูก", "R") return end
+    log("NPC จริงที่พบสำหรับ " .. selected.mob .. ":", "G")
+    log("  npc = CFrame.new(" .. string.format("%.2f, %.2f, %.2f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z) .. ")", "G")
+    log("  (เก่าคือ " .. fmtCF(selected.npc) .. ")", "S")
+end)
+
+btnSnapMob.MouseButton1Click:Connect(function()
+    local _, hrp = getChar()
+    if not hrp or not selected then log("เลือกเควส + ยืนจุดที่ถูก", "R") return end
+    log("MOB จริงที่พบสำหรับ " .. selected.mob .. ":", "G")
+    log("  mobCF = CFrame.new(" .. string.format("%.2f, %.2f, %.2f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z) .. ")", "G")
+    log("  (เก่าคือ " .. fmtCF(selected.mobCF) .. ")", "S")
+end)
+
+btnRefresh.MouseButton1Click:Connect(function()
+    refreshStatus()
+    log("รีเฟรชสถานะแล้ว", "S")
+end)
+
+btnCopy.MouseButton1Click:Connect(function()
+    local clip = setclipboard or toclipboard or write_clipboard
+    local header = {
+        "=== BF04 Level Spy Report ===",
+        "Time: " .. os.date("%Y-%m-%d %H:%M:%S"),
+        "PlaceId: " .. tostring(game.PlaceId),
+        "Level: " .. getLevel(),
+        "Sea: " .. tostring(getSea()),
+        "",
+    }
+    local body = table.concat(header, "\n") .. "\n" .. table.concat(copyLines, "\n")
+    local ok = clip and pcall(clip, body)
+    btnCopy.Text = ok and "OK!" or "fail"
+    task.delay(1.5, function() if btnCopy.Parent then btnCopy.Text = "Copy รายงาน" end end)
+    log(ok and "คัดลอกคลิปบอร์ดแล้ว — วางในแชทได้" or "executor ไม่รองรับ clipboard", ok and "G" or "R")
+end)
+
+-- auto select by level
+task.defer(function()
+    refreshStatus()
+    log("โหลด Level Spy แล้ว — ตารางจาก BF04 เก่า", "G")
+    log("วิธีใช้สั้นๆ:", "Y")
+    log("1) กด 'เควสตาม Lv ฉัน' หรือคลิกรายการ", "S")
+    log("2) บิน→NPC / บิน→มอน แล้วดูว่าถึงไหม มีมอนไหม", "S")
+    log("3) สแกนรอบตัว / สแกนที่จุดมอน", "S")
+    log("4) ลอง StartQuest ถ้าใกล้ NPC", "S")
+    log("5) เจอจุดจริง → บันทึกเป็น NPC/MOB จริง → Copy รายงานส่งมา", "S")
+    local lv = getLevel()
+    for _, row in ipairs(REF) do
+        if lv >= row.lvMin and lv <= row.lvMax then
+            selectRow(row)
+            break
+        end
+    end
+end)
+
+task.spawn(function()
+    while sg.Parent do
+        task.wait(2)
+        refreshStatus()
+    end
+end)
