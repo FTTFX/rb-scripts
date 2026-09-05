@@ -651,7 +651,7 @@ local function directRemoteAttack(mobTarget, mobName)
         end
     end)
     local equipped = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
-    if not equipped then return end
+    if not equipped then equipWeapon(); return end
     local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
     if not mainPart then return end
     local othersEnemies = { { mobTarget, mainPart } }
@@ -844,11 +844,8 @@ local function mainLoop()
                         local hrpNow = myChar:FindFirstChild("HumanoidRootPart")
                         if hrpNow then
                             applyBodyVelocity(hrpNow)
-                            local dist = (mhrp.Position - hrpNow.Position).Magnitude
-                            if dist > lockDist + 150 then break end
-                            if dist > 25 then
-                                if not tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0))) then break end
-                            end
+                            -- เกาะเหนือหัวมอน 15 studs แบบคงที่ นิ่ง ไม่กระตุก
+                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 15, 0)
                         end
                         if os.clock() - lastCamT >= 0.2 then
                             lastCamT = os.clock()
@@ -861,6 +858,11 @@ local function mainLoop()
                     end
 
                     directRemoteAttack(v, qdata.mob)
+                    -- คลิกโจมตีจริงร่วมด้วย เพื่อให้อาวุธตีแน่นอนตามตัวอย่าง Snapxx
+                    pcall(function()
+                        local vu = game:GetService("VirtualUser")
+                        if vu then vu:Button1Down(Vector2.new(0, 0)) end
+                    end)
                     task.wait(0.05)
                 end
             end
