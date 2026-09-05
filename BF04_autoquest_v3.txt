@@ -1,7 +1,6 @@
--- BF04_autoquest_v3.txt — Sea 3 Auto Farm (Lv.1500–2600)
--- รับเควสมอนตามเลเวล + ถ้าบอสเกาะเกิด → รับเควสบอสแล้วตี
--- ไม่ทำเควสนอก (Saber / Bartilo / ผล / ฯลฯ)
--- ตารางจาก Snapxx; บิน/ตีจาก BF04
+-- BF04_autoquest_v3.txt — Sea 3 Auto Quest (Lv.1500–2600)
+-- สร้างบนฐานโค้ด BF04 ดั้งเดิม 100% (บิน flySmooth + toTarget + directRemoteAttack + เควสตรงเลเวล)
+-- ตัดเควสนอกแมพ (Saber / ข้ามทะเล 1-2 / ตรวจเควสนอก) เหลือเฉพาะฟาร์ม Sea 3 ปกติ
 
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
@@ -15,44 +14,12 @@ _G.BF04V3 = _G.BF04V3 or {}
 _G.BF04V3_LOOP = nil
 _G.BF04V3_BV = nil
 local AUTO_ON = false
-local MAGNET_ON = true
-local BOSS_ON = true
 local currentTween = nil
-local FLY_SPEED = 320
-local HOVER_Y = 18
 
-local SEA3_PLACE = {
-    [7449423635] = true,
-    [100117331123089] = true,
-}
+local BTP_ON = true
+local BTP_MIN_DIST = 3000
 
-local function isSea3()
-    if SEA3_PLACE[game.PlaceId] then return true end
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return false end
-    for _, n in ipairs({ "Port Town", "Hydra Island", "Great Tree", "Castle on the Sea",
-        "PortTown", "HydraIsland", "GreatTree", "CakeLoaf", "Tiki Outpost" }) do
-        if map:FindFirstChild(n) then return true end
-    end
-    return false
-end
-
-local function getMyLevel()
-    local ok, lv = pcall(function() return LP.Data.Level.Value end)
-    if ok and lv then return lv end
-    return 1500
-end
-
-local function getCommF()
-    local remotes = RS:FindFirstChild("Remotes")
-    if remotes then
-        for _, r in ipairs(remotes:GetDescendants()) do
-            if r.Name == "CommF_" and r:IsA("RemoteFunction") then return r end
-        end
-    end
-end
-
--- ── Mob + Quest DB (Sea 3) ───────────────────────────────────────
+-- ── Sea 3 Quest Database (Snapxx & BF04) ──────────────────────────
 local function getQuestData(level)
     level = level or 1500
     if level < 1525 then
@@ -210,108 +177,142 @@ local function getQuestData(level)
     end
 end
 
--- บอสเกาะทะเล 3 ที่มีเควส (questNum = 3) — ไม่รวม raid boss ไร้เควส
-local SEA3_BOSSES = {
-    { name = "Stone", questName = "PiratePortQuest", questNum = 3,
-        questCF = CFrame.new(-289.77, 43.82, 5579.94),
-        bossCF = CFrame.new(-1027.65, 92.40, 6578.85) },
-    { name = "Hydra Leader", questName = "VenomCrewQuest", questNum = 3,
-        questCF = CFrame.new(5445.95, 601.63, 751.44),
-        bossCF = CFrame.new(5543.86, 668.97, 199.03) },
-    { name = "Kilo Admiral", questName = "MarineTreeIsland", questNum = 3,
-        questCF = CFrame.new(2179.30, 28.73, -6739.97),
-        bossCF = CFrame.new(2764.22, 432.46, -7144.46) },
-    { name = "Captain Elephant", questName = "DeepForestIsland", questNum = 3,
-        questCF = CFrame.new(-13232.68, 332.40, -7626.01),
-        bossCF = CFrame.new(-13376.76, 433.29, -8071.39) },
-    { name = "Beautiful Pirate", questName = "DeepForestIsland2", questNum = 3,
-        questCF = CFrame.new(-12682.10, 390.89, -9902.12),
-        bossCF = CFrame.new(5283.61, 22.56, -110.78) },
-    { name = "Cake Queen", questName = "IceCreamIslandQuest", questNum = 3,
-        questCF = CFrame.new(-819.38, 64.93, -10967.28),
-        bossCF = CFrame.new(-678.65, 381.35, -11114.20) },
-}
+local function getMyLevel()
+    local ok, lv = pcall(function() return LP.Data.Level.Value end)
+    if ok and lv then return lv end
+    return 1500
+end
 
--- ── GUI ───────────────────────────────────────────────────────────
+-- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04V3GUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04V3GUI"; sg.ResetOnSpawn = false; sg.IgnoreGuiInset = true; sg.Parent = pg
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 340, 0, 310)
+frame.Size = UDim2.new(0, 360, 0, 420)
 frame.Position = UDim2.new(0, 10, 0, 10)
-frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18); frame.BorderSizePixel = 0
+frame.BackgroundColor3 = Color3.fromRGB(12,12,18); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true; frame.Parent = sg
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 
 local titleLbl = Instance.new("TextLabel")
-titleLbl.Size = UDim2.new(1, -40, 0, 24); titleLbl.Position = UDim2.new(0, 10, 0, 2)
-titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120, 220, 180)
-titleLbl.Text = "BF04 V3 Sea3 Quest+Boss 1500–2600"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 12
+titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
+titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(120,220,180)
+titleLbl.Text = "BF04 Auto Quest Sea 3 (1500–2600)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
-    if currentTween then pcall(function() currentTween:Cancel() end); currentTween = nil end
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+        currentTween = nil
+    end
 end
 
 local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 24, 0, 22); closeBtn.Position = UDim2.new(1, -28, 0, 3)
-closeBtn.BackgroundColor3 = Color3.fromRGB(120, 20, 20); closeBtn.TextColor3 = Color3.new(1, 1, 1)
+closeBtn.Size = UDim2.new(0,24,0,22); closeBtn.Position = UDim2.new(1,-28,0,3)
+closeBtn.BackgroundColor3 = Color3.fromRGB(120,20,20); closeBtn.TextColor3 = Color3.new(1,1,1)
 closeBtn.Text = "X"; closeBtn.Font = Enum.Font.GothamBold; closeBtn.TextSize = 12; closeBtn.BorderSizePixel = 0
 closeBtn.Parent = frame
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,4)
 
 local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0, 100, 0, 28); autoBtn.Position = UDim2.new(0, 10, 0, 30)
-autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50); autoBtn.TextColor3 = Color3.new(1, 1, 1)
-autoBtn.Text = "AUTO: OFF"; autoBtn.Font = Enum.Font.GothamBold; autoBtn.TextSize = 12; autoBtn.BorderSizePixel = 0
+autoBtn.Size = UDim2.new(0, 160, 0, 30); autoBtn.Position = UDim2.new(0, 10, 0, 34)
+autoBtn.BackgroundColor3 = Color3.fromRGB(30,120,50); autoBtn.TextColor3 = Color3.new(1,1,1)
+autoBtn.Text = "AUTO: OFF"; autoBtn.Font = Enum.Font.GothamBold; autoBtn.TextSize = 13; autoBtn.BorderSizePixel = 0
 autoBtn.Parent = frame
-Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0, 5)
+Instance.new("UICorner", autoBtn).CornerRadius = UDim.new(0,5)
 
+local MAGNET_ON = false
 local magnetBtn = Instance.new("TextButton")
-magnetBtn.Size = UDim2.new(0, 100, 0, 28); magnetBtn.Position = UDim2.new(0, 118, 0, 30)
-magnetBtn.BackgroundColor3 = Color3.fromRGB(90, 60, 150); magnetBtn.TextColor3 = Color3.new(1, 1, 1)
-magnetBtn.Text = "MAGNET: ON"; magnetBtn.Font = Enum.Font.GothamBold; magnetBtn.TextSize = 12; magnetBtn.BorderSizePixel = 0
+magnetBtn.Size = UDim2.new(0, 170, 0, 30); magnetBtn.Position = UDim2.new(0, 180, 0, 34)
+magnetBtn.BackgroundColor3 = Color3.fromRGB(50,50,70); magnetBtn.TextColor3 = Color3.new(1,1,1)
+magnetBtn.Text = "MAGNET: OFF"; magnetBtn.Font = Enum.Font.GothamBold; magnetBtn.TextSize = 12; magnetBtn.BorderSizePixel = 0
 magnetBtn.Parent = frame
-Instance.new("UICorner", magnetBtn).CornerRadius = UDim.new(0, 5)
+Instance.new("UICorner", magnetBtn).CornerRadius = UDim.new(0,5)
+magnetBtn.MouseButton1Click:Connect(function()
+    MAGNET_ON = not MAGNET_ON
+    magnetBtn.Text = MAGNET_ON and "MAGNET: ON" or "MAGNET: OFF"
+    magnetBtn.BackgroundColor3 = MAGNET_ON and Color3.fromRGB(90,60,150) or Color3.fromRGB(50,50,70)
+end)
 
-local bossBtn = Instance.new("TextButton")
-bossBtn.Size = UDim2.new(0, 100, 0, 28); bossBtn.Position = UDim2.new(0, 226, 0, 30)
-bossBtn.BackgroundColor3 = Color3.fromRGB(160, 80, 40); bossBtn.TextColor3 = Color3.new(1, 1, 1)
-bossBtn.Text = "BOSS: ON"; bossBtn.Font = Enum.Font.GothamBold; bossBtn.TextSize = 12; bossBtn.BorderSizePixel = 0
-bossBtn.Parent = frame
-Instance.new("UICorner", bossBtn).CornerRadius = UDim.new(0, 5)
+local clearBtn = Instance.new("TextButton")
+clearBtn.Size = UDim2.new(0, 340, 0, 24); clearBtn.Position = UDim2.new(0, 10, 0, 70)
+clearBtn.BackgroundColor3 = Color3.fromRGB(80,30,30); clearBtn.TextColor3 = Color3.new(1,1,1)
+clearBtn.Text = "ล้าง / ปลดล็อกตัวละคร"
+clearBtn.Font = Enum.Font.GothamBold; clearBtn.TextSize = 11; clearBtn.BorderSizePixel = 0
+clearBtn.Parent = frame
+Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,5)
 
-local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1, -20, 0, 20); statusLbl.Position = UDim2.new(0, 10, 0, 64)
-statusLbl.BackgroundTransparency = 1; statusLbl.TextColor3 = Color3.fromRGB(200, 200, 120)
-statusLbl.Text = "พร้อม"; statusLbl.Font = Enum.Font.Gotham; statusLbl.TextSize = 11
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left; statusLbl.Parent = frame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1,-16,1,-106); scroll.Position = UDim2.new(0,8,0,100)
+scroll.BackgroundColor3 = Color3.fromRGB(8,8,14); scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0,0,0,0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
+Instance.new("UICorner", scroll).CornerRadius = UDim.new(0,4)
+local layout = Instance.new("UIListLayout"); layout.SortOrder = Enum.SortOrder.LayoutOrder; layout.Parent = scroll
+local padL = Instance.new("UIPadding"); padL.PaddingLeft = UDim.new(0,6); padL.PaddingTop = UDim.new(0,2); padL.Parent = scroll
 
-local logBox = Instance.new("TextLabel")
-logBox.Size = UDim2.new(1, -20, 0, 210); logBox.Position = UDim2.new(0, 10, 0, 88)
-logBox.BackgroundColor3 = Color3.fromRGB(8, 8, 12); logBox.TextColor3 = Color3.fromRGB(180, 180, 180)
-logBox.Text = ""; logBox.Font = Enum.Font.Code; logBox.TextSize = 11
-logBox.TextXAlignment = Enum.TextXAlignment.Left; logBox.TextYAlignment = Enum.TextYAlignment.Top
-logBox.TextWrapped = true; logBox.BorderSizePixel = 0; logBox.Parent = frame
-Instance.new("UICorner", logBox).CornerRadius = UDim.new(0, 4)
-
+-- ── Log ────────────────────────────────────────────────────────────
 local logLines = {}
-local function log(msg)
-    table.insert(logLines, os.date("%H:%M:%S ") .. tostring(msg))
-    while #logLines > 14 do table.remove(logLines, 1) end
-    logBox.Text = table.concat(logLines, "\n")
-end
-local function setState(s) statusLbl.Text = s end
+local logOrder = 0
+local lastState = ""
+local logColors = {
+    G = Color3.fromRGB(80,255,120), Y = Color3.fromRGB(255,210,0),
+    R = Color3.fromRGB(255,80,80), B = Color3.fromRGB(140,160,255),
+    S = Color3.fromRGB(140,140,140),
+}
+local SCRIPT_T0 = os.clock()
+local lastLogT = SCRIPT_T0
+local MAX_LOG = 150
+local logLabels = {}
 
--- ── Helpers ───────────────────────────────────────────────────────
-local function getChar()
-    local char = LP.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if char and hrp and hum then return char, hrp, hum end
+local function log(txt, col)
+    local c = logColors[col] or logColors.S
+    local now = os.clock()
+    txt = string.format("[%s +%.2fs] %s", os.date("%H:%M:%S"), now - lastLogT, txt)
+    lastLogT = now
+    logOrder += 1
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1,-10,0,14); l.BackgroundTransparency = 1; l.Font = Enum.Font.Code
+    l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left; l.TextWrapped = true
+    l.TextColor3 = c; l.Text = txt; l.LayoutOrder = logOrder; l.Parent = scroll
+    table.insert(logLines, txt)
+    table.insert(logLabels, l)
+    while #logLabels > MAX_LOG do
+        local oldL = table.remove(logLabels, 1)
+        if oldL then oldL:Destroy() end
+    end
+    while #logLines > MAX_LOG do table.remove(logLines, 1) end
+    scroll.CanvasPosition = Vector2.new(0, layout.AbsoluteContentSize.Y)
 end
 
-local RegisterAttack, RegisterHit
+local lastStateT = 0
+local function setState(txt, col)
+    if txt == lastState then return end
+    local now = os.clock()
+    if now - lastStateT < 0.3 then
+        lastState = txt
+        return
+    end
+    lastState = txt
+    lastStateT = now
+    log(txt, col)
+end
+
+local getCommF, getChar, tp
+
+-- ── Helper ────────────────────────────────────────────────────────
+function getCommF()
+    local remotes = RS:FindFirstChild("Remotes")
+    if remotes then
+        for _, r in ipairs(remotes:GetDescendants()) do
+            if r.Name == "CommF_" and r:IsA("RemoteFunction") then return r end
+        end
+    end
+    return nil
+end
+
+local RegisterAttack = nil
+local RegisterHit = nil
 local function getCombatRemotes()
     if RegisterAttack and RegisterHit then return RegisterAttack, RegisterHit end
     pcall(function()
@@ -324,421 +325,569 @@ local function getCombatRemotes()
     return RegisterAttack, RegisterHit
 end
 
+function getChar()
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if char and hrp and hum then return char, hrp, hum end
+    return nil
+end
+
 local function ensureBuso()
     local char = LP.Character
     if not char or char:FindFirstChild("HasBuso") then return end
-    pcall(function() RS.Remotes.CommF_:InvokeServer("Buso") end)
+    local ok, CommF = pcall(function()
+        return RS:WaitForChild("Remotes"):WaitForChild("CommF_")
+    end)
+    if ok and CommF then
+        pcall(function() CommF:InvokeServer("Buso") end)
+    end
 end
 
-local QUEST_ITEMS = { Relic = true, Cup = true, Torch = true, Key = true }
-local function equipWeapon()
-    local char, _, hum = getChar()
-    if not char or not hum then return false end
-    local cur = char:FindFirstChildOfClass("Tool")
-    if cur and not QUEST_ITEMS[cur.Name] and cur.ToolTip ~= "Wear" then return true end
-    local bp = LP:FindFirstChild("Backpack")
-    if not bp then return false end
-    for _, tip in ipairs({ "Melee", "Sword", "Blox Fruit", "Gun" }) do
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and t.ToolTip == tip and not QUEST_ITEMS[t.Name] then
-                pcall(function() hum:EquipTool(t) end)
-                return true
-            end
-        end
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if AUTO_ON then pcall(ensureBuso) end
     end
-    for _, t in ipairs(bp:GetChildren()) do
-        if t:IsA("Tool") and not QUEST_ITEMS[t.Name] then
-            pcall(function() hum:EquipTool(t) end)
-            return true
-        end
-    end
-    return false
-end
+end)
 
-local function applyBV(hrp)
-    if _G.BF04V3_BV and _G.BF04V3_BV.Parent then return end
-    local att = hrp:FindFirstChild("BF04V3_Att")
-    if not att then
-        att = Instance.new("Attachment"); att.Name = "BF04V3_Att"; att.Parent = hrp
-    end
-    local lv = Instance.new("LinearVelocity")
-    lv.Name = "BF04V3_Noclip"; lv.Attachment0 = att; lv.MaxForce = 1e6
-    lv.VectorVelocity = Vector3.new(0, 0, 0)
-    lv.RelativeTo = Enum.ActuatorRelativeTo.World; lv.Parent = hrp
-    _G.BF04V3_BV = lv
-end
-
-local noclipParts = {}
+local noclipParts, noclipChar, noclipRefreshed = {}, nil, 0
 local function setNoclip(on)
     local char = LP.Character
     if not char then return end
-    if on then
-        noclipParts = {}
+    local now = os.clock()
+    if char ~= noclipChar or now - noclipRefreshed > 2 then
+        noclipChar = char
+        noclipRefreshed = now
+        table.clear(noclipParts)
         for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then noclipParts[p] = p.CanCollide; p.CanCollide = false end
+            if p:IsA("BasePart") then table.insert(noclipParts, p) end
         end
-    else
-        for p, v in pairs(noclipParts) do if p.Parent then p.CanCollide = v end end
-        noclipParts = {}
+    end
+    for i = #noclipParts, 1, -1 do
+        local p = noclipParts[i]
+        if p.Parent then
+            if p.CanCollide == on then p.CanCollide = not on end
+        else
+            table.remove(noclipParts, i)
+        end
     end
 end
 
-local BLOCKING = {
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if _G.BF04V3_LOOP then pcall(setNoclip, true) end
+    end
+end)
+
+local function applyBodyVelocity(hrp)
+    if _G.BF04V3_BV and _G.BF04V3_BV.Parent then return end
+    local att = hrp:FindFirstChild("BF04_Att")
+    if not att then
+        att = Instance.new("Attachment")
+        att.Name = "BF04_Att"
+        att.Parent = hrp
+    end
+    local lv = Instance.new("LinearVelocity")
+    lv.Name = "BF04_Noclip"
+    lv.Attachment0 = att
+    lv.MaxForce = 1e6
+    lv.VectorVelocity = Vector3.new(0, 0, 0)
+    lv.RelativeTo = Enum.ActuatorRelativeTo.World
+    lv.Parent = hrp
+    _G.BF04V3_BV = lv
+end
+
+local BLOCKING_CLASSES = {
     BodyVelocity = true, BodyGyro = true, BodyPosition = true,
-    LinearVelocity = true, AlignPosition = true, AlignOrientation = true,
+    BodyThrust = true, BodyAngularVelocity = true,
+    AlignPosition = true, AlignOrientation = true,
+    LinearVelocity = true, AngularVelocity = true, VectorForce = true,
 }
 local function releaseControl()
-    stopTween()
-    pcall(function() if _G.BF04V3_BV then _G.BF04V3_BV:Destroy() _G.BF04V3_BV = nil end end)
+    pcall(function() if currentTween then currentTween:Cancel() currentTween = nil end end)
+    pcall(function()
+        if _G.BF04V3_BV then _G.BF04V3_BV:Destroy() _G.BF04V3_BV = nil end
+    end)
     local char = LP.Character
     if not char then return end
     pcall(function()
         for _, obj in ipairs(char:GetDescendants()) do
-            if BLOCKING[obj.ClassName] then obj:Destroy() end
+            if BLOCKING_CLASSES[obj.ClassName] then obj:Destroy() end
         end
     end)
     pcall(function()
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.Anchored = false end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Anchored = false
+                if part.Name ~= "HumanoidRootPart" then part.CanCollide = true end
+            end
         end
+    end)
+    pcall(function()
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.PlatformStand = false; hum.Sit = false end
+        if hum then
+            hum.PlatformStand = false
+            hum.Sit = false
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            if hum.WalkSpeed <= 0 then hum.WalkSpeed = 16 end
+            if hum.JumpPower <= 0 then hum.JumpPower = 50 end
+            hum.AutoRotate = true
+        end
+    end)
+    pcall(function()
+        local pm = LP:FindFirstChild("PlayerScripts") and LP.PlayerScripts:FindFirstChild("PlayerModule")
+        if pm then
+            local controls = require(pm):GetControls()
+            if controls then controls:Enable() end
+        end
     end)
     setNoclip(false)
-    pcall(function()
-        require(LP.PlayerScripts:WaitForChild("PlayerModule")):GetControls():Enable()
-    end)
 end
 
-closeBtn.MouseButton1Click:Connect(function()
-    AUTO_ON = false; _G.BF04V3_LOOP = nil; releaseControl(); sg:Destroy()
-end)
-magnetBtn.MouseButton1Click:Connect(function()
-    MAGNET_ON = not MAGNET_ON
-    magnetBtn.Text = MAGNET_ON and "MAGNET: ON" or "MAGNET: OFF"
-    magnetBtn.BackgroundColor3 = MAGNET_ON and Color3.fromRGB(90, 60, 150) or Color3.fromRGB(50, 50, 70)
-end)
-bossBtn.MouseButton1Click:Connect(function()
-    BOSS_ON = not BOSS_ON
-    bossBtn.Text = BOSS_ON and "BOSS: ON" or "BOSS: OFF"
-    bossBtn.BackgroundColor3 = BOSS_ON and Color3.fromRGB(160, 80, 40) or Color3.fromRGB(50, 50, 70)
+clearBtn.MouseButton1Click:Connect(function()
+    releaseControl()
+    log("ปลดล็อกตัวละครแล้ว ✓", "G")
 end)
 
-local function flyTo(destCF, speed)
+closeBtn.MouseButton1Click:Connect(function()
+    AUTO_ON = false
+    _G.BF04V3_LOOP = nil
+    stopTween()
+    releaseControl()
+    sg:Destroy()
+end)
+
+-- ── Smart Travel ──────────────────────────────────────────────────
+local SEARCH_R = 3000
+local SPAWN_DB = {}
+local function rememberSpawn(name, pos)
+    local list = SPAWN_DB[name]
+    if not list then
+        list = {}
+        SPAWN_DB[name] = list
+    end
+    for _, p in ipairs(list) do
+        if (p - pos).Magnitude < 200 then return end
+    end
+    if #list < 8 then table.insert(list, pos) end
+end
+
+local function flySmooth(destCF, speed)
     stopTween()
     local char, hrp = getChar()
     if not char or not hrp then return false end
-    applyBV(hrp); setNoclip(true)
+
     local dist = (destCF.Position - hrp.Position).Magnitude
-    if dist < 12 then return true end
-    local spd = speed or FLY_SPEED
-    if dist >= 1000 then spd = math.min(spd, 240)
-    elseif dist >= 500 then spd = math.min(spd, 280) end
-    local tween = TweenService:Create(hrp, TweenInfo.new(dist / spd, Enum.EasingStyle.Linear), { CFrame = destCF })
-    currentTween = tween; tween:Play(); tween.Completed:Wait(); currentTween = nil
+    if dist < 10 then return true end
+
+    local spd = speed or 380
+    if dist >= 1000 then spd = math.min(spd, 250)
+    elseif dist >= 500 then spd = math.min(spd, 300)
+    elseif dist >= 250 then spd = math.min(spd, 600) end
+
+    local tween = TweenService:Create(hrp,
+        TweenInfo.new(dist / spd, Enum.EasingStyle.Linear),
+        { CFrame = destCF })
+    currentTween = tween
+    tween:Play()
+    tween.Completed:Wait()
+    currentTween = nil
+
     local _, h2 = getChar()
     if not h2 then return false end
-    return (destCF.Position - h2.Position).Magnitude <= 30
+    local left = (destCF.Position - h2.Position).Magnitude
+    return left <= 25
 end
 
-local function boostSim()
-    pcall(function()
-        if setsimulationradius then setsimulationradius(math.huge, math.huge) end
-        if sethiddenproperty then
-            sethiddenproperty(LP, "MaximumSimulationRadius", math.huge)
-            sethiddenproperty(LP, "SimulationRadius", math.huge)
-        end
-    end)
+local function getSpawnName()
+    local ok, name = pcall(function() return LP.Data.SpawnPoint.Value end)
+    if ok and type(name) == "string" and name ~= "" then return name end
+end
+local ORIGINAL_SPAWN = getSpawnName()
+
+local function bypassTP(targetCF)
+    local char, hrp, hum = getChar()
+    if not char or not hrp or not hum then return false end
+    local CommF = getCommF()
+    if not CommF then return false end
+
+    local deadline = os.clock() + 15
+    repeat
+        pcall(function()
+            hum:ChangeState(15)
+            hrp.CFrame = targetCF
+            task.wait()
+            hrp.CFrame = targetCF
+        end)
+        task.wait(0.5)
+        local _, h = getChar()
+        if not h then return false end
+        hrp = h
+    until (targetCF.Position - hrp.Position).Magnitude <= 1500 or os.clock() > deadline
+
+    if (targetCF.Position - hrp.Position).Magnitude > 1500 then return false end
+
+    pcall(function() CommF:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.2)
+    pcall(function() CommF:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.2)
+    pcall(function() CommF:InvokeServer("TeleportToSpawn") end)
+    task.wait(1.5)
+    return true
 end
 
-local function bringMobs(primary, mobName)
-    if not MAGNET_ON or not primary then return end
-    local _, myHrp = getChar()
-    if not myHrp then return end
-    boostSim()
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return end
-    for _, e in ipairs(enemies:GetChildren()) do
-        if e ~= primary then
-            local hum = e:FindFirstChild("Humanoid")
-            local ehrp = e:FindFirstChild("HumanoidRootPart")
-            if hum and ehrp and hum.Health > 0 and string.find(e.Name, mobName)
-               and not string.find(e.Name, "Boss") and not string.find(e.Name, "Leader") then
-                pcall(function()
-                    hum.PlatformStand = true; ehrp.CanCollide = false
-                    ehrp.CFrame = myHrp.CFrame * CFrame.new(math.random(-6, 6), 0, math.random(-6, 6))
-                end)
-            end
-        end
+local function toTarget(targetCF)
+    local char, hrp = getChar()
+    if not char or not hrp then return false end
+    local dist = (targetCF.Position - hrp.Position).Magnitude
+    if dist < 25 then
+        stopTween()
+        hrp.CFrame = targetCF
+        return true
     end
+    if BTP_ON and dist > BTP_MIN_DIST then
+        stopTween()
+        if bypassTP(targetCF) then return true end
+    end
+    return flySmooth(targetCF, 420)
 end
 
-local function attack(mobTarget, mobName, allowAoE)
-    if not mobTarget or not mobTarget.Parent then return end
-    local rA, rH = getCombatRemotes()
-    if not (LP.Character and LP.Character:FindFirstChildOfClass("Tool")) then return end
-    local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
-    if not mainPart then return end
-    local others = { { mobTarget, mainPart } }
-    if allowAoE and MAGNET_ON then
-        local enemies = Workspace:FindFirstChild("Enemies")
-        if enemies then
-            for _, e in ipairs(enemies:GetChildren()) do
-                if #others >= 8 then break end
-                if e ~= mobTarget then
-                    local hum = e:FindFirstChild("Humanoid")
-                    local part = e:FindFirstChild("Head") or e:FindFirstChild("HumanoidRootPart")
-                    if hum and part and hum.Health > 0 and string.find(e.Name, mobName)
-                       and (part.Position - mainPart.Position).Magnitude < 100 then
-                        others[#others + 1] = { e, part }
-                    end
-                end
-            end
-        end
-    end
-    pcall(function()
-        if rA then rA:FireServer(0); rA:FireServer(1); rA:FireServer(2); rA:FireServer(3) end
-    end)
-    pcall(function() if rH then rH:FireServer(mainPart, others) end end)
-end
+function tp(cframe) return toTarget(cframe) end
 
-local function findAlive(name, folder)
-    folder = folder or Workspace:FindFirstChild("Enemies")
-    if not folder then return nil end
-    for _, e in ipairs(folder:GetChildren()) do
-        if string.find(e.Name, name) then
-            local hum = e:FindFirstChild("Humanoid")
-            local ehrp = e:FindFirstChild("HumanoidRootPart")
-            if hum and ehrp and hum.Health > 0 then return e end
-        end
-    end
-end
-
-local function findMobNear(mobName, nearPos)
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return nil end
-    local best, bestD = nil, math.huge
-    local origin = nearPos
-    if not origin then
-        local _, hrp = getChar(); origin = hrp and hrp.Position
-    end
-    if not origin then return nil end
-    for _, e in ipairs(enemies:GetChildren()) do
-        if string.find(e.Name, mobName) then
-            local hum = e:FindFirstChild("Humanoid")
-            local ehrp = e:FindFirstChild("HumanoidRootPart")
-            if hum and ehrp and hum.Health > 0 then
-                local d = (ehrp.Position - origin).Magnitude
-                if d < bestD then bestD = d; best = e end
-            end
+local QUEST_ITEMS = {
+    Relic = true, Cup = true, Torch = true, Key = true,
+}
+function equipWeapon()
+    local char, _, hum = getChar()
+    if not char or not hum then return false end
+    local held = char:FindFirstChildOfClass("Tool")
+    if held and not QUEST_ITEMS[held.Name] then return true end
+    if held then pcall(function() hum:UnequipTools() end); task.wait(0.1) end
+    local bp = LP:FindFirstChild("Backpack")
+    if not bp then return false end
+    local tool = bp:FindFirstChild("Combat")
+    if not tool then
+        for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") and not QUEST_ITEMS[t.Name] then tool = t break end
         end
     end
-    return best
+    if tool then pcall(function() hum:EquipTool(tool) end); return true end
+    return false
 end
 
-local function getQuestUI()
-    local main = pg:FindFirstChild("Main")
-    return main and main:FindFirstChild("Quest")
-end
-
-local function questTitle()
-    local UIQ = getQuestUI()
-    local t = ""
-    pcall(function() t = UIQ.Container.QuestTitle.Title.Text end)
-    return t, UIQ
+local function aimCam(mob)
+    local mhrp = mob and (mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Head"))
+    if not mhrp then return end
+    local cam = Workspace.CurrentCamera
+    if cam then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, mhrp.Position) end
 end
 
 local function closeDialogue()
     pcall(function()
         local main = pg:FindFirstChild("Main")
         if not main then return end
-        for _, name in ipairs({ "Dialogue", "NPC", "Choices" }) do
+        for _, name in ipairs({"Dialogue", "Conversations", "Talk", "NPCDialog"}) do
             local d = main:FindFirstChild(name)
             if d and d:IsA("GuiObject") and d.Visible then d.Visible = false end
         end
     end)
 end
 
--- หาบอสเกาะที่เกิดอยู่ (Enemies หรือ ReplicatedStorage)
-local function findSpawnedBoss()
-    if not BOSS_ON then return nil end
-    for _, b in ipairs(SEA3_BOSSES) do
-        local live = findAlive(b.name, Workspace:FindFirstChild("Enemies"))
-        if live then return b, live end
-        local rs = findAlive(b.name, RS)
-        if rs then return b, rs end
+local SIM_RADIUS_T = 0
+local function boostSimulationRadius()
+    local now = os.clock()
+    if now - SIM_RADIUS_T < 5 then return end
+    SIM_RADIUS_T = now
+    pcall(function()
+        if setsimulationradius then setsimulationradius(math.huge, math.huge) end
+        if sethiddenproperty then
+            sethiddenproperty(LP, "MaximumSimulationRadius", math.huge)
+            sethiddenproperty(LP, "SimulationRadius", math.huge)
+            sethiddenproperty(Workspace, "PhysicsSteppedMethod", "Transient")
+        end
+    end)
+end
+
+local function bringMobsToTarget(primaryTarget, mobName)
+    if not primaryTarget or not primaryTarget.Parent then return end
+    local _, myHrp = getChar()
+    local pHrp = myHrp or primaryTarget:FindFirstChild("HumanoidRootPart")
+    if not pHrp then return end
+    boostSimulationRadius()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return end
+    for _, otherMob in ipairs(enemies:GetChildren()) do
+        if otherMob ~= primaryTarget and otherMob ~= LP.Character then
+            local isBoss = string.find(otherMob.Name, "Boss") or string.find(otherMob.Name, "King")
+                or string.find(otherMob.Name, "Leader") or string.find(otherMob.Name, "Admiral")
+            local oHum = otherMob:FindFirstChild("Humanoid")
+            local oHrp = otherMob:FindFirstChild("HumanoidRootPart")
+            local isQuestMob = mobName and string.find(otherMob.Name, mobName)
+            if isQuestMob and not isBoss and oHum and oHrp and oHum.Health > 0 then
+                pcall(function()
+                    oHum.PlatformStand = true
+                    oHum.Sit = true
+                    oHrp.CanCollide = false
+                    oHrp.Velocity = Vector3.new(0, 0, 0)
+                    oHrp.Anchored = false
+                    oHrp.CFrame = pHrp.CFrame * CFrame.new(math.random(-6, 6), 0, math.random(-6, 6))
+                end)
+            end
+        end
     end
 end
 
-local function fightTarget(mob, label, useMagnet)
-    local mhrp = mob:FindFirstChild("HumanoidRootPart")
-    local mhum = mob:FindFirstChild("Humanoid")
-    if not mhrp or not mhum or mhum.Health <= 0 then return false end
-    local _, hrp = getChar()
-    if not hrp then return false end
-    equipWeapon(); ensureBuso()
-    local hover = mhrp.CFrame * CFrame.new(0, HOVER_Y, 0)
-    local dist = (hrp.Position - mhrp.Position).Magnitude
-    if dist > 40 then
-        flyTo(hover, FLY_SPEED)
-    else
-        pcall(function() applyBV(hrp); hrp.CFrame = hover end)
-    end
-    if useMagnet then bringMobs(mob, label) end
-    attack(mob, label, useMagnet)
-    return true
-end
-
--- ── Main loop ─────────────────────────────────────────────────────
-local function mainLoop()
-    log("=== V3 Sea3 Quest+Boss START ===")
-    if not isSea3() then
-        log("ไม่ใช่ทะเล 3 — หยุด"); setState("ต้องอยู่ทะเล 3")
-        AUTO_ON = false; autoBtn.Text = "AUTO: OFF"
-        autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50)
-        return
-    end
-    local lvl = getMyLevel()
-    if lvl < 1500 then
-        log("Lv." .. lvl .. " < 1500"); setState("Lv ต่ำไป")
-        AUTO_ON = false; autoBtn.Text = "AUTO: OFF"; return
-    end
-
-    local CommF = getCommF()
-    if not CommF then log("หา CommF_ ไม่เจอ"); setState("ไม่มี CommF"); return end
-    getCombatRemotes()
-    log("Lv." .. lvl .. " | เควสมอน + บอสเกาะ (ไม่ทำเควสนอก)")
-
-    while AUTO_ON and _G.BF04V3_LOOP do
-        local char, hrp, hum = getChar()
-        if not char or (hum and hum.Health <= 0) then
-            setState("รอเกิดใหม่..."); log("ตาย → รอเกิด")
-            LP.CharacterAdded:Wait(); task.wait(2)
-        else
-            -- 1) บอสเกาะเกิด → รับเควสบอสแล้วตี (priority)
-            local bossData, bossMob = findSpawnedBoss()
-            if bossData then
-                local title, UIQ = questTitle()
-                if UIQ and UIQ.Visible and not string.find(title, bossData.name) then
-                    setState("ทิ้งเควสเก่า → รับบอส " .. bossData.name)
-                    pcall(function() CommF:InvokeServer("AbandonQuest") end)
-                    task.wait(0.4)
-                end
-                title, UIQ = questTitle()
-                if not (UIQ and UIQ.Visible and string.find(title, bossData.name)) then
-                    setState("บินรับเควสบอส " .. bossData.name)
-                    local d = (bossData.questCF.Position - hrp.Position).Magnitude
-                    if d > 15 then
-                        flyTo(bossData.questCF, FLY_SPEED)
-                    else
-                        log("StartQuest " .. bossData.questName .. ",3 (" .. bossData.name .. ")")
-                        pcall(function()
-                            CommF:InvokeServer("StartQuest", bossData.questName, bossData.questNum)
-                        end)
-                        task.wait(0.5); closeDialogue()
-                    end
-                else
-                    -- บอสอาจอยู่ใน RS ยังไม่ stream → บินไปจุดบอสก่อน
-                    if not bossMob.Parent or bossMob.Parent == RS then
-                        setState("รอสปอว์นบอส " .. bossData.name)
-                        flyTo(bossData.bossCF * CFrame.new(0, HOVER_Y, 0), FLY_SPEED)
-                        task.wait(0.3)
-                        bossMob = findAlive(bossData.name, Workspace:FindFirstChild("Enemies"))
-                            or findAlive(bossData.name, RS)
-                    end
-                    if bossMob and bossMob.Parent == Workspace:FindFirstChild("Enemies") then
-                        setState("ตีบอส " .. bossData.name)
-                        fightTarget(bossMob, bossData.name, false)
-                    end
-                end
-
-            else
-                -- 2) ฟาร์มเควสมอนตามเลเวล
-                local q = getQuestData(getMyLevel())
-                local title, UIQ = questTitle()
-                if not UIQ then setState("หา Quest UI ไม่เจอ"); task.wait(1)
-                else
-                    -- เควสค้างที่ไม่ใช่มอน/บอสของเรา → ทิ้ง (กันเควสนอก)
-                    if UIQ.Visible and title ~= ""
-                       and not string.find(title, q.mob)
-                       and not string.find(string.lower(title), "boss") then
-                        local isOurBoss = false
-                        for _, b in ipairs(SEA3_BOSSES) do
-                            if string.find(title, b.name) then isOurBoss = true; break end
-                        end
-                        if not isOurBoss then
-                            setState("ทิ้งเควสนอก: " .. title)
-                            pcall(function() CommF:InvokeServer("AbandonQuest") end)
-                            task.wait(0.4)
-                        end
-                    end
-
-                    title, UIQ = questTitle()
-                    if not UIQ.Visible then
-                        local d = (q.questCF.Position - hrp.Position).Magnitude
-                        if d > 15 then
-                            setState("บินรับเควส " .. q.mob)
-                            flyTo(q.questCF, FLY_SPEED)
-                        else
-                            setState("StartQuest " .. q.questName .. "," .. q.questNum)
-                            pcall(function()
-                                CommF:InvokeServer("StartQuest", q.questName, q.questNum)
-                            end)
-                            local waited = 0
-                            while not UIQ.Visible and waited < 15 and AUTO_ON do
-                                task.wait(0.1); waited += 1; closeDialogue()
-                            end
-                            if UIQ.Visible then log("รับเควส ✓ " .. q.mob)
-                            else log("รับเควสไม่ติด " .. q.questName); task.wait(0.8) end
-                        end
-                    else
-                        closeDialogue()
-                        setState("หา " .. q.mob)
-                        local mob = findMobNear(q.mob)
-                        if not mob then
-                            flyTo(q.mobCF * CFrame.new(0, HOVER_Y, 0), FLY_SPEED)
-                            task.wait(0.35)
-                            mob = findMobNear(q.mob, q.mobCF.Position)
-                        end
-                        if mob then
-                            local mhum = mob:FindFirstChild("Humanoid")
-                            setState("ตี " .. q.mob .. " HP " .. (mhum and math.floor(mhum.Health) or "?"))
-                            fightTarget(mob, q.mob, true)
-                        else
-                            setState("รอสปอว์น " .. q.mob)
-                            task.wait(0.4)
-                        end
+local function directRemoteAttack(mobTarget, mobName)
+    if not mobTarget or not mobTarget.Parent then return end
+    local rAttack, rHit = getCombatRemotes()
+    pcall(function()
+        local char = LP.Character
+        if char then
+            if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Sit = false end
+        end
+    end)
+    local equipped = LP.Character and LP.Character:FindFirstChildOfClass("Tool")
+    if not equipped then return end
+    local mainPart = mobTarget:FindFirstChild("Head") or mobTarget:FindFirstChild("HumanoidRootPart")
+    if not mainPart then return end
+    local othersEnemies = { { mobTarget, mainPart } }
+    if MAGNET_ON then
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, e in ipairs(enemies:GetChildren()) do
+                if #othersEnemies >= 8 then break end
+                if e ~= mobTarget then
+                    local isBoss = string.find(e.Name, "Boss") or string.find(e.Name, "King")
+                    local eHum = e:FindFirstChild("Humanoid")
+                    local ePart = e:FindFirstChild("Head") or e:FindFirstChild("HumanoidRootPart")
+                    if not isBoss and eHum and eHum.Health > 0 and ePart
+                       and (not mobName or string.find(e.Name, mobName))
+                       and (ePart.Position - mainPart.Position).Magnitude < 100 then
+                        othersEnemies[#othersEnemies + 1] = { e, ePart }
                     end
                 end
             end
         end
-        RunService.Heartbeat:Wait()
+    end
+    pcall(function()
+        if rAttack then
+            rAttack:FireServer(0); rAttack:FireServer(1); rAttack:FireServer(2); rAttack:FireServer(3)
+        end
+    end)
+    pcall(function()
+        if rHit then rHit:FireServer(mainPart, othersEnemies) end
+    end)
+end
+
+-- ── Main Loop (ตรงกับ BF04 ดั้งเดิม) ──────────────────────────────
+local LAST_MOB_NAME = ""
+local LAST_MOB_POS = nil
+local PATROL_I = 0
+
+local function mainLoop()
+    log("=== START AUTO V3 Sea 3 ===", "Y")
+    local CommF = getCommF()
+    if not CommF then log("หา CommF_ ไม่เจอ!", "R") return end
+    getCombatRemotes()
+
+    while AUTO_ON and _G.BF04V3_LOOP and not getChar() do
+        setState("รอตัวละคร spawn...", "S")
+        task.wait(1)
     end
 
+    while AUTO_ON and _G.BF04V3_LOOP do
+        task.wait(0.25)
+        pcall(function()
+            local char, hrp = getChar()
+            if not char then setState("รอตัวละคร...", "S") return end
+
+            local currentLevel = getMyLevel()
+            local qdata = getQuestData(currentLevel)
+
+            local UIQ = pg:FindFirstChild("Main") and pg.Main:FindFirstChild("Quest")
+            if not UIQ then setState("หา Quest UI ไม่เจอ", "R") return end
+
+            local titleTxt = ""
+            pcall(function() titleTxt = UIQ.Container.QuestTitle.Title.Text end)
+
+            -- 1. เควสไม่ตรงเลเวล → AbandonQuest เพื่อรับเควสใหม่
+            if UIQ.Visible and titleTxt ~= "" and not string.find(titleTxt, qdata.mob) then
+                setState("เควสไม่ตรง (" .. titleTxt .. ") → AbandonQuest", "Y")
+                CommF:InvokeServer("AbandonQuest")
+                task.wait(0.5)
+                return
+            end
+
+            -- 2. ยังไม่มีเควส → บินไปหา NPC ตามเลเวล → รับเควส
+            if not UIQ.Visible then
+                local dist = (qdata.questCF.Position - hrp.Position).Magnitude
+                if dist > 15 then
+                    setState("บินไปรับเควส: " .. qdata.mob .. " (" .. math.floor(dist) .. ")", "B")
+                    tp(qdata.questCF)
+                else
+                    setState("รับเควส: " .. qdata.questName .. " [Lv." .. currentLevel .. "]", "Y")
+                    CommF:InvokeServer("StartQuest", qdata.questName, qdata.questNum)
+                    local waited = 0
+                    while not UIQ.Visible and waited < 20 and AUTO_ON and _G.BF04V3_LOOP do
+                        task.wait(0.1)
+                        waited += 1
+                        closeDialogue()
+                    end
+                    if UIQ.Visible then
+                        setState("รับเควสสำเร็จ ✓ → บินไปจุดเกิดมอน", "G")
+                        tp(qdata.mobCF)
+                        task.wait(0.3)
+                    else
+                        log("เซิร์ฟเวอร์ยังไม่เปิดรับเควส " .. qdata.questName, "R")
+                        task.wait(1)
+                    end
+                end
+
+            -- 3. มีเควสแล้ว → ล็อกมอนตามเลเวลและตี
+            else
+                closeDialogue()
+                local enemies = Workspace:FindFirstChild("Enemies")
+                local target = nil
+                local bestDist = math.huge
+                if enemies then
+                    for _, v in ipairs(enemies:GetChildren()) do
+                        if v:FindFirstChild("HumanoidRootPart") then
+                            rememberSpawn(v.Name, v.HumanoidRootPart.Position)
+                        end
+                        local isMatch = string.find(v.Name, qdata.mob)
+                        local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
+                        if not string.find(qdata.mob, "King") and not string.find(qdata.mob, "Boss") and isBoss then
+                            isMatch = false
+                        end
+                        if isMatch and v:FindFirstChild("Humanoid")
+                           and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+                            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                            if d < bestDist and d < SEARCH_R then
+                                bestDist = d
+                                target = v
+                            end
+                        end
+                    end
+                end
+
+                if not target and enemies then
+                    for _, v in ipairs(enemies:GetChildren()) do
+                        local isBoss = string.find(v.Name, "Boss") or string.find(v.Name, "King")
+                        local isMatch = string.find(v.Name, qdata.mob) and not
+                            (isBoss and not string.find(qdata.mob, "King") and not string.find(qdata.mob, "Boss"))
+                        if isMatch and v:FindFirstChild("Humanoid")
+                           and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+                            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                            if d < bestDist then bestDist = d; target = v end
+                        end
+                    end
+                    if target then
+                        setState("เจอ " .. qdata.mob .. " ไกล " .. math.floor(bestDist) .. " → บินไปหา", "B")
+                        tp(CFrame.new(target.HumanoidRootPart.Position + Vector3.new(0, 20, 0)))
+                    end
+                end
+
+                if not target then
+                    local sameMob = (LAST_MOB_NAME == qdata.mob)
+                    local anchor = (sameMob and LAST_MOB_POS) or qdata.mobCF.Position
+                    local known = SPAWN_DB[qdata.mob]
+                    if not (sameMob and LAST_MOB_POS) and known and #known > 0 then
+                        PATROL_I = (PATROL_I or 0) + 1
+                        local p = known[(PATROL_I % #known) + 1]
+                        setState("ไปยืนจุดเกิดที่จำไว้ " .. qdata.mob, "B")
+                        tp(CFrame.new(p + Vector3.new(0, 15, 0)))
+                        task.wait(0.5)
+                        return
+                    end
+                    if sameMob and LAST_MOB_POS then
+                        setState("มอนตายหมด → รอ respawn", "S")
+                        tp(CFrame.new(anchor + Vector3.new(0, 20, 0)))
+                    else
+                        PATROL_I = (PATROL_I or 0) + 1
+                        local ang = PATROL_I * 1.2
+                        local r = 60 + (PATROL_I % 6) * 50
+                        local off = Vector3.new(math.cos(ang) * r, 15, math.sin(ang) * r)
+                        setState("ตระเวนหา " .. qdata.mob, "Y")
+                        tp(CFrame.new(anchor + off))
+                    end
+                    task.wait(0.5)
+                    return
+                end
+
+                local v = target
+                if LAST_MOB_NAME ~= qdata.mob then
+                    LAST_MOB_NAME = qdata.mob
+                    PATROL_I = 0
+                end
+                LAST_MOB_POS = v.HumanoidRootPart.Position
+                setState("สู้ " .. v.Name .. " (HP " .. math.floor(v.Humanoid.Health) .. ")", "Y")
+
+                equipWeapon()
+                local lastCamT, lastMagnetT = 0, 0
+                local lockDist = bestDist
+
+                while v.Parent and v.Humanoid.Health > 0 and UIQ.Visible and AUTO_ON and _G.BF04V3_LOOP do
+                    local myChar, _, myHum = getChar()
+                    if not myChar or (myHum and myHum.Health <= 0) then
+                        setState("ตาย → รอเกิดใหม่", "R")
+                        LP.CharacterAdded:Wait()
+                        task.wait(3)
+                        break
+                    end
+
+                    local mhrp = v:FindFirstChild("HumanoidRootPart")
+                    if mhrp then
+                        local hrpNow = myChar:FindFirstChild("HumanoidRootPart")
+                        if hrpNow then
+                            applyBodyVelocity(hrpNow)
+                            local dist = (mhrp.Position - hrpNow.Position).Magnitude
+                            if dist > lockDist + 150 then break end
+                            if dist > 25 then
+                                if not tp(CFrame.new(mhrp.Position + Vector3.new(0, 12, 0))) then break end
+                            end
+                        end
+                        if os.clock() - lastCamT >= 0.2 then
+                            lastCamT = os.clock()
+                            aimCam(v)
+                        end
+                        if MAGNET_ON and os.clock() - lastMagnetT >= 0.25 then
+                            lastMagnetT = os.clock()
+                            bringMobsToTarget(v, qdata.mob)
+                        end
+                    end
+
+                    directRemoteAttack(v, qdata.mob)
+                    task.wait(0.05)
+                end
+            end
+        end)
+    end
+    stopTween()
     releaseControl()
-    log("=== STOP ==="); setState("หยุดแล้ว")
+    log("=== STOP AUTO ===", "R")
 end
 
 autoBtn.MouseButton1Click:Connect(function()
     if AUTO_ON then
-        AUTO_ON = false; _G.BF04V3_LOOP = nil; stopTween()
-        autoBtn.Text = "AUTO: OFF"; autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50)
-        releaseControl(); log("ปิด AUTO")
+        AUTO_ON = false
+        _G.BF04V3_LOOP = nil
+        stopTween()
+        autoBtn.Text = "AUTO: OFF"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50)
+        releaseControl()
+        log("ปิด AUTO")
     else
         AUTO_ON = true
-        autoBtn.Text = "AUTO: ON"; autoBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+        autoBtn.Text = "AUTO: ON"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
         _G.BF04V3_LOOP = true
         task.spawn(mainLoop)
     end
 end)
 
-task.spawn(function()
-    while sg.Parent do
-        task.wait(2)
-        if AUTO_ON then pcall(ensureBuso) end
-    end
-end)
-
-log("V3: เควสมอนตาม Lv + บอสเกาะ (ไม่ทำเควสนอก)")
-local lv = getMyLevel()
-setState("Lv." .. lv .. (isSea3() and " Sea3 ✓" or " ไม่ใช่ Sea3"))
+log("BF04 V3 (Sea 3 Only: 1500–2600) โหลดแล้ว ✓", "G")
+log("ใช้กลไกเดียวกับ BF04 ปกติ — กด AUTO ได้เลย", "S")
