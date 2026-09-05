@@ -165,7 +165,7 @@ local function flyTo(posOrCF, label)
     local _, h2 = getChar()
     if not h2 then return false end
     local left = (h2.Position - dest.Position).Magnitude
-    if left <= 40 then
+    if left <= 50 then
         h2.CFrame = dest
         return true
     end
@@ -488,11 +488,10 @@ local function equipWeapon()
     return equipSword()
 end
 
--- ร่างพระตีไกล → จาก Spy 2026-09-05: โดนสูงสุด ≈40 | แนะนำ ≤34
--- ความสูง 18 = ระยะแนวตั้ง ≈18 (อยู่ในช่วงโดน) ไม่ต้องเยื้องด้าน
-local SAFE_HIT_RANGE = 34
+-- ร่างพระตีไกล → Spy รอบ 2 (2026-09-05): โดนสูงสุด ≈96 | แนะนำ ≤81
+local SAFE_HIT_RANGE = 81
 local function attackHeight()
-    return isBigForm() and 18 or 8
+    return isBigForm() and 20 or 8
 end
 
 local function attackMob(mob)
