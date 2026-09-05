@@ -748,109 +748,177 @@ local function mainLoop()
     log("=== STOP ===", "R")
 end
 
--- ── Spy ระยะตีร่างพระ: ไล่ระยะแนวนอน ยิงดาเมจ ดูว่าระยะไหนโดน ──
+-- ── Spy ระยะตี: จำตำแหน่งมอน → เริ่มจากไกลสุด → ค่อยเข้าใกล้ → โดนครั้งแรก = ระยะสูงสุด ──
 local spyBusy = false
 local function spyAttackRange()
     if spyBusy then log("กำลังวัดอยู่ รอจบก่อน", "Y") return end
     spyBusy = true
     local ok, err = pcall(function()
-        log("════ Spy ระยะตี (ร่างพระ+ดาบ) ════", "Y")
+        log("════ Spy ระยะตี v2 (ไกล→ใกล้) ════", "Y")
         _G.BF04C_ON = false
         autoBtn.Text = "AUTO: OFF"
         autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50)
+        task.wait(0.4) -- ให้ AUTO หยุดบินก่อน
 
         ensureBuddhaSword(true)
-        local _, hrp = getChar()
-        if hrp then
+        local _, hrp0 = getChar()
+        if hrp0 then
             log(string.format("HRP Size=%.1f,%.1f,%.1f | big=%s",
-                hrp.Size.X, hrp.Size.Y, hrp.Size.Z, tostring(isBigForm())), "B")
+                hrp0.Size.X, hrp0.Size.Y, hrp0.Size.Z, tostring(isBigForm())), "B")
         end
         if not isBigForm() then
-            log("⚠ ยังไม่ใช่ร่างใหญ่ — ผลอาจไม่แม่น (กด Z เองแล้วกด Spy อีกครั้งได้)", "O")
+            log("⚠ ยังไม่ใช่ร่างใหญ่ — กด Z เองแล้ว Spy ใหม่ได้", "O")
         end
 
         local quest = pickQuestForLevel(getLevel())
         local mobName = quest and quest.mob or nil
-        local mob, md = mobName and findMob(mobName) or nil, nil
+        local mob = mobName and select(1, findMob(mobName)) or nil
         if not mob then
-            -- หามอนใกล้สุดใดๆ
             local enemies = Workspace:FindFirstChild("Enemies")
             local bestD = math.huge
-            if enemies then
-                local _, my = getChar()
+            local _, my = getChar()
+            if enemies and my then
                 for _, e in ipairs(enemies:GetChildren()) do
                     local hum = e:FindFirstChildOfClass("Humanoid")
                     local eh = e:FindFirstChild("HumanoidRootPart")
-                    if hum and eh and hum.Health > 0 and my then
+                    if hum and eh and hum.Health > 0 then
                         local d = (eh.Position - my.Position).Magnitude
-                        if d < bestD then bestD = d; mob = e; md = d end
+                        if d < bestD then bestD = d; mob = e end
                     end
                 end
             end
         end
         if not mob then
-            log("ไม่เจอมอนใน Enemies — บินใกล้มอนก่อนแล้วกด Spy อีกครั้ง", "R")
+            log("ไม่เจอมอน — ยืนใกล้มอนก่อน (อย่าเปิด AUTO)", "R")
             return
         end
 
         local mhrp = mob:FindFirstChild("HumanoidRootPart")
         local mhum = mob:FindFirstChildOfClass("Humanoid")
         if not mhrp or not mhum then log("มอนไม่มี HRP", "R") return end
-        log(string.format("เป้า: %s HP%.0f (เริ่ม d=%.0f)", mob.Name, mhum.Health, md or 0), "G")
 
-        -- ไม่ขยาย hitbox มอน (วัดระยะจริงของเกม)
+        -- จำพิกัดมอนตอนเริ่ม (ล็อกมอนนิ่งระหว่างวัด — กันเดินหนีทำให้ระยะเพี้ยน)
+        local anchorPos = mhrp.Position
+        log(string.format("เป้า: %s HP%.0f @ %.0f,%.0f,%.0f",
+            mob.Name, mhum.Health, anchorPos.X, anchorPos.Y, anchorPos.Z), "G")
+        log("วิธี: วางจากไกล 150→5 | รอดาเมจเข้าก่อนค่อยนับระยะจริง", "S")
+
         local height = isBigForm() and 18 or 8
-        local maxHit, minMiss = 0, nil
-        -- ไล่จากใกล้ → ไกล
-        for dist = 5, 120, 5 do
-            if not mob.Parent or not mhum.Parent or mhum.Health <= 0 then
+        local firstHitD = nil -- ระยะจริงครั้งแรกที่โดน (จากไกลเข้ามา)
+        local confirmed = {}
+
+        -- วางตัว + รอให้ตำแหน่งนิ่ง (กันวาปเด้ง)
+        local function settleAt(horizDist)
+            mhrp = mob:FindFirstChild("HumanoidRootPart")
+            mhum = mob:FindFirstChildOfClass("Humanoid")
+            if not mhrp or not mhum or mhum.Health <= 0 then return nil end
+            -- ตรึงมอนที่จุดเดิม
+            pcall(function()
+                mhrp.Anchored = true
+                mhrp.CFrame = CFrame.new(anchorPos)
+                mhum.PlatformStand = true
+            end)
+            local want = math.sqrt(height * height + horizDist * horizDist)
+            for try = 1, 6 do
+                local _, my = getChar()
+                if not my then return nil end
+                setNoclip()
+                equipSword()
+                my.CFrame = CFrame.new(anchorPos) * CFrame.new(0, height, horizDist)
+                task.wait(0.25)
+                _, my = getChar()
+                mhrp = mob:FindFirstChild("HumanoidRootPart")
+                if not my or not mhrp then return nil end
+                -- ตรึงมอนอีกครั้งหลัง wait
+                pcall(function()
+                    mhrp.CFrame = CFrame.new(anchorPos)
+                end)
+                local real = (my.Position - mhrp.Position).Magnitude
+                if math.abs(real - want) <= 18 then
+                    return real, my
+                end
+                -- ยังเด้ง → วาร์ปซ้ำ
+            end
+            local _, my = getChar()
+            mhrp = mob:FindFirstChild("HumanoidRootPart")
+            if my and mhrp then
+                return (my.Position - mhrp.Position).Magnitude, my
+            end
+            return nil
+        end
+
+        -- ไกล → ใกล้
+        for horiz = 150, 5, -5 do
+            if not mob.Parent or not mhum or mhum.Health <= 0 then
                 log("มอนตายกลางทาง หยุดวัด", "Y")
                 break
             end
-            local _, myHrp = getChar()
-            if not myHrp then break end
-            setNoclip()
-            equipSword()
-            -- วางห่างแนวนอน dist studs ระดับความสูงคงที่
-            local base = mhrp.CFrame
-            myHrp.CFrame = base * CFrame.new(0, height, dist)
-            task.wait(0.15)
-            local hp0 = mhum.Health
-            -- ยิงหลายครั้งในระยะนี้
-            for _ = 1, 8 do
-                attackMob(mob)
-                task.wait(0.06)
-            end
-            task.wait(0.35)
-            local hp1 = mhum.Health
-            local dmg = hp0 - hp1
-            local realD = (myHrp.Position - mhrp.Position).Magnitude
-            if dmg > 0 then
-                maxHit = math.max(maxHit, realD)
-                log(string.format("✓ โดน @ ตั้ง%.0f จริง=%.0f ดาเมจ=-%.0f", dist, realD, dmg), "G")
+            local realD = settleAt(horiz)
+            if not realD then
+                log(string.format("ข้ามตั้ง%d (วางตัวไม่ได้)", horiz), "O")
             else
-                if not minMiss then minMiss = realD end
-                log(string.format("✗ ไม่โดน @ ตั้ง%.0f จริง=%.0f", dist, realD), "S")
-                -- ถ้าพลาดติดกันหลังเคยโดนแล้ว หยุดเร็วได้
-                if maxHit > 0 and dist >= maxHit + 15 then
-                    log("พลาดต่อเนื่องหลังระยะโดน → จบ", "Y")
-                    break
+                local want = math.sqrt(height * height + horiz * horiz)
+                if math.abs(realD - want) > 25 then
+                    log(string.format("~ ไม่นิ่ง ตั้ง%d อยาก=%.0f จริง=%.0f (ข้าม)", horiz, want, realD), "O")
+                else
+                    local hp0 = mhum.Health
+                    for _ = 1, 10 do
+                        -- ตรึงตำแหน่งระหว่างยิง
+                        local _, my = getChar()
+                        if my and mhrp then
+                            my.CFrame = CFrame.new(anchorPos) * CFrame.new(0, height, horiz)
+                            pcall(function() mhrp.CFrame = CFrame.new(anchorPos) end)
+                        end
+                        attackMob(mob)
+                        task.wait(0.05)
+                    end
+                    task.wait(0.3)
+                    mhum = mob:FindFirstChildOfClass("Humanoid")
+                    if not mhum then break end
+                    local dmg = hp0 - mhum.Health
+                    -- วัดระยะจริงอีกครั้งหลังยิง
+                    local _, my2 = getChar()
+                    mhrp = mob:FindFirstChild("HumanoidRootPart")
+                    local realAfter = (my2 and mhrp) and (my2.Position - mhrp.Position).Magnitude or realD
+                    if dmg > 0 then
+                        if not firstHitD then
+                            firstHitD = realAfter
+                            log(string.format("★ โดนครั้งแรก @ จริง=%.0f (ตั้งแนวนอน%d) ดาเมจ=-%.0f",
+                                realAfter, horiz, dmg), "G")
+                        else
+                            log(string.format("✓ ยังโดน @ จริง=%.0f ดาเมจ=-%.0f", realAfter, dmg), "G")
+                        end
+                        confirmed[#confirmed + 1] = realAfter
+                        -- โดนแล้วเก็บอีก 2 ขั้นใกล้เพื่อยืนยัน แล้วจบ
+                        if #confirmed >= 3 then
+                            log("ยืนยันโดน 3 ระยะแล้ว → จบ", "Y")
+                            break
+                        end
+                    else
+                        log(string.format("✗ ไม่โดน @ ตั้ง%d จริง=%.0f", horiz, realAfter), "S")
+                        if firstHitD then
+                            -- เคยโดนแล้วแต่ระยะนี้ไม่โดน = แปลก ข้าม
+                        end
+                    end
                 end
             end
         end
 
+        -- ปลดมอน
+        pcall(function()
+            if mhrp then mhrp.Anchored = false end
+        end)
+
         log("──────── สรุป ────────", "Y")
-        log(string.format("ร่างใหญ่=%s | ความสูงทดสอบ=%.0f", tostring(isBigForm()), height), "B")
-        if maxHit > 0 then
-            log(string.format("★ ระยะตีโดนสูงสุด ≈ %.0f studs", maxHit), "G")
-            log(string.format("  แนะนำล็อกตีที่ระยะ ≤ %.0f studs", math.floor(maxHit * 0.85)), "G")
+        log(string.format("ร่างใหญ่=%s | สูงทดสอบ=%.0f | ไล่จากไกล→ใกล้", tostring(isBigForm()), height), "B")
+        if firstHitD then
+            local safe = math.floor(firstHitD * 0.85)
+            log(string.format("★ ระยะตีโดนสูงสุด (ครั้งแรกจากไกล) ≈ %.0f studs", firstHitD), "G")
+            log(string.format("  แนะนำล็อกตีที่ระยะ ≤ %.0f studs", safe), "G")
         else
-            log("ไม่โดนเลยทั้งช่วง — เช็คดาบ/RegisterHit/ร่างพระ", "R")
+            log("ไม่โดนเลย — เช็คดาบ/ร่างพระ หรือมอนตายก่อนวัด", "R")
         end
-        if minMiss then
-            log(string.format("เริ่มพลาดประมาณ %.0f studs", minMiss), "O")
-        end
-        log("════ จบ Spy ระยะตี — Copy ส่งมาได้ ════", "Y")
+        log("════ จบ Spy ระยะตี v2 — Copy ส่งมาได้ ════", "Y")
     end)
     if not ok then log("Spy error: " .. tostring(err), "R") end
     spyBusy = false
