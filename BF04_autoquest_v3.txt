@@ -673,13 +673,37 @@ local function directRemoteAttack(mobTarget, mobName)
             end
         end
     end
+
+    -- แบบที่ 1: มาตรฐาน Blox Fruits RE Remotes (RegisterAttack + RegisterHit)
     pcall(function()
         if rAttack then
-            rAttack:FireServer(0); rAttack:FireServer(1); rAttack:FireServer(2); rAttack:FireServer(3)
+            rAttack:FireServer(1e-9)
+            rAttack:FireServer(0)
+        end
+        if rHit then
+            rHit:FireServer(mainPart, othersEnemies)
         end
     end)
+
+    -- แบบที่ 2: RigControllerEvent (ระบบ CombatFramework ของเกม)
     pcall(function()
-        if rHit then rHit:FireServer(mainPart, othersEnemies) end
+        local rigEvent = RS:FindFirstChild("RigControllerEvent")
+        if rigEvent then
+            local hits = {}
+            for _, pair in ipairs(othersEnemies) do
+                table.insert(hits, pair[2])
+            end
+            rigEvent:FireServer("hit", hits, 1, "")
+        end
+    end)
+
+    -- แบบที่ 3: VirtualUser คลิกโจมตีจริง
+    pcall(function()
+        local vu = game:GetService("VirtualUser")
+        if vu then
+            vu:CaptureController()
+            vu:Button1Down(Vector2.new(1280, 672))
+        end
     end)
 end
 
@@ -844,8 +868,8 @@ local function mainLoop()
                         local hrpNow = myChar:FindFirstChild("HumanoidRootPart")
                         if hrpNow then
                             applyBodyVelocity(hrpNow)
-                            -- เกาะเหนือหัวมอน 15 studs แบบคงที่ นิ่ง ไม่กระตุก
-                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 15, 0)
+                            -- เกาะเหนือหัวมอน 8-10 studs เพื่อให้อยู่ใน Hitbox ระยะอาวุธ
+                            hrpNow.CFrame = mhrp.CFrame * CFrame.new(0, 9, 0)
                         end
                         if os.clock() - lastCamT >= 0.2 then
                             lastCamT = os.clock()
@@ -858,11 +882,6 @@ local function mainLoop()
                     end
 
                     directRemoteAttack(v, qdata.mob)
-                    -- คลิกโจมตีจริงร่วมด้วย เพื่อให้อาวุธตีแน่นอนตามตัวอย่าง Snapxx
-                    pcall(function()
-                        local vu = game:GetService("VirtualUser")
-                        if vu then vu:Button1Down(Vector2.new(0, 0)) end
-                    end)
                     task.wait(0.05)
                 end
             end
