@@ -1,11 +1,11 @@
 --[[ ═══════════════════════════════════════════════════════════════════
     BF04 Auto Quest V3 — Sea 3 Only (Lv.1500-2600)  [Rewrite Clean]
-    โครงสร้างแบบ MUXHUB (ฟาร์มถึง 2600+ ได้จริง):
-      1. totarget = TweenService ธรรมดา วน repeat จนถึงระยะ 20 (ไม่มี BTP ซับซ้อน)
+    โครงสร้างแบบ MUXHUB + fallback BF04:
+      1. totarget = TweenService วนจนถึงระยะ 20
       2. รับเควสผ่าน CommF_:StartQuest + SetSpawnPoint
-      3. ตี = ขยาย Hitbox มอน 50x50x50 + FastAttack ผ่าน CombatFramework
-         + VirtualUser ปลอมคลิก ให้เกมยิง RegisterHit ผ่าน pipeline ปกติ
-      4. Magnet ดึงมอนเควสมากอง (isnetworkowner เช็คเจ้าของฟิสิกส์)
+      3. ตี = Hitbox 50 + VirtualUser + RegisterAttack/Hit (หลัก)
+         + CombatFramework ถ้า require ได้ (เสริม ไม่บังคับ)
+      4. Magnet ดึงมอนเควส (isnetworkowner)
     ═══════════════════════════════════════════════════════════════════ ]]
 
 local Players = game:GetService("Players")
@@ -269,39 +269,134 @@ local function equipWeapon()
     return false
 end
 
--- ── FastAttack Engine (สไตล์ MUXHUB ตรงๆ) ─────────────────────────
-task.spawn(function()
-    local ok, CF = pcall(function()
-        return require(LP.PlayerScripts:WaitForChild("CombatFramework", 15))
-    end)
-    if not ok or not CF then log("CombatFramework require ไม่ได้ (เกมอัพเดต?)", "R") return end
-    local okShake, CamShake = pcall(function()
-        return require(RS:WaitForChild("Util", 5):WaitForChild("CameraShaker", 5))
-    end)
-    log("FastAttack Engine พร้อม ✓", "G")
-    RunService.Heartbeat:Connect(function()
-        if FASTATTACK_ON and _G.BF04V3_ON then
-            pcall(function()
-                local c = CF.activeController
-                c.attacking = false
-                c.blocking = false
-                c.timeToNextAttack = tick() - 1
-                c.timeToNextBlock = 0
-                c.increment = 3
-                c.hitboxMagnitude = 120
-                local char = LP.Character
-                if char then
-                    local stun = char:FindFirstChild("Stun")
-                    if stun then stun.Value = 0 end
-                    local hum = char:FindFirstChildOfClass("Humanoid")
-                    if hum then hum.Sit = false end
-                end
-                VirtualUser:CaptureController()
-                VirtualUser:Button1Down(Vector2.new(1280, 672))
-                if okShake and CamShake then CamShake:Stop() end
-            end)
+-- ── Combat remotes (fallback หลักเมื่อ CombatFramework require ไม่ได้) ─
+local RegisterAttack, RegisterHit
+local function getCombatRemotes()
+    if RegisterAttack and RegisterHit then return RegisterAttack, RegisterHit end
+    pcall(function()
+        local net = RS:FindFirstChild("Modules") and RS.Modules:FindFirstChild("Net")
+        if net then
+            RegisterAttack = net:FindFirstChild("RE/RegisterAttack")
+            RegisterHit = net:FindFirstChild("RE/RegisterHit")
         end
     end)
+    return RegisterAttack, RegisterHit
+end
+
+local function fireRemoteHit(mobTarget, mobName)
+    if not mobTarget or not mobTarget.Parent then return end
+    local rAttack, rHit = getCombatRemotes()
+    local char = LP.Character
+    if not char or not char:FindFirstChildOfClass("Tool") then return end
+    local mainPart = mobTarget:FindFirstChild("Head")
+        or mobTarget:FindFirstChild("HumanoidRootPart")
+    if not mainPart then return end
+    local pack = { { mobTarget, mainPart } }
+    if _G.BF04V3_MAGNET then
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, e in ipairs(enemies:GetChildren()) do
+                if #pack >= 8 then break end
+                if e ~= mobTarget and e.Name:find(mobName or "", 1, true)
+                   and not e.Name:find("Boss") then
+                    local eh = e:FindFirstChildOfClass("Humanoid")
+                    local ep = e:FindFirstChild("Head") or e:FindFirstChild("HumanoidRootPart")
+                    if eh and eh.Health > 0 and ep
+                       and (ep.Position - mainPart.Position).Magnitude < 100 then
+                        pack[#pack + 1] = { e, ep }
+                    end
+                end
+            end
+        end
+    end
+    pcall(function()
+        if rAttack then
+            rAttack:FireServer(0); rAttack:FireServer(1)
+            rAttack:FireServer(2); rAttack:FireServer(3)
+        end
+        if rHit then rHit:FireServer(mainPart, pack) end
+    end)
+end
+
+-- หา activeController: require → getupvalues → getgc (ไม่บังคับ)
+local activeCtrl = nil
+local function resolveController()
+    if activeCtrl then return activeCtrl end
+    -- 1) require ตรง
+    pcall(function()
+        local mod = LP.PlayerScripts:FindFirstChild("CombatFramework")
+        if not mod then return end
+        local CF = require(mod)
+        if CF and CF.activeController then
+            activeCtrl = CF.activeController
+            return
+        end
+        if debug and debug.getupvalues then
+            local ups = debug.getupvalues(CF)
+            if ups and ups[2] and ups[2].activeController then
+                activeCtrl = ups[2].activeController
+            end
+        end
+    end)
+    if activeCtrl then return activeCtrl end
+    -- 2) ไล่ getgc หา table ที่มี hitboxMagnitude
+    pcall(function()
+        if not getgc then return end
+        for _, v in ipairs(getgc(true)) do
+            if type(v) == "table" and rawget(v, "hitboxMagnitude")
+               and rawget(v, "timeToNextAttack") and rawget(v, "attacking") ~= nil then
+                activeCtrl = v
+                break
+            end
+        end
+    end)
+    return activeCtrl
+end
+
+-- ── FastAttack Engine: VirtualUser เสมอ + CF ถ้ามี + Remote ──
+local CURRENT_TARGET, CURRENT_MOBNAME = nil, nil
+task.spawn(function()
+    task.wait(1)
+    local c = resolveController()
+    if c then
+        log("CombatFramework ✓ (เสริม hitbox)", "G")
+    else
+        log("CF ไม่ได้ → ใช้ RegisterHit + VirtualUser", "Y")
+    end
+    local ra, rh = getCombatRemotes()
+    if ra and rh then
+        log("RegisterAttack/Hit ✓", "G")
+    else
+        log("RegisterHit ยังไม่เจอ (จะลองใหม่ตอนตี)", "Y")
+    end
+
+    RunService.Heartbeat:Connect(function()
+        if not (FASTATTACK_ON and _G.BF04V3_ON) then return end
+        pcall(function()
+            local char = LP.Character
+            if char then
+                local stun = char:FindFirstChild("Stun")
+                if stun then stun.Value = 0 end
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then hum.Sit = false end
+            end
+            local ctrl = resolveController()
+            if ctrl then
+                ctrl.attacking = false
+                ctrl.blocking = false
+                ctrl.timeToNextAttack = tick() - 1
+                ctrl.timeToNextBlock = 0
+                ctrl.increment = 3
+                ctrl.hitboxMagnitude = 120
+            end
+            VirtualUser:CaptureController()
+            VirtualUser:Button1Down(Vector2.new(1280, 672))
+            if CURRENT_TARGET then
+                fireRemoteHit(CURRENT_TARGET, CURRENT_MOBNAME)
+            end
+        end)
+    end)
+    log("FastAttack Engine พร้อม ✓", "G")
 end)
 
 -- ── Magnet (สไตล์ Xenon: isnetworkowner + BodyVelocity) ───────────
@@ -422,9 +517,16 @@ local function mainLoop()
                 return
             end
 
-            -- ═══ สู้: บินเข้า + ขยาย hitbox + FastAttack ═══
+            -- ═══ สู้: ล็อกเหนือหัว + ขยาย hitbox + FastAttack ═══
             setState("สู้ " .. target.Name .. " (HP " .. math.floor(target.Humanoid.Health) .. ")", "Y")
             equipWeapon()
+            -- Buso กัน elemental immunity
+            pcall(function()
+                if not LP.Character:FindFirstChild("HasBuso") then
+                    CommF:InvokeServer("Buso")
+                end
+            end)
+            CURRENT_TARGET, CURRENT_MOBNAME = target, qdata.mob
             FASTATTACK_ON = true
             local lastHp = target.Humanoid.Health
             local lastCheck = os.clock()
@@ -434,14 +536,14 @@ local function mainLoop()
                   and target.Humanoid.Health > 0 and _G.BF04V3_ON do
                 local myChar, myHrp = getChar()
                 if not myChar then break end
+                equipWeapon()
 
                 local mhrp = target:FindFirstChild("HumanoidRootPart")
                 if not mhrp then break end
 
-                -- ลอยเหนือหัวมอน 25 studs (hitbox 50 → ครอบถึงแน่นอน)
-                myHrp.CFrame = mhrp.CFrame * CFrame.new(0, 25, 0)
+                -- ลอยเหนือหัว 12 studs (hitbox 50 ครอบถึง + remote ระยะพอ)
+                myHrp.CFrame = mhrp.CFrame * CFrame.new(0, 12, 0)
 
-                -- ขยาย hitbox + ห้ามมอนขยับ (สไตล์ MUXHUB)
                 pcall(function()
                     target.Humanoid.PlatformStand = true
                     target.Humanoid.Sit = true
@@ -450,8 +552,8 @@ local function mainLoop()
                 end)
 
                 bringMobs(target, qdata.mob, myHrp)
+                fireRemoteHit(target, qdata.mob)
 
-                -- เช็คเลือดทุก 1.5 วิ: ไม่ลด 3 ครั้ง = ตัวบั๊ก → แบน 45 วิ
                 if os.clock() - lastCheck >= 1.5 then
                     lastCheck = os.clock()
                     local hp = target.Humanoid.Health
@@ -472,6 +574,7 @@ local function mainLoop()
             end
 
             FASTATTACK_ON = false
+            CURRENT_TARGET, CURRENT_MOBNAME = nil, nil
             if target.Parent == nil or (target:FindFirstChildOfClass("Humanoid")
                and target.Humanoid.Health <= 0) then
                 log(target.Name .. " ตายแล้ว ✓", "G")
@@ -496,6 +599,7 @@ autoBtn.MouseButton1Click:Connect(function()
         task.spawn(mainLoop)
     else
         FASTATTACK_ON = false
+        CURRENT_TARGET, CURRENT_MOBNAME = nil, nil
         log("=== STOP ===", "R")
     end
 end)
@@ -510,8 +614,9 @@ end)
 closeBtn.MouseButton1Click:Connect(function()
     _G.BF04V3_ON = false
     FASTATTACK_ON = false
+    CURRENT_TARGET, CURRENT_MOBNAME = nil, nil
     sg:Destroy()
 end)
 
 log("BF04 V3 Clean โหลดแล้ว ✓", "G")
-log("กด AUTO ได้เลย — โครงสร้าง MUXHUB", "S")
+log("กด AUTO ได้เลย — Remote+VU (CF เสริม)", "S")
