@@ -21,7 +21,10 @@ local pg = LP:WaitForChild("PlayerGui")
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 _G.BF04C_ON = false
-local FLY_SPEED = 180
+_G.BF04C_LOOPING = false -- กันโหลดใหม่แล้ว AUTO ค้าง "กำลังรันอยู่แล้ว"
+_G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1 -- ฆ่าลูปเก่าที่ค้าง InvokeServer/บิน
+local MY_GEN = _G.BF04C_GEN
+local FLY_SPEED = 260
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
@@ -159,7 +162,6 @@ end
 
 local currentTween
 local flyLock = false
-local FLY_SPEED = 260 -- studs/s รอยช้าแบบตอนบินตี (ทะลุกำแพงด้วย noclip)
 
 local function stopFlyTween()
     if currentTween then
@@ -168,14 +170,20 @@ local function stopFlyTween()
     end
 end
 
+local function hardStopFly()
+    stopFlyTween()
+    flyLock = false
+end
+
 local function flyTo(posOrCF, label)
     local _, hrp = getChar()
     if not hrp then return false end
     if flyLock then
         local t0 = os.clock()
-        while flyLock and os.clock() - t0 < 30 and _G.BF04C_ON do
+        while flyLock and os.clock() - t0 < 8 and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
             task.wait(0.1)
         end
+        if flyLock then hardStopFly() end
     end
     flyLock = true
     setNoclip(true)
@@ -186,32 +194,36 @@ local function flyTo(posOrCF, label)
 
     local ok = false
     local okRun, err = pcall(function()
+        if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then return end
         if dist < 20 then
             hrp.CFrame = dest
             hrp.AssemblyLinearVelocity = Vector3.zero
             ok = true
             return
         end
-        -- Tween รอยต่อเนื่อง + noclip (ไม่กระโดดทีละ 200 แล้วค้างกำแพง)
         local spd = FLY_SPEED
-        if dist >= 1500 then spd = 320
-        elseif dist >= 800 then spd = 290
+        if dist >= 1500 then spd = 340
+        elseif dist >= 800 then spd = 300
         end
-        local dur = math.clamp(dist / spd, 0.2, 18)
+        local dur = math.clamp(dist / spd, 0.2, 14)
         stopFlyTween()
         local tw = TweenService:Create(hrp,
             TweenInfo.new(dur, Enum.EasingStyle.Linear),
             { CFrame = dest })
         currentTween = tw
         tw:Play()
-        local tEnd = os.clock() + dur + 1.5
-        while currentTween == tw and os.clock() < tEnd and _G.BF04C_ON do
+        local tEnd = os.clock() + dur + 1.0
+        while currentTween == tw and os.clock() < tEnd
+              and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
             setNoclip(true)
             local _, h = getChar()
-            if h then h.AssemblyLinearVelocity = Vector3.zero end
+            if h then
+                h.AssemblyLinearVelocity = Vector3.zero
+                hrp = h
+            end
             task.wait(0.05)
-            if not hrp.Parent then break end
-            if (hrp.Position - dest.Position).Magnitude <= 25 then
+            if not hrp or not hrp.Parent then break end
+            if (hrp.Position - dest.Position).Magnitude <= 28 then
                 stopFlyTween()
                 break
             end
@@ -221,12 +233,12 @@ local function flyTo(posOrCF, label)
         if h2 then
             setNoclip(true)
             local left = (h2.Position - dest.Position).Magnitude
-            if left > 35 then
+            if left > 40 then
                 h2.CFrame = dest
                 h2.AssemblyLinearVelocity = Vector3.zero
                 left = (h2.Position - dest.Position).Magnitude
             end
-            ok = left <= 70
+            ok = left <= 80
             if not ok then
                 log(string.format("ยังไม่ถึง (เหลือ %.0f)", left), "Y")
             end
@@ -235,6 +247,28 @@ local function flyTo(posOrCF, label)
     flyLock = false
     if not okRun then log("fly error: " .. tostring(err), "R") end
     return ok
+end
+
+-- InvokeServer มี timeout กันค้างเงียบ
+local function invokeCF(cf, ...)
+    local args = { ... }
+    local done, res, err = false, nil, nil
+    task.spawn(function()
+        local ok, a, b = pcall(function()
+            return cf:InvokeServer(table.unpack(args))
+        end)
+        if ok then res = a else err = a end
+        done = true
+    end)
+    local t0 = os.clock()
+    while not done and os.clock() - t0 < 6 and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
+        task.wait(0.1)
+    end
+    if not done then
+        return false, "timeout"
+    end
+    if err then return false, err end
+    return true, res
 end
 
 -- ── อ่าน RS.Quests → เลือกเควสตามเลเวล ─────────────────────────────
@@ -1332,16 +1366,38 @@ local function readQuestProgress(quest)
     end
 
     local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
-    if ok and vis == true then
+    -- อ่านข้อความใน Main.Quest แม้ Visible=false (เกมซ่อน UI แต่ยังมีข้อความจริง)
+    do
         local t = ""
         pcall(function() t = pg.Main.Quest.Container.QuestTitle.Title.Text or "" end)
-        considerTitle(t, "Main.Quest")
-        for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
-            if d:IsA("TextLabel") then
-                local a, b = parseProgress(d.Text)
-                if a and b then cur, need = a, b end
-                if title == "" then considerTitle(tostring(d.Text), "Main.Quest") end
+        local tl = t:lower()
+        if t ~= "" and not tl:find("bandit", 1, true) then
+            considerTitle(t, vis == true and "Main.Quest" or "Main.Quest.hidden")
+        end
+        if ok and vis == true then
+            for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
+                if d:IsA("TextLabel") then
+                    local a, b = parseProgress(d.Text)
+                    if a and b then cur, need = a, b end
+                    if title == "" then considerTitle(tostring(d.Text), "Main.Quest") end
+                end
             end
+        elseif title == "" then
+            pcall(function()
+                for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
+                    if d:IsA("TextLabel") then
+                        local tx = tostring(d.Text or "")
+                        local tl2 = tx:lower()
+                        if tl2:find("defeat", 1, true) or tx:find("เอาชนะ", 1, true) then
+                            if not tl2:find("bandit", 1, true) then
+                                considerTitle(tx, "Main.Quest.hidden")
+                                local a, b = parseProgress(tx)
+                                if a and b then cur, need = a, b end
+                            end
+                        end
+                    end
+                end
+            end)
         end
     end
 
@@ -1599,17 +1655,23 @@ end
 -- ── Main loop ──────────────────────────────────────────────────────
 local function mainLoop()
     if _G.BF04C_LOOPING then
-        log("AUTO กำลังรันอยู่แล้ว — ไม่เปิดซ้ำ", "O")
-        return
+        -- ลูปเก่าค้าง (โหลดซ้ำ / Invoke ค้าง) → บังคับรีสตาร์ท
+        log("AUTO ค้าง → รีสตาร์ทลูป", "O")
+        _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1
+        MY_GEN = _G.BF04C_GEN
+        hardStopFly()
+        _G.BF04C_LOOPING = false
+        task.wait(0.3)
     end
     _G.BF04C_LOOPING = true
+    local loopGen = MY_GEN
     log("=== START Compass Auto ===", "Y")
     local cf = getCommF()
     if not cf then log("ไม่มี CommF_", "R"); _G.BF04C_LOOPING = false; return end
     getCombatRemotes()
     pcall(function() ensureBuddhaSword(true) end)
 
-    while _G.BF04C_ON do
+    while _G.BF04C_ON and _G.BF04C_GEN == loopGen do
         local ok, err = pcall(function()
             local lv = getLevel()
             local quest = pickQuestForLevel(lv)
@@ -1662,15 +1724,16 @@ local function mainLoop()
                 local dNow = hNow and (hNow.Position - pos).Magnitude or -1
                 log(string.format("StartQuest(%s, %s) ร่างใหญ่=%s ระยะ=%.0f",
                     quest.qName, tostring(quest.qNum), tostring(isBigForm()), dNow), "Y")
-                local iok, ires = pcall(function()
-                    return cf:InvokeServer("StartQuest", quest.qName, quest.qNum)
-                end)
+                local iok, ires = invokeCF(cf, "StartQuest", quest.qName, quest.qNum)
                 log("ผล: ok=" .. tostring(iok) .. " res=" .. tostring(ires), "B")
-                if iok then
-                    -- res=0 ก็มักรับสำเร็จแล้ว แต่ Main.Quest.Visible อาจไม่ขึ้น — บังคับไปฟาร์ม
+                if iok and ires ~= "timeout" then
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
                     log("ตั้งโหมดมีเควส 25วิ (รอ UI)", "G")
+                elseif ires == "timeout" then
+                    log("StartQuest timeout — ลองใหม่", "R")
+                    task.wait(1)
+                    return
                 end
                 -- คลิกปุ่มเลือกเควสใน UI ถ้ามี (Warrior / Archer)
                 pcall(function()
@@ -1700,7 +1763,8 @@ local function mainLoop()
                 end)
                 task.wait(0.6)
                 local w = 0
-                while not select(1, hasActiveQuest(quest)) and w < 30 and _G.BF04C_ON do
+                while not select(1, hasActiveQuest(quest)) and w < 30
+                      and _G.BF04C_ON and _G.BF04C_GEN == loopGen do
                     local _, h = getChar()
                     if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
                     task.wait(0.1); w += 1
@@ -1725,9 +1789,10 @@ local function mainLoop()
             )
             if questUIVisible() and titleTxt ~= "" and not titleOk then
                 log("เควสไม่ตรง (" .. titleTxt .. ") → Abandon แล้วรอเคลียร์", "Y")
-                pcall(function() cf:InvokeServer("AbandonQuest") end)
+                invokeCF(cf, "AbandonQuest")
                 local t0 = os.clock()
-                while questUIVisible() and os.clock() - t0 < 3 and _G.BF04C_ON do
+                while questUIVisible() and os.clock() - t0 < 3
+                      and _G.BF04C_ON and _G.BF04C_GEN == loopGen do
                     task.wait(0.15)
                 end
                 if questUIVisible() then
@@ -1761,22 +1826,20 @@ local function mainLoop()
             local lastCheck = os.clock()
             local noDmg = 0
             while mob.Parent and mhum.Parent and mhum.Health > 0
-                  and select(1, hasActiveQuest(quest)) and _G.BF04C_ON do
+                  and select(1, hasActiveQuest(quest))
+                  and _G.BF04C_ON and _G.BF04C_GEN == loopGen do
                 local _, myHrp = getChar()
                 if not myHrp then break end
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
                 if not mhrp then break end
                 setNoclip()
                 equipSword()
-                -- ล็อกเหนือหัว → ระยะจริง ≈ attackHeight (≤34 จาก Spy)
                 myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
                 local nowD = (myHrp.Position - mhrp.Position).Magnitude
                 if nowD > SAFE_HIT_RANGE then
-                    -- เด้งออกนอกระยะ → วาร์ปกลับทันที
                     myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
                 end
                 pcall(function()
-                    -- hitbox เสริมเล็กน้อย (ไม่พึ่งเป็นหลัก — Spy วัดโดยไม่ขยาย)
                     mhrp.Size = Vector3.new(25, 25, 25)
                     mhrp.CanCollide = false
                     mhum.PlatformStand = true
@@ -1817,15 +1880,20 @@ local function mainLoop()
             end
             task.wait(0.3)
         end)
+        if _G.BF04C_GEN ~= loopGen then break end
         if not ok then
             log("Loop error: " .. tostring(err), "R")
+            hardStopFly()
             task.wait(1)
         else
             task.wait(0.15)
         end
     end
     log("=== STOP ===", "R")
-    _G.BF04C_LOOPING = false
+    hardStopFly()
+    if _G.BF04C_GEN == loopGen then
+        _G.BF04C_LOOPING = false
+    end
 end
 
 -- ── Spy ระยะตี: จำตำแหน่งมอน → เริ่มจากไกลสุด → ค่อยเข้าใกล้ → โดนครั้งแรก = ระยะสูงสุด ──
@@ -2011,11 +2079,20 @@ closeBtn.MouseButton1Click:Connect(function()
 end)
 
 autoBtn.MouseButton1Click:Connect(function()
-    _G.BF04C_ON = not _G.BF04C_ON
-    autoBtn.Text = _G.BF04C_ON and "AUTO: ON" or "AUTO: OFF"
-    autoBtn.BackgroundColor3 = _G.BF04C_ON
-        and Color3.fromRGB(180, 40, 40) or Color3.fromRGB(30, 120, 50)
     if _G.BF04C_ON then
+        -- ปิด
+        _G.BF04C_ON = false
+        _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1
+        MY_GEN = _G.BF04C_GEN
+        hardStopFly()
+        _G.BF04C_LOOPING = false
+        autoBtn.Text = "AUTO: OFF"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(30, 120, 50)
+        log("AUTO ปิดแล้ว", "O")
+    else
+        _G.BF04C_ON = true
+        autoBtn.Text = "AUTO: ON"
+        autoBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
         task.spawn(mainLoop)
     end
 end)
