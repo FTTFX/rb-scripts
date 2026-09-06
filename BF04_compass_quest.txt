@@ -610,6 +610,9 @@ local function spyGuideLinks(guide)
     return hits
 end
 
+-- forward declare (กันเรียกก่อนนิยามแล้วได้ nil)
+local findQuestGiver
+
 -- หัวใจ: ชื่อจากเข็มทิศ → พิกัด
 local function reverseCompassToPos(quest)
     local ui = readCompassUI()
@@ -625,6 +628,7 @@ local function reverseCompassToPos(quest)
     if targetName then
         local part, dist, realName = findNpcByExactName(targetName)
         if part then
+            rememberNpc(part)
             log(string.format("→ เจอในแมพ: %s (%.0f studs) @ %.1f,%.1f,%.1f",
                 realName or targetName, dist or 0, part.Position.X, part.Position.Y, part.Position.Z), "G")
             return part.Position, "name→NPCs:" .. (realName or targetName)
@@ -640,21 +644,16 @@ local function reverseCompassToPos(quest)
         return cached, csrc
     end
 
-    -- 3) สำรองจากเควส (Dragon Crew ฯลฯ)
-    if quest then
-        local mob = (quest.mob or ""):lower()
-        if mob:find("dragon crew", 1, true) and KNOWN_NPC["dragon crew quest giver"] then
-            local p = KNOWN_NPC["dragon crew quest giver"]
-            log("→ สำรองจากเควส Dragon Crew @ NPC ที่เคยรู้", "G")
-            return p, "known:dragon crew quest giver"
-        end
-        local part2 = findQuestGiver(quest)
+    -- 3) สำรอง: หา Quest Giver ในแมพ (ชื่อจาก Guide ก่อน)
+    if findQuestGiver then
+        local part2 = findQuestGiver(quest, targetName)
         if part2 then
             rememberNpc(part2)
             return part2.Position, "quest→NPCs"
         end
     end
 
+    -- 4) ไม่มีพิกัด → ให้ resolve ใช้ COMPASS_STEP
     return nil, ui
 end
 
@@ -789,11 +788,24 @@ local function flyByCompassStep(opts)
 end
 
 -- หา Quest Giver จากเควส (สำรอง ถ้า Guide ไม่มีชื่อ)
-local function findQuestGiver(quest)
+findQuestGiver = function(quest, preferName)
     local folder = Workspace:FindFirstChild("NPCs")
     if not folder then return nil end
     local _, myHrp = getChar()
     local best, bestD = nil, math.huge
+    local preferL = preferName and preferName:lower() or nil
+
+    -- ชื่อจากเข็มทิศตรงๆ ก่อน
+    if preferL then
+        for _, npc in ipairs(folder:GetChildren()) do
+            if npc.Name:lower() == preferL or npc.Name:lower():find(preferL, 1, true) then
+                local part = npc:FindFirstChild("HumanoidRootPart")
+                    or npc:FindFirstChildWhichIsA("BasePart")
+                if part then return part, 0 end
+            end
+        end
+    end
+
     local keys = {}
     if quest then
         local mob = quest.mob or ""
@@ -802,18 +814,37 @@ local function findQuestGiver(quest)
         if #words >= 2 then
             keys[#keys+1] = words[1] .. " " .. words[2]
         end
+        if #words >= 1 then keys[#keys+1] = words[1] end -- "Hydra" จาก Hydra Enforcer
         keys[#keys+1] = mob
         keys[#keys+1] = quest.displayName or ""
         keys[#keys+1] = quest.qName or ""
     end
+    if preferName then
+        for w in preferName:gmatch("%S+") do
+            if w:lower() ~= "quest" and w:lower() ~= "giver" and w:lower() ~= "the" then
+                keys[#keys+1] = w
+            end
+        end
+    end
     keys[#keys+1] = "Quest Giver"
     for _, npc in ipairs(folder:GetChildren()) do
         local nl = npc.Name:lower()
-        local hit = nl:find("quest giver", 1, true) or nl:find("questgiver", 1, true)
+        local hit = false
+        if preferL and (nl == preferL or nl:find(preferL, 1, true)) then
+            hit = true
+        end
+        if not hit then
+            hit = nl:find("quest giver", 1, true) or nl:find("questgiver", 1, true)
+        end
         if not hit and quest then
             for _, k in ipairs(keys) do
                 if k ~= "" and nl:find(k:lower(), 1, true) then hit = true break end
             end
+        end
+        -- อย่าเลือก Dragon Crew ถ้าเป้าเป็น Hydra Town (และกลับกัน)
+        if hit and preferL then
+            if preferL:find("hydra", 1, true) and nl:find("dragon", 1, true) then hit = false end
+            if preferL:find("dragon", 1, true) and nl:find("hydra", 1, true) then hit = false end
         end
         if hit then
             local part = npc:FindFirstChild("HumanoidRootPart")
@@ -2075,6 +2106,9 @@ end
 -- ── ปุ่ม ───────────────────────────────────────────────────────────
 closeBtn.MouseButton1Click:Connect(function()
     _G.BF04C_ON = false
+    _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1
+    hardStopFly()
+    _G.BF04C_LOOPING = false
     sg:Destroy()
 end)
 
