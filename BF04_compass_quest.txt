@@ -1126,20 +1126,26 @@ local function findMob(mobName)
     return best, bestD
 end
 
+-- บอสจริงใน Enemies มักมีแท็ก [Boss] หรือชื่อในรายการ — ห้ามจับ Staff/เมนูมั่ว
+local KNOWN_BOSS_NAMES = {
+    "hydra leader", "stone", "island empress", "kilo admiral",
+    "captain elephant", "beautiful pirate", "cake queen", "longma",
+    "soul reaper", "rip_indra", "dough king", "cake prince",
+    "darkbeard", "tide keeper", "cursed captain",
+}
+
 local function isBossMobName(name)
-    local n = (name or ""):lower()
+    local raw = tostring(name or "")
+    local n = raw:lower()
     if n == "" then return false end
-    if n:find("enforcer", 1, true) then return false end -- มอนธรรมดา
-    if n:find("assailant", 1, true) then return false end
-    return n:find("leader", 1, true) ~= nil
-        or n:find("boss", 1, true) ~= nil
-        or n:find("[boss]", 1, true) ~= nil
-        or n:find("empress", 1, true) ~= nil
-        or n:find("king", 1, true) ~= nil
-        or n:find("queen", 1, true) ~= nil
-        or n:find("admiral", 1, true) ~= nil
-        or n:find("elephant", 1, true) ~= nil
-        or n:find("indra", 1, true) ~= nil
+    if n:find("enforcer", 1, true) or n:find("assailant", 1, true) then return false end
+    if n:find("staff", 1, true) or n:find("crew leader", 1, true) then return false end
+    -- แท็กเกม
+    if raw:find("%[Boss%]") or raw:find("%[Raid Boss%]") then return true end
+    for _, k in ipairs(KNOWN_BOSS_NAMES) do
+        if n == k or n:find(k, 1, true) then return true end
+    end
+    return false
 end
 
 -- สแกนบอสที่เกิดอยู่ตอนนี้ใน Enemies
@@ -1243,26 +1249,34 @@ local function dumpBossSpy()
         end
     end
 
-    -- UI ข้อความบอกเกิด?
+    -- UI: เฉพาะข้อความบอกว่าเกิดแล้ว (ไม่ใช่เมนู Respawn Bosses)
     local tips = 0
     for _, d in ipairs(pg:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
+        if sg and d:IsDescendantOf(sg) then
+            -- ข้าม GUI เราเอง
+        elseif d:IsA("TextLabel") or d:IsA("TextButton") then
             local vis = false
             pcall(function() vis = d.Visible and d.AbsoluteSize.X > 8 end)
             if vis then
                 local tx = tostring(d.Text or "")
                 local tl = tx:lower()
-                if #tx > 4 and #tx < 120 and (
-                    tl:find("spawn", 1, true) or tx:find("เกิด", 1, true)
-                    or tl:find("leader", 1, true) or tl:find("appeared", 1, true)
-                ) and not tl:find("defeat", 1, true) and not tl:find("bandit", 1, true) then
+                if #tx > 6 and #tx < 100
+                   and not tl:find("respawn", 1, true)
+                   and not tl:find("crew leader", 1, true)
+                   and not tx:find("%[%d%d:%d%d:%d%d%]")
+                   and (
+                       tl:find("has spawned", 1, true)
+                       or tl:find("appeared", 1, true)
+                       or tx:find("เกิดแล้ว", 1, true)
+                       or tx:find("ได้เกิด", 1, true)
+                   ) then
                     tips += 1
-                    if tips <= 6 then log("  UI: " .. tx:sub(1, 80), "B") end
+                    if tips <= 6 then log("  UI spawn: " .. tx:sub(1, 80), "G") end
                 end
             end
         end
     end
-    if tips == 0 then log("  ไม่เจอข้อความ spawn บนจอ", "S") end
+    if tips == 0 then log("  ไม่มีข้อความ 'spawned/เกิดแล้ว' บนจอ (เมนู Respawn ≠ บอสเกิด)", "S") end
     log("════ จบ Spy บอส — Copy ส่งมาได้ ════", "Y")
 end
 
@@ -1278,16 +1292,26 @@ task.spawn(function()
         local hrp = ch:FindFirstChild("HumanoidRootPart")
         local hum = ch:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum or hum.Health <= 0 then return end
+        -- ต้องเป็น Model ใน Enemies จริง
+        if not ch:IsA("Model") then return end
         MOB_CACHE[ch.Name:lower()] = hrp.Position
-        bossSkipUntil = 0
-        bossMissCount = 0
+        local key = ch.Name:lower()
+        if key:find("hydra leader", 1, true) or ch.Name:find("%[Boss%]") then
+            bossSkipUntil = 0
+            bossMissCount = 0
+        end
         _G.BF04C_BOSS_ALIVE = {
             name = ch.Name,
             pos = hrp.Position,
             t = os.clock(),
         }
-        log(string.format("★ Spy: บอสเกิด %s @ %.0f,%.0f,%.0f — ปลดข้ามบอส",
-            ch.Name, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "G")
+        log(string.format("★ Spy: บอสเกิด %s HP%.0f @ %.0f,%.0f,%.0f",
+            ch.Name, hum.Health, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "G")
+        if key:find("hydra leader", 1, true) then
+            log("→ ปลดข้ามบอส Hydra Leader — AUTO จะสลับเควสได้", "G")
+            bossSkipUntil = 0
+            bossMissCount = 0
+        end
     end
     for _, ch in ipairs(enemies:GetChildren()) do
         if isBossMobName(ch.Name) then onBoss(ch) end
