@@ -1138,11 +1138,13 @@ local spiralStep = 0
 local spiralOrigin = nil
 local triedKnownHigh = false
 
-local function resetSpiral(origin)
+local function resetSpiral(origin, keepTried)
     spiralR = 150
     spiralStep = 0
     spiralOrigin = origin
-    triedKnownHigh = false
+    if not keepTried then
+        triedKnownHigh = false
+    end
 end
 
 local function nextSpiralPoint(mobName)
@@ -1184,7 +1186,9 @@ local function nextSpiralPoint(mobName)
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
     end
-    local y = math.clamp(math.max(spiralOrigin.Y, 380), 350, 520)
+    local baseY = math.max(spiralOrigin.Y, 200)
+    -- ห้ามบังคับ Y≤520 — Hydra Town อยู่ ~1000
+    local y = baseY + (spiralR > 400 and 40 or 0)
     return Vector3.new(
         spiralOrigin.X + math.cos(ang) * spiralR,
         y,
@@ -1258,17 +1262,25 @@ local function huntMobOrSweep(quest)
 
     local hint = mobSpawnHint(quest.mob)
     if hint and not triedKnownHigh then
+        resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 200), hint.Z), true)
         triedKnownHigh = true
-        resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 380), hint.Z))
         local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
         local list = alts or { hint }
-        for i, pt in ipairs(list) do
+        -- บอส: ลองจุดน้อยลง แล้วสลับเควสเร็ว
+        local maxTry = isBossQuest(quest) and math.min(3, #list) or #list
+        for i = 1, maxTry do
+            local pt = list[i]
             log(string.format("ลองจุดสูง #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
             flyTo(CFrame.new(pt), "จุดมอนสูง")
-            task.wait(1.4) -- รอสตรีมมอนหลังบินรอย
+            task.wait(isBossQuest(quest) and 0.8 or 1.4)
             mob, md = findMob(quest.mob)
             if mob then return mob, md end
             logNearbyEnemies(1500)
+        end
+        if isBossQuest(quest) then
+            -- นับหนักหลังกวาดจุด known แล้วไม่เจอ
+            bossMissCount += 2
+            log(string.format("บอสไม่เจอหลังจุด known (สะสม %d/6)", bossMissCount), "Y")
         end
     end
 
@@ -2133,17 +2145,16 @@ local function mainLoop()
             if not mob then
                 if isBossQuest(quest) then
                     bossMissCount += 1
-                    log(string.format("บอสยังไม่เกิด (%d/10) — หาต่อหรือจะสลับเควส", bossMissCount), "Y")
-                    if bossMissCount >= 10 then
+                    log(string.format("บอสยังไม่เกิด (%d/6) — หาต่อหรือจะสลับเควส", bossMissCount), "Y")
+                    if bossMissCount >= 6 then
                         local prev = pickPreviousFarmQuest(lv, quest)
                         log("★ บอสไม่เจอ → Abandon แล้วกลับเควสก่อนหน้า"
                             .. (prev and (": " .. prev.mob) or ""), "O")
                         invokeCF(cf, "AbandonQuest")
                         forceQuestUntil = 0
                         bossMissCount = 0
-                        bossSkipUntil = os.clock() + 300 -- 5 นาทีค่อยลองบอสใหม่
+                        bossSkipUntil = os.clock() + 300
                         resetSpiral(nil)
-                        triedKnownHigh = false
                         task.wait(0.8)
                         return
                     end
