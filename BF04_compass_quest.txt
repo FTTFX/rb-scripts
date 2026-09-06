@@ -1440,20 +1440,71 @@ local function resolveNpcTarget(quest)
     return nil, "ยังไม่มีชื่อ/พิกัดจากเข็มทิศ"
 end
 
+-- บอสจริง — ประกาศก่อน findMob (กันจับ Kilo ด้วยคำว่า Admiral)
+local KNOWN_BOSS_NAMES = {
+    "hydra leader", "stone", "island empress", "kilo admiral",
+    "captain elephant", "beautiful pirate", "cake queen", "longma",
+    "soul reaper", "rip_indra", "dough king", "cake prince",
+    "darkbeard", "tide keeper", "cursed captain",
+}
+
+local function isBossMobName(name)
+    local raw = tostring(name or "")
+    local n = raw:lower()
+    if n == "" then return false end
+    if n:find("enforcer", 1, true) or n:find("assailant", 1, true) then return false end
+    if n:find("staff", 1, true) or n:find("crew leader", 1, true) then return false end
+    if raw:find("%[Boss%]") or raw:find("%[Raid Boss%]") then return true end
+    for _, k in ipairs(KNOWN_BOSS_NAMES) do
+        if n == k or n:find(k, 1, true) then return true end
+    end
+    return false
+end
+
 local function findMob(mobName)
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return nil end
     local _, myHrp = getChar()
     local best, bestD = nil, math.huge
-    local keys = { mobName }
-    if mobName and mobName:find(" ", 1, true) then
-        local last = mobName:match("(%S+)$")
-        if last and #last >= 4 then keys[#keys+1] = last end
+    local wantL = (mobName or ""):lower()
+    local wantBoss = isBossMobName(mobName)
+    -- คำท้ายสั้น ๆ ที่มักชนกับบอส — ห้ามใช้เดี่ยว ๆ
+    local BAD_TAIL = {
+        admiral = true, leader = true, king = true, queen = true,
+        captain = true, boss = true, pirate = true, reaper = true,
+    }
+    local keys = {}
+    if mobName and mobName ~= "" then
+        keys[#keys+1] = mobName
+        if mobName:find(" ", 1, true) then
+            local last = mobName:match("(%S+)$")
+            if last and #last >= 4 and not BAD_TAIL[last:lower()] then
+                keys[#keys+1] = last
+            end
+        end
     end
     for _, e in ipairs(enemies:GetChildren()) do
+        local el = e.Name:lower()
         local match = false
-        for _, k in ipairs(keys) do
-            if k and e.Name:find(k, 1, true) then match = true break end
+        -- ตรงชื่อเต็มก่อน
+        if wantL ~= "" and el:find(wantL, 1, true) then
+            match = true
+        else
+            for _, k in ipairs(keys) do
+                if k and k:lower() ~= wantL and e.Name:find(k, 1, true) then
+                    match = true
+                    break
+                end
+            end
+        end
+        -- เควสฟาร์มห้ามไปจับบอส (เช่น Admiral → Kilo Admiral)
+        if match and isBossMobName(e.Name) and not wantBoss then
+            match = false
+        end
+        -- ขอชื่อบอส → ต้องมีชื่อนั้นในตัวมอนจริง
+        if match and wantBoss and wantL ~= ""
+           and not el:find(wantL, 1, true) and not wantL:find(el:gsub("%[.-%]", ""):gsub("^%s+",""):gsub("%s+$",""), 1, true) then
+            match = false
         end
         if match then
             local hum = e:FindFirstChildOfClass("Humanoid")
@@ -1471,28 +1522,6 @@ local function findMob(mobName)
         end
     end
     return best, bestD
-end
-
--- บอสจริงใน Enemies มักมีแท็ก [Boss] หรือชื่อในรายการ — ห้ามจับ Staff/เมนูมั่ว
-local KNOWN_BOSS_NAMES = {
-    "hydra leader", "stone", "island empress", "kilo admiral",
-    "captain elephant", "beautiful pirate", "cake queen", "longma",
-    "soul reaper", "rip_indra", "dough king", "cake prince",
-    "darkbeard", "tide keeper", "cursed captain",
-}
-
-local function isBossMobName(name)
-    local raw = tostring(name or "")
-    local n = raw:lower()
-    if n == "" then return false end
-    if n:find("enforcer", 1, true) or n:find("assailant", 1, true) then return false end
-    if n:find("staff", 1, true) or n:find("crew leader", 1, true) then return false end
-    -- แท็กเกม
-    if raw:find("%[Boss%]") or raw:find("%[Raid Boss%]") then return true end
-    for _, k in ipairs(KNOWN_BOSS_NAMES) do
-        if n == k or n:find(k, 1, true) then return true end
-    end
-    return false
 end
 
 -- สแกนบอสที่เกิดอยู่ตอนนี้ใน Enemies
@@ -2825,6 +2854,25 @@ local function mainLoop()
 
             log("มีเควสแล้ว: " .. tostring(qTxt) .. " → ไปตีมอน", "G")
 
+            -- บอส: ต้องมีเควสบอสจริงก่อนตี (กันตี Kilo ตอนยังเป็นเควสฟาร์ม)
+            if isBossQuest(quest) then
+                local ql = (qTxt or ""):lower()
+                local bm = (quest.mob or ""):lower()
+                local bossTitleOk = ql ~= "" and (
+                    (bm ~= "" and ql:find(bm:sub(1, math.min(8, #bm)), 1, true))
+                    or ql:find("kilo", 1, true)
+                    or ql:find("hydra leader", 1, true)
+                    or (bm:find("leader", 1, true) and ql:find("leader", 1, true))
+                )
+                if not bossTitleOk then
+                    log("ยังไม่ใช่เควสบอสบน UI → ไปรับเควสบอสก่อนตี", "O")
+                    -- อย่าตี — วนไปรับที่ NPC
+                    forceQuestUntil = 0
+                    task.wait(0.3)
+                    return
+                end
+            end
+
             local titleTxt = qTxt ~= "" and qTxt or questTitle()
             local mobKey = (quest.mob or ""):lower()
             local titleOk = titleTxt ~= "" and (
@@ -2872,6 +2920,19 @@ local function mainLoop()
                 log("ยังไม่เจอ " .. quest.mob .. " → ไล่จุดต่อไป", "Y")
                 task.wait(0.4)
                 return
+            end
+            -- กันตีบอสตอนเควสไม่ใช่บอส / ยังไม่รับเควสบอส
+            if isBossMobName(mob.Name) and not isBossQuest(quest) then
+                log("ข้ามบอส " .. mob.Name .. " (ยังไม่ใช่เควสบอส) → หามอนเควสต่อ", "O")
+                task.wait(0.4)
+                return
+            end
+            if isBossMobName(mob.Name) and isBossQuest(quest) then
+                local hasBossQ = select(1, hasActiveQuest(quest))
+                if not hasBossQ then
+                    log("เจอบอสแต่ยังไม่มีเควสบอส → ไปรับก่อน", "O")
+                    return
+                end
             end
             if isBossQuest(quest) then bossMissCount = 0 end
             local mhrp = mob:FindFirstChild("HumanoidRootPart")
