@@ -873,8 +873,23 @@ local function huntMobOrSweep(quest)
     local mob, md = findMob(quest.mob)
     if mob then return mob, md end
 
+    -- มีจุดที่เคยเจอ Archer แล้ว → บินกลับที่นั่นก่อน (ห้ามไป NPC)
+    local cached = MOB_CACHE[(quest.mob or ""):lower()]
+    if cached then
+        log(string.format("กลับจุดมอนที่จำไว้ @ %.0f,%.0f,%.0f", cached.X, cached.Y, cached.Z), "G")
+        flyTo(CFrame.new(cached + Vector3.new(0, 30, 0)), "cacheมอน")
+        task.wait(0.8)
+        mob, md = findMob(quest.mob)
+        if mob then return mob, md end
+    end
+
+    -- ตามเข็มทิศเฉพาะตอนข้อความไม่ใช่ Find Quest Giver
     local ui = readCompassUI()
-    if ui.distance and ui.distance > 8 and (ui.arrowAbs or ui.arrowRot) ~= nil then
+    local titleL = (ui.title or ""):lower()
+    local compassOk = ui.distance and ui.distance > 8 and (ui.arrowAbs or ui.arrowRot) ~= nil
+        and not titleL:find("quest giver", 1, true)
+        and not titleL:find("find the", 1, true)
+    if compassOk then
         log(string.format("เข็มทิศชี้เป้า %d ม. (ไม่กลับ NPC)", ui.distance), "Y")
         flyByCompassStep({ skipNpcCache = true, highY = true })
         task.wait(0.35)
@@ -1220,45 +1235,43 @@ local function guiReallyVisible(gui)
     return gui.AbsoluteSize.X > 10 and gui.AbsoluteSize.Y > 8
 end
 
--- หาข้อความเควสที่โชว์บนจอจริง (UI ไทยไม่อยู่ที่ Main.Quest.Visible เสมอ)
+-- หาข้อความเควสที่โชว์บนจอจริง (ข้าม GUI สคริปต์เรา + ค่าค้าง)
 local function findOnScreenQuestText(quest)
-    local needles = { "เอาชนะ", "Defeat" }
-    if quest and quest.mob then
-        needles[#needles+1] = quest.mob
-    end
     local best, bestPath = nil, nil
     for _, d in ipairs(pg:GetDescendants()) do
         if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local tx = tostring(d.Text or "")
-            if tx == "" or #tx > 100 then
+            -- ข้าม log ของ BF04 เอง
+            if sg and d:IsDescendantOf(sg) then
                 -- skip
-            elseif guiReallyVisible(d) then
-                local hit = false
-                local tl = tx:lower()
-                if tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true) then
-                    -- ข้ามข้อความเก่า Bandits ถ้าไม่ใช่เป้าเรา
-                    if tl:find("bandit", 1, true) then
-                        hit = false
-                    else
+            else
+                local tx = tostring(d.Text or "")
+                if tx ~= "" and #tx <= 90 and guiReallyVisible(d)
+                   and not tx:find("มีเควสแล้ว", 1, true)
+                   and not tx:find("ไปตีมอน", 1, true)
+                   and not tx:find("Loop error", 1, true)
+                   and not tx:find("%[%d%d:%d%d:%d%d%]") then
+                    local tl = tx:lower()
+                    local hit = false
+                    if (tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true))
+                       and not tl:find("bandit", 1, true) then
                         hit = true
                     end
-                end
-                if quest and quest.mob and tx:find(quest.mob, 1, true) then
-                    if tx:find("/", 1, true) or tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true)
-                       or tx:find("0/", 1, true) then
-                        hit = true
+                    if quest and quest.mob and tx:find(quest.mob, 1, true) then
+                        if tx:find("/", 1, true) or tx:find("เอาชนะ", 1, true)
+                           or tl:find("defeat", 1, true) then
+                            hit = true
+                        end
                     end
-                end
-                if hit then
-                    -- ข้ามข้อความใน Main.Quest ตอน Visible=false (ค่าค้าง)
-                    local underQuest = false
-                    pcall(function()
-                        underQuest = d:IsDescendantOf(pg.Main.Quest) and not pg.Main.Quest.Visible
-                    end)
-                    if not underQuest then
-                        best = tx
-                        bestPath = d:GetFullName():gsub("^.-PlayerGui%.", "")
-                        break
+                    if hit then
+                        local underDeadQuest = false
+                        pcall(function()
+                            underDeadQuest = d:IsDescendantOf(pg.Main.Quest) and not pg.Main.Quest.Visible
+                        end)
+                        if not underDeadQuest then
+                            best = tx
+                            bestPath = d:GetFullName():gsub("^.-PlayerGui%.", "")
+                            break
+                        end
                     end
                 end
             end
