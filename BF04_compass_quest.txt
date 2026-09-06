@@ -33,7 +33,7 @@ local sg = Instance.new("ScreenGui")
 sg.Name = "BF04CompassGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 420, 0, 450); frame.Position = UDim2.new(0, 10, 0, 10)
+frame.Size = UDim2.new(0, 450, 0, 450); frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12, 14, 20); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
 frame.Parent = sg
@@ -62,12 +62,13 @@ local function mkBtn(txt, x, y, w, col)
     return b
 end
 
-local autoBtn = mkBtn("AUTO: OFF", 8, 30, 70, Color3.fromRGB(30, 120, 50))
-local dumpBtn = mkBtn("Spy เข็ม", 82, 30, 62, Color3.fromRGB(100, 80, 40))
-local questSpyBtn = mkBtn("Spy เควส", 148, 30, 62, Color3.fromRGB(80, 100, 140))
-local npcSpyBtn = mkBtn("Spy NPC", 214, 30, 62, Color3.fromRGB(40, 120, 100))
-local mobSpyBtn = mkBtn("Spy มอน", 280, 30, 58, Color3.fromRGB(160, 90, 30))
-local copyBtn = mkBtn("Copy", 342, 30, 70, Color3.fromRGB(30, 100, 50))
+local autoBtn = mkBtn("AUTO: OFF", 8, 30, 68, Color3.fromRGB(30, 120, 50))
+local dumpBtn = mkBtn("Spy เข็ม", 80, 30, 56, Color3.fromRGB(100, 80, 40))
+local questSpyBtn = mkBtn("Spy เควส", 140, 30, 56, Color3.fromRGB(80, 100, 140))
+local npcSpyBtn = mkBtn("Spy NPC", 200, 30, 56, Color3.fromRGB(40, 120, 100))
+local mobSpyBtn = mkBtn("Spy มอน", 260, 30, 52, Color3.fromRGB(160, 90, 30))
+local bossSpyBtn = mkBtn("Spy บอส", 316, 30, 52, Color3.fromRGB(160, 50, 80))
+local copyBtn = mkBtn("Copy", 372, 30, 70, Color3.fromRGB(30, 100, 50))
 
 local statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 64)
@@ -1101,7 +1102,6 @@ local function findMob(mobName)
     local _, myHrp = getChar()
     local best, bestD = nil, math.huge
     local keys = { mobName }
-    -- "Dragon Crew Archer" → ลอง "Archer" ด้วย
     if mobName and mobName:find(" ", 1, true) then
         local last = mobName:match("(%S+)$")
         if last and #last >= 4 then keys[#keys+1] = last end
@@ -1125,6 +1125,171 @@ local function findMob(mobName)
     end
     return best, bestD
 end
+
+local function isBossMobName(name)
+    local n = (name or ""):lower()
+    if n == "" then return false end
+    if n:find("enforcer", 1, true) then return false end -- มอนธรรมดา
+    if n:find("assailant", 1, true) then return false end
+    return n:find("leader", 1, true) ~= nil
+        or n:find("boss", 1, true) ~= nil
+        or n:find("[boss]", 1, true) ~= nil
+        or n:find("empress", 1, true) ~= nil
+        or n:find("king", 1, true) ~= nil
+        or n:find("queen", 1, true) ~= nil
+        or n:find("admiral", 1, true) ~= nil
+        or n:find("elephant", 1, true) ~= nil
+        or n:find("indra", 1, true) ~= nil
+end
+
+-- สแกนบอสที่เกิดอยู่ตอนนี้ใน Enemies
+local function scanAliveBosses()
+    local list = {}
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return list end
+    local _, myHrp = getChar()
+    for _, e in ipairs(enemies:GetChildren()) do
+        if isBossMobName(e.Name) then
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            local hrp = e:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+                local d = myHrp and (hrp.Position - myHrp.Position).Magnitude or 0
+                list[#list+1] = {
+                    model = e, name = e.Name, hp = hum.Health,
+                    p = hrp.Position, d = d,
+                }
+                MOB_CACHE[e.Name:lower()] = hrp.Position
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.d < b.d end)
+    return list
+end
+
+local function findAliveBoss(nameHint)
+    local want = (nameHint or ""):lower()
+    for _, it in ipairs(scanAliveBosses()) do
+        if want == "" or it.name:lower():find(want, 1, true) or want:find(it.name:lower(), 1, true) then
+            return it.model, it.d, it
+        end
+    end
+    if want ~= "" then
+        return findMob(nameHint)
+    end
+    return nil
+end
+
+local function pickBossQuestForLevel(lv)
+    local data = getQuests()
+    if not data then return nil end
+    local best = nil
+    for qName, entry in pairs(data) do
+        if type(entry) == "table" then
+            for num, sub in pairs(entry) do
+                if type(sub) == "table" and type(sub.LevelReq) == "number"
+                   and sub.LevelReq <= lv and type(sub.Task) == "table" then
+                    local mob, need = next(sub.Task)
+                    if mob and type(need) == "number" then
+                        local cand = {
+                            qName = qName, qNum = tonumber(num) or num,
+                            mob = mob, need = need, levelReq = sub.LevelReq,
+                            displayName = sub.Name or mob,
+                        }
+                        if isBossQuest(cand) then
+                            if not best or cand.levelReq > best.levelReq
+                               or (cand.levelReq == best.levelReq and cand.qNum > best.qNum) then
+                                best = cand
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function dumpBossSpy()
+    log("════ Spy บอส (เกิดอยู่ไหม) ════", "Y")
+    local lv = getLevel()
+    local bossQ = pickBossQuestForLevel(lv)
+    if bossQ then
+        log(string.format("เควสบอสตาม Lv: %s#%s %s (x%d)",
+            bossQ.qName, tostring(bossQ.qNum), bossQ.mob, bossQ.need), "B")
+    else
+        log("ไม่มีเควสบอสใน RS.Quests สำหรับ Lv นี้", "O")
+    end
+
+    local list = scanAliveBosses()
+    if #list == 0 then
+        log("✗ ไม่มีบอสใน Enemies ตอนนี้", "O")
+    else
+        log("★ บอสเกิดอยู่: " .. #list .. " ตัว", "G")
+        for _, it in ipairs(list) do
+            log(string.format("  ★ %s HP%.0f d=%.0f @ %.1f,%.1f,%.1f",
+                it.name, it.hp, it.d, it.p.X, it.p.Y, it.p.Z), "G")
+            log(string.format("    CFrame.new(%.2f, %.2f, %.2f)", it.p.X, it.p.Y, it.p.Z), "S")
+        end
+    end
+
+    if bossQ then
+        local m, d = findAliveBoss(bossQ.mob)
+        if m then
+            log(string.format("✓ เป้าเควส [%s] เกิดแล้ว d=%.0f", bossQ.mob, d or 0), "G")
+            log("→ AUTO ควรรับ/ไปตีเควสบอสได้", "G")
+        else
+            log(string.format("✗ เป้าเควส [%s] ยังไม่เกิด", bossQ.mob), "Y")
+            log("→ AUTO จะฟาร์มเควสก่อนหน้าจนกว่า Spy เจอบอส", "Y")
+        end
+    end
+
+    -- UI ข้อความบอกเกิด?
+    local tips = 0
+    for _, d in ipairs(pg:GetDescendants()) do
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and guiReallyVisible(d) then
+            local tx = tostring(d.Text or "")
+            local tl = tx:lower()
+            if #tx > 4 and #tx < 120 and (
+                tl:find("spawn", 1, true) or tx:find("เกิด", 1, true)
+                or tl:find("leader", 1, true) or tl:find("appeared", 1, true)
+            ) and not tl:find("defeat", 1, true) then
+                tips += 1
+                if tips <= 6 then log("  UI: " .. tx:sub(1, 80), "B") end
+            end
+        end
+    end
+    if tips == 0 then log("  ไม่เจอข้อความ spawn บนจอ", "S") end
+    log("════ จบ Spy บอส — Copy ส่งมาได้ ════", "Y")
+end
+
+-- เฝ้า Enemies: บอสเกิด → ปลดข้ามบอส + จำพิกัด
+task.spawn(function()
+    local enemies = Workspace:FindFirstChild("Enemies") or Workspace:WaitForChild("Enemies", 60)
+    if not enemies then return end
+    local function onBoss(ch)
+        if not ch or not ch.Parent then return end
+        if not isBossMobName(ch.Name) then return end
+        task.wait(0.35)
+        if not ch.Parent then return end
+        local hrp = ch:FindFirstChild("HumanoidRootPart")
+        local hum = ch:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum or hum.Health <= 0 then return end
+        MOB_CACHE[ch.Name:lower()] = hrp.Position
+        bossSkipUntil = 0
+        bossMissCount = 0
+        _G.BF04C_BOSS_ALIVE = {
+            name = ch.Name,
+            pos = hrp.Position,
+            t = os.clock(),
+        }
+        log(string.format("★ Spy: บอสเกิด %s @ %.0f,%.0f,%.0f — ปลดข้ามบอส",
+            ch.Name, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "G")
+    end
+    for _, ch in ipairs(enemies:GetChildren()) do
+        if isBossMobName(ch.Name) then onBoss(ch) end
+    end
+    enemies.ChildAdded:Connect(onBoss)
+end)
 
 local function mobSpawnHint(mobName)
     local key = (mobName or ""):lower()
@@ -2001,6 +2166,19 @@ local function mainLoop()
     while _G.BF04C_ON and _G.BF04C_GEN == loopGen do
         local ok, err = pcall(function()
             local lv = getLevel()
+            local bossQ = pickBossQuestForLevel(lv)
+            -- Spy: บอสเกิดใน Enemies → ปลดข้าม + สลับไปเควสบอส
+            if bossQ then
+                local alive = findAliveBoss(bossQ.mob)
+                if alive then
+                    if os.clock() < bossSkipUntil or bossMissCount > 0 then
+                        log("★ Spy บอสเกิดแล้ว → สลับไป " .. bossQ.mob, "G")
+                    end
+                    bossSkipUntil = 0
+                    bossMissCount = 0
+                end
+            end
+
             local quest = pickQuestForLevel(lv)
             if quest and isBossQuest(quest) and os.clock() < bossSkipUntil then
                 local prev = pickPreviousFarmQuest(lv, quest)
@@ -2010,6 +2188,19 @@ local function mainLoop()
                         prev.qName, tostring(prev.qNum), prev.mob), "Y")
                     quest = prev
                 end
+            end
+            -- ถ้ากำลังฟาร์มธรรมดา แต่บอสเกิด → บังคับเควสบอส
+            if quest and not isBossQuest(quest) and bossQ and findAliveBoss(bossQ.mob) then
+                local hasFarm = select(1, hasActiveQuest(quest))
+                local hasBoss = select(1, hasActiveQuest(bossQ))
+                if hasFarm and not hasBoss then
+                    log("บอสเกิด → Abandon เควสฟาร์ม แล้วไปรับเควสบอส", "Y")
+                    invokeCF(cf, "AbandonQuest")
+                    forceQuestUntil = 0
+                    task.wait(0.5)
+                    return
+                end
+                quest = bossQ
             end
             if not quest then
                 log("ไม่มีเควสที่ LevelReq <= " .. lv, "R")
@@ -2475,6 +2666,10 @@ end)
 
 mobSpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpMobSpawn)
+end)
+
+bossSpyBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpBossSpy)
 end)
 
 copyBtn.MouseButton1Click:Connect(function()
