@@ -295,7 +295,7 @@ local function flyTo(posOrCF, label)
             ok = true
             return
         end
-        -- บิน tween — อ่านค่าสดจาก GUI ทุกท่อน (บิน = ความเร็วหลัก)
+        -- บิน tween — ค่า "บิน" ใช้จริงทุกเส้นทาง (รวมบิน→มอน)
         local spd = FLY_SPEED
         local chunk = FLY_CHUNK
         local pause = FLY_CHUNK_PAUSE
@@ -304,24 +304,17 @@ local function flyTo(posOrCF, label)
             chunk = tonumber(_G.BF04C_FLY.chunk) or chunk
             pause = tonumber(_G.BF04C_FLY.pause) or pause
         end
-        if label == "มอน" or (label and label:find("มอน", 1, true)) then
-            spd = FLY_SPEED_COMBAT
-            if type(_G.BF04C_FLY) == "table" then
-                spd = tonumber(_G.BF04C_FLY.combat) or spd
-            end
-        elseif label and label:find("spySPD", 1, true) then
-            spd = tonumber(label:match("spySPD:(%d+)")) or spd
-        end
-        -- ไม่บังคับใช้ค่า "ไกล" ที่ช้ากว่า — บินที่ตั้งไว้ใช้จริงทุกระยะ
-        if dist >= 5000 then chunk = math.min(chunk, math.max(400, chunk * 0.85)) end
         if label and label:find("spySPD", 1, true) then
+            spd = tonumber(label:match("spySPD:(%d+)")) or spd
             chunk = math.min(chunk, 380)
         end
+        if dist >= 5000 then chunk = math.min(chunk, math.max(400, chunk * 0.85)) end
+        log(string.format("ใช้ความเร็ว %.0f (ท่อน %.0f)", spd, chunk), "S")
         local guard = 0
         while (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN and guard < 80 do
             guard = guard + 1
             -- อ่านความเร็วใหม่กลางทาง ถ้าเพิ่งกดใส่
-            if type(_G.BF04C_FLY) == "table" and not (label and label:find("มอน", 1, true)) then
+            if type(_G.BF04C_FLY) == "table" then
                 spd = tonumber(_G.BF04C_FLY.normal) or spd
                 chunk = tonumber(_G.BF04C_FLY.chunk) or chunk
                 pause = tonumber(_G.BF04C_FLY.pause) or pause
@@ -340,7 +333,7 @@ local function flyTo(posOrCF, label)
             local dir = (dest.Position - hrp.Position)
             if dir.Magnitude < 1 then break end
             local nxt = hrp.Position + dir.Unit * step
-            local dur = math.clamp(step / math.max(spd, 20), 0.2, 12)
+            local dur = math.clamp(step / math.max(spd, 20), 0.15, 12)
             stopFlyTween()
             local look = Vector3.new(dir.X, 0, dir.Z)
             local lookCF = look.Magnitude > 1 and CFrame.new(nxt, nxt + look) or CFrame.new(nxt)
@@ -349,7 +342,7 @@ local function flyTo(posOrCF, label)
                 { CFrame = lookCF })
             currentTween = tw
             tw:Play()
-            local tEnd = os.clock() + dur + 0.08
+            local tEnd = os.clock() + dur + 0.05
             while currentTween == tw and os.clock() < tEnd
                   and (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN do
                 setNoclip(true)
