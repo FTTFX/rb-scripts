@@ -768,6 +768,13 @@ local function findMob(mobName)
     return best, bestD
 end
 
+local function mobSpawnHint(mobName)
+    local key = (mobName or ""):lower()
+    if MOB_CACHE[key] then return MOB_CACHE[key], "cache" end
+    if KNOWN_MOB[key] then return KNOWN_MOB[key], "known" end
+    return nil
+end
+
 -- จุดไล่สตรีมเกาะ Dragon Crew (Warrior ยืนยันแล้ว / Archer ไล่รอบเกาะ)
 local ARCHER_SWEEP = {
     Vector3.new(6919, 80, -941),
@@ -791,7 +798,6 @@ local function huntMobOrSweep(quest)
         mob, md = findMob(quest.mob)
         if mob then return mob, md end
     end
-    -- ไล่จุดรอบเกาะ
     local pt = ARCHER_SWEEP[((sweepIdx - 1) % #ARCHER_SWEEP) + 1]
     sweepIdx += 1
     log(string.format("ไล่หา %s จุด #%d @ %.0f,%.0f,%.0f",
@@ -799,13 +805,6 @@ local function huntMobOrSweep(quest)
     flyTo(CFrame.new(pt), "ไล่สตรีมมอน")
     task.wait(0.9)
     return findMob(quest.mob)
-end
-
-local function mobSpawnHint(mobName)
-    local key = (mobName or ""):lower()
-    if MOB_CACHE[key] then return MOB_CACHE[key], "cache" end
-    if KNOWN_MOB[key] then return KNOWN_MOB[key], "known" end
-    return nil
 end
 
 -- Spy: สแกนว่ามอนเกิด/โหลดที่ไหน
