@@ -284,35 +284,76 @@ local function getQuests()
 end
 
 -- คืน { qName, qNum, mob, need, levelReq, displayName }
-local function pickQuestForLevel(lv)
+local bossSkipUntil = 0
+local bossMissCount = 0
+
+local function isBossQuest(q)
+    if not q then return false end
+    if type(q.need) == "number" and q.need == 1 then return true end
+    local m = (q.mob or ""):lower()
+    return m:find("leader", 1, true) ~= nil
+        or m:find("boss", 1, true) ~= nil
+        or m:find("king", 1, true) ~= nil
+        or m:find("admiral", 1, true) ~= nil
+end
+
+local function pickQuestForLevel(lv, opts)
+    opts = opts or {}
+    local skipBoss = opts.skipBoss
+    if skipBoss == nil then skipBoss = os.clock() < bossSkipUntil end
+    local preferName = opts.qName
+    local maxQNum = opts.maxQNum
     local data = getQuests()
     if not data then return nil end
     local best = nil
     for qName, entry in pairs(data) do
-        if type(entry) == "table" then
+        if type(entry) == "table" and (not preferName or qName == preferName) then
             for num, sub in pairs(entry) do
                 if type(sub) == "table" and type(sub.LevelReq) == "number"
                    and sub.LevelReq <= lv and type(sub.Task) == "table" then
                     local mob, need = next(sub.Task)
-                    if mob and type(need) == "number" then
+                    local qn = tonumber(num) or num
+                    if mob and type(need) == "number"
+                       and not (maxQNum and type(qn) == "number" and qn > maxQNum) then
                         local cand = {
                             qName = qName,
-                            qNum = tonumber(num) or num,
+                            qNum = qn,
                             mob = mob,
                             need = need,
                             levelReq = sub.LevelReq,
                             displayName = sub.Name or mob,
                         }
-                        if not best or cand.levelReq > best.levelReq
-                           or (cand.levelReq == best.levelReq and cand.qNum > best.qNum) then
-                            best = cand
+                        if not (skipBoss and isBossQuest(cand)) then
+                            if not best or cand.levelReq > best.levelReq
+                               or (cand.levelReq == best.levelReq and cand.qNum > best.qNum) then
+                                best = cand
+                            end
                         end
                     end
                 end
             end
         end
     end
+    if not best and preferName then
+        return pickQuestForLevel(lv, { skipBoss = skipBoss, maxQNum = maxQNum })
+    end
     return best
+end
+
+-- เควสก่อนหน้า (บอสยังไม่เกิด → ฟาร์มธรรมดา)
+local function pickPreviousFarmQuest(lv, current)
+    if current then
+        local qn = tonumber(current.qNum)
+        if qn and qn > 1 then
+            local prev = pickQuestForLevel(lv, {
+                skipBoss = true,
+                qName = current.qName,
+                maxQNum = qn - 1,
+            })
+            if prev then return prev end
+        end
+    end
+    return pickQuestForLevel(lv, { skipBoss = true })
 end
 
 -- ── หาเป้าเข็มทิศ / NPC ────────────────────────────────────────────
@@ -473,8 +514,9 @@ local KNOWN_MOB = {
     -- Spy จริง 2026-09-06
     ["dragon crew archer"] = Vector3.new(6762, 484, 111),
     -- Hydra Town บน (เก่า BF04 + จุดรอบเมือง)
-    ["hydra enforcer"] = Vector3.new(5825.22, 682.89, 704.58),
+    ["hydra enforcer"] = Vector3.new(5259, 1004, 748),
     ["hydra leader"] = Vector3.new(5214.3, 1003.5, 759.0),
+    ["venomous assailant"] = Vector3.new(5166, 1004, 757),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
@@ -485,13 +527,11 @@ local KNOWN_MOB_ALT = {
         Vector3.new(6488.92, 383.38, -110.66),
     },
     ["hydra enforcer"] = {
-        Vector3.new(5825.22, 682.89, 704.58),
+        Vector3.new(5259, 1004, 748),
+        Vector3.new(5300, 1004, 643),
+        Vector3.new(5120, 1004, 584),
+        Vector3.new(5214, 1003, 759),
         Vector3.new(5448.86, 601.52, 751.13),
-        Vector3.new(5600, 650, 700),
-        Vector3.new(5200, 600, 750),
-        Vector3.new(6000, 680, 650),
-        Vector3.new(5100, 550, 500),
-        Vector3.new(5300, 700, 400),
     },
     ["hydra leader"] = {
         Vector3.new(5214.3, 1003.5, 759.0),
@@ -499,6 +539,13 @@ local KNOWN_MOB_ALT = {
         Vector3.new(5100, 1000, 700),
         Vector3.new(5400, 980, 750),
         Vector3.new(5000, 950, 800),
+        Vector3.new(5259, 1004, 748),
+    },
+    ["venomous assailant"] = {
+        Vector3.new(5166, 1004, 757),
+        Vector3.new(5012, 1004, 752),
+        Vector3.new(5214, 1003, 759),
+        Vector3.new(5300, 1000, 700),
     },
 }
 local compassStuck = 0
@@ -1943,6 +1990,15 @@ local function mainLoop()
         local ok, err = pcall(function()
             local lv = getLevel()
             local quest = pickQuestForLevel(lv)
+            if quest and isBossQuest(quest) and os.clock() < bossSkipUntil then
+                local prev = pickPreviousFarmQuest(lv, quest)
+                if prev then
+                    log(string.format("ข้ามบอส (%ds) → เควสก่อนหน้า %s#%s %s",
+                        math.floor(bossSkipUntil - os.clock()),
+                        prev.qName, tostring(prev.qNum), prev.mob), "Y")
+                    quest = prev
+                end
+            end
             if not quest then
                 log("ไม่มีเควสที่ LevelReq <= " .. lv, "R")
                 task.wait(3)
@@ -2075,10 +2131,30 @@ local function mainLoop()
 
             local mob, md = huntMobOrSweep(quest)
             if not mob then
+                if isBossQuest(quest) then
+                    bossMissCount += 1
+                    log(string.format("บอสยังไม่เกิด (%d/10) — หาต่อหรือจะสลับเควส", bossMissCount), "Y")
+                    if bossMissCount >= 10 then
+                        local prev = pickPreviousFarmQuest(lv, quest)
+                        log("★ บอสไม่เจอ → Abandon แล้วกลับเควสก่อนหน้า"
+                            .. (prev and (": " .. prev.mob) or ""), "O")
+                        invokeCF(cf, "AbandonQuest")
+                        forceQuestUntil = 0
+                        bossMissCount = 0
+                        bossSkipUntil = os.clock() + 300 -- 5 นาทีค่อยลองบอสใหม่
+                        resetSpiral(nil)
+                        triedKnownHigh = false
+                        task.wait(0.8)
+                        return
+                    end
+                else
+                    bossMissCount = 0
+                end
                 log("ยังไม่เจอ " .. quest.mob .. " → ไล่จุดต่อไป", "Y")
                 task.wait(0.4)
                 return
             end
+            if isBossQuest(quest) then bossMissCount = 0 end
             local mhrp = mob:FindFirstChild("HumanoidRootPart")
             local mhum = mob:FindFirstChildOfClass("Humanoid")
             if not mhrp or not mhum then return end
