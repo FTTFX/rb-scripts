@@ -1235,92 +1235,133 @@ local function guiReallyVisible(gui)
     return gui.AbsoluteSize.X > 10 and gui.AbsoluteSize.Y > 8
 end
 
--- หาข้อความเควสที่โชว์บนจอจริง (ข้าม GUI สคริปต์เรา + ค่าค้าง)
-local function findOnScreenQuestText(quest)
-    local best, bestPath = nil, nil
+-- อ่าน progress เควส เช่น (5/8) หรือ 5/8
+local function parseProgress(tx)
+    if not tx then return nil, nil end
+    local a, b = tostring(tx):match("%((%d+)%s*/%s*(%d+)%)")
+    if not a then a, b = tostring(tx):match("(%d+)%s*/%s*(%d+)") end
+    if a and b then return tonumber(a), tonumber(b) end
+    return nil, nil
+end
+
+local function readQuestProgress(quest)
+    local title, cur, need = "", nil, nil
+    local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
+    if ok and vis == true then
+        pcall(function()
+            title = pg.Main.Quest.Container.QuestTitle.Title.Text or ""
+        end)
+        cur, need = parseProgress(title)
+        if not cur then
+            for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
+                if d:IsA("TextLabel") then
+                    local a, b = parseProgress(d.Text)
+                    if a and b then cur, need = a, b; break end
+                end
+            end
+        end
+        if title ~= "" then return cur, need, title, "Main.Quest" end
+    end
+    -- สแกนจอ (ข้าม GUI สคริปต์)
     for _, d in ipairs(pg:GetDescendants()) do
         if d:IsA("TextLabel") or d:IsA("TextButton") then
-            -- ข้าม log ของ BF04 เอง
-            if sg and d:IsDescendantOf(sg) then
-                -- skip
-            else
+            if not (sg and d:IsDescendantOf(sg)) and guiReallyVisible(d) then
                 local tx = tostring(d.Text or "")
-                if tx ~= "" and #tx <= 90 and guiReallyVisible(d)
+                if #tx > 0 and #tx < 90
                    and not tx:find("มีเควสแล้ว", 1, true)
-                   and not tx:find("ไปตีมอน", 1, true)
-                   and not tx:find("Loop error", 1, true)
                    and not tx:find("%[%d%d:%d%d:%d%d%]") then
                     local tl = tx:lower()
-                    local hit = false
-                    if (tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true))
+                    local mobOk = not quest or not quest.mob or tx:find(quest.mob, 1, true)
+                    if mobOk and (tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true))
                        and not tl:find("bandit", 1, true) then
-                        hit = true
+                        local a, b = parseProgress(tx)
+                        return a, b, tx, "onScreen"
                     end
-                    if quest and quest.mob and tx:find(quest.mob, 1, true) then
-                        if tx:find("/", 1, true) or tx:find("เอาชนะ", 1, true)
-                           or tl:find("defeat", 1, true) then
-                            hit = true
-                        end
-                    end
-                    if hit then
-                        local underDeadQuest = false
-                        pcall(function()
-                            underDeadQuest = d:IsDescendantOf(pg.Main.Quest) and not pg.Main.Quest.Visible
-                        end)
-                        if not underDeadQuest then
-                            best = tx
-                            bestPath = d:GetFullName():gsub("^.-PlayerGui%.", "")
-                            break
+                    if mobOk then
+                        local a, b = parseProgress(tx)
+                        if a and b and b >= 5 and b <= 20 then
+                            return a, b, tx, "onScreen"
                         end
                     end
                 end
             end
         end
     end
-    return best, bestPath
+    return nil, nil, "", nil
+end
+
+-- Guide บอกไปหา Quest Giver = ยังไม่มีเควสตีมอน / เควสจบแล้ว
+local function guideWantsQuestGiver()
+    local ui = readCompassUI()
+    if not ui.title then return false end
+    local t = ui.title:lower()
+    return t:find("find the", 1, true) ~= nil and t:find("quest giver", 1, true) ~= nil
+end
+
+-- หาข้อความเควสที่โชว์บนจอจริง (ข้าม GUI สคริปต์เรา + ค่าค้าง)
+local function findOnScreenQuestText(quest)
+    local cur, need, title = readQuestProgress(quest)
+    if title ~= "" then return title, "progress" end
+    return nil, nil
 end
 
 local function questUIVisible()
     local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
     if ok and vis == true then return true end
-    local tx = findOnScreenQuestText(nil)
-    return tx ~= nil
+    local cur, need, title = readQuestProgress(nil)
+    return title ~= nil and title ~= ""
 end
 
 local function questTitle()
-    local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
-    if ok and vis == true then
-        local ok2, t = pcall(function() return pg.Main.Quest.Container.QuestTitle.Title.Text end)
-        if ok2 and t and t ~= "" and not tostring(t):lower():find("bandit", 1, true) then
-            return t
-        end
-    end
-    local tx = findOnScreenQuestText(pickQuestForLevel(getLevel()))
-    return tx or ""
+    local cur, need, title = readQuestProgress(pickQuestForLevel(getLevel()))
+    return title or ""
 end
 
 local function hasActiveQuest(quest)
-    if os.clock() < forceQuestUntil then
-        return true, forceQuestLabel ~= "" and forceQuestLabel or "(forceหลังStartQuest)"
+    local cur, need, title, src = readQuestProgress(quest)
+
+    -- ครบจำนวนแล้ว = จบเควส → กลับไปรับใหม่
+    if cur and need and need > 0 and cur >= need then
+        forceQuestUntil = 0
+        forceQuestLabel = ""
+        return false, string.format("ครบ%d/%d", cur, need)
     end
-    local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
-    if ok and vis == true then
-        local title = ""
-        pcall(function() title = pg.Main.Quest.Container.QuestTitle.Title.Text end)
-        if title ~= "" and not title:lower():find("bandit", 1, true) then
-            return true, title
+
+    -- Guide ชี้ Quest Giver = ไม่มีเควสตีอยู่ (หรือจบแล้ว)
+    if guideWantsQuestGiver() then
+        local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
+        if not (ok and vis == true) then
+            forceQuestUntil = 0
+            forceQuestLabel = ""
+            return false, ""
         end
-        if title ~= "" then return true, title end
+        -- Main.Quest เปิดอยู่แต่ Guide ก็ชี้ Giver → เชื่อ progress
+        if title == "" or (title:lower():find("bandit", 1, true)) then
+            forceQuestUntil = 0
+            return false, ""
+        end
     end
-    local tx, path = findOnScreenQuestText(quest)
-    if tx then
-        return true, tx
+
+    local okVis, vis = pcall(function() return pg.Main.Quest.Visible end)
+    if okVis and vis == true and title ~= "" and not title:lower():find("bandit", 1, true) then
+        return true, title
     end
+
+    if title ~= "" and not title:lower():find("bandit", 1, true) then
+        return true, title
+    end
+
+    if os.clock() < forceQuestUntil then
+        return true, forceQuestLabel ~= "" and forceQuestLabel or "(รอUIเควส)"
+    end
+
     return false, ""
 end
 
 local function dumpQuestUI()
-    log("════ Spy เควส UI (รับแล้วหรือยัง) ════", "Y")
+    log("════ Spy เควส UI (รับแล้ว/จบแล้ว?) ════", "Y")
+    local quest = pickQuestForLevel(getLevel())
+    local cur, need, title, src = readQuestProgress(quest)
     local main = pg:FindFirstChild("Main")
     if main then
         local q = main:FindFirstChild("Quest")
@@ -1336,33 +1377,40 @@ local function dumpQuestUI()
             end
         end
     end
-    log("── สแกนข้อความเควสที่โชว์บนจอ ──", "Y")
-    local n = 0
-    for _, d in ipairs(pg:GetDescendants()) do
-        if n >= 20 then break end
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local tx = tostring(d.Text or "")
-            if guiReallyVisible(d) and (
-                tx:find("เอาชนะ", 1, true) or tx:lower():find("defeat", 1, true)
-                or tx:find("Dragon Crew", 1, true) or tx:find("Archers", 1, true)
-            ) then
-                n += 1
-                log(string.format("  ★ %s", tx:sub(1, 70)), "G")
-                log("    path: " .. d:GetFullName():gsub("^.-PlayerGui%.", ""), "S")
-            end
-        end
+    if title ~= "" then
+        log(string.format("ข้อความเควส [%s]: %s", tostring(src), title), "G")
+    else
+        log("ไม่เจอข้อความเควสบนจอ", "O")
     end
-    if n == 0 then log("  ไม่เจอข้อความเควสบนจอ", "O") end
-    local on, title = hasActiveQuest(pickQuestForLevel(getLevel()))
-    log(string.format("สรุป hasActiveQuest=%s | %s", tostring(on), title ~= "" and title or "(ว่าง)"), on and "G" or "Y")
+    if cur and need then
+        log(string.format("★ Progress: %d / %d %s", cur, need, cur >= need and "← จบแล้ว ต้องรับใหม่" or ""), cur >= need and "Y" or "G")
+    else
+        log("ยังอ่าน x/y ไม่ได้ — ส่ง Spy ตอนมีเควสอยู่", "O")
+    end
+    local ui = readCompassUI()
+    if ui.title then log("Guide: " .. ui.title, "B") end
+    if guideWantsQuestGiver() then log("Guide ชี้ Quest Giver → ควรรีบรับเควส", "Y") end
+    local on, t2 = hasActiveQuest(quest)
+    log(string.format("สรุป hasActiveQuest=%s | %s", tostring(on), t2 ~= "" and t2 or "(ว่าง)"), on and "G" or "Y")
     log("════ จบ Spy เควส — Copy ส่งมาได้ ════", "Y")
 end
 
 local function refreshStatus(quest)
     local lv = getLevel()
     local q = quest and string.format("%s#%s %s", quest.qName, tostring(quest.qNum), quest.mob) or "-"
-    local on, title = hasActiveQuest(quest)
-    local ui = on and ("ON:" .. (title ~= "" and title:sub(1, 40) or "?")) or "OFF"
+    local cur, need, title = readQuestProgress(quest)
+    local on, t2 = hasActiveQuest(quest)
+    local ui
+    if not on then
+        ui = "OFF"
+        if t2:find("ครบ", 1, true) then ui = "DONE:" .. t2 end
+    else
+        if cur and need then
+            ui = string.format("ON:%d/%d %s", cur, need, (title ~= "" and title or t2):sub(1, 28))
+        else
+            ui = "ON:" .. (t2 ~= "" and t2:sub(1, 40) or "?")
+        end
+    end
     statusLbl.Text = string.format("Lv.%d | QuestUI %s\nเป้า: %s", lv, ui, q)
 end
 
@@ -1519,9 +1567,9 @@ local function mainLoop()
                 log("ผล: ok=" .. tostring(iok) .. " res=" .. tostring(ires), "B")
                 if iok then
                     -- res=0 ก็มักรับสำเร็จแล้ว แต่ Main.Quest.Visible อาจไม่ขึ้น — บังคับไปฟาร์ม
-                    forceQuestUntil = os.clock() + 180
+                    forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
-                    log("ตั้งโหมดมีเควส 180วิ (ไม่รอ Main.Quest.Visible)", "G")
+                    log("ตั้งโหมดมีเควส 25วิ (รอ UI)", "G")
                 end
                 -- คลิกปุ่มเลือกเควสใน UI ถ้ามี (Warrior / Archer)
                 pcall(function()
@@ -1651,6 +1699,21 @@ local function mainLoop()
                 task.wait()
             end
             log(mob.Name .. " จบรอบ", "G")
+            local pc, pn = readQuestProgress(quest)
+            if pc and pn then
+                log(string.format("เควส progress %d/%d", pc, pn), "B")
+                if pc >= pn then
+                    forceQuestUntil = 0
+                    log("★ เควสครบแล้ว → กลับไปรับใหม่", "Y")
+                    task.wait(0.4)
+                    return
+                end
+            elseif guideWantsQuestGiver() then
+                forceQuestUntil = 0
+                log("★ Guide ชี้ Quest Giver → กลับไปรับใหม่", "Y")
+                task.wait(0.4)
+                return
+            end
             task.wait(0.3)
         end)
         if not ok then
