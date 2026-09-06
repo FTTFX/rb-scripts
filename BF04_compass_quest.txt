@@ -373,8 +373,8 @@ local KNOWN_NPC = {
 local MOB_CACHE = {} -- lowerName -> Vector3
 local KNOWN_MOB = {
     ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
-    -- เดาจาก offset ตารางเก่า (Archer สูง Y≈380) + Warrior ใหม่
-    ["dragon crew archer"] = Vector3.new(7123, 387, 276),
+    -- จากฮับ Sea3 (Y สูง = เมืองบน) — ไม่ใช่จุด Warrior
+    ["dragon crew archer"] = Vector3.new(6625, 378, 244),
 }
 local compassStuck = 0
 local lastMeter = nil
@@ -1094,8 +1094,8 @@ local function dumpMobSpawn()
     if foundData == 0 then
         log("  ไม่เจอชื่อ Archer ในแมพ/RS (สตรีมยังไม่โหลดโซนบน)", "O")
     end
-    log("ตารางเก่า BF04 Archer≈ CFrame.new(6488.92, 383.38, -110.66) (แมพเก่า)", "S")
-    log("เดาแมพใหม่ (offset): CFrame.new(7123, 387, 276)", "S")
+    log("ตารางฮับ Archer: CFrame.new(6625, 378, 244)", "G")
+    log("หมายเหตุ: เกมไม่เปิดไฟล์จุดเกิดมอนใน client — ใช้ Enemies ตอนโหลด / จำหลังเจอ / ตารางฮับ", "O")
 
     log("════ จบ Spy มอน — Copy ส่งมาได้ ════", "Y")
 end
