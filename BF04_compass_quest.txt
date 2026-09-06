@@ -369,12 +369,12 @@ local NPC_CACHE = {} -- lowerName -> Vector3
 local KNOWN_NPC = {
     ["dragon crew quest giver"] = Vector3.new(6735.11, 126.99, -711.10),
 }
--- จุดเกาะมอน (Spy ยืนยัน Warrior; Archer ใช้จุดใกล้กันจนกว่า Spy มอนจะเจอ)
+-- จุดเกาะมอน (Archer = เมืองบน ไม่ใช่จุด Warrior)
 local MOB_CACHE = {} -- lowerName -> Vector3
 local KNOWN_MOB = {
     ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
-    -- Archer = เมืองบนบันได เหนือ/ซ้าย Warrior (wiki) — เดาสูงขึ้น ไม่ใช้จุด Warrior
-    ["dragon crew archer"] = Vector3.new(6750, 220, -1150),
+    -- เดาจาก offset ตารางเก่า (Archer สูง Y≈380) + Warrior ใหม่
+    ["dragon crew archer"] = Vector3.new(7123, 387, 276),
 }
 local compassStuck = 0
 local lastMeter = nil
@@ -613,21 +613,25 @@ local function dumpCompassDeep()
 end
 
 -- บินทีละก้าวตามเข็มทิศ — ใช้เมื่อยังไม่มีชื่อ/พิกัดจำ
-local function flyByCompassStep()
+local function flyByCompassStep(opts)
+    opts = opts or {}
     local ui = readCompassUI()
     local d0 = ui.distance
     local rot = ui.arrowAbs or ui.arrowRot
     if not d0 or rot == nil then return false, "ไม่มีระยะ/ลูกศรจาก Guide UI" end
 
-    local cached, csrc = npcFromTitle(ui.title)
-    if cached then
-        log(string.format("มีพิกัดแล้ว (%s) — ไม่เดาลูกศร", csrc), "G")
-        flyTo(CFrame.new(cached + Vector3.new(0, 6, 0)), "NPC/" .. csrc)
-        compassStuck = 0
-        return true, 0
+    -- ตอนตามมอน: ห้ามวาร์ปกลับ NPC (Guide มักยังขึ้นชื่อ Quest Giver)
+    if not opts.skipNpcCache then
+        local cached, csrc = npcFromTitle(ui.title)
+        if cached then
+            log(string.format("มีพิกัดแล้ว (%s) — ไม่เดาลูกศร", csrc), "G")
+            flyTo(CFrame.new(cached + Vector3.new(0, 6, 0)), "NPC/" .. csrc)
+            compassStuck = 0
+            return true, 0
+        end
     end
-    if d0 <= 25 then
-        return false, "ใกล้แล้ว (" .. d0 .. "ม.) รอ NPC โหลด"
+    if d0 <= 12 then
+        return false, "ใกล้แล้ว (" .. d0 .. "ม.)"
     end
 
     if ui.navigateBtn then
@@ -638,17 +642,23 @@ local function flyByCompassStep()
     local _, hrp = getChar()
     if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร" end
 
+    -- ตามมอน: ยกสูงขึ้นด้วย (Archer อยู่ด้านบน)
+    local yBoost = opts.highY and 80 or 35
     local hopStuds
     if d0 > 150 then
         hopStuds = math.clamp(d0 * 3 * 0.32, 80, 260)
     elseif d0 > 100 then
         hopStuds = math.clamp(d0 * 3 * 0.22, 45, 120)
     else
-        hopStuds = math.clamp(d0 * 3 * 0.15, 28, 70)
+        hopStuds = math.clamp(d0 * 3 * 0.18, 40, 90)
     end
 
-    local dest = hrp.Position + dir * hopStuds + Vector3.new(0, 35, 0)
-    log(string.format("ตามเข็มทิศ: %dม. → ก้าว %.0f studs (rot=%.0f)", d0, hopStuds, rot), "B")
+    local dest = hrp.Position + dir * hopStuds + Vector3.new(0, yBoost, 0)
+    if opts.highY then
+        dest = Vector3.new(dest.X, math.max(dest.Y, hrp.Position.Y + 100, 280), dest.Z)
+    end
+    log(string.format("ตามเข็มทิศ: %dม. → ก้าว %.0f studs Y=%.0f (rot=%.0f)",
+        d0, hopStuds, dest.Y, rot), "B")
     flyTo(CFrame.new(dest), "เข็มทิศ")
     task.wait(0.4)
     local ui2 = readCompassUI()
@@ -657,16 +667,17 @@ local function flyByCompassStep()
         log(string.format("เมตรลด %d → %d ✓", d0, d1), "G")
         compassStuck = 0
         lastMeter = d1
-        -- ใกล้แล้วลองหาชื่ออีกครั้ง
-        local tn = parseTargetNameFromTitle(ui2.title)
-        if tn then findNpcByExactName(tn) end
+        if not opts.skipNpcCache then
+            local tn = parseTargetNameFromTitle(ui2.title)
+            if tn then findNpcByExactName(tn) end
+        end
         return true, d1
     end
     if d1 and d1 >= d0 then
         log(string.format("เมตรไม่ลด %d → %d ลองทิศกลับ", d0, d1), "O")
         local _, h2 = getChar()
         if h2 then
-            local back = h2.Position - dir * hopStuds + Vector3.new(0, 35, 0)
+            local back = h2.Position - dir * hopStuds + Vector3.new(0, yBoost, 0)
             flyTo(CFrame.new(back), "เข็มทิศกลับ")
             task.wait(0.3)
             local ui3 = readCompassUI()
@@ -776,31 +787,59 @@ local function mobSpawnHint(mobName)
     return nil
 end
 
--- ไล่กว้าง ~1000+ studs + สูงขึ้น (Archer อยู่เมืองบน ไม่ใช่จุด Warrior)
-local function buildMobSweep()
-    local pts = {}
-    local cx, cz = 6900, -950
-    local offsets = {0, 400, -400, 800, -800, 1100, -1100}
-    local ys = {70, 160, 250, 350}
-    for _, dx in ipairs(offsets) do
-        for _, dz in ipairs(offsets) do
-            for _, y in ipairs(ys) do
-                if dx == 0 or dz == 0 or math.abs(dx) == math.abs(dz) then
-                    pts[#pts+1] = Vector3.new(cx + dx, y, cz + dz)
+local spiralR = 200
+local spiralStep = 0
+local spiralOrigin = nil
+local triedKnownHigh = false
+
+local function resetSpiral(origin)
+    spiralR = 200
+    spiralStep = 0
+    spiralOrigin = origin
+    triedKnownHigh = false
+end
+
+local function nextSpiralPoint()
+    local _, hrp = getChar()
+    if not hrp then return nil end
+    if not spiralOrigin then
+        local enemies = Workspace:FindFirstChild("Enemies")
+        local bestP, bestD = hrp.Position, math.huge
+        if enemies then
+            for _, e in ipairs(enemies:GetChildren()) do
+                if e.Name:find("Warrior", 1, true) or e.Name:find("Dragon Crew", 1, true) then
+                    local eh = e:FindFirstChild("HumanoidRootPart")
+                    if eh then
+                        local d = (eh.Position - hrp.Position).Magnitude
+                        if d < bestD then bestD = d; bestP = eh.Position end
+                    end
                 end
             end
         end
+        spiralOrigin = bestP
+        log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d",
+            spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
     end
-    pts[#pts+1] = Vector3.new(6919, 200, -941)
-    pts[#pts+1] = Vector3.new(6800, 250, -1100)
-    pts[#pts+1] = Vector3.new(6700, 220, -1200)
-    pts[#pts+1] = Vector3.new(7100, 220, -1200)
-    pts[#pts+1] = Vector3.new(6600, 280, -1000)
-    pts[#pts+1] = Vector3.new(7200, 280, -900)
-    return pts
+    local ang = spiralStep * (math.pi / 4)
+    spiralStep += 1
+    if spiralStep >= 8 then
+        spiralStep = 0
+        spiralR += 200
+        if spiralR > 1600 then
+            spiralR = 200
+            spiralOrigin = hrp.Position
+            log("ก้นหอยครบ 1600 → เริ่มใหม่รอบตัว", "O")
+        else
+            log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
+        end
+    end
+    local y = math.clamp(spiralOrigin.Y + 200, 280, 450)
+    return Vector3.new(
+        spiralOrigin.X + math.cos(ang) * spiralR,
+        y,
+        spiralOrigin.Z + math.sin(ang) * spiralR
+    )
 end
-local MOB_SWEEP = buildMobSweep()
-local sweepIdx = 1
 
 local function logNearbyEnemies(radius)
     local enemies = Workspace:FindFirstChild("Enemies")
@@ -835,37 +874,36 @@ local function huntMobOrSweep(quest)
     if mob then return mob, md end
 
     local ui = readCompassUI()
-    if ui.distance and ui.distance > 15 and (ui.arrowAbs or ui.arrowRot) ~= nil then
-        log(string.format("เข็มทิศชี้มอน? %d ม. → ก้าวตาม", ui.distance), "Y")
-        flyByCompassStep()
-        task.wait(0.3)
+    if ui.distance and ui.distance > 8 and (ui.arrowAbs or ui.arrowRot) ~= nil then
+        log(string.format("เข็มทิศชี้เป้า %d ม. (ไม่กลับ NPC)", ui.distance), "Y")
+        flyByCompassStep({ skipNpcCache = true, highY = true })
+        task.wait(0.35)
         mob, md = findMob(quest.mob)
         if mob then return mob, md end
-        logNearbyEnemies(1500)
     end
 
     local hint = mobSpawnHint(quest.mob)
-    if hint and (sweepIdx % 3 == 1) then
-        log(string.format("ลองจุด known @ %.0f,%.0f,%.0f", hint.X, hint.Y, hint.Z), "B")
-        flyTo(CFrame.new(hint + Vector3.new(0, 25, 0)), "จุดมอน")
+    if hint and not triedKnownHigh then
+        triedKnownHigh = true
+        log(string.format("ลองจุด known สูง @ %.0f,%.0f,%.0f", hint.X, hint.Y, hint.Z), "B")
+        flyTo(CFrame.new(hint), "จุดมอนสูง")
         task.wait(1.0)
         mob, md = findMob(quest.mob)
         if mob then return mob, md end
         logNearbyEnemies(1500)
     end
 
-    local pt = MOB_SWEEP[((sweepIdx - 1) % #MOB_SWEEP) + 1]
-    sweepIdx += 1
-    log(string.format("ไล่หา %s กว้าง #%d/%d @ %.0f,%.0f,%.0f",
-        quest.mob, sweepIdx - 1, #MOB_SWEEP, pt.X, pt.Y, pt.Z), "B")
-    flyTo(CFrame.new(pt), "ไล่สตรีมมอน")
-    task.wait(1.1)
+    local pt = nextSpiralPoint()
+    if not pt then return nil end
+    log(string.format("ก้นหอย r=%d @ %.0f,%.0f,%.0f", spiralR, pt.X, pt.Y, pt.Z), "B")
+    flyTo(CFrame.new(pt), "ก้นหอย")
+    task.wait(1.0)
     mob, md = findMob(quest.mob)
     if not mob then logNearbyEnemies(1500) end
     return mob, md
 end
 
--- Spy: สแกนว่ามอนเกิด/โหลดที่ไหน
+-- Spy: สแกนว่ามอนเกิด/โหลดที่ไหน + หาใน Data/แมพ
 local function dumpMobSpawn()
     log("════ Spy มอน / จุดเกิด ════", "Y")
     local lv = getLevel()
@@ -1001,6 +1039,48 @@ local function dumpMobSpawn()
             task.wait(1)
         end
     end
+
+    -- Spy จาก Data/แมพ: ชื่อ Archer ใน Workspace/RS
+    log("── Spy Data/แมพ (ชื่อ Archer / Spawn) ──", "Y")
+    local foundData = 0
+    local function noteObj(obj, tag)
+        local p = posFromAny(obj)
+        if not p and obj:IsA("Model") then
+            p = obj:GetPivot() and obj:GetPivot().Position
+        end
+        if p then
+            foundData += 1
+            if foundData <= 20 then
+                log(string.format("  [%s] %s @ %.0f,%.0f,%.0f",
+                    tag, obj:GetFullName():gsub("Workspace%.", "WS."):gsub("ReplicatedStorage%.", "RS."),
+                    p.X, p.Y, p.Z), "G")
+            end
+        end
+    end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if foundData >= 20 then break end
+        local n = obj.Name:lower()
+        if n:find("archer", 1, true) or (n:find("spawn", 1, true) and n:find("dragon", 1, true)) then
+            if obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Attachment") or obj:IsA("Folder") then
+                noteObj(obj, obj.ClassName)
+            end
+        end
+    end
+    pcall(function()
+        for _, obj in ipairs(RS:GetDescendants()) do
+            if foundData >= 25 then break end
+            local n = obj.Name:lower()
+            if n:find("archer", 1, true) and (obj:IsA("ModuleScript") or obj:IsA("Folder") or obj:IsA("StringValue")) then
+                foundData += 1
+                log("  RS:" .. obj:GetFullName():gsub("ReplicatedStorage%.", "") .. " [" .. obj.ClassName .. "]", "B")
+            end
+        end
+    end)
+    if foundData == 0 then
+        log("  ไม่เจอชื่อ Archer ในแมพ/RS (สตรีมยังไม่โหลดโซนบน)", "O")
+    end
+    log("ตารางเก่า BF04 Archer≈ CFrame.new(6488.92, 383.38, -110.66) (แมพเก่า)", "S")
+    log("เดาแมพใหม่ (offset): CFrame.new(7123, 387, 276)", "S")
 
     log("════ จบ Spy มอน — Copy ส่งมาได้ ════", "Y")
 end
