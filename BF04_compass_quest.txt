@@ -2067,8 +2067,73 @@ end
 -- ร่างพระตีไกล → Spy: โดนสูงสุด ≈96 | รักษาระยะห่างไม่ชนตัวมอน
 local SAFE_HIT_RANGE = 90 -- เริ่มตีเมื่อเข้าใกล้ระยะนี้
 local STANDOFF_Y = 48 -- ลอยเหนือมอน (อยู่ในระยะตี แต่ไม่ทับตัว)
+local VACUUM_ON = true
+local VACUUM_RADIUS = 320 -- รัศมีดูดมอนชื่อเดียวกัน
+local VACUUM_PULL_Y = -8 -- ดึงมอนมาอยู่ใต้ตัวเรา (legacy)
+-- บอสไม่ดูดรวม (ตัวเดียว)
 local function attackHeight()
     return STANDOFF_Y
+end
+
+local function mobNameMatch(eName, want)
+    if not want or want == "" then return false end
+    if eName:find(want, 1, true) then return true end
+    local last = want:match("(%S+)$")
+    return last and #last >= 4 and eName:find(last, 1, true) ~= nil
+end
+
+-- ดูดมอนชื่อเควสมาใต้จุดฟาร์ม
+local function vacuumMobs(mobName, myHrp, anchor)
+    if not VACUUM_ON or not myHrp or not mobName then return 0 end
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return 0 end
+    local base = anchor or (myHrp.Position + Vector3.new(0, VACUUM_PULL_Y, 0))
+    local pull = Vector3.new(base.X, base.Y + 3, base.Z)
+    local n = 0
+    for _, e in ipairs(enemies:GetChildren()) do
+        if mobNameMatch(e.Name, mobName) then
+            local eh = e:FindFirstChild("HumanoidRootPart")
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            if eh and hum and hum.Health > 0 then
+                local d = (eh.Position - myHrp.Position).Magnitude
+                if d <= VACUUM_RADIUS then
+                    pcall(function()
+                        eh.CanCollide = false
+                        eh.AssemblyLinearVelocity = Vector3.zero
+                        eh.AssemblyAngularVelocity = Vector3.zero
+                        eh.CFrame = CFrame.new(pull)
+                        hum.PlatformStand = true
+                        hum.Sit = true
+                        hum.WalkSpeed = 0
+                        hum.JumpPower = 0
+                    end)
+                    n = n + 1
+                end
+            end
+        end
+    end
+    return n
+end
+
+-- มอนในระยะตี (หลังดูด) สำหรับ RegisterHit หลายตัว
+local function collectHitTargets(mobName, myHrp, radius)
+    local list = {}
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies or not myHrp then return list end
+    radius = radius or 100
+    for _, e in ipairs(enemies:GetChildren()) do
+        if mobNameMatch(e.Name, mobName) then
+            local eh = e:FindFirstChild("HumanoidRootPart")
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            local head = e:FindFirstChild("Head") or eh
+            if eh and hum and hum.Health > 0 and head then
+                if (eh.Position - myHrp.Position).Magnitude <= radius then
+                    list[#list + 1] = { e, head }
+                end
+            end
+        end
+    end
+    return list
 end
 
 -- ล็อกห่างมอน: เหนือหัว ~STANDOFF_Y — ตีได้ก่อนถึงตัว / มอนชนยาก
@@ -2077,7 +2142,6 @@ local function lockOnMobHead(mob, myHrp, height)
     local mhrp = mob:FindFirstChild("HumanoidRootPart")
     if not mhrp then return false end
     local h = height or STANDOFF_Y
-    -- ถ้ายืนใกล้เกิน → ถอยขึ้นให้ห่าง
     local dest = mhrp.CFrame * CFrame.new(0, h, 0)
     setNoclip(true)
     myHrp.CFrame = dest
@@ -2092,7 +2156,6 @@ local function lockOnMobHead(mob, myHrp, height)
         end
     end)
     pcall(function()
-        -- ไม่ขยาย hitbox มอนใหญ่เกิน — กันดึงชนตัว
         mhrp.CanCollide = false
         local mh = mob:FindFirstChildOfClass("Humanoid")
         if mh then mh.PlatformStand = true; mh.Sit = true end
@@ -2100,18 +2163,43 @@ local function lockOnMobHead(mob, myHrp, height)
     return true
 end
 
-local function attackMob(mob)
+-- ลอยนิ่งเหนือจุดฟาร์ม (กองมอนถูกดูดอยู่ใต้)
+local function holdFarmSpot(myHrp, anchor, height)
+    if not myHrp or not anchor then return end
+    local h = height or STANDOFF_Y
+    setNoclip(true)
+    myHrp.CFrame = CFrame.new(anchor + Vector3.new(0, h, 0))
+    myHrp.AssemblyLinearVelocity = Vector3.zero
+    myHrp.AssemblyAngularVelocity = Vector3.zero
+    pcall(function()
+        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = true
+            hum.Sit = false
+            hum.AutoRotate = false
+        end
+    end)
+end
+
+local function attackMob(mob, mobNameHint)
     equipSword()
     local rA, rH = getCombatRemotes()
-    local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
-    if not part then return end
+    local _, myHrp = getChar()
+    local want = mobNameHint or (mob and mob.Name) or ""
+    local targets = collectHitTargets(want, myHrp, 110)
+    if #targets == 0 and mob then
+        local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
+        if part then targets = { { mob, part } } end
+    end
+    if #targets == 0 then return end
+    local primary = targets[1][2]
     pcall(function()
         local char = LP.Character
         if char and char:FindFirstChild("Stun") then char.Stun.Value = 0 end
         if rA then
             rA:FireServer(0); rA:FireServer(1); rA:FireServer(2); rA:FireServer(3)
         end
-        if rH then rH:FireServer(part, { { mob, part } }) end
+        if rH then rH:FireServer(primary, targets) end
         VirtualUser:CaptureController()
         VirtualUser:Button1Down(Vector2.new(1280, 672))
         task.wait(0.03)
@@ -2744,27 +2832,45 @@ local function mainLoop()
                 if hPush then lockOnMobHead(mob, hPush, STANDOFF_Y) end
             end
 
-            log(string.format("สู้ %s HP%.0f (d=%.0f) ลอยห่าง Y=%d",
-                mob.Name, mhum.Health, md or 0, STANDOFF_Y), "Y")
+            local farmAnchor = mhrp.Position
+            log(string.format("สู้ %s HP%.0f (d=%.0f) ดูดมอน r=%d",
+                mob.Name, mhum.Health, md or 0, VACUUM_RADIUS), "Y")
             local lastHp = mhum.Health
             local lastCheck = os.clock()
             local noDmg = 0
             local heightTry = { 48, 56, 40, 64, 35, 72 }
             local hi = 1
+            local lastVacLog = 0
             while mob.Parent and mhum.Parent and mhum.Health > 0
                   and select(1, hasActiveQuest(quest))
                   and _G.BF04C_ON and _G.BF04C_GEN == loopGen do
                 local _, myHrp = getChar()
                 if not myHrp then break end
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
-                if not mhrp then break end
-                -- ถ้าระยะในระนาบใกล้เกิน → ถอยขึ้น
-                local flat = Vector3.new(myHrp.Position.X - mhrp.Position.X, 0, myHrp.Position.Z - mhrp.Position.Z).Magnitude
+                if not mhrp then
+                    -- ตัวหลักตาย → หาตัวใหม่ในกองที่ดูดไว้
+                    local nxt = select(1, findMob(quest.mob))
+                    if nxt then
+                        mob = nxt
+                        mhum = mob:FindFirstChildOfClass("Humanoid")
+                        mhrp = mob:FindFirstChild("HumanoidRootPart")
+                        if not mhrp or not mhum then break end
+                    else
+                        break
+                    end
+                end
                 local useH = heightTry[hi] or STANDOFF_Y
-                if flat < 20 then useH = math.max(useH, 56) end
                 equipSword()
-                lockOnMobHead(mob, myHrp, useH)
-                attackMob(mob)
+                holdFarmSpot(myHrp, farmAnchor, useH)
+                local pulled = 0
+                if not isBossQuest(quest) then
+                    pulled = vacuumMobs(quest.mob, myHrp, farmAnchor)
+                    if pulled > 1 and os.clock() - lastVacLog > 2.5 then
+                        lastVacLog = os.clock()
+                        log(string.format("ดูดมอน %d ตัว", pulled), "B")
+                    end
+                end
+                attackMob(mob, quest.mob)
                 if os.clock() - lastCheck >= 1.0 then
                     lastCheck = os.clock()
                     local hp = mhum.Health
