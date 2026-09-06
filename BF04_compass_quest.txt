@@ -198,54 +198,80 @@ local function flyTo(posOrCF, label)
     local ok = false
     local okRun, err = pcall(function()
         if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then return end
-        if dist < 20 then
+        if dist < 25 then
             hrp.CFrame = dest
             hrp.AssemblyLinearVelocity = Vector3.zero
+            task.wait(0.2)
             ok = true
             return
         end
+        -- ไกล = ช้า + แบ่งท่อน กัน rubberband ดีดกลับ
         local spd = FLY_SPEED
         if label == "มอน" or (label and label:find("มอน", 1, true)) then
             spd = FLY_SPEED_COMBAT
-        elseif dist >= 1500 then spd = 200
-        elseif dist >= 800 then spd = 170
+        elseif dist >= 3000 then spd = FLY_SPEED_LONG
+        elseif dist >= 1500 then spd = 110
+        elseif dist >= 800 then spd = 125
         end
-        local dur = math.clamp(dist / spd, 0.25, 20)
-        stopFlyTween()
-        local tw = TweenService:Create(hrp,
-            TweenInfo.new(dur, Enum.EasingStyle.Linear),
-            { CFrame = dest })
-        currentTween = tw
-        tw:Play()
-        local tEnd = os.clock() + dur + 1.0
-        while currentTween == tw and os.clock() < tEnd
-              and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
-            setNoclip(true)
+        local chunk = (dist >= 3000) and 450 or ((dist >= 1500) and 550 or 700)
+        local guard = 0
+        while _G.BF04C_ON and _G.BF04C_GEN == MY_GEN and guard < 60 do
+            guard = guard + 1
             local _, h = getChar()
-            if h then
-                h.AssemblyLinearVelocity = Vector3.zero
-                hrp = h
+            if not h then break end
+            hrp = h
+            setNoclip(true)
+            local left = (hrp.Position - dest.Position).Magnitude
+            if left <= 35 then
+                hrp.CFrame = dest
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                break
             end
-            task.wait(0.05)
-            if not hrp or not hrp.Parent then break end
-            if (hrp.Position - dest.Position).Magnitude <= 28 then
-                stopFlyTween()
+            local step = math.min(chunk, left)
+            local dir = (dest.Position - hrp.Position)
+            if dir.Magnitude < 1 then break end
+            local nxt = hrp.Position + dir.Unit * step
+            local dur = math.clamp(step / spd, 0.3, 8)
+            stopFlyTween()
+            local look = Vector3.new(dir.X, 0, dir.Z)
+            local lookCF = look.Magnitude > 1 and CFrame.new(nxt, nxt + look) or CFrame.new(nxt)
+            local tw = TweenService:Create(hrp,
+                TweenInfo.new(dur, Enum.EasingStyle.Linear),
+                { CFrame = lookCF })
+            currentTween = tw
+            tw:Play()
+            local tEnd = os.clock() + dur + 0.4
+            while currentTween == tw and os.clock() < tEnd
+                  and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
+                setNoclip(true)
+                local _, h2 = getChar()
+                if h2 then
+                    h2.AssemblyLinearVelocity = Vector3.zero
+                    hrp = h2
+                end
+                task.wait(0.05)
+            end
+            stopFlyTween()
+            task.wait(0.12)
+        end
+        for _ = 1, 4 do
+            local _, h2 = getChar()
+            if not h2 then break end
+            setNoclip(true)
+            h2.CFrame = dest
+            h2.AssemblyLinearVelocity = Vector3.zero
+            task.wait(0.25)
+            if (h2.Position - dest.Position).Magnitude <= 90 then
+                ok = true
                 break
             end
         end
-        stopFlyTween()
-        local _, h2 = getChar()
-        if h2 then
-            setNoclip(true)
-            local left = (h2.Position - dest.Position).Magnitude
-            if left > 40 then
-                h2.CFrame = dest
-                h2.AssemblyLinearVelocity = Vector3.zero
-                left = (h2.Position - dest.Position).Magnitude
-            end
-            ok = left <= 80
+        local _, h3 = getChar()
+        if h3 then
+            local left = (h3.Position - dest.Position).Magnitude
+            ok = left <= 120
             if not ok then
-                log(string.format("ยังไม่ถึง (เหลือ %.0f)", left), "Y")
+                log(string.format("บินไม่ติด (เหลือ %.0f) — จะลองใหม่", left), "Y")
             end
         end
     end)
@@ -1600,6 +1626,21 @@ local function huntMobOrSweep(quest)
         end
     end
 
+    -- หลุดเกาะ/ดีดกลับไกลจากจุดมอน → บินช้ากลับ known ก่อนก้นหอย
+    do
+        local hint = mobSpawnHint(quest.mob)
+        local _, hrp0 = getChar()
+        if hint and hrp0 and (hrp0.Position - hint).Magnitude > 2500 then
+            log(string.format("อยู่ไกลจุดมอน %.0f → บินกลับ known ก่อน",
+                (hrp0.Position - hint).Magnitude), "O")
+            flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "กลับเกาะมอน")
+            task.wait(0.5)
+            mob, md = findMob(quest.mob)
+            if mob then return mob, md end
+            resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 200), hint.Z))
+        end
+    end
+
     -- มีจุดที่เคยเจอ Archer แล้ว → บินกลับที่นั่นก่อน (ห้ามไป NPC)
     local cached = MOB_CACHE[(quest.mob or ""):lower()]
     if cached then
@@ -2499,6 +2540,7 @@ local function mainLoop()
                 if iok and ires ~= "timeout" then
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
+                    resetSpiral(nil) -- รับเควสใหม่ → อย่าใช้ก้นหอยเกาะเก่า
                     log("ตั้งโหมดมีเควส 25วิ (รอ UI)", "G")
                 elseif ires == "timeout" then
                     log("StartQuest timeout — ลองใหม่", "R")
