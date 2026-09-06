@@ -406,8 +406,17 @@ local KNOWN_NPC = {
 local MOB_CACHE = {} -- lowerName -> Vector3
 local KNOWN_MOB = {
     ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
-    -- จากฮับ Sea3 (Y สูง = เมืองบน) — ไม่ใช่จุด Warrior
+    -- เมืองบน Hydra (Y สูง) — ฮับ + จุดสำรอง
     ["dragon crew archer"] = Vector3.new(6625, 378, 244),
+}
+local KNOWN_MOB_ALT = {
+    ["dragon crew archer"] = {
+        Vector3.new(6625, 378, 244),
+        Vector3.new(6900, 350, 150),
+        Vector3.new(6500, 400, 200),
+        Vector3.new(6800, 380, 300),
+        Vector3.new(6400, 360, 100),
+    },
 }
 local compassStuck = 0
 local lastMeter = nil
@@ -836,20 +845,14 @@ local function nextSpiralPoint()
     local _, hrp = getChar()
     if not hrp then return nil end
     if not spiralOrigin then
-        local enemies = Workspace:FindFirstChild("Enemies")
-        local bestP, bestD = hrp.Position, math.huge
-        if enemies then
-            for _, e in ipairs(enemies:GetChildren()) do
-                if e.Name:find("Warrior", 1, true) or e.Name:find("Dragon Crew", 1, true) then
-                    local eh = e:FindFirstChild("HumanoidRootPart")
-                    if eh then
-                        local d = (eh.Position - hrp.Position).Magnitude
-                        if d < bestD then bestD = d; bestP = eh.Position end
-                    end
-                end
-            end
+        -- เริ่มจากจุด Archer ที่รู้/จำ — ห้ามใช้ Warrior เป็นศูนย์กลาง
+        local hint = mobSpawnHint("Dragon Crew Archer")
+            or mobSpawnHint((pickQuestForLevel(getLevel()) or {}).mob or "")
+        if hint then
+            spiralOrigin = hint
+        else
+            spiralOrigin = hrp.Position + Vector3.new(0, 200, 0)
         end
-        spiralOrigin = bestP
         log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d",
             spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
     end
@@ -860,13 +863,14 @@ local function nextSpiralPoint()
         spiralR += 200
         if spiralR > 1600 then
             spiralR = 200
-            spiralOrigin = hrp.Position
-            log("ก้นหอยครบ 1600 → เริ่มใหม่รอบตัว", "O")
+            spiralOrigin = hrp.Position + Vector3.new(0, 250, 0)
+            log("ก้นหอยครบ 1600 → เริ่มใหม่รอบตัว (สูง)", "O")
         else
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
     end
-    local y = math.clamp(spiralOrigin.Y + 200, 280, 450)
+    local baseY = math.max(spiralOrigin.Y, 300)
+    local y = math.clamp(baseY + (spiralR > 400 and 50 or 0), 280, 500)
     return Vector3.new(
         spiralOrigin.X + math.cos(ang) * spiralR,
         y,
@@ -933,12 +937,16 @@ local function huntMobOrSweep(quest)
     local hint = mobSpawnHint(quest.mob)
     if hint and not triedKnownHigh then
         triedKnownHigh = true
-        log(string.format("ลองจุด known สูง @ %.0f,%.0f,%.0f", hint.X, hint.Y, hint.Z), "B")
-        flyTo(CFrame.new(hint), "จุดมอนสูง")
-        task.wait(1.0)
-        mob, md = findMob(quest.mob)
-        if mob then return mob, md end
-        logNearbyEnemies(1500)
+        local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
+        local list = alts or { hint }
+        for i, pt in ipairs(list) do
+            log(string.format("ลองจุดสูง #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
+            flyTo(CFrame.new(pt), "จุดมอนสูง")
+            task.wait(1.0)
+            mob, md = findMob(quest.mob)
+            if mob then return mob, md end
+            logNearbyEnemies(1500)
+        end
     end
 
     local pt = nextSpiralPoint()
