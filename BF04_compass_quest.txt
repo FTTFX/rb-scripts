@@ -23,11 +23,11 @@ _G.BF04C_ON = false
 _G.BF04C_LOOPING = false -- กันโหลดใหม่แล้ว AUTO ค้าง "กำลังรันอยู่แล้ว"
 _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1 -- ฆ่าลูปเก่าที่ค้าง InvokeServer/บิน
 local MY_GEN = _G.BF04C_GEN
-local FLY_SPEED = 90 -- วาร์ปท่อนละ ~90 + หยุด (Spy: 100 ผ่าน / 120 กระตุก → ใช้ 90)
-local FLY_SPEED_COMBAT = 90
-local FLY_SPEED_LONG = 90
-local WARP_STEP = 90 -- กระโดดทีละกี่ studs
-local WARP_PAUSE = 0.1 -- หยุดระหว่างวาร์ป
+local FLY_SPEED = 60 -- Spy วาร์ป 2026-09-06: 60 ผ่าน / 75 กระตุก
+local FLY_SPEED_COMBAT = 60
+local FLY_SPEED_LONG = 60
+local WARP_STEP = 60 -- กระโดดทีละกี่ studs
+local WARP_PAUSE = 0.15 -- หยุดระหว่างวาร์ป
 if _G.BF04C_FLY and type(_G.BF04C_FLY) == "table" then
     FLY_SPEED = tonumber(_G.BF04C_FLY.normal) or FLY_SPEED
     FLY_SPEED_COMBAT = tonumber(_G.BF04C_FLY.combat) or FLY_SPEED_COMBAT
@@ -36,7 +36,7 @@ if _G.BF04C_FLY and type(_G.BF04C_FLY) == "table" then
     WARP_PAUSE = tonumber(_G.BF04C_FLY.pause) or WARP_PAUSE
 end
 local FLY_CHUNK_PAUSE = WARP_PAUSE
-local FLY_SETTLE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.settle) or 0.12
+local FLY_SETTLE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.settle) or 0.15
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
