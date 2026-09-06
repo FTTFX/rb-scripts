@@ -466,17 +466,27 @@ local KNOWN_NPC_ALT = {
 local MOB_CACHE = {} -- lowerName -> Vector3
 local KNOWN_MOB = {
     ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
-    -- เมืองบน Hydra (Y~380) — จุดเก่า BF04 ที่เคยใช้ได้
-    ["dragon crew archer"] = Vector3.new(6488.92, 383.38, -110.66),
+    -- Spy จริง 2026-09-06
+    ["dragon crew archer"] = Vector3.new(6762, 484, 111),
+    -- Hydra Town บน (เก่า BF04 + จุดรอบเมือง)
+    ["hydra enforcer"] = Vector3.new(5825.22, 682.89, 704.58),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
+        Vector3.new(6762, 484, 111),
+        Vector3.new(6949, 486, 185),
+        Vector3.new(6669, 484, 329),
+        Vector3.new(6583, 484, 505),
         Vector3.new(6488.92, 383.38, -110.66),
-        Vector3.new(6625, 378, 244),
-        Vector3.new(6350, 390, -50),
-        Vector3.new(6600, 400, 50),
-        Vector3.new(6200, 370, -200),
-        Vector3.new(6700, 360, 150),
+    },
+    ["hydra enforcer"] = {
+        Vector3.new(5825.22, 682.89, 704.58),
+        Vector3.new(5448.86, 601.52, 751.13),
+        Vector3.new(5600, 650, 700),
+        Vector3.new(5200, 600, 750),
+        Vector3.new(6000, 680, 650),
+        Vector3.new(5100, 550, 500),
+        Vector3.new(5300, 700, 400),
     },
 }
 local compassStuck = 0
@@ -550,34 +560,44 @@ local function modelPart(model)
         or model:FindFirstChildWhichIsA("BasePart")
 end
 
--- หาโมเดล/พาร์ทในโลกจากชื่อ (ตีกลับจากชื่อที่เข็มทิศบอก)
+-- หาโมเดลจากชื่อ — ต้องครบคำสำคัญ (ห้ามจับ "Quest Giver" แทน "Hydra Town Quest Giver")
 local function findNpcByExactName(targetName)
     if not targetName or targetName == "" then return nil end
     local want = targetName:lower()
     local wantTok = {}
     for w in want:gmatch("%S+") do
-        if w ~= "the" and w ~= "a" then wantTok[#wantTok+1] = w end
+        if w ~= "the" and w ~= "a" and w ~= "quest" and w ~= "giver" then
+            wantTok[#wantTok+1] = w -- hydra, town, dragon, crew ...
+        end
     end
     local _, myHrp = getChar()
-    local best, bestD, bestName = nil, math.huge, nil
+    local best, bestScore, bestD, bestName = nil, -1, math.huge, nil
 
     local function consider(model)
         if not model then return end
         local nl = model.Name:lower()
-        local hit = (nl == want) or nl:find(want, 1, true) or want:find(nl, 1, true)
-        if not hit and #wantTok >= 2 then
+        local score = -1
+        if nl == want then
+            score = 100
+        elseif nl:find(want, 1, true) then
+            score = 90
+        else
+            -- ทุกคำสำคัญต้องอยู่ในชื่อ NPC
+            if #wantTok == 0 then return end
             local ok = true
             for _, t in ipairs(wantTok) do
                 if not nl:find(t, 1, true) then ok = false break end
             end
-            hit = ok
+            if not ok then return end
+            -- ห้ามจับแค่ "quest giver" เปล่าๆ ถ้าเป้ามีคำเฉพาะ
+            if #wantTok >= 1 and (nl == "quest giver" or nl == "questgiver") then return end
+            score = 50 + #wantTok
         end
-        if not hit then return end
         local part = modelPart(model)
         if not part then return end
         local d = myHrp and (part.Position - myHrp.Position).Magnitude or 0
-        if d < bestD then
-            bestD = d; best = part; bestName = model.Name
+        if score > bestScore or (score == bestScore and d < bestD) then
+            bestScore = score; bestD = d; best = part; bestName = model.Name
         end
     end
 
@@ -1074,7 +1094,8 @@ local function nextSpiralPoint(mobName)
         local hint = mobSpawnHint(mobName)
             or mobSpawnHint((pickQuestForLevel(getLevel()) or {}).mob or "")
         if hint then
-            spiralOrigin = Vector3.new(hint.X, math.max(hint.Y, 380), hint.Z)
+            local minY = (tostring(mobName or ""):lower():find("hydra", 1, true)) and 550 or 380
+            spiralOrigin = Vector3.new(hint.X, math.max(hint.Y, minY), hint.Z)
         else
             spiralOrigin = hrp.Position + Vector3.new(0, 250, 0)
             if spiralOrigin.Y < 350 then
@@ -1143,6 +1164,14 @@ end
 local function huntMobOrSweep(quest)
     local mob, md = findMob(quest.mob)
     if mob then return mob, md end
+
+    -- เปลี่ยนมอนเควส → รีเซ็ตก้นหอย
+    if spiralOrigin and quest and quest.mob then
+        local hint = mobSpawnHint(quest.mob)
+        if hint and (spiralOrigin - hint).Magnitude > 800 then
+            resetSpiral(Vector3.new(hint.X, hint.Y, hint.Z))
+        end
+    end
 
     -- มีจุดที่เคยเจอ Archer แล้ว → บินกลับที่นั่นก่อน (ห้ามไป NPC)
     local cached = MOB_CACHE[(quest.mob or ""):lower()]
