@@ -62,11 +62,11 @@ local function mkBtn(txt, x, y, w, col)
 end
 
 local autoBtn = mkBtn("AUTO: OFF", 8, 30, 70, Color3.fromRGB(30, 120, 50))
-local dumpBtn = mkBtn("Spy เข็ม", 82, 30, 68, Color3.fromRGB(100, 80, 40))
-local questSpyBtn = mkBtn("Spy เควส", 154, 30, 68, Color3.fromRGB(80, 100, 140))
-local mobSpyBtn = mkBtn("Spy มอน", 226, 30, 68, Color3.fromRGB(160, 90, 30))
-local rangeBtn = mkBtn("Spy ตี", 298, 30, 56, Color3.fromRGB(140, 70, 40))
-local copyBtn = mkBtn("Copy", 358, 30, 54, Color3.fromRGB(30, 100, 50))
+local dumpBtn = mkBtn("Spy เข็ม", 82, 30, 62, Color3.fromRGB(100, 80, 40))
+local questSpyBtn = mkBtn("Spy เควส", 148, 30, 62, Color3.fromRGB(80, 100, 140))
+local npcSpyBtn = mkBtn("Spy NPC", 214, 30, 62, Color3.fromRGB(40, 120, 100))
+local mobSpyBtn = mkBtn("Spy มอน", 280, 30, 58, Color3.fromRGB(160, 90, 30))
+local copyBtn = mkBtn("Copy", 342, 30, 70, Color3.fromRGB(30, 100, 50))
 
 local statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 64)
@@ -449,6 +449,18 @@ end
 local NPC_CACHE = {} -- lowerName -> Vector3
 local KNOWN_NPC = {
     ["dragon crew quest giver"] = Vector3.new(6735.11, 126.99, -711.10),
+    -- เก่า BF04 (อาจขยับ) — ใช้เป็นจุดลองโหลดโซน
+    ["hydra town quest giver"] = Vector3.new(5448.86, 601.52, 751.13),
+}
+local KNOWN_NPC_ALT = {
+    ["hydra town quest giver"] = {
+        Vector3.new(5448.86, 601.52, 751.13),
+        Vector3.new(5200, 600, 750),
+        Vector3.new(5600, 580, 800),
+        Vector3.new(5300, 620, 600),
+        Vector3.new(5100, 550, 500),
+        Vector3.new(5800, 500, 400),
+    },
 }
 -- จุดเกาะมอน (Archer = เมืองบน ไม่ใช่จุด Warrior)
 local MOB_CACHE = {} -- lowerName -> Vector3
@@ -488,28 +500,80 @@ local function parseTargetNameFromTitle(title)
     return who
 end
 
-local function rememberNpc(part)
+local function rememberNpc(part, nameOverride)
     if not part then return end
-    local name = (part.Parent and part.Parent.Name) or part.Name
+    local name = nameOverride or (part.Parent and part.Parent.Name) or part.Name
     NPC_CACHE[name:lower()] = part.Position
+    -- จำสั้นด้วย เช่น "hydra town quest giver"
+    local short = name:lower():gsub("%s+", " ")
+    NPC_CACHE[short] = part.Position
+end
+
+-- สแกน NPC ทั้งแมพ (ไม่จำกัดแค่โฟลเดอร์ NPCs)
+local function iterNpcModels(cb)
+    local seen = {}
+    local function add(model)
+        if not model or seen[model] then return end
+        if not model:IsA("Model") then return end
+        seen[model] = true
+        cb(model)
+    end
+    local folder = Workspace:FindFirstChild("NPCs") or Workspace:FindFirstChild("NPC")
+    if folder then
+        for _, n in ipairs(folder:GetChildren()) do add(n) end
+    end
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj:IsA("Model") then add(obj) end
+        if obj:IsA("Folder") or obj:IsA("Model") then
+            local nl = obj.Name:lower()
+            if nl:find("npc", 1, true) or nl:find("character", 1, true)
+               or nl:find("quest", 1, true) or nl:find("town", 1, true) then
+                for _, c in ipairs(obj:GetChildren()) do add(c) end
+            end
+        end
+    end
+    -- ลึก: ชื่อมี Quest Giver / Hydra / Dragon
+    for _, d in ipairs(Workspace:GetDescendants()) do
+        if d:IsA("Model") then
+            local nl = d.Name:lower()
+            if nl:find("quest giver", 1, true) or nl:find("questgiver", 1, true)
+               or nl:find("hydra", 1, true) or nl:find("dragon crew", 1, true) then
+                add(d)
+            end
+        end
+    end
+end
+
+local function modelPart(model)
+    return model:FindFirstChild("HumanoidRootPart")
+        or model.PrimaryPart
+        or model:FindFirstChildWhichIsA("BasePart")
 end
 
 -- หาโมเดล/พาร์ทในโลกจากชื่อ (ตีกลับจากชื่อที่เข็มทิศบอก)
 local function findNpcByExactName(targetName)
     if not targetName or targetName == "" then return nil end
     local want = targetName:lower()
+    local wantTok = {}
+    for w in want:gmatch("%S+") do
+        if w ~= "the" and w ~= "a" then wantTok[#wantTok+1] = w end
+    end
     local _, myHrp = getChar()
     local best, bestD, bestName = nil, math.huge, nil
 
     local function consider(model)
         if not model then return end
         local nl = model.Name:lower()
-        if nl ~= want and not nl:find(want, 1, true) and not want:find(nl, 1, true) then
-            return
+        local hit = (nl == want) or nl:find(want, 1, true) or want:find(nl, 1, true)
+        if not hit and #wantTok >= 2 then
+            local ok = true
+            for _, t in ipairs(wantTok) do
+                if not nl:find(t, 1, true) then ok = false break end
+            end
+            hit = ok
         end
-        local part = model:FindFirstChild("HumanoidRootPart")
-            or model.PrimaryPart
-            or model:FindFirstChildWhichIsA("BasePart")
+        if not hit then return end
+        local part = modelPart(model)
         if not part then return end
         local d = myHrp and (part.Position - myHrp.Position).Magnitude or 0
         if d < bestD then
@@ -517,20 +581,64 @@ local function findNpcByExactName(targetName)
         end
     end
 
-    local folder = Workspace:FindFirstChild("NPCs")
-    if folder then
-        for _, npc in ipairs(folder:GetChildren()) do consider(npc) end
-    end
-    -- เผื่ออยู่นอกโฟลเดอร์ NPCs
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj:IsA("Model") then consider(obj) end
-    end
+    iterNpcModels(consider)
 
     if best then
-        rememberNpc(best)
+        rememberNpc(best, bestName)
         return best, bestD, bestName
     end
     return nil
+end
+
+-- Spy: ลิสต์ NPC ทั้งแมพ + จำพิกัด
+local function dumpNpcList()
+    log("════ Spy NPC ทั้งแมพ ════", "Y")
+    local ui = readCompassUI()
+    local want = parseTargetNameFromTitle(ui.title)
+    if want then log("เป้าจากเข็มทิศ: " .. want, "Y") end
+    local list = {}
+    iterNpcModels(function(model)
+        local part = modelPart(model)
+        if not part then return end
+        local nl = model.Name:lower()
+        local isQG = nl:find("quest", 1, true) or nl:find("giver", 1, true)
+            or nl:find("hydra", 1, true) or nl:find("dragon", 1, true)
+            or nl:find("crew", 1, true) or nl:find("island", 1, true)
+        if not isQG and not model:FindFirstChildOfClass("Humanoid") then return end
+        list[#list+1] = { name = model.Name, p = part.Position, qg = isQG and true or false }
+    end)
+    table.sort(list, function(a, b)
+        if a.qg ~= b.qg then return a.qg end
+        return a.name < b.name
+    end)
+    log(string.format("พบโมเดลที่สนใจ: %d", #list), "B")
+    local shown = 0
+    for _, it in ipairs(list) do
+        if it.qg or shown < 25 then
+            shown += 1
+            NPC_CACHE[it.name:lower()] = it.p
+            log(string.format("%s %s @ %.1f,%.1f,%.1f",
+                it.qg and "★" or "•", it.name, it.p.X, it.p.Y, it.p.Z), it.qg and "G" or "S")
+            log(string.format("  CFrame.new(%.2f, %.2f, %.2f)", it.p.X, it.p.Y, it.p.Z), "S")
+        end
+    end
+    if want then
+        local part, dist, real = findNpcByExactName(want)
+        if part then
+            log(string.format("✓ เจอเป้า %s d=%.0f", real or want, dist or 0), "G")
+        else
+            log("✗ ยังไม่เจอเป้าในแมพ (ยังไม่สตรีม) — จะลองจุด known / บินตรงระยะ UI", "O")
+            local alts = KNOWN_NPC_ALT[want:lower()]
+            if alts then
+                for i, pt in ipairs(alts) do
+                    log(string.format("  known#%d CFrame.new(%.2f, %.2f, %.2f)", i, pt.X, pt.Y, pt.Z), "B")
+                end
+            end
+        end
+    end
+    local folder = Workspace:FindFirstChild("NPCs")
+    log("workspace.NPCs children: " .. tostring(folder and #folder:GetChildren() or 0), "B")
+    log("════ จบ Spy NPC — Copy ส่งมาได้ ════", "Y")
 end
 
 local function npcFromTitle(title)
@@ -699,25 +807,62 @@ local function dumpCompassDeep()
             info.distance, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "Y")
     end
     log("════ จบ Spy — Copy ส่งมาได้ ════", "Y")
+    dumpNpcList()
     return info
 end
 
--- บินทีละก้าวตามเข็มทิศ — ใช้เมื่อยังไม่มีชื่อ/พิกัดจำ
+-- บินตามเข็มทิศ: บินตรงตามระยะ UI เป็นหลัก (ไม่กระโดดทีละนิด)
+local triedNpcKnown = {}
 local function flyByCompassStep(opts)
     opts = opts or {}
     local ui = readCompassUI()
     local d0 = ui.distance
     local rot = ui.arrowAbs or ui.arrowRot
+    local targetName = parseTargetNameFromTitle(ui.title)
+
+    -- สแกน NPC ใหม่ทุกครั้งก่อนเดาลูกศร
+    if targetName and not opts.skipNpcCache then
+        local part, dist, real = findNpcByExactName(targetName)
+        if part then
+            log(string.format("★ Spy NPC เจอ %s (%.0f studs) — บินตรง", real or targetName, dist or 0), "G")
+            flyTo(CFrame.new(part.Position + Vector3.new(0, 6, 0)), "NPC/" .. (real or targetName))
+            compassStuck = 0
+            return true, 0
+        end
+    end
+
     if not d0 or rot == nil then return false, "ไม่มีระยะ/ลูกศรจาก Guide UI" end
 
-    -- ตอนตามมอน: ห้ามวาร์ปกลับ NPC (Guide มักยังขึ้นชื่อ Quest Giver)
     if not opts.skipNpcCache then
         local cached, csrc = npcFromTitle(ui.title)
         if cached then
             log(string.format("มีพิกัดแล้ว (%s) — ไม่เดาลูกศร", csrc), "G")
             flyTo(CFrame.new(cached + Vector3.new(0, 6, 0)), "NPC/" .. csrc)
+            task.wait(0.8)
+            if targetName then findNpcByExactName(targetName) end
             compassStuck = 0
             return true, 0
+        end
+        -- ลองจุด known ของเมืองนี้ (บังคับสตรีม)
+        local key = targetName and targetName:lower() or ""
+        if key ~= "" and not triedNpcKnown[key] then
+            triedNpcKnown[key] = true
+            local alts = KNOWN_NPC_ALT[key]
+            local pts = alts or (KNOWN_NPC[key] and { KNOWN_NPC[key] })
+            if pts then
+                for i, pt in ipairs(pts) do
+                    log(string.format("ลองจุด NPC known#%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
+                    flyTo(CFrame.new(pt + Vector3.new(0, 8, 0)), "NPC known")
+                    task.wait(1.0)
+                    local part = findNpcByExactName(targetName)
+                    if part then
+                        log("โหลด NPC หลังไปจุด known", "G")
+                        flyTo(CFrame.new(part.Position + Vector3.new(0, 6, 0)), "NPC")
+                        compassStuck = 0
+                        return true, 0
+                    end
+                end
+            end
         end
     end
     if d0 <= 12 then
@@ -732,57 +877,57 @@ local function flyByCompassStep(opts)
     local _, hrp = getChar()
     if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร" end
 
-    -- ตามมอน: ยกสูงขึ้นด้วย (Archer อยู่ด้านบน)
-    local yBoost = opts.highY and 80 or 35
-    local hopStuds
-    if d0 > 150 then
-        hopStuds = math.clamp(d0 * 3 * 0.32, 80, 260)
-    elseif d0 > 100 then
-        hopStuds = math.clamp(d0 * 3 * 0.22, 45, 120)
+    -- บินตรงเกือบเต็มระยะ UI (เมตร×3 ≈ studs) — ไม่กระโดดนิดๆ
+    local fullStuds = d0 * 3
+    local hopStuds = fullStuds
+    if compassStuck < 2 then
+        hopStuds = math.clamp(fullStuds * 0.92, 60, 2000)
     else
-        hopStuds = math.clamp(d0 * 3 * 0.18, 40, 90)
+        -- stuck: ลองมุมเบี่ยง +/−45°
+        local off = (compassStuck % 3 == 1) and 45 or ((compassStuck % 3 == 2) and -45 or 0)
+        local ang = math.rad(off)
+        dir = Vector3.new(
+            dir.X * math.cos(ang) - dir.Z * math.sin(ang),
+            0,
+            dir.X * math.sin(ang) + dir.Z * math.cos(ang)
+        ).Unit
+        hopStuds = math.clamp(fullStuds * 0.95, 80, 2000)
+        log(string.format("stuck → มุมเบี่ยง %d° บินตรง %.0f studs", off, hopStuds), "Y")
     end
 
+    local yBoost = opts.highY and 60 or 20
     local dest = hrp.Position + dir * hopStuds + Vector3.new(0, yBoost, 0)
-    if opts.highY then
-        dest = Vector3.new(dest.X, math.max(dest.Y, hrp.Position.Y + 100, 280), dest.Z)
-    end
-    log(string.format("ตามเข็มทิศ: %dม. → ก้าว %.0f studs Y=%.0f (rot=%.0f)",
+    -- หันหน้าไปทางบินก่อน (ลูกศรถัดไปอ่านถูก)
+    hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(dest.X, hrp.Position.Y, dest.Z))
+    log(string.format("บินตรงระยะ UI: %dม. ≈ %.0f studs Y=%.0f (rot=%.0f)",
         d0, hopStuds, dest.Y, rot), "B")
     flyTo(CFrame.new(dest), "เข็มทิศ")
-    task.wait(0.4)
+    task.wait(0.6)
+    if targetName then
+        local part = findNpcByExactName(targetName)
+        if part then
+            log("★ โหลด NPC หลังบินตรง", "G")
+            flyTo(CFrame.new(part.Position + Vector3.new(0, 6, 0)), "NPC")
+            compassStuck = 0
+            return true, 0
+        end
+    end
     local ui2 = readCompassUI()
     local d1 = ui2.distance
-    if d1 and d1 < d0 - 1 then
+    if d1 and d1 < d0 - 3 then
         log(string.format("เมตรลด %d → %d ✓", d0, d1), "G")
         compassStuck = 0
         lastMeter = d1
-        if not opts.skipNpcCache then
-            local tn = parseTargetNameFromTitle(ui2.title)
-            if tn then findNpcByExactName(tn) end
-        end
         return true, d1
     end
-    if d1 and d1 >= d0 then
-        log(string.format("เมตรไม่ลด %d → %d ลองทิศกลับ", d0, d1), "O")
-        local _, h2 = getChar()
-        if h2 then
-            local back = h2.Position - dir * hopStuds + Vector3.new(0, yBoost, 0)
-            flyTo(CFrame.new(back), "เข็มทิศกลับ")
-            task.wait(0.3)
-            local ui3 = readCompassUI()
-            if ui3.distance and ui3.distance < d0 - 1 then
-                log(string.format("ทิศกลับแล้วเมตร=%d ✓", ui3.distance), "G")
-                compassStuck = 0
-                lastMeter = ui3.distance
-                return true, ui3.distance
-            end
-        end
-        if lastMeter and d1 and math.abs(d1 - lastMeter) <= 4 then
-            compassStuck += 1
-            log("วนเมตร≈" .. tostring(d1) .. " stuck=" .. compassStuck, "Y")
-        end
+    if d1 and d1 >= d0 - 3 then
+        compassStuck += 1
+        log(string.format("เมตรไม่ลด %d → %s stuck=%d", d0, tostring(d1), compassStuck), "O")
         lastMeter = d1 or d0
+        -- stuck มาก → Spy NPC ทั้งแมพอีกรอบ
+        if compassStuck >= 3 and compassStuck % 3 == 0 then
+            dumpNpcList()
+        end
     end
     return true, d1 or d0
 end
@@ -2139,12 +2284,12 @@ questSpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpQuestUI)
 end)
 
-mobSpyBtn.MouseButton1Click:Connect(function()
-    task.spawn(dumpMobSpawn)
+npcSpyBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpNpcList)
 end)
 
-rangeBtn.MouseButton1Click:Connect(function()
-    task.spawn(spyAttackRange)
+mobSpyBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpMobSpawn)
 end)
 
 copyBtn.MouseButton1Click:Connect(function()
