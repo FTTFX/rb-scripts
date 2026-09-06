@@ -24,8 +24,9 @@ _G.BF04C_ON = false
 _G.BF04C_LOOPING = false -- กันโหลดใหม่แล้ว AUTO ค้าง "กำลังรันอยู่แล้ว"
 _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1 -- ฆ่าลูปเก่าที่ค้าง InvokeServer/บิน
 local MY_GEN = _G.BF04C_GEN
-local FLY_SPEED = 150 -- ช้าลง กันกระตุก
-local FLY_SPEED_COMBAT = 120 -- บินเข้ามอนช้ากว่า
+local FLY_SPEED = 140
+local FLY_SPEED_COMBAT = 110
+local FLY_SPEED_LONG = 95 -- ระยะไกลช้า กันดีดกลับ
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
@@ -536,6 +537,8 @@ local KNOWN_MOB = {
     ["hydra enforcer"] = Vector3.new(5259, 1004, 748),
     ["hydra leader"] = Vector3.new(5214.3, 1003.5, 759.0),
     ["venomous assailant"] = Vector3.new(5166, 1004, 757),
+    ["marine commodore"] = Vector3.new(2490.08, 190.42, -7160.05),
+    ["marine rear admiral"] = Vector3.new(3951.39, 229.12, -6912.82),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
@@ -565,6 +568,21 @@ local KNOWN_MOB_ALT = {
         Vector3.new(5012, 1004, 752),
         Vector3.new(5214, 1003, 759),
         Vector3.new(5300, 1000, 700),
+    },
+    ["marine commodore"] = {
+        Vector3.new(2490.08, 190.42, -7160.05),
+        Vector3.new(2180, 200, -6741),
+        Vector3.new(2300, 250, -7000),
+        Vector3.new(2600, 300, -7200),
+        Vector3.new(2400, 400, -7100),
+        Vector3.new(2100, 150, -6900),
+        Vector3.new(2998, 400, -7344),
+    },
+    ["marine rear admiral"] = {
+        Vector3.new(3951.39, 229.12, -6912.82),
+        Vector3.new(3800, 250, -7000),
+        Vector3.new(2490, 190, -7160),
+        Vector3.new(3000, 400, -7200),
     },
 }
 local compassStuck = 0
@@ -2441,9 +2459,32 @@ local function mainLoop()
                 local nearDist = isBigForm() and 55 or 28
                 if dist > nearDist then
                     local arrived = flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/" .. src)
-                    if not arrived then task.wait(0.2); return end
+                    task.wait(0.35)
+                    local _, hCheck = getChar()
+                    local left = hCheck and (hCheck.Position - pos).Magnitude or 9999
+                    if not arrived or left > 150 then
+                        log(string.format("ยังไม่ถึง NPC (เหลือ %.0f) — ไม่ StartQuest", left), "Y")
+                        task.wait(0.4)
+                        return
+                    end
                 end
-                equipSword() -- ถึงแล้ว → StartQuest ต่อทันที
+                -- ยืนยันระยะอีกครั้งก่อนรับเควส
+                do
+                    local _, hNow0 = getChar()
+                    local dGate = hNow0 and (hNow0.Position - pos).Magnitude or 9999
+                    if dGate > 80 then
+                        log(string.format("ระยะยังไกล %.0f — บินช้าเข้าใหม่", dGate), "O")
+                        flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/retry")
+                        task.wait(0.4)
+                        local _, h2 = getChar()
+                        dGate = h2 and (h2.Position - pos).Magnitude or 9999
+                        if dGate > 100 then
+                            log("ยังไกลอยู่ ข้ามรอบนี้", "R")
+                            return
+                        end
+                    end
+                end
+                equipSword()
                 for _ = 1, 4 do
                     local _, h = getChar()
                     if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
