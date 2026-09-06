@@ -24,7 +24,8 @@ _G.BF04C_ON = false
 _G.BF04C_LOOPING = false -- กันโหลดใหม่แล้ว AUTO ค้าง "กำลังรันอยู่แล้ว"
 _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1 -- ฆ่าลูปเก่าที่ค้าง InvokeServer/บิน
 local MY_GEN = _G.BF04C_GEN
-local FLY_SPEED = 260
+local FLY_SPEED = 150 -- ช้าลง กันกระตุก
+local FLY_SPEED_COMBAT = 120 -- บินเข้ามอนช้ากว่า
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
@@ -202,10 +203,12 @@ local function flyTo(posOrCF, label)
             return
         end
         local spd = FLY_SPEED
-        if dist >= 1500 then spd = 340
-        elseif dist >= 800 then spd = 300
+        if label == "มอน" or (label and label:find("มอน", 1, true)) then
+            spd = FLY_SPEED_COMBAT
+        elseif dist >= 1500 then spd = 200
+        elseif dist >= 800 then spd = 170
         end
-        local dur = math.clamp(dist / spd, 0.2, 14)
+        local dur = math.clamp(dist / spd, 0.25, 20)
         stopFlyTween()
         local tw = TweenService:Create(hrp,
             TweenInfo.new(dur, Enum.EasingStyle.Linear),
@@ -1500,10 +1503,44 @@ local function equipWeapon()
     return equipSword()
 end
 
--- ร่างพระตีไกล → Spy รอบ 2 (2026-09-05): โดนสูงสุด ≈96 | แนะนำ ≤81
-local SAFE_HIT_RANGE = 100 -- Spy ระยะตี 2026-09-06 ≈163 แรก; ใช้ 100 กันพลาด
+-- ร่างพระตีไกล → Spy: โดนสูงสุด ≈96 | แนะนำล็อกบนหัว
+local SAFE_HIT_RANGE = 100
 local function attackHeight()
-    return isBigForm() and 20 or 8
+    return isBigForm() and 14 or 6
+end
+
+-- ล็อกนิ่งบนหัวมอน (ไม่กระตุก)
+local function lockOnMobHead(mob, myHrp, height)
+    if not mob or not myHrp then return false end
+    local mhrp = mob:FindFirstChild("HumanoidRootPart")
+    local head = mob:FindFirstChild("Head")
+    if not mhrp then return false end
+    local h = height or attackHeight()
+    local dest
+    if head then
+        dest = head.CFrame * CFrame.new(0, math.max(4, h * 0.45), 0)
+    else
+        dest = mhrp.CFrame * CFrame.new(0, h, 0)
+    end
+    setNoclip(true)
+    myHrp.CFrame = dest
+    myHrp.AssemblyLinearVelocity = Vector3.zero
+    myHrp.AssemblyAngularVelocity = Vector3.zero
+    pcall(function()
+        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = true
+            hum.Sit = false
+            hum.AutoRotate = false
+        end
+    end)
+    pcall(function()
+        mhrp.Size = Vector3.new(30, 30, 30)
+        mhrp.CanCollide = false
+        local mh = mob:FindFirstChildOfClass("Humanoid")
+        if mh then mh.PlatformStand = true; mh.Sit = true end
+    end)
+    return true
 end
 
 local function attackMob(mob)
@@ -2021,15 +2058,23 @@ local function mainLoop()
             if not mhrp or not mhum then return end
 
             if (md or 999) > SAFE_HIT_RANGE then
-                flyTo(mhrp.CFrame * CFrame.new(0, attackHeight(), 0), "มอน")
+                -- เข้าใกล้ช้าๆ แล้ววาร์ปบนหัว (ไม่ Tween ระยะสั้น)
+                if (md or 999) > 80 then
+                    flyTo(mhrp.CFrame * CFrame.new(0, attackHeight() + 10, 0), "มอน")
+                end
+                local _, hNear = getChar()
+                if hNear then lockOnMobHead(mob, hNear) end
+                task.wait(0.15)
                 return
             end
 
-            log(string.format("สู้ %s HP%.0f (d=%.0f big=%s)",
+            log(string.format("สู้ %s HP%.0f (d=%.0f big=%s) ล็อกบนหัว",
                 mob.Name, mhum.Health, md or 0, tostring(isBigForm())), "Y")
             local lastHp = mhum.Health
             local lastCheck = os.clock()
             local noDmg = 0
+            local heightTry = { 10, 14, 18, 22, 8, 26 }
+            local hi = 1
             while mob.Parent and mhum.Parent and mhum.Health > 0
                   and select(1, hasActiveQuest(quest))
                   and _G.BF04C_ON and _G.BF04C_GEN == loopGen do
@@ -2037,26 +2082,20 @@ local function mainLoop()
                 if not myHrp then break end
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
                 if not mhrp then break end
-                setNoclip()
                 equipSword()
-                myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
-                local nowD = (myHrp.Position - mhrp.Position).Magnitude
-                if nowD > SAFE_HIT_RANGE then
-                    myHrp.CFrame = mhrp.CFrame * CFrame.new(0, attackHeight(), 0)
-                end
-                pcall(function()
-                    mhrp.Size = Vector3.new(25, 25, 25)
-                    mhrp.CanCollide = false
-                    mhum.PlatformStand = true
-                    mhum.Sit = true
-                end)
+                lockOnMobHead(mob, myHrp, heightTry[hi] or attackHeight())
                 attackMob(mob)
-                if os.clock() - lastCheck >= 1.2 then
+                if os.clock() - lastCheck >= 1.0 then
                     lastCheck = os.clock()
                     local hp = mhum.Health
-                    if hp >= lastHp then
+                    if hp >= lastHp - 1 then
                         noDmg += 1
-                        if noDmg >= 3 then
+                        -- ลองความสูงใหม่ก่อนข้ามตัว
+                        if noDmg >= 2 then
+                            hi = (hi % #heightTry) + 1
+                            log("ลองสูงบนหัว=" .. tostring(heightTry[hi]), "O")
+                        end
+                        if noDmg >= 8 then
                             log("ตีไม่เข้า → ข้ามตัวนี้", "Y")
                             break
                         end
@@ -2065,8 +2104,12 @@ local function mainLoop()
                         lastHp = hp
                     end
                 end
-                task.wait()
+                task.wait(0.05) -- ไม่กระตุกทุกเฟรม
             end
+            pcall(function()
+                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                if hum then hum.PlatformStand = false; hum.AutoRotate = true end
+            end)
             log(mob.Name .. " จบรอบ", "G")
             local pc, pn = readQuestProgress(quest)
             if pc and pn then
