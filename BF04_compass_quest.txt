@@ -373,7 +373,8 @@ local KNOWN_NPC = {
 local MOB_CACHE = {} -- lowerName -> Vector3
 local KNOWN_MOB = {
     ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
-    ["dragon crew archer"] = Vector3.new(6919.08, 55.07, -940.84),
+    -- Archer = เมืองบนบันได เหนือ/ซ้าย Warrior (wiki) — เดาสูงขึ้น ไม่ใช้จุด Warrior
+    ["dragon crew archer"] = Vector3.new(6750, 220, -1150),
 }
 local compassStuck = 0
 local lastMeter = nil
@@ -775,36 +776,93 @@ local function mobSpawnHint(mobName)
     return nil
 end
 
--- จุดไล่สตรีมเกาะ Dragon Crew (Warrior ยืนยันแล้ว / Archer ไล่รอบเกาะ)
-local ARCHER_SWEEP = {
-    Vector3.new(6919, 80, -941),
-    Vector3.new(7218, 80, -681),
-    Vector3.new(6710, 80, -1139),
-    Vector3.new(6615, 80, -979),
-    Vector3.new(7000, 120, -800),
-    Vector3.new(6800, 150, -900),
-    Vector3.new(7100, 60, -1100),
-    Vector3.new(6500, 60, -700),
-}
+-- ไล่กว้าง ~1000+ studs + สูงขึ้น (Archer อยู่เมืองบน ไม่ใช่จุด Warrior)
+local function buildMobSweep()
+    local pts = {}
+    local cx, cz = 6900, -950
+    local offsets = {0, 400, -400, 800, -800, 1100, -1100}
+    local ys = {70, 160, 250, 350}
+    for _, dx in ipairs(offsets) do
+        for _, dz in ipairs(offsets) do
+            for _, y in ipairs(ys) do
+                if dx == 0 or dz == 0 or math.abs(dx) == math.abs(dz) then
+                    pts[#pts+1] = Vector3.new(cx + dx, y, cz + dz)
+                end
+            end
+        end
+    end
+    pts[#pts+1] = Vector3.new(6919, 200, -941)
+    pts[#pts+1] = Vector3.new(6800, 250, -1100)
+    pts[#pts+1] = Vector3.new(6700, 220, -1200)
+    pts[#pts+1] = Vector3.new(7100, 220, -1200)
+    pts[#pts+1] = Vector3.new(6600, 280, -1000)
+    pts[#pts+1] = Vector3.new(7200, 280, -900)
+    return pts
+end
+local MOB_SWEEP = buildMobSweep()
 local sweepIdx = 1
+
+local function logNearbyEnemies(radius)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    local _, hrp = getChar()
+    if not enemies or not hrp then return end
+    local list = {}
+    for _, e in ipairs(enemies:GetChildren()) do
+        local eh = e:FindFirstChild("HumanoidRootPart")
+        local hum = e:FindFirstChildOfClass("Humanoid")
+        if eh and hum and hum.Health > 0 then
+            local d = (eh.Position - hrp.Position).Magnitude
+            if d <= radius then
+                list[#list+1] = { name = e.Name, d = d, p = eh.Position }
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.d < b.d end)
+    if #list == 0 then
+        log(string.format("  ในรัศมี %d: ไม่มีมอนโหลด", radius), "O")
+        return
+    end
+    log(string.format("  ในรัศมี %d: %d ตัว", radius, #list), "B")
+    for i = 1, math.min(8, #list) do
+        local it = list[i]
+        log(string.format("  • %s d=%.0f @ %.0f,%.0f,%.0f",
+            it.name, it.d, it.p.X, it.p.Y, it.p.Z), "S")
+    end
+end
 
 local function huntMobOrSweep(quest)
     local mob, md = findMob(quest.mob)
     if mob then return mob, md end
-    local hint = mobSpawnHint(quest.mob)
-    if hint then
-        flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "จุดมอน")
-        task.wait(0.8)
+
+    local ui = readCompassUI()
+    if ui.distance and ui.distance > 15 and (ui.arrowAbs or ui.arrowRot) ~= nil then
+        log(string.format("เข็มทิศชี้มอน? %d ม. → ก้าวตาม", ui.distance), "Y")
+        flyByCompassStep()
+        task.wait(0.3)
         mob, md = findMob(quest.mob)
         if mob then return mob, md end
+        logNearbyEnemies(1500)
     end
-    local pt = ARCHER_SWEEP[((sweepIdx - 1) % #ARCHER_SWEEP) + 1]
+
+    local hint = mobSpawnHint(quest.mob)
+    if hint and (sweepIdx % 3 == 1) then
+        log(string.format("ลองจุด known @ %.0f,%.0f,%.0f", hint.X, hint.Y, hint.Z), "B")
+        flyTo(CFrame.new(hint + Vector3.new(0, 25, 0)), "จุดมอน")
+        task.wait(1.0)
+        mob, md = findMob(quest.mob)
+        if mob then return mob, md end
+        logNearbyEnemies(1500)
+    end
+
+    local pt = MOB_SWEEP[((sweepIdx - 1) % #MOB_SWEEP) + 1]
     sweepIdx += 1
-    log(string.format("ไล่หา %s จุด #%d @ %.0f,%.0f,%.0f",
-        quest.mob, sweepIdx - 1, pt.X, pt.Y, pt.Z), "B")
+    log(string.format("ไล่หา %s กว้าง #%d/%d @ %.0f,%.0f,%.0f",
+        quest.mob, sweepIdx - 1, #MOB_SWEEP, pt.X, pt.Y, pt.Z), "B")
     flyTo(CFrame.new(pt), "ไล่สตรีมมอน")
-    task.wait(0.9)
-    return findMob(quest.mob)
+    task.wait(1.1)
+    mob, md = findMob(quest.mob)
+    if not mob then logNearbyEnemies(1500) end
+    return mob, md
 end
 
 -- Spy: สแกนว่ามอนเกิด/โหลดที่ไหน
@@ -919,20 +977,20 @@ local function dumpMobSpawn()
             -- สแกนรอบตัวหลังบิน
             local _, hrp = getChar()
             if hrp and enemies then
-                log("── มอนในรัศมี 400 หลังบิน ──", "Y")
+                log("── มอนในรัศมี 1500 หลังบิน ──", "Y")
                 local near = 0
                 for _, e in ipairs(enemies:GetChildren()) do
                     local eh = e:FindFirstChild("HumanoidRootPart")
-                    if eh and (eh.Position - hrp.Position).Magnitude < 400 then
+                    if eh and (eh.Position - hrp.Position).Magnitude < 1500 then
                         near += 1
-                        if near <= 12 then
+                        if near <= 15 then
                             log(string.format("  %s d=%.0f @ %.0f,%.0f,%.0f",
                                 e.Name, (eh.Position - hrp.Position).Magnitude,
                                 eh.Position.X, eh.Position.Y, eh.Position.Z), "B")
                         end
                     end
                 end
-                if near == 0 then log("  ไม่มีมอนในรัศมี 400", "O") end
+                if near == 0 then log("  ไม่มีมอนในรัศมี 1500", "O") end
             end
         end
     else
