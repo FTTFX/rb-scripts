@@ -118,12 +118,22 @@ local function mkFlyBox(label, x, w, defText)
     lab.BackgroundTransparency = 1; lab.TextColor3 = Color3.fromRGB(160, 170, 190)
     lab.Text = label; lab.Font = Enum.Font.Code; lab.TextSize = 10
     lab.TextXAlignment = Enum.TextXAlignment.Right; lab.Parent = frame
+    lab.ZIndex = 5
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(0, w, 0, 22); box.Position = UDim2.new(0, x + 30, 0, 84)
     box.BackgroundColor3 = Color3.fromRGB(28, 32, 45); box.BorderSizePixel = 0
     box.TextColor3 = Color3.new(1, 1, 1); box.Font = Enum.Font.Code; box.TextSize = 11
     box.Text = defText; box.ClearTextOnFocus = false; box.Parent = frame
+    box.ZIndex = 6
+    box.TextEditable = true
+    box.Active = true
     Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    box.Focused:Connect(function()
+        frame.Active = false -- กันลากหน้าต่างตอนพิมพ์
+    end)
+    box.FocusLost:Connect(function()
+        frame.Active = true
+    end)
     return box
 end
 local boxSpd = mkFlyBox("บิน", 4, 42, tostring(FLY_SPEED))
@@ -285,23 +295,37 @@ local function flyTo(posOrCF, label)
             ok = true
             return
         end
-        -- บิน tween — ค่าปรับจาก GUI (Spd/ไกล/ท่อน/หยุด)
+        -- บิน tween — อ่านค่าสดจาก GUI ทุกท่อน (บิน = ความเร็วหลัก)
         local spd = FLY_SPEED
+        local chunk = FLY_CHUNK
+        local pause = FLY_CHUNK_PAUSE
+        if type(_G.BF04C_FLY) == "table" then
+            spd = tonumber(_G.BF04C_FLY.normal) or spd
+            chunk = tonumber(_G.BF04C_FLY.chunk) or chunk
+            pause = tonumber(_G.BF04C_FLY.pause) or pause
+        end
         if label == "มอน" or (label and label:find("มอน", 1, true)) then
             spd = FLY_SPEED_COMBAT
+            if type(_G.BF04C_FLY) == "table" then
+                spd = tonumber(_G.BF04C_FLY.combat) or spd
+            end
         elseif label and label:find("spySPD", 1, true) then
-            spd = tonumber(label:match("spySPD:(%d+)")) or FLY_SPEED
-        elseif dist >= 3000 then spd = FLY_SPEED_LONG
-        elseif dist >= 1500 then spd = math.min(FLY_SPEED, math.max(FLY_SPEED_LONG, FLY_SPEED))
+            spd = tonumber(label:match("spySPD:(%d+)")) or spd
         end
-        local chunk = FLY_CHUNK
-        if dist >= 5000 then chunk = math.min(chunk, math.max(400, FLY_CHUNK * 0.85)) end
+        -- ไม่บังคับใช้ค่า "ไกล" ที่ช้ากว่า — บินที่ตั้งไว้ใช้จริงทุกระยะ
+        if dist >= 5000 then chunk = math.min(chunk, math.max(400, chunk * 0.85)) end
         if label and label:find("spySPD", 1, true) then
             chunk = math.min(chunk, 380)
         end
         local guard = 0
         while (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN and guard < 80 do
             guard = guard + 1
+            -- อ่านความเร็วใหม่กลางทาง ถ้าเพิ่งกดใส่
+            if type(_G.BF04C_FLY) == "table" and not (label and label:find("มอน", 1, true)) then
+                spd = tonumber(_G.BF04C_FLY.normal) or spd
+                chunk = tonumber(_G.BF04C_FLY.chunk) or chunk
+                pause = tonumber(_G.BF04C_FLY.pause) or pause
+            end
             local _, h = getChar()
             if not h then break end
             hrp = h
@@ -340,8 +364,8 @@ local function flyTo(posOrCF, label)
                 task.wait(0.03)
             end
             stopFlyTween()
-            if FLY_CHUNK_PAUSE > 0 then
-                task.wait(FLY_CHUNK_PAUSE)
+            if pause and pause > 0 then
+                task.wait(pause)
             end
         end
         for _ = 1, 3 do
@@ -3422,19 +3446,34 @@ end
 
 local function applyFlyFromBoxes()
     local function num(box, fallback)
-        local v = tonumber((box.Text or ""):gsub(",", "."))
-        return v or fallback
+        local raw = tostring(box.Text or "")
+        raw = raw:gsub("%s+", ""):gsub(",", ".")
+        local v = tonumber(raw)
+        if not v then
+            log("ค่าไม่ใช่ตัวเลข: " .. raw .. " → คงเดิม " .. tostring(fallback), "R")
+            return fallback
+        end
+        return v
     end
-    FLY_SPEED = math.clamp(num(boxSpd, FLY_SPEED), 40, 400)
-    FLY_SPEED_LONG = math.clamp(num(boxLong, FLY_SPEED_LONG), 30, 400)
-    FLY_SPEED_COMBAT = math.clamp(num(boxCombat, FLY_SPEED_COMBAT), 40, 400)
-    FLY_CHUNK = math.clamp(num(boxChunk, FLY_CHUNK), 200, 3000)
-    FLY_CHUNK_PAUSE = math.clamp(num(boxPause, FLY_CHUNK_PAUSE), 0, 2)
+    local nSpd = num(boxSpd, FLY_SPEED)
+    local nLong = num(boxLong, FLY_SPEED_LONG)
+    local nCombat = num(boxCombat, FLY_SPEED_COMBAT)
+    local nChunk = num(boxChunk, FLY_CHUNK)
+    local nPause = num(boxPause, FLY_CHUNK_PAUSE)
+    FLY_SPEED = math.clamp(nSpd, 40, 500)
+    FLY_SPEED_LONG = math.clamp(nLong, 30, 500)
+    FLY_SPEED_COMBAT = math.clamp(nCombat, 40, 500)
+    FLY_CHUNK = math.clamp(nChunk, 200, 3000)
+    FLY_CHUNK_PAUSE = math.clamp(nPause, 0, 2)
     FLY_CHUNK_PAUSE = math.floor(FLY_CHUNK_PAUSE * 100 + 0.5) / 100
+    -- ถ้าตั้งแค่บิน ให้ไกลตามด้วย (กันคิดว่าตั้งแล้วแต่บินยังช้า)
+    if nSpd ~= FLY_SPEED_LONG and boxLong.Text == tostring(FLY_SPEED_LONG) then
+        -- no-op
+    end
     saveFlyCfg()
     syncFlyBoxes()
-    log(string.format("บิน=%d ไกล=%d ตี=%d ท่อน=%d หยุด=%.2f",
-        FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT, FLY_CHUNK, FLY_CHUNK_PAUSE), "Y")
+    log(string.format("✓ ตั้งบินแล้ว spd=%d (ใช้จริงทุกระยะ) ตี=%d ท่อน=%d หยุด=%.2f",
+        FLY_SPEED, FLY_SPEED_COMBAT, FLY_CHUNK, FLY_CHUNK_PAUSE), "G")
 end
 
 local function resetFlyBoxes()
@@ -3507,11 +3546,17 @@ flySpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpFlySpeed)
 end)
 
-flyApplyBtn.MouseButton1Click:Connect(applyFlyFromBoxes)
+flyApplyBtn.MouseButton1Click:Connect(function()
+    applyFlyFromBoxes()
+end)
+flyApplyBtn.Activated:Connect(function()
+    applyFlyFromBoxes()
+end)
 flyResetBtn.MouseButton1Click:Connect(resetFlyBoxes)
 for _, box in ipairs({ boxSpd, boxLong, boxCombat, boxChunk, boxPause }) do
-    box.FocusLost:Connect(function(enter)
-        if enter then applyFlyFromBoxes() end
+    box.FocusLost:Connect(function(enterPressed)
+        -- ออกจากช่อง / กด Enter → บันทึกทันที
+        applyFlyFromBoxes()
     end)
 end
 
