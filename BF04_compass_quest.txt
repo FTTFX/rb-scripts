@@ -26,6 +26,14 @@ local MY_GEN = _G.BF04C_GEN
 local FLY_SPEED = 140
 local FLY_SPEED_COMBAT = 110
 local FLY_SPEED_LONG = 95 -- ระยะไกลช้า กันดีดกลับ
+-- ค่าที่ Spy ความเร็วเจอ (คงข้ามโหลดในเซสชัน)
+if _G.BF04C_FLY and type(_G.BF04C_FLY) == "table" then
+    FLY_SPEED = tonumber(_G.BF04C_FLY.normal) or FLY_SPEED
+    FLY_SPEED_COMBAT = tonumber(_G.BF04C_FLY.combat) or FLY_SPEED_COMBAT
+    FLY_SPEED_LONG = tonumber(_G.BF04C_FLY.long) or FLY_SPEED_LONG
+end
+local FLY_CHUNK_PAUSE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.pause) or 0.15
+local FLY_SETTLE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.settle) or 0.35
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
@@ -33,7 +41,7 @@ local sg = Instance.new("ScreenGui")
 sg.Name = "BF04CompassGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 450, 0, 450); frame.Position = UDim2.new(0, 10, 0, 10)
+frame.Size = UDim2.new(0, 450, 0, 480); frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12, 14, 20); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
 frame.Parent = sg
@@ -69,16 +77,23 @@ local npcSpyBtn = mkBtn("Spy NPC", 200, 30, 56, Color3.fromRGB(40, 120, 100))
 local mobSpyBtn = mkBtn("Spy มอน", 260, 30, 52, Color3.fromRGB(160, 90, 30))
 local bossSpyBtn = mkBtn("Spy บอส", 316, 30, 52, Color3.fromRGB(160, 50, 80))
 local copyBtn = mkBtn("Copy", 372, 30, 70, Color3.fromRGB(30, 100, 50))
+local flySpyBtn = mkBtn("Spy ความเร็ว", 8, 62, 100, Color3.fromRGB(90, 60, 140))
+local flyApplyLbl = Instance.new("TextLabel")
+flyApplyLbl.Size = UDim2.new(0, 320, 0, 28); flyApplyLbl.Position = UDim2.new(0, 116, 0, 62)
+flyApplyLbl.BackgroundTransparency = 1; flyApplyLbl.TextColor3 = Color3.fromRGB(180, 180, 200)
+flyApplyLbl.Text = string.format("บิน: %d / ไกล %d / ตี %d", FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT)
+flyApplyLbl.Font = Enum.Font.Code; flyApplyLbl.TextSize = 11
+flyApplyLbl.TextXAlignment = Enum.TextXAlignment.Left; flyApplyLbl.Parent = frame
 
 local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 64)
+statusLbl.Size = UDim2.new(1, -16, 0, 36); statusLbl.Position = UDim2.new(0, 8, 0, 94)
 statusLbl.BackgroundTransparency = 1; statusLbl.TextColor3 = Color3.fromRGB(200, 200, 210)
 statusLbl.Text = "..."; statusLbl.Font = Enum.Font.Code; statusLbl.TextSize = 11
 statusLbl.TextXAlignment = Enum.TextXAlignment.Left; statusLbl.TextWrapped = true
 statusLbl.Parent = frame
 
 local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -16, 1, -112); scroll.Position = UDim2.new(0, 8, 0, 104)
+scroll.Size = UDim2.new(1, -16, 1, -140); scroll.Position = UDim2.new(0, 8, 0, 132)
 scroll.BackgroundColor3 = Color3.fromRGB(8, 8, 14); scroll.BorderSizePixel = 0
 scroll.ScrollBarThickness = 5; scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y; scroll.Parent = frame
@@ -196,7 +211,7 @@ local function flyTo(posOrCF, label)
 
     local ok = false
     local okRun, err = pcall(function()
-        if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then return end
+        if not (_G.BF04C_ON or _G.BF04C_SPYFLY) or _G.BF04C_GEN ~= MY_GEN then return end
         if dist < 25 then
             hrp.CFrame = dest
             hrp.AssemblyLinearVelocity = Vector3.zero
@@ -208,13 +223,18 @@ local function flyTo(posOrCF, label)
         local spd = FLY_SPEED
         if label == "มอน" or (label and label:find("มอน", 1, true)) then
             spd = FLY_SPEED_COMBAT
+        elseif label and label:find("spySPD", 1, true) then
+            spd = tonumber(label:match("spySPD:(%d+)")) or FLY_SPEED
         elseif dist >= 3000 then spd = FLY_SPEED_LONG
-        elseif dist >= 1500 then spd = 110
-        elseif dist >= 800 then spd = 125
+        elseif dist >= 1500 then spd = math.min(FLY_SPEED, 110)
+        elseif dist >= 800 then spd = math.min(FLY_SPEED, 125)
         end
         local chunk = (dist >= 3000) and 450 or ((dist >= 1500) and 550 or 700)
+        if label and label:find("spySPD", 1, true) then
+            chunk = 380 -- ท่อนสั้น: บิน→หยุด→บิน→หยุด
+        end
         local guard = 0
-        while _G.BF04C_ON and _G.BF04C_GEN == MY_GEN and guard < 60 do
+        while (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN and guard < 60 do
             guard = guard + 1
             local _, h = getChar()
             if not h then break end
@@ -241,7 +261,7 @@ local function flyTo(posOrCF, label)
             tw:Play()
             local tEnd = os.clock() + dur + 0.4
             while currentTween == tw and os.clock() < tEnd
-                  and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
+                  and (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN do
                 setNoclip(true)
                 local _, h2 = getChar()
                 if h2 then
@@ -251,7 +271,7 @@ local function flyTo(posOrCF, label)
                 task.wait(0.05)
             end
             stopFlyTween()
-            task.wait(0.12)
+            task.wait(FLY_CHUNK_PAUSE)
         end
         for _ = 1, 4 do
             local _, h2 = getChar()
@@ -2974,6 +2994,140 @@ local function spyAttackRange()
     spyBusy = false
 end
 
+-- ── Spy ความเร็ว: บินท่อนสั้น → หยุด → บิน → หยุด หาค่าสูงสุดไม่กระตุก ──
+local flySpyBusy = false
+local function dumpFlySpeed()
+    if flySpyBusy then log("Spy ความเร็วกำลังรันอยู่", "O"); return end
+    flySpyBusy = true
+    _G.BF04C_SPYFLY = true
+    local ok, err = pcall(function()
+        log("════ Spy ความเร็วเครื่อง (บิน→หยุด→บิน→หยุด) ════", "Y")
+        log("อยู่น่านน้ำว่าง ๆ ดีสุด — AUTO ปิดได้", "B")
+        local _, hrp0 = getChar()
+        if not hrp0 then log("ไม่มีตัวละคร", "R"); return end
+        setNoclip(true)
+        local origin = hrp0.Position
+        local look = hrp0.CFrame.LookVector
+        look = Vector3.new(look.X, 0, look.Z)
+        if look.Magnitude < 0.1 then look = Vector3.new(1, 0, 0) else look = look.Unit end
+
+        local speeds = { 80, 100, 120, 140, 160, 180, 200, 220, 250, 280 }
+        local best = nil
+        local RUBBER_FAIL = 70 -- studs ดีดกลับหลังหยุด = กระตุก
+        local JUMP_FAIL = 120 -- กระโดดตำแหน่งระหว่างบิน
+
+        for _, spd in ipairs(speeds) do
+            if _G.BF04C_GEN ~= MY_GEN then break end
+            local _, hStart = getChar()
+            if not hStart then break end
+            local base = hStart.Position
+            local maxJump, maxRubber = 0, 0
+            local okSpd = true
+            log(string.format("── ทดสอบ spd=%d ──", spd), "Y")
+
+            for hop = 1, 2 do
+                local dest = base + look * (380 * hop)
+                local expect = dest
+                local _, h1 = getChar()
+                if not h1 then okSpd = false; break end
+                local pBefore = h1.Position
+                -- บินท่อนเดียวด้วยความเร็วนี้
+                local step = 380
+                local dur = math.clamp(step / spd, 0.25, 6)
+                stopFlyTween()
+                flyLock = true
+                setNoclip(true)
+                local tw = TweenService:Create(h1,
+                    TweenInfo.new(dur, Enum.EasingStyle.Linear),
+                    { CFrame = CFrame.new(dest) })
+                currentTween = tw
+                tw:Play()
+                local tEnd = os.clock() + dur + 0.35
+                local lastP = h1.Position
+                while currentTween == tw and os.clock() < tEnd and _G.BF04C_GEN == MY_GEN do
+                    setNoclip(true)
+                    local _, h2 = getChar()
+                    if h2 then
+                        h2.AssemblyLinearVelocity = Vector3.zero
+                        local jump = (h2.Position - lastP).Magnitude
+                        if jump > maxJump then maxJump = jump end
+                        lastP = h2.Position
+                        h1 = h2
+                    end
+                    task.wait(0.05)
+                end
+                stopFlyTween()
+                -- หยุดนิ่งวัด rubberband
+                local _, hStop = getChar()
+                if hStop then
+                    hStop.AssemblyLinearVelocity = Vector3.zero
+                    local atTweenEnd = hStop.Position
+                    task.wait(FLY_SETTLE)
+                    local _, hSettle = getChar()
+                    if hSettle then
+                        hSettle.AssemblyLinearVelocity = Vector3.zero
+                        local rubber = (hSettle.Position - atTweenEnd).Magnitude
+                        local miss = (hSettle.Position - expect).Magnitude
+                        if rubber > maxRubber then maxRubber = rubber end
+                        log(string.format("  hop%d: ดีดกลับ=%.0f พลาดเป้า=%.0f jumpMax=%.0f",
+                            hop, rubber, miss, maxJump), rubber > RUBBER_FAIL and "R" or "G")
+                        if rubber > RUBBER_FAIL or miss > 200 then
+                            okSpd = false
+                        end
+                        base = hSettle.Position -- ต่อจากจุดหยุดจริง
+                    end
+                end
+                flyLock = false
+                task.wait(FLY_CHUNK_PAUSE) -- หยุดก่อนท่อนถัดไป
+                if not okSpd then break end
+            end
+
+            if okSpd and maxRubber <= RUBBER_FAIL and maxJump <= JUMP_FAIL then
+                best = spd
+                log(string.format("✓ spd=%d ผ่าน (ดีด≤%.0f jump≤%.0f)", spd, maxRubber, maxJump), "G")
+            else
+                log(string.format("✗ spd=%d ไม่ผ่าน — หยุดทดสอบความเร็วสูงกว่า", spd), "R")
+                break
+            end
+            -- กลับใกล้จุดเริ่มทุก 2 ความเร็ว กันหลุดแมพ
+            if spd % 40 == 0 then
+                local _, hb = getChar()
+                if hb and (hb.Position - origin).Magnitude > 900 then
+                    log("กลับจุดเริ่มทดสอบ...", "B")
+                    flyTo(CFrame.new(origin + Vector3.new(0, 20, 0)), "spySPD:100")
+                end
+            end
+        end
+
+        if best then
+            local longSpd = math.max(70, math.floor(best * 0.68))
+            local combatSpd = math.max(80, math.floor(best * 0.78))
+            FLY_SPEED = best
+            FLY_SPEED_LONG = longSpd
+            FLY_SPEED_COMBAT = combatSpd
+            _G.BF04C_FLY = {
+                normal = best,
+                long = longSpd,
+                combat = combatSpd,
+                pause = FLY_CHUNK_PAUSE,
+                settle = FLY_SETTLE,
+            }
+            flyApplyLbl.Text = string.format("บิน: %d / ไกล %d / ตี %d ★", best, longSpd, combatSpd)
+            log(string.format("★ เร็วสุดไม่กระตุก ≈ %d studs/s", best), "G")
+            log(string.format("→ ใช้ AUTO: ปกติ=%d ไกล=%d ตี=%d", best, longSpd, combatSpd), "G")
+            log("ค่าจำใน _G.BF04C_FLY — โหลดสคริปต์ใหม่ในเซสชันนี้ยังใช้ได้", "B")
+        else
+            log("ไม่พบความเร็วที่ผ่าน — ลองลด pause/อยู่ที่โล่งกว่า", "R")
+        end
+        log("════ จบ Spy ความเร็ว — Copy ส่งมาได้ ════", "Y")
+    end)
+    _G.BF04C_SPYFLY = false
+    flyLock = false
+    stopFlyTween()
+    flySpyBusy = false
+    if not ok then log("Spy ความเร็ว error: " .. tostring(err), "R") end
+end
+
 -- ── ปุ่ม ───────────────────────────────────────────────────────────
 closeBtn.MouseButton1Click:Connect(function()
     _G.BF04C_ON = false
@@ -3020,6 +3174,10 @@ end)
 
 bossSpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpBossSpy)
+end)
+
+flySpyBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpFlySpeed)
 end)
 
 copyBtn.MouseButton1Click:Connect(function()
