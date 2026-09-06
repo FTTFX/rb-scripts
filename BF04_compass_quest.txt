@@ -159,13 +159,21 @@ end
 
 local currentTween
 local flyLock = false
+local FLY_SPEED = 260 -- studs/s รอยช้าแบบตอนบินตี (ทะลุกำแพงด้วย noclip)
+
+local function stopFlyTween()
+    if currentTween then
+        pcall(function() currentTween:Cancel() end)
+        currentTween = nil
+    end
+end
+
 local function flyTo(posOrCF, label)
     local _, hrp = getChar()
     if not hrp then return false end
     if flyLock then
-        -- มีเที่ยวบินค้าง — รอให้จบ ไม่ยกเลิกกลางทาง
         local t0 = os.clock()
-        while flyLock and os.clock() - t0 < 25 and _G.BF04C_ON do
+        while flyLock and os.clock() - t0 < 30 and _G.BF04C_ON do
             task.wait(0.1)
         end
     end
@@ -178,41 +186,47 @@ local function flyTo(posOrCF, label)
 
     local ok = false
     local okRun, err = pcall(function()
-        if dist < 25 then
+        if dist < 20 then
             hrp.CFrame = dest
+            hrp.AssemblyLinearVelocity = Vector3.zero
             ok = true
             return
         end
-        -- วาร์ปทีละก้าว (ทนกว่า Tween ที่ถูกยกเลิก/ดึงกลับ)
-        local step = 220
-        local guard = 0
-        while _G.BF04C_ON and guard < 80 do
-            guard += 1
-            local _, h = getChar()
-            if not h then break end
+        -- Tween รอยต่อเนื่อง + noclip (ไม่กระโดดทีละ 200 แล้วค้างกำแพง)
+        local spd = FLY_SPEED
+        if dist >= 1500 then spd = 320
+        elseif dist >= 800 then spd = 290
+        end
+        local dur = math.clamp(dist / spd, 0.2, 18)
+        stopFlyTween()
+        local tw = TweenService:Create(hrp,
+            TweenInfo.new(dur, Enum.EasingStyle.Linear),
+            { CFrame = dest })
+        currentTween = tw
+        tw:Play()
+        local tEnd = os.clock() + dur + 1.5
+        while currentTween == tw and os.clock() < tEnd and _G.BF04C_ON do
             setNoclip(true)
-            local left = (h.Position - dest.Position).Magnitude
-            if left <= 30 then
-                h.CFrame = dest
-                ok = true
+            local _, h = getChar()
+            if h then h.AssemblyLinearVelocity = Vector3.zero end
+            task.wait(0.05)
+            if not hrp.Parent then break end
+            if (hrp.Position - dest.Position).Magnitude <= 25 then
+                stopFlyTween()
                 break
             end
-            local dir = (dest.Position - h.Position)
-            local go = math.min(step, left)
-            local nxt = h.Position + dir.Unit * go
-            h.CFrame = CFrame.new(nxt, nxt + Vector3.new(dir.X, 0, dir.Z))
-            h.AssemblyLinearVelocity = Vector3.zero
-            task.wait(0.05)
         end
+        stopFlyTween()
         local _, h2 = getChar()
         if h2 then
+            setNoclip(true)
             local left = (h2.Position - dest.Position).Magnitude
-            if left > 40 then
-                -- บังคับวางครั้งสุดท้าย
+            if left > 35 then
                 h2.CFrame = dest
+                h2.AssemblyLinearVelocity = Vector3.zero
                 left = (h2.Position - dest.Position).Magnitude
             end
-            ok = left <= 60
+            ok = left <= 70
             if not ok then
                 log(string.format("ยังไม่ถึง (เหลือ %.0f)", left), "Y")
             end
@@ -406,16 +420,17 @@ local KNOWN_NPC = {
 local MOB_CACHE = {} -- lowerName -> Vector3
 local KNOWN_MOB = {
     ["dragon crew warrior"] = Vector3.new(6919.08, 55.07, -940.84),
-    -- เมืองบน Hydra (Y สูง) — ฮับ + จุดสำรอง
-    ["dragon crew archer"] = Vector3.new(6625, 378, 244),
+    -- เมืองบน Hydra (Y~380) — จุดเก่า BF04 ที่เคยใช้ได้
+    ["dragon crew archer"] = Vector3.new(6488.92, 383.38, -110.66),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
+        Vector3.new(6488.92, 383.38, -110.66),
         Vector3.new(6625, 378, 244),
-        Vector3.new(6900, 350, 150),
-        Vector3.new(6500, 400, 200),
-        Vector3.new(6800, 380, 300),
-        Vector3.new(6400, 360, 100),
+        Vector3.new(6350, 390, -50),
+        Vector3.new(6600, 400, 50),
+        Vector3.new(6200, 370, -200),
+        Vector3.new(6700, 360, 150),
     },
 }
 local compassStuck = 0
@@ -829,29 +844,32 @@ local function mobSpawnHint(mobName)
     return nil
 end
 
-local spiralR = 200
+local spiralR = 150
 local spiralStep = 0
 local spiralOrigin = nil
 local triedKnownHigh = false
 
 local function resetSpiral(origin)
-    spiralR = 200
+    spiralR = 150
     spiralStep = 0
     spiralOrigin = origin
     triedKnownHigh = false
 end
 
-local function nextSpiralPoint()
+local function nextSpiralPoint(mobName)
     local _, hrp = getChar()
     if not hrp then return nil end
     if not spiralOrigin then
-        -- เริ่มจากจุด Archer ที่รู้/จำ — ห้ามใช้ Warrior เป็นศูนย์กลาง
-        local hint = mobSpawnHint("Dragon Crew Archer")
+        -- ศูนย์กลาง = จุดมอนเควสเท่านั้น (ห้าม Warrior / ตำแหน่งตัวเองต่ำ)
+        local hint = mobSpawnHint(mobName)
             or mobSpawnHint((pickQuestForLevel(getLevel()) or {}).mob or "")
         if hint then
-            spiralOrigin = hint
+            spiralOrigin = Vector3.new(hint.X, math.max(hint.Y, 380), hint.Z)
         else
-            spiralOrigin = hrp.Position + Vector3.new(0, 200, 0)
+            spiralOrigin = hrp.Position + Vector3.new(0, 250, 0)
+            if spiralOrigin.Y < 350 then
+                spiralOrigin = Vector3.new(spiralOrigin.X, 380, spiralOrigin.Z)
+            end
         end
         log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d",
             spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
@@ -860,17 +878,23 @@ local function nextSpiralPoint()
     spiralStep += 1
     if spiralStep >= 8 then
         spiralStep = 0
-        spiralR += 200
-        if spiralR > 1600 then
-            spiralR = 200
-            spiralOrigin = hrp.Position + Vector3.new(0, 250, 0)
-            log("ก้นหอยครบ 1600 → เริ่มใหม่รอบตัว (สูง)", "O")
+        spiralR += 150
+        if spiralR > 1200 then
+            spiralR = 150
+            -- รีเซ็ตกลับจุด known ของมอนเควส ไม่ใช่ตำแหน่งตัว (กันหลงเกาะล่าง)
+            local hint = mobSpawnHint(mobName)
+            if hint then
+                spiralOrigin = Vector3.new(hint.X, math.max(hint.Y, 380), hint.Z)
+                log("ก้นหอยครบ → กลับจุด known สูง", "O")
+            else
+                spiralOrigin = Vector3.new(hrp.Position.X, 400, hrp.Position.Z)
+                log("ก้นหอยครบ → เริ่มใหม่รอบตัว (สูง)", "O")
+            end
         else
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
     end
-    local baseY = math.max(spiralOrigin.Y, 300)
-    local y = math.clamp(baseY + (spiralR > 400 and 50 or 0), 280, 500)
+    local y = math.clamp(math.max(spiralOrigin.Y, 380), 350, 520)
     return Vector3.new(
         spiralOrigin.X + math.cos(ang) * spiralR,
         y,
@@ -937,25 +961,29 @@ local function huntMobOrSweep(quest)
     local hint = mobSpawnHint(quest.mob)
     if hint and not triedKnownHigh then
         triedKnownHigh = true
+        resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 380), hint.Z))
         local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
         local list = alts or { hint }
         for i, pt in ipairs(list) do
             log(string.format("ลองจุดสูง #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
             flyTo(CFrame.new(pt), "จุดมอนสูง")
-            task.wait(1.0)
+            task.wait(1.4) -- รอสตรีมมอนหลังบินรอย
             mob, md = findMob(quest.mob)
             if mob then return mob, md end
             logNearbyEnemies(1500)
         end
     end
 
-    local pt = nextSpiralPoint()
+    local pt = nextSpiralPoint(quest.mob)
     if not pt then return nil end
     log(string.format("ก้นหอย r=%d @ %.0f,%.0f,%.0f", spiralR, pt.X, pt.Y, pt.Z), "B")
     flyTo(CFrame.new(pt), "ก้นหอย")
-    task.wait(1.0)
+    task.wait(1.4)
     mob, md = findMob(quest.mob)
-    if not mob then logNearbyEnemies(1500) end
+    if not mob then
+        log("ยังไม่เจอ " .. tostring(quest.mob) .. " → ไล่จุดต่อไป", "O")
+        logNearbyEnemies(1500)
+    end
     return mob, md
 end
 
