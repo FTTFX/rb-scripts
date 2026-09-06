@@ -1246,15 +1246,19 @@ local function dumpBossSpy()
     -- UI ข้อความบอกเกิด?
     local tips = 0
     for _, d in ipairs(pg:GetDescendants()) do
-        if (d:IsA("TextLabel") or d:IsA("TextButton")) and guiReallyVisible(d) then
-            local tx = tostring(d.Text or "")
-            local tl = tx:lower()
-            if #tx > 4 and #tx < 120 and (
-                tl:find("spawn", 1, true) or tx:find("เกิด", 1, true)
-                or tl:find("leader", 1, true) or tl:find("appeared", 1, true)
-            ) and not tl:find("defeat", 1, true) then
-                tips += 1
-                if tips <= 6 then log("  UI: " .. tx:sub(1, 80), "B") end
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local vis = false
+            pcall(function() vis = d.Visible and d.AbsoluteSize.X > 8 end)
+            if vis then
+                local tx = tostring(d.Text or "")
+                local tl = tx:lower()
+                if #tx > 4 and #tx < 120 and (
+                    tl:find("spawn", 1, true) or tx:find("เกิด", 1, true)
+                    or tl:find("leader", 1, true) or tl:find("appeared", 1, true)
+                ) and not tl:find("defeat", 1, true) and not tl:find("bandit", 1, true) then
+                    tips += 1
+                    if tips <= 6 then log("  UI: " .. tx:sub(1, 80), "B") end
+                end
             end
         end
     end
