@@ -1792,6 +1792,7 @@ local function mainLoop()
         end
     end
     log("=== STOP ===", "R")
+    _G.BF04C_LOOPING = false
 end
 
 -- ── Spy ระยะตี: จำตำแหน่งมอน → เริ่มจากไกลสุด → ค่อยเข้าใกล้ → โดนครั้งแรก = ระยะสูงสุด ──
