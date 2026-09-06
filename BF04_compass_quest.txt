@@ -23,17 +23,20 @@ _G.BF04C_ON = false
 _G.BF04C_LOOPING = false -- กันโหลดใหม่แล้ว AUTO ค้าง "กำลังรันอยู่แล้ว"
 _G.BF04C_GEN = (_G.BF04C_GEN or 0) + 1 -- ฆ่าลูปเก่าที่ค้าง InvokeServer/บิน
 local MY_GEN = _G.BF04C_GEN
-local FLY_SPEED = 100 -- Spy เครื่อง 2026-09-06: 100 ผ่าน / 120 กระตุก
-local FLY_SPEED_COMBAT = 80
-local FLY_SPEED_LONG = 70 -- ระยะไกลช้า กันดีดกลับ
--- ค่าที่ Spy ความเร็วเจอ (คงข้ามโหลดในเซสชัน)
+local FLY_SPEED = 90 -- วาร์ปท่อนละ ~90 + หยุด (Spy: 100 ผ่าน / 120 กระตุก → ใช้ 90)
+local FLY_SPEED_COMBAT = 90
+local FLY_SPEED_LONG = 90
+local WARP_STEP = 90 -- กระโดดทีละกี่ studs
+local WARP_PAUSE = 0.1 -- หยุดระหว่างวาร์ป
 if _G.BF04C_FLY and type(_G.BF04C_FLY) == "table" then
     FLY_SPEED = tonumber(_G.BF04C_FLY.normal) or FLY_SPEED
     FLY_SPEED_COMBAT = tonumber(_G.BF04C_FLY.combat) or FLY_SPEED_COMBAT
     FLY_SPEED_LONG = tonumber(_G.BF04C_FLY.long) or FLY_SPEED_LONG
+    WARP_STEP = tonumber(_G.BF04C_FLY.warpStep) or WARP_STEP
+    WARP_PAUSE = tonumber(_G.BF04C_FLY.pause) or WARP_PAUSE
 end
-local FLY_CHUNK_PAUSE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.pause) or 0.18
-local FLY_SETTLE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.settle) or 0.40
+local FLY_CHUNK_PAUSE = WARP_PAUSE
+local FLY_SETTLE = tonumber(_G.BF04C_FLY and _G.BF04C_FLY.settle) or 0.12
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
@@ -77,11 +80,12 @@ local npcSpyBtn = mkBtn("Spy NPC", 200, 30, 56, Color3.fromRGB(40, 120, 100))
 local mobSpyBtn = mkBtn("Spy มอน", 260, 30, 52, Color3.fromRGB(160, 90, 30))
 local bossSpyBtn = mkBtn("Spy บอส", 316, 30, 52, Color3.fromRGB(160, 50, 80))
 local copyBtn = mkBtn("Copy", 372, 30, 70, Color3.fromRGB(30, 100, 50))
-local flySpyBtn = mkBtn("Spy ความเร็ว", 8, 62, 100, Color3.fromRGB(90, 60, 140))
+local flySpyBtn = mkBtn("Spy ความเร็ว", 8, 62, 88, Color3.fromRGB(90, 60, 140))
+local warpSpyBtn = mkBtn("Spy วาร์ป", 100, 62, 72, Color3.fromRGB(70, 90, 160))
 local flyApplyLbl = Instance.new("TextLabel")
-flyApplyLbl.Size = UDim2.new(0, 320, 0, 28); flyApplyLbl.Position = UDim2.new(0, 116, 0, 62)
+flyApplyLbl.Size = UDim2.new(0, 260, 0, 28); flyApplyLbl.Position = UDim2.new(0, 178, 0, 62)
 flyApplyLbl.BackgroundTransparency = 1; flyApplyLbl.TextColor3 = Color3.fromRGB(180, 180, 200)
-flyApplyLbl.Text = string.format("บิน: %d / ไกล %d / ตี %d", FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT)
+flyApplyLbl.Text = string.format("วาร์ป %d / หยุด %.2f", WARP_STEP, WARP_PAUSE)
 flyApplyLbl.Font = Enum.Font.Code; flyApplyLbl.TextSize = 11
 flyApplyLbl.TextXAlignment = Enum.TextXAlignment.Left; flyApplyLbl.Parent = frame
 
@@ -207,79 +211,67 @@ local function flyTo(posOrCF, label)
     local dest = typeof(posOrCF) == "CFrame" and posOrCF
         or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
     local dist = (hrp.Position - dest.Position).Magnitude
-    log(string.format("บิน→%s %.0f studs", label or "เป้า", dist), "B")
+    log(string.format("วาร์ป→%s %.0f studs (ทีละ%d หยุด%.2f)",
+        label or "เป้า", dist, WARP_STEP, WARP_PAUSE), "B")
 
     local ok = false
     local okRun, err = pcall(function()
         if not (_G.BF04C_ON or _G.BF04C_SPYFLY) or _G.BF04C_GEN ~= MY_GEN then return end
-        if dist < 25 then
+        if dist < 20 then
             hrp.CFrame = dest
             hrp.AssemblyLinearVelocity = Vector3.zero
-            task.wait(0.2)
+            task.wait(WARP_PAUSE)
             ok = true
             return
         end
-        -- ไกล = ช้า + แบ่งท่อน กัน rubberband ดีดกลับ
-        local spd = FLY_SPEED
-        if label == "มอน" or (label and label:find("มอน", 1, true)) then
-            spd = FLY_SPEED_COMBAT
-        elseif label and label:find("spySPD", 1, true) then
-            spd = tonumber(label:match("spySPD:(%d+)")) or FLY_SPEED
-        elseif dist >= 3000 then spd = FLY_SPEED_LONG
-        elseif dist >= 1500 then spd = math.min(FLY_SPEED, 110)
-        elseif dist >= 800 then spd = math.min(FLY_SPEED, 125)
-        end
-        local chunk = (dist >= 3000) and 450 or ((dist >= 1500) and 550 or 700)
-        if label and label:find("spySPD", 1, true) then
-            chunk = 380 -- ท่อนสั้น: บิน→หยุด→บิน→หยุด
+        -- โหมดวาร์ป: +WARP_STEP → หยุด WARP_PAUSE → ซ้ำ (กันกระตุก)
+        local stepSize = WARP_STEP
+        if label and label:find("spyWARP:", 1, true) then
+            stepSize = tonumber(label:match("spyWARP:(%d+)")) or WARP_STEP
         end
         local guard = 0
-        while (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN and guard < 60 do
+        while (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN and guard < 200 do
             guard = guard + 1
             local _, h = getChar()
             if not h then break end
             hrp = h
             setNoclip(true)
             local left = (hrp.Position - dest.Position).Magnitude
-            if left <= 35 then
+            if left <= 28 then
                 hrp.CFrame = dest
                 hrp.AssemblyLinearVelocity = Vector3.zero
+                task.wait(WARP_PAUSE)
                 break
             end
-            local step = math.min(chunk, left)
+            local step = math.min(stepSize, left)
             local dir = (dest.Position - hrp.Position)
             if dir.Magnitude < 1 then break end
             local nxt = hrp.Position + dir.Unit * step
-            local dur = math.clamp(step / spd, 0.3, 8)
-            stopFlyTween()
-            local look = Vector3.new(dir.X, 0, dir.Z)
-            local lookCF = look.Magnitude > 1 and CFrame.new(nxt, nxt + look) or CFrame.new(nxt)
-            local tw = TweenService:Create(hrp,
-                TweenInfo.new(dur, Enum.EasingStyle.Linear),
-                { CFrame = lookCF })
-            currentTween = tw
-            tw:Play()
-            local tEnd = os.clock() + dur + 0.4
-            while currentTween == tw and os.clock() < tEnd
-                  and (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN do
-                setNoclip(true)
-                local _, h2 = getChar()
-                if h2 then
+            -- วาร์ปท่อนสั้น (CFrame) แล้วหยุด — ไม่ tween ยาว
+            hrp.CFrame = CFrame.new(nxt, nxt + Vector3.new(dir.X, 0, dir.Z))
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            task.wait(WARP_PAUSE)
+            -- วัดดีดกลับเบา ๆ
+            local _, h2 = getChar()
+            if h2 then
+                local rubber = (h2.Position - nxt).Magnitude
+                if rubber > 55 then
+                    -- ดีดแรง → ช้าลง: ลดท่อน + หยุดนานขึ้นรอบนี้
+                    task.wait(WARP_PAUSE)
+                    h2.CFrame = CFrame.new(nxt)
                     h2.AssemblyLinearVelocity = Vector3.zero
-                    hrp = h2
                 end
-                task.wait(0.05)
+                hrp = h2
             end
-            stopFlyTween()
-            task.wait(FLY_CHUNK_PAUSE)
         end
-        for _ = 1, 4 do
+        for _ = 1, 3 do
             local _, h2 = getChar()
             if not h2 then break end
             setNoclip(true)
             h2.CFrame = dest
             h2.AssemblyLinearVelocity = Vector3.zero
-            task.wait(0.25)
+            task.wait(WARP_PAUSE + 0.05)
             if (h2.Position - dest.Position).Magnitude <= 90 then
                 ok = true
                 break
@@ -290,7 +282,7 @@ local function flyTo(posOrCF, label)
             local left = (h3.Position - dest.Position).Magnitude
             ok = left <= 120
             if not ok then
-                log(string.format("บินไม่ติด (เหลือ %.0f) — จะลองใหม่", left), "Y")
+                log(string.format("วาร์ปไม่ติด (เหลือ %.0f)", left), "Y")
             end
         end
     end)
@@ -2062,25 +2054,21 @@ local function equipWeapon()
     return equipSword()
 end
 
--- ร่างพระตีไกล → Spy: โดนสูงสุด ≈96 | แนะนำล็อกบนหัว
-local SAFE_HIT_RANGE = 100
+-- ร่างพระตีไกล → Spy: โดนสูงสุด ≈96 | รักษาระยะห่างไม่ชนตัวมอน
+local SAFE_HIT_RANGE = 90 -- เริ่มตีเมื่อเข้าใกล้ระยะนี้
+local STANDOFF_Y = 48 -- ลอยเหนือมอน (อยู่ในระยะตี แต่ไม่ทับตัว)
 local function attackHeight()
-    return isBigForm() and 14 or 6
+    return STANDOFF_Y
 end
 
--- ล็อกนิ่งบนหัวมอน (ไม่กระตุก)
+-- ล็อกห่างมอน: เหนือหัว ~STANDOFF_Y — ตีได้ก่อนถึงตัว / มอนชนยาก
 local function lockOnMobHead(mob, myHrp, height)
     if not mob or not myHrp then return false end
     local mhrp = mob:FindFirstChild("HumanoidRootPart")
-    local head = mob:FindFirstChild("Head")
     if not mhrp then return false end
-    local h = height or attackHeight()
-    local dest
-    if head then
-        dest = head.CFrame * CFrame.new(0, math.max(4, h * 0.45), 0)
-    else
-        dest = mhrp.CFrame * CFrame.new(0, h, 0)
-    end
+    local h = height or STANDOFF_Y
+    -- ถ้ายืนใกล้เกิน → ถอยขึ้นให้ห่าง
+    local dest = mhrp.CFrame * CFrame.new(0, h, 0)
     setNoclip(true)
     myHrp.CFrame = dest
     myHrp.AssemblyLinearVelocity = Vector3.zero
@@ -2094,7 +2082,7 @@ local function lockOnMobHead(mob, myHrp, height)
         end
     end)
     pcall(function()
-        mhrp.Size = Vector3.new(30, 30, 30)
+        -- ไม่ขยาย hitbox มอนใหญ่เกิน — กันดึงชนตัว
         mhrp.CanCollide = false
         local mh = mob:FindFirstChildOfClass("Humanoid")
         if mh then mh.PlatformStand = true; mh.Sit = true end
@@ -2732,22 +2720,26 @@ local function mainLoop()
             if not mhrp or not mhum then return end
 
             if (md or 999) > SAFE_HIT_RANGE then
-                -- เข้าใกล้ช้าๆ แล้ววาร์ปบนหัว (ไม่ Tween ระยะสั้น)
-                if (md or 999) > 80 then
-                    flyTo(mhrp.CFrame * CFrame.new(0, attackHeight() + 10, 0), "มอน")
-                end
+                -- วาร์ปไปจุดลอยเหนือมอน (ยังไม่ทับตัว)
+                local stand = mhrp.Position + Vector3.new(0, STANDOFF_Y, 0)
+                flyTo(CFrame.new(stand), "มอน")
                 local _, hNear = getChar()
                 if hNear then lockOnMobHead(mob, hNear) end
-                task.wait(0.15)
+                task.wait(0.12)
                 return
             end
+            -- ใกล้เกิน (ชนตัว) → ดันขึ้นให้ห่างก่อนตี
+            if (md or 0) < 25 then
+                local _, hPush = getChar()
+                if hPush then lockOnMobHead(mob, hPush, STANDOFF_Y) end
+            end
 
-            log(string.format("สู้ %s HP%.0f (d=%.0f big=%s) ล็อกบนหัว",
-                mob.Name, mhum.Health, md or 0, tostring(isBigForm())), "Y")
+            log(string.format("สู้ %s HP%.0f (d=%.0f) ลอยห่าง Y=%d",
+                mob.Name, mhum.Health, md or 0, STANDOFF_Y), "Y")
             local lastHp = mhum.Health
             local lastCheck = os.clock()
             local noDmg = 0
-            local heightTry = { 10, 14, 18, 22, 8, 26 }
+            local heightTry = { 48, 56, 40, 64, 35, 72 }
             local hi = 1
             while mob.Parent and mhum.Parent and mhum.Health > 0
                   and select(1, hasActiveQuest(quest))
@@ -2756,18 +2748,21 @@ local function mainLoop()
                 if not myHrp then break end
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
                 if not mhrp then break end
+                -- ถ้าระยะในระนาบใกล้เกิน → ถอยขึ้น
+                local flat = Vector3.new(myHrp.Position.X - mhrp.Position.X, 0, myHrp.Position.Z - mhrp.Position.Z).Magnitude
+                local useH = heightTry[hi] or STANDOFF_Y
+                if flat < 20 then useH = math.max(useH, 56) end
                 equipSword()
-                lockOnMobHead(mob, myHrp, heightTry[hi] or attackHeight())
+                lockOnMobHead(mob, myHrp, useH)
                 attackMob(mob)
                 if os.clock() - lastCheck >= 1.0 then
                     lastCheck = os.clock()
                     local hp = mhum.Health
                     if hp >= lastHp - 1 then
                         noDmg += 1
-                        -- ลองความสูงใหม่ก่อนข้ามตัว
                         if noDmg >= 2 then
                             hi = (hi % #heightTry) + 1
-                            log("ลองสูงบนหัว=" .. tostring(heightTry[hi]), "O")
+                            log("ลองสูงห่างมอน=" .. tostring(heightTry[hi]), "O")
                         end
                         if noDmg >= 8 then
                             log("ตีไม่เข้า → ข้ามตัวนี้", "Y")
@@ -2778,7 +2773,7 @@ local function mainLoop()
                         lastHp = hp
                     end
                 end
-                task.wait(0.05) -- ไม่กระตุกทุกเฟรม
+                task.wait(0.05)
             end
             pcall(function()
                 local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
@@ -2994,6 +2989,100 @@ local function spyAttackRange()
     spyBusy = false
 end
 
+-- ── Spy วาร์ป: +step → หยุด pause → +step → หยุด (หาท่อนใหญ่สุดไม่กระตุก) ──
+local warpSpyBusy = false
+local function dumpWarpSpy()
+    if warpSpyBusy or flySpyBusy then log("Spy กำลังรันอยู่", "O"); return end
+    warpSpyBusy = true
+    _G.BF04C_SPYFLY = true
+    local ok, err = pcall(function()
+        log("════ Spy วาร์ป ( +N → หยุด 0.1 → +N → หยุด ) ════", "Y")
+        log("รูปแบบ: วาร์ปทีละ N studs / หยุด " .. tostring(WARP_PAUSE) .. "s", "B")
+        local _, h0 = getChar()
+        if not h0 then log("ไม่มีตัวละคร", "R"); return end
+        setNoclip(true)
+        local origin = h0.Position
+        local look = Vector3.new(h0.CFrame.LookVector.X, 0, h0.CFrame.LookVector.Z)
+        if look.Magnitude < 0.1 then look = Vector3.new(1, 0, 0) else look = look.Unit end
+
+        local steps = { 60, 75, 90, 100, 110, 120, 140 }
+        local best = nil
+        local RUBBER_FAIL = 50
+
+        for _, step in ipairs(steps) do
+            if _G.BF04C_GEN ~= MY_GEN then break end
+            local _, hs = getChar()
+            if not hs then break end
+            local base = hs.Position
+            local maxRubber = 0
+            local okStep = true
+            log(string.format("── ทดสอบวาร์ป step=%d หยุด=%.2f ──", step, WARP_PAUSE), "Y")
+
+            -- 6 ฮ็อป: วาร์ป→หยุด→วาร์ป→หยุด...
+            for hop = 1, 6 do
+                local nxt = base + look * step
+                local _, h1 = getChar()
+                if not h1 then okStep = false; break end
+                setNoclip(true)
+                h1.CFrame = CFrame.new(nxt)
+                h1.AssemblyLinearVelocity = Vector3.zero
+                task.wait(WARP_PAUSE)
+                local _, h2 = getChar()
+                if not h2 then okStep = false; break end
+                local rubber = (h2.Position - nxt).Magnitude
+                if rubber > maxRubber then maxRubber = rubber end
+                log(string.format("  hop%d: ดีด=%.0f @ %.0f,%.0f,%.0f",
+                    hop, rubber, h2.Position.X, h2.Position.Y, h2.Position.Z),
+                    rubber > RUBBER_FAIL and "R" or "G")
+                if rubber > RUBBER_FAIL then
+                    okStep = false
+                    break
+                end
+                base = h2.Position
+            end
+
+            if okStep then
+                best = step
+                log(string.format("✓ step=%d ผ่าน (ดีดสูงสุด=%.0f)", step, maxRubber), "G")
+            else
+                log(string.format("✗ step=%d ไม่ผ่าน — หยุดทดสอบท่อนใหญ่กว่า", step), "R")
+                break
+            end
+            -- กลับใกล้จุดเริ่ม
+            local _, hb = getChar()
+            if hb and (hb.Position - origin).Magnitude > 700 then
+                log("กลับจุดเริ่ม...", "B")
+                flyTo(CFrame.new(origin + Vector3.new(0, 15, 0)), "spyWARP:75")
+            end
+        end
+
+        if best then
+            WARP_STEP = best
+            FLY_SPEED = best
+            FLY_SPEED_LONG = best
+            FLY_SPEED_COMBAT = best
+            _G.BF04C_FLY = {
+                normal = best,
+                long = best,
+                combat = best,
+                warpStep = best,
+                pause = WARP_PAUSE,
+                settle = FLY_SETTLE,
+            }
+            flyApplyLbl.Text = string.format("วาร์ป %d / หยุด %.2f ★", best, WARP_PAUSE)
+            log(string.format("★ วาร์ปนิ่งสุด ≈ +%d studs / หยุด %.2fs", best, WARP_PAUSE), "G")
+            log("→ AUTO ใช้โหมดวาร์ปนี้ทุกครั้งที่ย้ายเกาะ/เข้ามอน", "G")
+        else
+            log("วาร์ปไม่ผ่านแม้ท่อนเล็ก — ลองเพิ่ม WARP_PAUSE", "R")
+        end
+        log("════ จบ Spy วาร์ป — Copy ส่งมาได้ ════", "Y")
+    end)
+    _G.BF04C_SPYFLY = false
+    flyLock = false
+    warpSpyBusy = false
+    if not ok then log("Spy วาร์ป error: " .. tostring(err), "R") end
+end
+
 -- ── Spy ความเร็ว: บินท่อนสั้น → หยุด → บิน → หยุด หาค่าสูงสุดไม่กระตุก ──
 local flySpyBusy = false
 local function dumpFlySpeed()
@@ -3178,6 +3267,10 @@ end)
 
 flySpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpFlySpeed)
+end)
+
+warpSpyBtn.MouseButton1Click:Connect(function()
+    task.spawn(dumpWarpSpy)
 end)
 
 copyBtn.MouseButton1Click:Connect(function()
