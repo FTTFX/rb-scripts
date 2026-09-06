@@ -2195,36 +2195,40 @@ local function mainLoop()
         local ok, err = pcall(function()
             local lv = getLevel()
             local bossQ = pickBossQuestForLevel(lv)
-            -- Spy: บอสเกิดใน Enemies → ปลดข้าม + สลับไปเควสบอส
-            if bossQ then
-                local alive = findAliveBoss(bossQ.mob)
-                if alive then
-                    if os.clock() < bossSkipUntil or bossMissCount > 0 then
-                        log("★ Spy บอสเกิดแล้ว → สลับไป " .. bossQ.mob, "G")
-                    end
-                    bossSkipUntil = 0
-                    bossMissCount = 0
+            local bossAlive = bossQ and findAliveBoss(bossQ.mob)
+
+            if bossAlive then
+                if os.clock() < bossSkipUntil or bossMissCount > 0 then
+                    log("★ Spy บอสเกิดแล้ว → สลับไป " .. bossQ.mob, "G")
                 end
+                bossSkipUntil = 0
+                bossMissCount = 0
             end
 
+            -- เลือกเควส: บอสเกิดถึงรับบอส — ไม่เกิดใช้เควสก่อนหน้า
             local quest = pickQuestForLevel(lv)
-            if quest and isBossQuest(quest) and os.clock() < bossSkipUntil then
+            if quest and isBossQuest(quest) and not bossAlive then
                 local prev = pickPreviousFarmQuest(lv, quest)
                 if prev then
-                    log(string.format("ข้ามบอส (%ds) → เควสก่อนหน้า %s#%s %s",
-                        math.floor(bossSkipUntil - os.clock()),
+                    log(string.format("บอสยังไม่เกิด → รับเควสก่อนหน้า %s#%s %s",
                         prev.qName, tostring(prev.qNum), prev.mob), "Y")
+                    bossSkipUntil = math.max(bossSkipUntil, os.clock() + 180)
                     quest = prev
                 end
+            elseif quest and isBossQuest(quest) and os.clock() < bossSkipUntil and not bossAlive then
+                local prev = pickPreviousFarmQuest(lv, quest)
+                if prev then quest = prev end
             end
-            -- ถ้ากำลังฟาร์มธรรมดา แต่บอสเกิด → บังคับเควสบอส
-            if quest and not isBossQuest(quest) and bossQ and findAliveBoss(bossQ.mob) then
+
+            -- ฟาร์มอยู่ แต่บอสเพิ่งเกิด → สลับ
+            if quest and not isBossQuest(quest) and bossAlive then
                 local hasFarm = select(1, hasActiveQuest(quest))
                 local hasBoss = select(1, hasActiveQuest(bossQ))
                 if hasFarm and not hasBoss then
                     log("บอสเกิด → Abandon เควสฟาร์ม แล้วไปรับเควสบอส", "Y")
                     invokeCF(cf, "AbandonQuest")
                     forceQuestUntil = 0
+                    bossSkipUntil = 0
                     task.wait(0.5)
                     return
                 end
@@ -2237,8 +2241,25 @@ local function mainLoop()
             end
             refreshStatus(quest)
 
-            -- ── มีเควสแล้ว? (Defeat/เอาชนะ บนจอ) ──
+            -- ── มีเควสแล้ว? ──
             local hasQ, qTxt = hasActiveQuest(quest)
+
+            -- ติดเควสบอสอยู่ แต่บอสไม่เกิด → ทิ้งทันที ไปฟาร์ม
+            if hasQ and qTxt then
+                local ql = qTxt:lower()
+                if (ql:find("leader", 1, true) or ql:find("boss", 1, true))
+                   and not findAliveBoss(bossQ and bossQ.mob or "Hydra Leader") then
+                    log("มีเควสบอสแต่บอสไม่เกิด → Abandon กลับไปฟาร์ม", "O")
+                    invokeCF(cf, "AbandonQuest")
+                    forceQuestUntil = 0
+                    bossSkipUntil = os.clock() + 180
+                    bossMissCount = 0
+                    resetSpiral(nil)
+                    task.wait(0.6)
+                    return
+                end
+            end
+
             if not hasQ then
                 log("ยังไม่มีเควส (Quest UI ปิด) → ไปรับที่ NPC", "Y")
                 local pos, src = resolveNpcTarget(quest)
