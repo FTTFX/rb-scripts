@@ -50,6 +50,11 @@ local function saveFlyCfg()
 end
 saveFlyCfg()
 
+local AURA_ON = (_G.BF04C_AURA ~= false) -- ตีรอบตัว (โดนมอน+ผู้เล่นใกล้)
+local AURA_RADIUS = tonumber(_G.BF04C_AURA_R) or 96
+_G.BF04C_AURA = AURA_ON
+_G.BF04C_AURA_R = AURA_RADIUS
+
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
@@ -91,7 +96,9 @@ local questSpyBtn = mkBtn("Spy เควส", 140, 30, 56, Color3.fromRGB(80, 10
 local npcSpyBtn = mkBtn("Spy NPC", 200, 30, 56, Color3.fromRGB(40, 120, 100))
 local mobSpyBtn = mkBtn("Spy มอน", 260, 30, 52, Color3.fromRGB(160, 90, 30))
 local bossSpyBtn = mkBtn("Spy บอส", 316, 30, 52, Color3.fromRGB(160, 50, 80))
-local copyBtn = mkBtn("Copy", 372, 30, 70, Color3.fromRGB(30, 100, 50))
+local copyBtn = mkBtn("Copy", 372, 30, 48, Color3.fromRGB(30, 100, 50))
+local auraBtn = mkBtn(AURA_ON and "Aura: ON" or "Aura: OFF", 424, 30, 40,
+    AURA_ON and Color3.fromRGB(140, 50, 90) or Color3.fromRGB(50, 50, 60))
 local flySpyBtn = mkBtn("Spy ความเร็ว", 8, 62, 88, Color3.fromRGB(90, 60, 140))
 local flyApplyLbl = Instance.new("TextLabel")
 flyApplyLbl.Size = UDim2.new(0, 360, 0, 18); flyApplyLbl.Position = UDim2.new(0, 100, 0, 62)
@@ -2155,10 +2162,10 @@ local function equipWeapon()
     return equipSword()
 end
 
--- ร่างพระตีไกล → Spy: โดนสูงสุด ≈96 | รักษาระยะห่างไม่ชนตัวมอน
-local SAFE_HIT_RANGE = 90 -- เริ่มตีเมื่อเข้าใกล้ระยะนี้
-local STANDOFF_Y = 48 -- ลอยเหนือมอน (อยู่ในระยะตี แต่ไม่ทับตัว)
-local VACUUM_ON = false -- ปิดดูดมอน (ช้าลง)
+-- ร่างพระตีไกล → Aura รอบตัวโดนทุกอย่างใกล้เคียง (กันแกล้ง)
+local SAFE_HIT_RANGE = 90
+local STANDOFF_Y = 48
+local VACUUM_ON = false
 local VACUUM_RADIUS = 320
 local VACUUM_PULL_Y = -8
 local function attackHeight()
@@ -2205,12 +2212,12 @@ local function vacuumMobs(mobName, myHrp, anchor)
     return n
 end
 
--- มอนในระยะตี (หลังดูด) สำหรับ RegisterHit หลายตัว
+-- มอนเควสในรัศมี (เดิม)
 local function collectHitTargets(mobName, myHrp, radius)
     local list = {}
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies or not myHrp then return list end
-    radius = radius or 100
+    radius = radius or AURA_RADIUS
     for _, e in ipairs(enemies:GetChildren()) do
         if mobNameMatch(e.Name, mobName) then
             local eh = e:FindFirstChild("HumanoidRootPart")
@@ -2219,6 +2226,54 @@ local function collectHitTargets(mobName, myHrp, radius)
             if eh and hum and hum.Health > 0 and head then
                 if (eh.Position - myHrp.Position).Magnitude <= radius then
                     list[#list + 1] = { e, head }
+                end
+            end
+        end
+    end
+    return list
+end
+
+-- Aura: ทุกอย่างในรัศมี — มอนทุกชนิด + ผู้เล่นอื่น (ตอบโต้คนแกล้ง)
+local function collectAuraTargets(myHrp, preferMob, radius)
+    local list, seen = {}, {}
+    if not myHrp then return list end
+    radius = radius or AURA_RADIUS
+    local function add(model, part)
+        if not model or not part or seen[model] then return end
+        seen[model] = true
+        list[#list + 1] = { model, part }
+    end
+    -- เป้าเควสก่อน (primary)
+    if preferMob and preferMob.Parent then
+        local part = preferMob:FindFirstChild("Head") or preferMob:FindFirstChild("HumanoidRootPart")
+        local hum = preferMob:FindFirstChildOfClass("Humanoid")
+        if part and hum and hum.Health > 0 then add(preferMob, part) end
+    end
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, e in ipairs(enemies:GetChildren()) do
+            local eh = e:FindFirstChild("HumanoidRootPart")
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            local head = e:FindFirstChild("Head") or eh
+            if eh and hum and hum.Health > 0 and head then
+                if (eh.Position - myHrp.Position).Magnitude <= radius then
+                    add(e, head)
+                end
+            end
+        end
+    end
+    -- ผู้เล่นอื่นในรัศมี (กันแกล้ง)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP then
+            local ch = plr.Character
+            if ch then
+                local hrp = ch:FindFirstChild("HumanoidRootPart")
+                local hum = ch:FindFirstChildOfClass("Humanoid")
+                local head = ch:FindFirstChild("Head") or hrp
+                if hrp and hum and hum.Health > 0 and head then
+                    if (hrp.Position - myHrp.Position).Magnitude <= radius then
+                        add(ch, head)
+                    end
                 end
             end
         end
@@ -2275,11 +2330,17 @@ local function attackMob(mob, mobNameHint)
     equipSword()
     local rA, rH = getCombatRemotes()
     local _, myHrp = getChar()
-    local want = mobNameHint or (mob and mob.Name) or ""
-    local targets = collectHitTargets(want, myHrp, 110)
-    if #targets == 0 and mob then
-        local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
-        if part then targets = { { mob, part } } end
+    if not myHrp then return end
+    local targets
+    if AURA_ON then
+        targets = collectAuraTargets(myHrp, mob, AURA_RADIUS)
+    else
+        local want = mobNameHint or (mob and mob.Name) or ""
+        targets = collectHitTargets(want, myHrp, AURA_RADIUS)
+        if #targets == 0 and mob then
+            local part = mob:FindFirstChild("Head") or mob:FindFirstChild("HumanoidRootPart")
+            if part then targets = { { mob, part } } end
+        end
     end
     if #targets == 0 then return end
     local primary = targets[1][2]
@@ -2289,7 +2350,19 @@ local function attackMob(mob, mobNameHint)
         if rA then
             rA:FireServer(0); rA:FireServer(1); rA:FireServer(2); rA:FireServer(3)
         end
-        if rH then rH:FireServer(primary, targets) end
+        if rH then
+            rH:FireServer(primary, targets)
+            -- ยิงรอบสองกรณีมีเป้าเยอะ (aura)
+            if #targets > 8 then
+                local chunk = {}
+                for i = 9, math.min(#targets, 20) do
+                    chunk[#chunk + 1] = targets[i]
+                end
+                if #chunk > 0 then
+                    rH:FireServer(chunk[1][2], chunk)
+                end
+            end
+        end
         VirtualUser:CaptureController()
         VirtualUser:Button1Down(Vector2.new(1280, 672))
         task.wait(0.03)
@@ -3405,6 +3478,16 @@ end)
 
 bossSpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpBossSpy)
+end)
+
+auraBtn.MouseButton1Click:Connect(function()
+    AURA_ON = not AURA_ON
+    _G.BF04C_AURA = AURA_ON
+    auraBtn.Text = AURA_ON and "Aura: ON" or "Aura: OFF"
+    auraBtn.BackgroundColor3 = AURA_ON and Color3.fromRGB(140, 50, 90) or Color3.fromRGB(50, 50, 60)
+    log(AURA_ON
+        and string.format("Aura เปิด — ตีรอบตัว %.0f studs (มอน+ผู้เล่นใกล้)", AURA_RADIUS)
+        or "Aura ปิด — ตีเฉพาะเป้าเควส", AURA_ON and "G" or "O")
 end)
 
 flySpyBtn.MouseButton1Click:Connect(function()
