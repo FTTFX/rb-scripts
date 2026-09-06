@@ -31,11 +31,11 @@ _G.BF04C_FLY = {
     normal = 100,
     long = 70,
     combat = 80,
-    pause = 0.15,
-    settle = 0.35,
+    pause = 0,
+    settle = 0.25,
 }
-local FLY_CHUNK_PAUSE = 0.15
-local FLY_SETTLE = 0.35
+local FLY_CHUNK_PAUSE = 0 -- ไม่หยุดคั่นท่อน (กันรู้สึกสะดุด)
+local FLY_SETTLE = 0.25
 
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
@@ -221,7 +221,7 @@ local function flyTo(posOrCF, label)
             ok = true
             return
         end
-        -- บิน tween แบ่งท่อน ความเร็ว ~100 (Spy เครื่อง)
+        -- บิน tween ต่อเนื่อง ~100 (ไม่หยุดคั่นท่อน)
         local spd = FLY_SPEED
         if label == "มอน" or (label and label:find("มอน", 1, true)) then
             spd = FLY_SPEED_COMBAT
@@ -231,7 +231,8 @@ local function flyTo(posOrCF, label)
         elseif dist >= 1500 then spd = math.min(FLY_SPEED, 100)
         elseif dist >= 800 then spd = math.min(FLY_SPEED, 100)
         end
-        local chunk = (dist >= 3000) and 400 or ((dist >= 1500) and 450 or 500)
+        -- ท่อนใหญ่ขึ้น = ต่อเนื่องกว่า (ยังแบ่งกันดีดถ้าไกลมาก)
+        local chunk = (dist >= 5000) and 900 or ((dist >= 2000) and 1100 or 1400)
         if label and label:find("spySPD", 1, true) then
             chunk = 380
         end
@@ -252,7 +253,7 @@ local function flyTo(posOrCF, label)
             local dir = (dest.Position - hrp.Position)
             if dir.Magnitude < 1 then break end
             local nxt = hrp.Position + dir.Unit * step
-            local dur = math.clamp(step / spd, 0.3, 8)
+            local dur = math.clamp(step / spd, 0.2, 12)
             stopFlyTween()
             local look = Vector3.new(dir.X, 0, dir.Z)
             local lookCF = look.Magnitude > 1 and CFrame.new(nxt, nxt + look) or CFrame.new(nxt)
@@ -261,7 +262,7 @@ local function flyTo(posOrCF, label)
                 { CFrame = lookCF })
             currentTween = tw
             tw:Play()
-            local tEnd = os.clock() + dur + 0.4
+            local tEnd = os.clock() + dur + 0.08
             while currentTween == tw and os.clock() < tEnd
                   and (_G.BF04C_ON or _G.BF04C_SPYFLY) and _G.BF04C_GEN == MY_GEN do
                 setNoclip(true)
@@ -269,19 +270,22 @@ local function flyTo(posOrCF, label)
                 if h2 then
                     h2.AssemblyLinearVelocity = Vector3.zero
                     hrp = h2
+                    if (h2.Position - nxt).Magnitude <= 22 then
+                        break
+                    end
                 end
-                task.wait(0.05)
+                task.wait(0.03)
             end
             stopFlyTween()
-            task.wait(FLY_CHUNK_PAUSE)
+            -- ไม่ pause คั่นท่อน — ต่อทันที
         end
-        for _ = 1, 4 do
+        for _ = 1, 3 do
             local _, h2 = getChar()
             if not h2 then break end
             setNoclip(true)
             h2.CFrame = dest
             h2.AssemblyLinearVelocity = Vector3.zero
-            task.wait(0.25)
+            task.wait(0.15)
             if (h2.Position - dest.Position).Magnitude <= 90 then
                 ok = true
                 break
@@ -2067,10 +2071,9 @@ end
 -- ร่างพระตีไกล → Spy: โดนสูงสุด ≈96 | รักษาระยะห่างไม่ชนตัวมอน
 local SAFE_HIT_RANGE = 90 -- เริ่มตีเมื่อเข้าใกล้ระยะนี้
 local STANDOFF_Y = 48 -- ลอยเหนือมอน (อยู่ในระยะตี แต่ไม่ทับตัว)
-local VACUUM_ON = true
-local VACUUM_RADIUS = 320 -- รัศมีดูดมอนชื่อเดียวกัน
-local VACUUM_PULL_Y = -8 -- ดึงมอนมาอยู่ใต้ตัวเรา (legacy)
--- บอสไม่ดูดรวม (ตัวเดียว)
+local VACUUM_ON = false -- ปิดดูดมอน (ช้าลง)
+local VACUUM_RADIUS = 320
+local VACUUM_PULL_Y = -8
 local function attackHeight()
     return STANDOFF_Y
 end
@@ -2818,7 +2821,6 @@ local function mainLoop()
             if not mhrp or not mhum then return end
 
             if (md or 999) > SAFE_HIT_RANGE then
-                -- บินไปจุดลอยเหนือมอน (ยังไม่ทับตัว)
                 local stand = mhrp.Position + Vector3.new(0, STANDOFF_Y, 0)
                 flyTo(CFrame.new(stand), "มอน")
                 local _, hNear = getChar()
@@ -2826,50 +2828,30 @@ local function mainLoop()
                 task.wait(0.12)
                 return
             end
-            -- ใกล้เกิน (ชนตัว) → ดันขึ้นให้ห่างก่อนตี
             if (md or 0) < 25 then
                 local _, hPush = getChar()
                 if hPush then lockOnMobHead(mob, hPush, STANDOFF_Y) end
             end
 
-            local farmAnchor = mhrp.Position
-            log(string.format("สู้ %s HP%.0f (d=%.0f) ดูดมอน r=%d",
-                mob.Name, mhum.Health, md or 0, VACUUM_RADIUS), "Y")
+            log(string.format("สู้ %s HP%.0f (d=%.0f) ลอยห่าง Y=%d",
+                mob.Name, mhum.Health, md or 0, STANDOFF_Y), "Y")
             local lastHp = mhum.Health
             local lastCheck = os.clock()
             local noDmg = 0
             local heightTry = { 48, 56, 40, 64, 35, 72 }
             local hi = 1
-            local lastVacLog = 0
             while mob.Parent and mhum.Parent and mhum.Health > 0
                   and select(1, hasActiveQuest(quest))
                   and _G.BF04C_ON and _G.BF04C_GEN == loopGen do
                 local _, myHrp = getChar()
                 if not myHrp then break end
                 mhrp = mob:FindFirstChild("HumanoidRootPart")
-                if not mhrp then
-                    -- ตัวหลักตาย → หาตัวใหม่ในกองที่ดูดไว้
-                    local nxt = select(1, findMob(quest.mob))
-                    if nxt then
-                        mob = nxt
-                        mhum = mob:FindFirstChildOfClass("Humanoid")
-                        mhrp = mob:FindFirstChild("HumanoidRootPart")
-                        if not mhrp or not mhum then break end
-                    else
-                        break
-                    end
-                end
+                if not mhrp then break end
+                local flat = Vector3.new(myHrp.Position.X - mhrp.Position.X, 0, myHrp.Position.Z - mhrp.Position.Z).Magnitude
                 local useH = heightTry[hi] or STANDOFF_Y
+                if flat < 20 then useH = math.max(useH, 56) end
                 equipSword()
-                holdFarmSpot(myHrp, farmAnchor, useH)
-                local pulled = 0
-                if not isBossQuest(quest) then
-                    pulled = vacuumMobs(quest.mob, myHrp, farmAnchor)
-                    if pulled > 1 and os.clock() - lastVacLog > 2.5 then
-                        lastVacLog = os.clock()
-                        log(string.format("ดูดมอน %d ตัว", pulled), "B")
-                    end
-                end
+                lockOnMobHead(mob, myHrp, useH)
                 attackMob(mob, quest.mob)
                 if os.clock() - lastCheck >= 1.0 then
                     lastCheck = os.clock()
