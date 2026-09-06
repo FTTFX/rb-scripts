@@ -980,10 +980,7 @@ local function huntMobOrSweep(quest)
     flyTo(CFrame.new(pt), "ก้นหอย")
     task.wait(1.4)
     mob, md = findMob(quest.mob)
-    if not mob then
-        log("ยังไม่เจอ " .. tostring(quest.mob) .. " → ไล่จุดต่อไป", "O")
-        logNearbyEnemies(1500)
-    end
+    if not mob then logNearbyEnemies(1500) end
     return mob, md
 end
 
