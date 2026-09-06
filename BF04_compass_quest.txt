@@ -1,12 +1,11 @@
 --[[ ═══════════════════════════════════════════════════════════════════
-    BF04 Compass Quest — ต้นแบบฟาร์มตามเข็มทิศเกม (ไม่ฝังพิกัดเกาะ)
-    แนวคิด:
-      1) อ่าน RS.Quests → เลือกเควสที่ LevelReq ตรงเลเวลเรา
-      2) ถามเกม GetBestQuestNPC / อ่าน UI เข็มทิศ / หา Quest Giver ใน NPCs
-      3) บินไปตามทิศ → StartQuest
-      4) ตีมอนตาม Task ในเควส
-      5) ครบแล้ววนใหม่
-    ถ้าใช้ได้ = ใช้ได้ทั้งเกม ไม่ต้องอัปพิกัดทุกแพตช์
+    BF04 Compass Quest — ต้นแบบฟาร์มตามเข็มทิศเกม
+    ย้ายเกาะ (ถาวร — ห้ามข้ามขั้นตอน):
+      A) รู้เป้า: เข็มทิศ→ชื่อ → cache/known hub → ค่อย probe
+      B) บินช้าแบ่งท่อน (FLY_SPEED_LONG) + ยืนยันถึงจริง
+      C) ใกล้ NPC จริงเท่านั้นค่อย StartQuest (ห้ามรับระยะไกล)
+      D) จำ hub ที่สำเร็จไว้ใน _G.BF04C_HUBS → เกาะเดิมไม่ต้องหาใหม่
+      E) รับเควสแล้วรีเซ็ตก้นหอย / ไกลจุดมอน→บินกลับ known ก่อน
     ═══════════════════════════════════════════════════════════════════ ]]
 
 local Players = game:GetService("Players")
@@ -278,6 +277,28 @@ local function flyTo(posOrCF, label)
     flyLock = false
     if not okRun then log("fly error: " .. tostring(err), "R") end
     return ok
+end
+
+-- มาตรฐานย้ายเกาะ: บิน → ยืนยันเหลือระยะ (กันดีดกลับแล้วยังคิดว่าถึง)
+local function travelArrive(pos, label, nearOk)
+    nearOk = nearOk or 120
+    local _, h0 = getChar()
+    local d0 = h0 and (h0.Position - pos).Magnitude or 99999
+    if d0 <= (nearOk * 0.45) then
+        return true, d0
+    end
+    local ok = flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), label or "ย้ายเกาะ")
+    task.wait(0.35)
+    local _, h1 = getChar()
+    local left = h1 and (h1.Position - pos).Magnitude or 99999
+    if (not ok or left > nearOk) and left > 80 then
+        log(string.format("ยังไม่ติดที่หมาย (เหลือ %.0f) — บินช้าเข้าใหม่", left), "O")
+        flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), (label or "ย้ายเกาะ") .. "/retry")
+        task.wait(0.4)
+        local _, h2 = getChar()
+        left = h2 and (h2.Position - pos).Magnitude or 99999
+    end
+    return left <= nearOk, left
 end
 
 -- InvokeServer มี timeout กันค้างเงียบ
@@ -611,6 +632,47 @@ local KNOWN_MOB_ALT = {
         Vector3.new(3000, 400, -7200),
     },
 }
+
+-- hub ที่เคยถึงสำเร็จ — คงข้ามโหลดสคริปต์ในเซสชันเดียวกัน
+_G.BF04C_HUBS = _G.BF04C_HUBS or { npc = {}, mob = {} }
+local function rememberHub(kind, key, pos)
+    if not key or not pos then return end
+    local k = tostring(key):lower()
+    local v = typeof(pos) == "Vector3" and pos or pos.Position
+    if not v then return end
+    _G.BF04C_HUBS[kind] = _G.BF04C_HUBS[kind] or {}
+    _G.BF04C_HUBS[kind][k] = v
+    if kind == "npc" then
+        NPC_CACHE[k] = v
+        KNOWN_NPC[k] = v
+    elseif kind == "mob" then
+        MOB_CACHE[k] = v
+        KNOWN_MOB[k] = v
+    end
+end
+do
+    local hubs = _G.BF04C_HUBS
+    for k, v in pairs(hubs.npc or {}) do
+        if typeof(v) == "Vector3" then
+            NPC_CACHE[k] = v
+            KNOWN_NPC[k] = v
+        end
+    end
+    for k, v in pairs(hubs.mob or {}) do
+        if typeof(v) == "Vector3" then
+            MOB_CACHE[k] = v
+            KNOWN_MOB[k] = v
+        end
+    end
+    local nN, nM = 0, 0
+    for _ in pairs(hubs.npc or {}) do nN = nN + 1 end
+    for _ in pairs(hubs.mob or {}) do nM = nM + 1 end
+    if nN + nM > 0 then
+        -- log หลัง GUI พร้อม — เรียกทีหลังไม่ได้ตรงนี้ ใช้ print
+        print(string.format("[BF04] โหลด hub จำไว้: NPC=%d mob=%d", nN, nM))
+    end
+end
+
 local compassStuck = 0
 local lastMeter = nil
 local probeStep = 0
@@ -644,9 +706,10 @@ local function rememberNpc(part, nameOverride)
     if not part then return end
     local name = nameOverride or (part.Parent and part.Parent.Name) or part.Name
     NPC_CACHE[name:lower()] = part.Position
-    -- จำสั้นด้วย เช่น "hydra town quest giver"
     local short = name:lower():gsub("%s+", " ")
     NPC_CACHE[short] = part.Position
+    rememberHub("npc", name, part.Position)
+    rememberHub("npc", short, part.Position)
 end
 
 -- สแกน NPC ทั้งแมพ (ไม่จำกัดแค่โฟลเดอร์ NPCs)
@@ -1315,7 +1378,10 @@ local function findMob(mobName)
                 local d = myHrp and (hrp.Position - myHrp.Position).Magnitude or 0
                 if d < bestD then
                     bestD = d; best = e
-                    if mobName then MOB_CACHE[mobName:lower()] = hrp.Position end
+                    if mobName then
+                        MOB_CACHE[mobName:lower()] = hrp.Position
+                        rememberHub("mob", mobName, hrp.Position)
+                    end
                 end
             end
         end
@@ -2499,30 +2565,18 @@ local function mainLoop()
                 local dist = hrp and (hrp.Position - pos).Magnitude or 9999
                 local nearDist = isBigForm() and 55 or 28
                 if dist > nearDist then
-                    local arrived = flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/" .. src)
-                    task.wait(0.35)
-                    local _, hCheck = getChar()
-                    local left = hCheck and (hCheck.Position - pos).Magnitude or 9999
-                    if not arrived or left > 150 then
+                    local arrived, left = travelArrive(pos, "NPC/" .. tostring(src), 120)
+                    if not arrived then
                         log(string.format("ยังไม่ถึง NPC (เหลือ %.0f) — ไม่ StartQuest", left), "Y")
                         task.wait(0.4)
                         return
                     end
-                end
-                -- ยืนยันระยะอีกครั้งก่อนรับเควส
-                do
-                    local _, hNow0 = getChar()
-                    local dGate = hNow0 and (hNow0.Position - pos).Magnitude or 9999
-                    if dGate > 80 then
-                        log(string.format("ระยะยังไกล %.0f — บินช้าเข้าใหม่", dGate), "O")
-                        flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/retry")
-                        task.wait(0.4)
-                        local _, h2 = getChar()
-                        dGate = h2 and (h2.Position - pos).Magnitude or 9999
-                        if dGate > 100 then
-                            log("ยังไกลอยู่ ข้ามรอบนี้", "R")
-                            return
-                        end
+                else
+                    local _, hGate = getChar()
+                    local dGate = hGate and (hGate.Position - pos).Magnitude or 9999
+                    if dGate > 100 then
+                        log(string.format("ระยะยังไกล %.0f — ไม่ StartQuest", dGate), "R")
+                        return
                     end
                 end
                 equipSword()
@@ -2533,6 +2587,13 @@ local function mainLoop()
                 end
                 local _, hNow = getChar()
                 local dNow = hNow and (hNow.Position - pos).Magnitude or -1
+                if dNow > 100 then
+                    log(string.format("ยืนไม่ติด NPC (%.0f) — ข้าม StartQuest", dNow), "R")
+                    return
+                end
+                -- จำ hub เกาะนี้ — รอบหน้าไม่ต้องหาใหม่
+                if quest.npc then rememberHub("npc", quest.npc, pos) end
+                rememberHub("npc", tostring(src):gsub("^known:", ""):gsub("^cache:", ""), pos)
                 log(string.format("StartQuest(%s, %s) ร่างใหญ่=%s ระยะ=%.0f",
                     quest.qName, tostring(quest.qNum), tostring(isBigForm()), dNow), "Y")
                 local iok, ires = invokeCF(cf, "StartQuest", quest.qName, quest.qNum)
@@ -2541,7 +2602,11 @@ local function mainLoop()
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
                     resetSpiral(nil) -- รับเควสใหม่ → อย่าใช้ก้นหอยเกาะเก่า
-                    log("ตั้งโหมดมีเควส 25วิ (รอ UI)", "G")
+                    if quest.mob then
+                        local mh = mobSpawnHint(quest.mob)
+                        if mh then rememberHub("mob", quest.mob, mh) end
+                    end
+                    log("ตั้งโหมดมีเควส 25วิ (รอ UI) + จำ hub", "G")
                 elseif ires == "timeout" then
                     log("StartQuest timeout — ลองใหม่", "R")
                     task.wait(1)
