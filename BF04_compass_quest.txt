@@ -429,12 +429,25 @@ local bossMissCount = 0
 
 local function isBossQuest(q)
     if not q then return false end
-    if type(q.need) == "number" and q.need == 1 then return true end
     local m = (q.mob or ""):lower()
+    -- มอนฟาร์ม (ไม่ใช่บอส) — ห้ามสลับ/ทิ้งเควสเพราะคิดว่าเป็นบอส
+    if m:find("marine rear admiral", 1, true) then return false end
+    if m:find("marine commodore", 1, true) then return false end
+    if m:find("commodore", 1, true) then return false end
+    if m:find("enforcer", 1, true) or m:find("assailant", 1, true) then return false end
+    if m:find("warrior", 1, true) or m:find("archer", 1, true) then return false end
+    -- บอสชื่อชัด
+    if m:find("kilo admiral", 1, true) then return true end
+    if m:find("hydra leader", 1, true) then return true end
+    if m:find("island empress", 1, true) then return true end
+    if type(q.need) == "number" and q.need == 1 then
+        -- need=1 ของมอนฟาร์มทะเล → ไม่นับ
+        if m:find("marine", 1, true) and not m:find("kilo", 1, true) then return false end
+        return true
+    end
     return m:find("leader", 1, true) ~= nil
         or m:find("boss", 1, true) ~= nil
         or m:find("king", 1, true) ~= nil
-        or m:find("admiral", 1, true) ~= nil
 end
 
 local function pickQuestForLevel(lv, opts)
