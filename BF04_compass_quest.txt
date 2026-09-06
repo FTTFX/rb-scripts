@@ -103,25 +103,46 @@ local function refreshFlyLbl()
     flyApplyLbl.Text = string.format("บิน %d | ไกล %d | ตี %d | ท่อน %d | หยุด %.2f",
         FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT, FLY_CHUNK, FLY_CHUNK_PAUSE)
 end
-refreshFlyLbl()
 
--- แถวปรับบิน: กดลองเองได้ทันที
+-- แถวกรอกตัวเลขบิน (พิมพ์แล้วกดใส่ / Enter)
+local function mkFlyBox(label, x, w, defText)
+    local lab = Instance.new("TextLabel")
+    lab.Size = UDim2.new(0, 28, 0, 22); lab.Position = UDim2.new(0, x, 0, 84)
+    lab.BackgroundTransparency = 1; lab.TextColor3 = Color3.fromRGB(160, 170, 190)
+    lab.Text = label; lab.Font = Enum.Font.Code; lab.TextSize = 10
+    lab.TextXAlignment = Enum.TextXAlignment.Right; lab.Parent = frame
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, w, 0, 22); box.Position = UDim2.new(0, x + 30, 0, 84)
+    box.BackgroundColor3 = Color3.fromRGB(28, 32, 45); box.BorderSizePixel = 0
+    box.TextColor3 = Color3.new(1, 1, 1); box.Font = Enum.Font.Code; box.TextSize = 11
+    box.Text = defText; box.ClearTextOnFocus = false; box.Parent = frame
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 4)
+    return box
+end
+local boxSpd = mkFlyBox("บิน", 4, 42, tostring(FLY_SPEED))
+local boxLong = mkFlyBox("ไกล", 78, 42, tostring(FLY_SPEED_LONG))
+local boxCombat = mkFlyBox("ตี", 152, 42, tostring(FLY_SPEED_COMBAT))
+local boxChunk = mkFlyBox("ท่อน", 226, 48, tostring(FLY_CHUNK))
+local boxPause = mkFlyBox("หยุด", 306, 42, string.format("%.2f", FLY_CHUNK_PAUSE))
+
+local function syncFlyBoxes()
+    boxSpd.Text = tostring(FLY_SPEED)
+    boxLong.Text = tostring(FLY_SPEED_LONG)
+    boxCombat.Text = tostring(FLY_SPEED_COMBAT)
+    boxChunk.Text = tostring(FLY_CHUNK)
+    boxPause.Text = string.format("%.2f", FLY_CHUNK_PAUSE)
+    refreshFlyLbl()
+end
+syncFlyBoxes()
+
 local function mkTiny(txt, x, y, w, col)
     local b = mkBtn(txt, x, y, w, col or Color3.fromRGB(45, 50, 70))
     b.TextSize = 10
     b.Size = UDim2.new(0, w, 0, 22)
     return b
 end
-local flySpdM = mkTiny("Spd-", 8, 84, 40)
-local flySpdP = mkTiny("Spd+", 50, 84, 40, Color3.fromRGB(50, 90, 60))
-local flyLongM = mkTiny("ไกล-", 94, 84, 40)
-local flyLongP = mkTiny("ไกล+", 136, 84, 40, Color3.fromRGB(50, 90, 60))
-local flyChunkM = mkTiny("ท่อน-", 180, 84, 44)
-local flyChunkP = mkTiny("ท่อน+", 226, 84, 44, Color3.fromRGB(50, 90, 60))
-local flyPauseM = mkTiny("หยุด-", 274, 84, 44)
-local flyPauseP = mkTiny("หยุด+", 320, 84, 44, Color3.fromRGB(50, 90, 60))
-local flyResetBtn = mkTiny("รีเซ็ต", 368, 84, 50, Color3.fromRGB(100, 60, 40))
-local flyCombatBtn = mkTiny("ตี±10", 422, 84, 40, Color3.fromRGB(80, 70, 40))
+local flyApplyBtn = mkTiny("ใส่", 382, 84, 36, Color3.fromRGB(40, 110, 70))
+local flyResetBtn = mkTiny("รีเซ็ต", 422, 84, 40, Color3.fromRGB(100, 60, 40))
 
 local statusLbl = Instance.new("TextLabel")
 statusLbl.Size = UDim2.new(1, -16, 0, 32); statusLbl.Position = UDim2.new(0, 8, 0, 110)
@@ -3236,7 +3257,7 @@ local function dumpFlySpeed()
             FLY_SPEED_LONG = longSpd
             FLY_SPEED_COMBAT = combatSpd
             saveFlyCfg()
-            refreshFlyLbl()
+            syncFlyBoxes()
             log(string.format("★ เร็วสุดไม่กระตุก ≈ %d studs/s", best), "G")
             log(string.format("→ ใช้ AUTO: ปกติ=%d ไกล=%d ตี=%d", best, longSpd, combatSpd), "G")
             log("ค่าจำใน _G.BF04C_FLY — โหลดสคริปต์ใหม่ในเซสชันนี้ยังใช้ได้", "B")
@@ -3252,26 +3273,29 @@ local function dumpFlySpeed()
     if not ok then log("Spy ความเร็ว error: " .. tostring(err), "R") end
 end
 
-local function applyFlyAdjust(kind, delta)
-    if kind == "spd" then
-        FLY_SPEED = math.clamp(FLY_SPEED + delta, 40, 300)
-    elseif kind == "long" then
-        FLY_SPEED_LONG = math.clamp(FLY_SPEED_LONG + delta, 30, 250)
-    elseif kind == "combat" then
-        FLY_SPEED_COMBAT = math.clamp(FLY_SPEED_COMBAT + delta, 40, 250)
-    elseif kind == "chunk" then
-        FLY_CHUNK = math.clamp(FLY_CHUNK + delta, 200, 2500)
-    elseif kind == "pause" then
-        FLY_CHUNK_PAUSE = math.clamp(FLY_CHUNK_PAUSE + delta, 0, 1.0)
-        FLY_CHUNK_PAUSE = math.floor(FLY_CHUNK_PAUSE * 100 + 0.5) / 100
-    elseif kind == "reset" then
-        FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT = 100, 70, 80
-        FLY_CHUNK, FLY_CHUNK_PAUSE, FLY_SETTLE = 1000, 0, 0.25
+local function applyFlyFromBoxes()
+    local function num(box, fallback)
+        local v = tonumber((box.Text or ""):gsub(",", "."))
+        return v or fallback
     end
+    FLY_SPEED = math.clamp(num(boxSpd, FLY_SPEED), 40, 400)
+    FLY_SPEED_LONG = math.clamp(num(boxLong, FLY_SPEED_LONG), 30, 400)
+    FLY_SPEED_COMBAT = math.clamp(num(boxCombat, FLY_SPEED_COMBAT), 40, 400)
+    FLY_CHUNK = math.clamp(num(boxChunk, FLY_CHUNK), 200, 3000)
+    FLY_CHUNK_PAUSE = math.clamp(num(boxPause, FLY_CHUNK_PAUSE), 0, 2)
+    FLY_CHUNK_PAUSE = math.floor(FLY_CHUNK_PAUSE * 100 + 0.5) / 100
     saveFlyCfg()
-    refreshFlyLbl()
+    syncFlyBoxes()
     log(string.format("บิน=%d ไกล=%d ตี=%d ท่อน=%d หยุด=%.2f",
         FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT, FLY_CHUNK, FLY_CHUNK_PAUSE), "Y")
+end
+
+local function resetFlyBoxes()
+    FLY_SPEED, FLY_SPEED_LONG, FLY_SPEED_COMBAT = 100, 70, 80
+    FLY_CHUNK, FLY_CHUNK_PAUSE, FLY_SETTLE = 1000, 0, 0.25
+    saveFlyCfg()
+    syncFlyBoxes()
+    log("รีเซ็ตบิน: 100/70/80 ท่อน1000 หยุด0", "O")
 end
 
 -- ── ปุ่ม ───────────────────────────────────────────────────────────
@@ -3326,23 +3350,13 @@ flySpyBtn.MouseButton1Click:Connect(function()
     task.spawn(dumpFlySpeed)
 end)
 
-flySpdM.MouseButton1Click:Connect(function() applyFlyAdjust("spd", -10) end)
-flySpdP.MouseButton1Click:Connect(function() applyFlyAdjust("spd", 10) end)
-flyLongM.MouseButton1Click:Connect(function() applyFlyAdjust("long", -10) end)
-flyLongP.MouseButton1Click:Connect(function() applyFlyAdjust("long", 10) end)
-flyChunkM.MouseButton1Click:Connect(function() applyFlyAdjust("chunk", -100) end)
-flyChunkP.MouseButton1Click:Connect(function() applyFlyAdjust("chunk", 100) end)
-flyPauseM.MouseButton1Click:Connect(function() applyFlyAdjust("pause", -0.05) end)
-flyPauseP.MouseButton1Click:Connect(function() applyFlyAdjust("pause", 0.05) end)
-flyResetBtn.MouseButton1Click:Connect(function() applyFlyAdjust("reset", 0) end)
-flyCombatBtn.MouseButton1Click:Connect(function()
-    -- สลับ +10 / -10 ตามค่าปัจจุบัน
-    if FLY_SPEED_COMBAT >= 150 then
-        applyFlyAdjust("combat", -10)
-    else
-        applyFlyAdjust("combat", 10)
-    end
-end)
+flyApplyBtn.MouseButton1Click:Connect(applyFlyFromBoxes)
+flyResetBtn.MouseButton1Click:Connect(resetFlyBoxes)
+for _, box in ipairs({ boxSpd, boxLong, boxCombat, boxChunk, boxPause }) do
+    box.FocusLost:Connect(function(enter)
+        if enter then applyFlyFromBoxes() end
+    end)
+end
 
 copyBtn.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard or write_clipboard
