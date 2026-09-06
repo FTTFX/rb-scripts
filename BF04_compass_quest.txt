@@ -158,36 +158,69 @@ local function setNoclip(on)
 end
 
 local currentTween
+local flyLock = false
 local function flyTo(posOrCF, label)
     local _, hrp = getChar()
     if not hrp then return false end
+    if flyLock then
+        -- มีเที่ยวบินค้าง — รอให้จบ ไม่ยกเลิกกลางทาง
+        local t0 = os.clock()
+        while flyLock and os.clock() - t0 < 25 and _G.BF04C_ON do
+            task.wait(0.1)
+        end
+    end
+    flyLock = true
     setNoclip(true)
     local dest = typeof(posOrCF) == "CFrame" and posOrCF
         or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
     local dist = (hrp.Position - dest.Position).Magnitude
     log(string.format("บิน→%s %.0f studs", label or "เป้า", dist), "B")
-    if dist < 18 then
-        hrp.CFrame = dest
-        return true
-    end
-    local spd = FLY_SPEED
-    if dist > 1200 then spd = 180 end
-    if currentTween then pcall(function() currentTween:Cancel() end) end
-    local tw = TweenService:Create(hrp,
-        TweenInfo.new(dist / spd, Enum.EasingStyle.Linear), { CFrame = dest })
-    currentTween = tw
-    tw:Play()
-    tw.Completed:Wait()
-    currentTween = nil
-    local _, h2 = getChar()
-    if not h2 then return false end
-    local left = (h2.Position - dest.Position).Magnitude
-    if left <= 50 then
-        h2.CFrame = dest
-        return true
-    end
-    log(string.format("ยังไม่ถึง (เหลือ %.0f)", left), "Y")
-    return false
+
+    local ok = false
+    local okRun, err = pcall(function()
+        if dist < 25 then
+            hrp.CFrame = dest
+            ok = true
+            return
+        end
+        -- วาร์ปทีละก้าว (ทนกว่า Tween ที่ถูกยกเลิก/ดึงกลับ)
+        local step = 220
+        local guard = 0
+        while _G.BF04C_ON and guard < 80 do
+            guard += 1
+            local _, h = getChar()
+            if not h then break end
+            setNoclip(true)
+            local left = (h.Position - dest.Position).Magnitude
+            if left <= 30 then
+                h.CFrame = dest
+                ok = true
+                break
+            end
+            local dir = (dest.Position - h.Position)
+            local go = math.min(step, left)
+            local nxt = h.Position + dir.Unit * go
+            h.CFrame = CFrame.new(nxt, nxt + Vector3.new(dir.X, 0, dir.Z))
+            h.AssemblyLinearVelocity = Vector3.zero
+            task.wait(0.05)
+        end
+        local _, h2 = getChar()
+        if h2 then
+            local left = (h2.Position - dest.Position).Magnitude
+            if left > 40 then
+                -- บังคับวางครั้งสุดท้าย
+                h2.CFrame = dest
+                left = (h2.Position - dest.Position).Magnitude
+            end
+            ok = left <= 60
+            if not ok then
+                log(string.format("ยังไม่ถึง (เหลือ %.0f)", left), "Y")
+            end
+        end
+    end)
+    flyLock = false
+    if not okRun then log("fly error: " .. tostring(err), "R") end
+    return ok
 end
 
 -- ── อ่าน RS.Quests → เลือกเควสตามเลเวล ─────────────────────────────
@@ -1245,52 +1278,78 @@ local function parseProgress(tx)
 end
 
 local function readQuestProgress(quest)
-    local title, cur, need = "", nil, nil
+    local title, cur, need, src = "", nil, nil, nil
+
+    local function considerTitle(tx, from)
+        if not tx or tx == "" then return end
+        local tl = tx:lower()
+        if tl:find("bandit", 1, true) then return end
+        if not (tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true)) then return end
+        if quest and quest.mob and not tx:find(quest.mob, 1, true)
+           and not tx:find("Archer", 1, true) and not tx:find("Warrior", 1, true) then
+            -- ยังรับได้ถ้าเป็นข้อความเควสทั่วไป
+        end
+        title = tx
+        src = from
+        local a, b = parseProgress(tx)
+        if a and b then cur, need = a, b end
+        if not need then
+            need = tonumber(tx:match("[Dd]efeat%s*(%d+)") or tx:match("เอาชนะ%s*(%d+)") or "")
+        end
+    end
+
     local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
     if ok and vis == true then
-        pcall(function()
-            title = pg.Main.Quest.Container.QuestTitle.Title.Text or ""
-        end)
-        cur, need = parseProgress(title)
-        if not cur then
-            for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
-                if d:IsA("TextLabel") then
-                    local a, b = parseProgress(d.Text)
-                    if a and b then cur, need = a, b; break end
-                end
+        local t = ""
+        pcall(function() t = pg.Main.Quest.Container.QuestTitle.Title.Text or "" end)
+        considerTitle(t, "Main.Quest")
+        for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
+            if d:IsA("TextLabel") then
+                local a, b = parseProgress(d.Text)
+                if a and b then cur, need = a, b end
+                if title == "" then considerTitle(tostring(d.Text), "Main.Quest") end
             end
         end
-        if title ~= "" then return cur, need, title, "Main.Quest" end
     end
-    -- สแกนจอ (ข้าม GUI สคริปต์)
-    for _, d in ipairs(pg:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            if not (sg and d:IsDescendantOf(sg)) and guiReallyVisible(d) then
-                local tx = tostring(d.Text or "")
-                if #tx > 0 and #tx < 90
-                   and not tx:find("มีเควสแล้ว", 1, true)
-                   and not tx:find("%[%d%d:%d%d:%d%d%]") then
-                    local tl = tx:lower()
-                    local mobOk = not quest or not quest.mob or tx:find(quest.mob, 1, true)
-                    if mobOk and (tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true))
-                       and not tl:find("bandit", 1, true) then
-                        local a, b = parseProgress(tx)
-                        return a, b, tx, "onScreen"
-                    end
-                    if mobOk then
-                        local a, b = parseProgress(tx)
-                        if a and b and b >= 5 and b <= 20 then
-                            return a, b, tx, "onScreen"
-                        end
+
+    if title == "" then
+        for _, d in ipairs(pg:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                if not (sg and d:IsDescendantOf(sg)) and guiReallyVisible(d) then
+                    local tx = tostring(d.Text or "")
+                    if #tx > 0 and #tx < 90 and not tx:find("%[%d%d:%d%d:%d%d%]")
+                       and not tx:find("มีเควสแล้ว", 1, true) then
+                        considerTitle(tx, "onScreen")
+                        if title ~= "" then break end
                     end
                 end
             end
         end
     end
-    return nil, nil, "", nil
+
+    -- progress แยกช่อง เช่น "0/8"
+    if title ~= "" and (not cur or not need) then
+        local expect = need or (quest and quest.need) or 8
+        for _, d in ipairs(pg:GetDescendants()) do
+            if d:IsA("TextLabel") and not (sg and d:IsDescendantOf(sg)) and guiReallyVisible(d) then
+                local a, b = parseProgress(d.Text)
+                if a and b and b == expect then
+                    cur, need = a, b
+                    break
+                end
+                if a and b and b >= 5 and b <= 20 and #tostring(d.Text) <= 8 then
+                    cur, need = a, b
+                    break
+                end
+            end
+        end
+    end
+
+    if title == "" then return nil, nil, "", nil end
+    return cur, need, title, src
 end
 
--- Guide บอกไปหา Quest Giver = ยังไม่มีเควสตีมอน / เควสจบแล้ว
+-- Guide บอกไปหา Quest Giver
 local function guideWantsQuestGiver()
     local ui = readCompassUI()
     if not ui.title then return false end
@@ -1298,7 +1357,6 @@ local function guideWantsQuestGiver()
     return t:find("find the", 1, true) ~= nil and t:find("quest giver", 1, true) ~= nil
 end
 
--- หาข้อความเควสที่โชว์บนจอจริง (ข้าม GUI สคริปต์เรา + ค่าค้าง)
 local function findOnScreenQuestText(quest)
     local cur, need, title = readQuestProgress(quest)
     if title ~= "" then return title, "progress" end
@@ -1320,39 +1378,37 @@ end
 local function hasActiveQuest(quest)
     local cur, need, title, src = readQuestProgress(quest)
 
-    -- ครบจำนวนแล้ว = จบเควส → กลับไปรับใหม่
+    -- ครบแล้ว → รับใหม่
     if cur and need and need > 0 and cur >= need then
         forceQuestUntil = 0
         forceQuestLabel = ""
         return false, string.format("ครบ%d/%d", cur, need)
     end
 
-    -- Guide ชี้ Quest Giver = ไม่มีเควสตีอยู่ (หรือจบแล้ว)
+    -- มีข้อความ Defeat/เอาชนะ บนจอ = มีเควส (สำคัญกว่า Guide)
+    if title ~= "" and not title:lower():find("bandit", 1, true) then
+        local tl = title:lower()
+        if tl:find("defeat", 1, true) or title:find("เอาชนะ", 1, true) then
+            if cur and need then
+                return true, string.format("%s (%d/%d)", title, cur, need)
+            end
+            return true, title
+        end
+    end
+
+    -- เพิ่ง StartQuest สำเร็จ — เชื่อ force ก่อน (อย่าให้ Guide ล้าง)
+    if os.clock() < forceQuestUntil then
+        return true, forceQuestLabel ~= "" and forceQuestLabel or "(รอUIเควส)"
+    end
+
+    -- ไม่มี Defeat บนจอ + Guide ชี้ Giver = ยังไม่มีเควส
     if guideWantsQuestGiver() then
-        local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
-        if not (ok and vis == true) then
-            forceQuestUntil = 0
-            forceQuestLabel = ""
-            return false, ""
-        end
-        -- Main.Quest เปิดอยู่แต่ Guide ก็ชี้ Giver → เชื่อ progress
-        if title == "" or (title:lower():find("bandit", 1, true)) then
-            forceQuestUntil = 0
-            return false, ""
-        end
+        return false, ""
     end
 
     local okVis, vis = pcall(function() return pg.Main.Quest.Visible end)
-    if okVis and vis == true and title ~= "" and not title:lower():find("bandit", 1, true) then
+    if okVis and vis == true and title ~= "" then
         return true, title
-    end
-
-    if title ~= "" and not title:lower():find("bandit", 1, true) then
-        return true, title
-    end
-
-    if os.clock() < forceQuestUntil then
-        return true, forceQuestLabel ~= "" and forceQuestLabel or "(รอUIเควส)"
     end
 
     return false, ""
@@ -1385,13 +1441,20 @@ local function dumpQuestUI()
     if cur and need then
         log(string.format("★ Progress: %d / %d %s", cur, need, cur >= need and "← จบแล้ว ต้องรับใหม่" or ""), cur >= need and "Y" or "G")
     else
-        log("ยังอ่าน x/y ไม่ได้ — ส่ง Spy ตอนมีเควสอยู่", "O")
+        log("ยังอ่าน x/y ไม่ได้ (จะใช้ข้อความ Defeat/เอาชนะ แทน)", "O")
     end
     local ui = readCompassUI()
     if ui.title then log("Guide: " .. ui.title, "B") end
-    if guideWantsQuestGiver() then log("Guide ชี้ Quest Giver → ควรรีบรับเควส", "Y") end
+    if guideWantsQuestGiver() then
+        log("Guide ชี้ Quest Giver — ถ้ามี Defeat บนจอ = ยังมีเควสอยู่", "Y")
+    end
     local on, t2 = hasActiveQuest(quest)
-    log(string.format("สรุป hasActiveQuest=%s | %s", tostring(on), t2 ~= "" and t2 or "(ว่าง)"), on and "G" or "Y")
+    log(string.format("สรุป hasActiveQuest=%s | %s", tostring(on), t2 ~= "" and t2 or "(ว่าง)"), on and "G" or "R")
+    if on then
+        log("→ AUTO ควรไปตีมอน ไม่วน StartQuest", "G")
+    else
+        log("→ AUTO จะไปรับเควสที่ NPC", "Y")
+    end
     log("════ จบ Spy เควส — Copy ส่งมาได้ ════", "Y")
 end
 
@@ -1502,9 +1565,14 @@ end
 
 -- ── Main loop ──────────────────────────────────────────────────────
 local function mainLoop()
+    if _G.BF04C_LOOPING then
+        log("AUTO กำลังรันอยู่แล้ว — ไม่เปิดซ้ำ", "O")
+        return
+    end
+    _G.BF04C_LOOPING = true
     log("=== START Compass Auto ===", "Y")
     local cf = getCommF()
-    if not cf then log("ไม่มี CommF_", "R") return end
+    if not cf then log("ไม่มี CommF_", "R"); _G.BF04C_LOOPING = false; return end
     getCombatRemotes()
     pcall(function() ensureBuddhaSword(true) end)
 
@@ -1519,7 +1587,7 @@ local function mainLoop()
             end
             refreshStatus(quest)
 
-            -- ── มีเควสแล้ว? ใช้ Main.Quest.Visible เท่านั้น ──
+            -- ── มีเควสแล้ว? (Defeat/เอาชนะ บนจอ) ──
             local hasQ, qTxt = hasActiveQuest(quest)
             if not hasQ then
                 log("ยังไม่มีเควส (Quest UI ปิด) → ไปรับที่ NPC", "Y")
@@ -1548,10 +1616,10 @@ local function mainLoop()
                 local dist = hrp and (hrp.Position - pos).Magnitude or 9999
                 local nearDist = isBigForm() and 55 or 28
                 if dist > nearDist then
-                    flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/" .. src)
-                    return
+                    local arrived = flyTo(CFrame.new(pos + Vector3.new(0, 6, 0)), "NPC/" .. src)
+                    if not arrived then task.wait(0.2); return end
                 end
-                equipSword()
+                equipSword() -- ถึงแล้ว → StartQuest ต่อทันที
                 for _ = 1, 4 do
                     local _, h = getChar()
                     if h then h.CFrame = CFrame.new(pos + Vector3.new(0, 4, 0)) end
