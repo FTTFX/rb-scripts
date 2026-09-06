@@ -577,6 +577,7 @@ local function findQuestGiver(quest)
 end
 
 -- รวมแหล่งหาเป้า NPC
+-- ลำดับ: NPCs โหลดแล้ว → พิกัดที่เคยรู้ → เข็มทิศ (สุดท้าย)
 local function resolveNpcTarget(quest)
     local part, dist = findQuestGiver(quest)
     if part then
@@ -591,11 +592,18 @@ local function resolveNpcTarget(quest)
         log(string.format("เข็มทิศระยะ: %d ม.", ui.distance), "O")
     end
 
-    -- พิกัดจาก cache/known (ไม่ใช่ remote — GetBestQuestNPC ค้าง)
+    -- มีพิกัด known/cache → บินตรงเลย (ไม่เดาลูกศร — กันวน/บินเพดาน)
     local cached, csrc = npcFromTitle(ui.title)
-    if cached and (not ui.distance or ui.distance <= 120 or compassStuck >= 2) then
-        log("ใช้พิกัด " .. tostring(csrc) .. " @ "
-            .. string.format("%.0f,%.0f,%.0f", cached.X, cached.Y, cached.Z), "G")
+    if not cached and quest then
+        local mob = (quest.mob or ""):lower()
+        if mob:find("dragon crew", 1, true) then
+            cached = KNOWN_NPC["dragon crew quest giver"]
+            csrc = "known:dragon crew quest giver"
+        end
+    end
+    if cached then
+        log(string.format("บินตรงพิกัด %s @ %.0f,%.0f,%.0f",
+            tostring(csrc), cached.X, cached.Y, cached.Z), "G")
         return cached, csrc
     end
 
@@ -604,8 +612,7 @@ local function resolveNpcTarget(quest)
         return "COMPASS_STEP", "compassUI"
     end
 
-    if cached then return cached, csrc end
-    return nil, "NPC ยังไม่โหลด — เปิด Recommended Quest / กด Spy เข็มทิศ"
+    return nil, "ยังไม่มีพิกัด NPC — กด Spy มอน / เปิด Recommended Quest"
 end
 
 local function findMob(mobName)
@@ -1401,6 +1408,6 @@ task.spawn(function()
 end)
 
 log("โหลด Compass Quest แล้ว", "G")
-log("1) กด Dump เข็มทิศ/Data ก่อน → Copy ส่งมาดู", "Y")
-log("2) ถ้าข้อมูลโอเค กด AUTO ทดลองวน", "Y")
+log("วิธีใช้: เปิดเควสแนะนำในเกม → กด AUTO", "Y")
+log("ถ้าค้าง: กด Spy มอน → Copy ส่งมา", "Y")
 refreshStatus(pickQuestForLevel(getLevel()))
