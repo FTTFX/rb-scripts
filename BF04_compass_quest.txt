@@ -452,11 +452,12 @@ end
 local NPC_CACHE = {} -- lowerName -> Vector3
 local KNOWN_NPC = {
     ["dragon crew quest giver"] = Vector3.new(6735.11, 126.99, -711.10),
-    -- เก่า BF04 (อาจขยับ) — ใช้เป็นจุดลองโหลดโซน
-    ["hydra town quest giver"] = Vector3.new(5448.86, 601.52, 751.13),
+    -- Spy จริง 2026-09-06
+    ["hydra town quest giver"] = Vector3.new(5214.3, 1003.5, 759.0),
 }
 local KNOWN_NPC_ALT = {
     ["hydra town quest giver"] = {
+        Vector3.new(5214.3, 1003.5, 759.0),
         Vector3.new(5448.86, 601.52, 751.13),
         Vector3.new(5200, 600, 750),
         Vector3.new(5600, 580, 800),
@@ -473,6 +474,7 @@ local KNOWN_MOB = {
     ["dragon crew archer"] = Vector3.new(6762, 484, 111),
     -- Hydra Town บน (เก่า BF04 + จุดรอบเมือง)
     ["hydra enforcer"] = Vector3.new(5825.22, 682.89, 704.58),
+    ["hydra leader"] = Vector3.new(5214.3, 1003.5, 759.0),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
@@ -490,6 +492,13 @@ local KNOWN_MOB_ALT = {
         Vector3.new(6000, 680, 650),
         Vector3.new(5100, 550, 500),
         Vector3.new(5300, 700, 400),
+    },
+    ["hydra leader"] = {
+        Vector3.new(5214.3, 1003.5, 759.0),
+        Vector3.new(5300, 1050, 800),
+        Vector3.new(5100, 1000, 700),
+        Vector3.new(5400, 980, 750),
+        Vector3.new(5000, 950, 800),
     },
 }
 local compassStuck = 0
@@ -1577,13 +1586,26 @@ local function guiReallyVisible(gui)
     return gui.AbsoluteSize.X > 10 and gui.AbsoluteSize.Y > 8
 end
 
--- อ่าน progress เควส เช่น (5/8) หรือ 5/8
+-- อ่าน progress เควส เช่น (5/8) หรือ 5/8 — กันตัวเลขมั่วจาก HP/เงิน
 local function parseProgress(tx)
     if not tx then return nil, nil end
-    local a, b = tostring(tx):match("%((%d+)%s*/%s*(%d+)%)")
-    if not a then a, b = tostring(tx):match("(%d+)%s*/%s*(%d+)") end
-    if a and b then return tonumber(a), tonumber(b) end
-    return nil, nil
+    local s = tostring(tx):gsub(",", "")
+    -- เฉพาะข้อความสั้นแบบ progress
+    local a, b = s:match("%((%d+)%s*/%s*(%d+)%)")
+    if not a then
+        -- ทั้งสตริงเป็นแค่ "0/1" หรือมีชื่อมอนนำ "Hydra Leader 0/1"
+        a, b = s:match("(%d+)%s*/%s*(%d+)%s*$")
+    end
+    if not a or not b then return nil, nil end
+    local cur, need = tonumber(a), tonumber(b)
+    if not cur or not need then return nil, nil end
+    if need < 1 or need > 30 then return nil, nil end -- เควสปกติไม่เกิน 30
+    if cur > need + 2 then return nil, nil end -- กัน 772/1 จาก UI อื่น
+    if #s > 40 and not s:lower():find("defeat", 1, true) and not s:find("เอาชนะ", 1, true)
+       and not s:lower():find("leader", 1, true) and not s:lower():find("hydra", 1, true) then
+        return nil, nil
+    end
+    return cur, need
 end
 
 local function readQuestProgress(quest)
@@ -1594,10 +1616,6 @@ local function readQuestProgress(quest)
         local tl = tx:lower()
         if tl:find("bandit", 1, true) then return end
         if not (tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true)) then return end
-        if quest and quest.mob and not tx:find(quest.mob, 1, true)
-           and not tx:find("Archer", 1, true) and not tx:find("Warrior", 1, true) then
-            -- ยังรับได้ถ้าเป็นข้อความเควสทั่วไป
-        end
         title = tx
         src = from
         local a, b = parseProgress(tx)
@@ -1605,10 +1623,18 @@ local function readQuestProgress(quest)
         if not need then
             need = tonumber(tx:match("[Dd]efeat%s*(%d+)") or tx:match("เอาชนะ%s*(%d+)") or "")
         end
+        -- "Defeat Hydra Leader" ไม่มีเลข → ใช้ need จากเควส (บอส = 1)
+        if not need and quest and quest.need then need = quest.need end
+    end
+
+    local function takeProgress(a, b)
+        if not a or not b then return end
+        if b < 1 or b > 30 or a > b + 2 then return end
+        cur, need = a, b
     end
 
     local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
-    -- อ่านข้อความใน Main.Quest แม้ Visible=false (เกมซ่อน UI แต่ยังมีข้อความจริง)
+    -- อ่านข้อความใน Main.Quest แม้ Visible=false
     do
         local t = ""
         pcall(function() t = pg.Main.Quest.Container.QuestTitle.Title.Text or "" end)
@@ -1616,31 +1642,20 @@ local function readQuestProgress(quest)
         if t ~= "" and not tl:find("bandit", 1, true) then
             considerTitle(t, vis == true and "Main.Quest" or "Main.Quest.hidden")
         end
-        if ok and vis == true then
+        pcall(function()
             for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
                 if d:IsA("TextLabel") then
-                    local a, b = parseProgress(d.Text)
-                    if a and b then cur, need = a, b end
-                    if title == "" then considerTitle(tostring(d.Text), "Main.Quest") end
-                end
-            end
-        elseif title == "" then
-            pcall(function()
-                for _, d in ipairs(pg.Main.Quest:GetDescendants()) do
-                    if d:IsA("TextLabel") then
-                        local tx = tostring(d.Text or "")
-                        local tl2 = tx:lower()
-                        if tl2:find("defeat", 1, true) or tx:find("เอาชนะ", 1, true) then
-                            if not tl2:find("bandit", 1, true) then
-                                considerTitle(tx, "Main.Quest.hidden")
-                                local a, b = parseProgress(tx)
-                                if a and b then cur, need = a, b end
-                            end
-                        end
+                    local tx = tostring(d.Text or "")
+                    local a, b = parseProgress(tx)
+                    if a and b then takeProgress(a, b) end
+                    local tl2 = tx:lower()
+                    if title == "" and (tl2:find("defeat", 1, true) or tx:find("เอาชนะ", 1, true))
+                       and not tl2:find("bandit", 1, true) then
+                        considerTitle(tx, vis == true and "Main.Quest" or "Main.Quest.hidden")
                     end
                 end
-            end)
-        end
+            end
+        end)
     end
 
     if title == "" then
@@ -1651,30 +1666,41 @@ local function readQuestProgress(quest)
                     if #tx > 0 and #tx < 90 and not tx:find("%[%d%d:%d%d:%d%d%]")
                        and not tx:find("มีเควสแล้ว", 1, true) then
                         considerTitle(tx, "onScreen")
-                        if title ~= "" then break end
+                        if title ~= "" then
+                            -- หา progress ใกล้ๆ บนจอ เช่น "Hydra Leader 0/1"
+                            break
+                        end
                     end
                 end
             end
         end
     end
 
-    -- progress แยกช่อง เช่น "0/8"
-    if title ~= "" and (not cur or not need) then
-        local expect = need or (quest and quest.need) or 8
+    -- progress แยกช่อง เช่น "0/8" หรือ "Hydra Leader 0/1"
+    if title ~= "" then
+        local expect = (quest and quest.need) or need or 8
         for _, d in ipairs(pg:GetDescendants()) do
             if d:IsA("TextLabel") and not (sg and d:IsDescendantOf(sg)) and guiReallyVisible(d) then
-                local a, b = parseProgress(d.Text)
-                if a and b and b == expect then
-                    cur, need = a, b
-                    break
-                end
-                if a and b and b >= 5 and b <= 20 and #tostring(d.Text) <= 8 then
-                    cur, need = a, b
-                    break
+                local tx = tostring(d.Text or "")
+                local a, b = parseProgress(tx)
+                if a and b and a <= b and b <= 30 then
+                    local tl = tx:lower()
+                    local last = quest and quest.mob and (quest.mob:match("(%S+)$") or "") or ""
+                    local mobOk = last ~= "" and tl:find(last:lower(), 1, true)
+                    if b == expect or mobOk or (b >= 2 and b <= 20 and #tx <= 28 and a <= b) then
+                        takeProgress(a, b)
+                    end
                 end
             end
         end
     end
+
+    -- บอส/ไม่มีเลขในชื่อ
+    if title ~= "" and not need and quest and quest.need then
+        need = quest.need
+    end
+    if title ~= "" and need and not cur then cur = 0 end
+    if cur and need and cur > need then cur = 0 end
 
     if title == "" then return nil, nil, "", nil end
     return cur, need, title, src
