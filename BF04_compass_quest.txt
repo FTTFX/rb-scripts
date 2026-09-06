@@ -1001,7 +1001,7 @@ local function equipWeapon()
 end
 
 -- ร่างพระตีไกล → Spy รอบ 2 (2026-09-05): โดนสูงสุด ≈96 | แนะนำ ≤81
-local SAFE_HIT_RANGE = 81
+local SAFE_HIT_RANGE = 100 -- Spy ระยะตี 2026-09-06 ≈163 แรก; ใช้ 100 กันพลาด
 local function attackHeight()
     return isBigForm() and 20 or 8
 end
@@ -1026,86 +1026,30 @@ local function attackMob(mob)
 end
 
 local function questUIVisible()
-    -- path เก่า
+    -- ต้อง Visible จริงเท่านั้น — ข้อความในลูกอาจค้างแม้ปิด UI
     local ok, vis = pcall(function() return pg.Main.Quest.Visible end)
-    if ok and vis then return true end
-    -- path ใหม่อาจ Visible อยู่ลูก / หรือชื่อคนละอัน — สแกนข้อความเควสที่เปิดอยู่
-    local main = pg:FindFirstChild("Main")
-    if not main then return false end
-    for _, d in ipairs(main:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local t = tostring(d.Text or "")
-            if t:find("เอาชนะ", 1, true) or t:find("Defeat", 1, true)
-               or t:match("%d+%s*/%s*%d+") then
-                local gui = d
-                while gui and gui ~= main do
-                    if gui:IsA("GuiObject") and gui.Visible and gui.Name:lower():find("quest") then
-                        return true
-                    end
-                    gui = gui.Parent
-                end
-                -- มีข้อความเควส + parent โชว์
-                if d:IsA("GuiObject") and d.Visible then
-                    local p = d.Parent
-                    if p and p:IsA("GuiObject") and p.Visible then return true end
-                end
-            end
-        end
-    end
-    return false
+    return ok and vis == true
 end
 
 local function questTitle()
+    if not questUIVisible() then return "" end
     local ok, t = pcall(function() return pg.Main.Quest.Container.QuestTitle.Title.Text end)
-    if ok and t and t ~= "" then return t end
-    local main = pg:FindFirstChild("Main")
-    if not main then return "" end
-    for _, d in ipairs(main:GetDescendants()) do
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local tx = tostring(d.Text or "")
-            if tx:find("เอาชนะ", 1, true) or tx:find("Defeat", 1, true)
-               or (tx:find("Dragon Crew", 1, true) and tx:find("%d")) then
-                return tx
-            end
-        end
-    end
-    return ""
+    return (ok and t) or ""
 end
 
--- มีเควสแอคทีฟหรือยัง (UI หรือข้อความมอนเป้า)
+-- มีเควสแอคทีฟ = Main.Quest เปิดอยู่เท่านั้น
 local function hasActiveQuest(quest)
-    if questUIVisible() then
-        local title = questTitle()
-        if title ~= "" then
-            if not quest then return true, title end
-            local mob = (quest.mob or ""):lower()
-            local tl = title:lower()
-            if mob ~= "" and tl:find(mob:sub(1, math.min(12, #mob)), 1, true) then
-                return true, title
-            end
-            if tl:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true) then
-                return true, title
-            end
-            return true, title
-        end
+    if not questUIVisible() then return false, "" end
+    local title = questTitle()
+    if title == "" then return true, "" end
+    if not quest then return true, title end
+    local mob = (quest.mob or ""):lower()
+    local tl = title:lower()
+    if mob ~= "" and tl:find(mob:sub(1, math.min(12, #mob)), 1, true) then
         return true, title
     end
-    -- สำรอง: หาข้อความมอนเควสใน Main
-    if quest and quest.mob then
-        local main = pg:FindFirstChild("Main")
-        if main then
-            local needle = quest.mob
-            for _, d in ipairs(main:GetDescendants()) do
-                if d:IsA("TextLabel") then
-                    local tx = tostring(d.Text or "")
-                    if tx:find(needle, 1, true) and (tx:find("เอาชนะ", 1, true) or tx:find("/", 1, true) or tx:find("Defeat", 1, true)) then
-                        return true, tx
-                    end
-                end
-            end
-        end
-    end
-    return false, ""
+    -- เปิดอยู่แต่ชื่อไม่ตรง → ยังถือว่า "มีเควส" (ให้ชั้นนอกไป Abandon)
+    return true, title
 end
 
 local function dumpQuestUI()
@@ -1114,36 +1058,21 @@ local function dumpQuestUI()
     if not main then log("ไม่มี Main", "R") return end
     local q = main:FindFirstChild("Quest")
     if q then
-        log(string.format("Main.Quest Visible=%s", tostring(q.Visible)), "B")
+        log(string.format("Main.Quest Visible=%s ← ใช้ตัวนี้ตัดสินมีเควส", tostring(q.Visible)), q.Visible and "G" or "O")
         for _, d in ipairs(q:GetDescendants()) do
             if d:IsA("TextLabel") or d:IsA("TextButton") then
                 local tx = tostring(d.Text or "")
                 if tx ~= "" and #tx < 80 then
-                    log(string.format("  %s txt=%s vis=%s", d.Name, tx, tostring(d.Visible)), "S")
+                    log(string.format("  %s txt=%s", d.Name, tx), "S")
                 end
             end
         end
     else
-        log("ไม่มี Main.Quest — สแกนทั้ง Main", "O")
-    end
-    log("── ข้อความที่ดูเหมือนเควส ──", "Y")
-    local n = 0
-    for _, d in ipairs(main:GetDescendants()) do
-        if n >= 25 then break end
-        if d:IsA("TextLabel") or d:IsA("TextButton") then
-            local tx = tostring(d.Text or "")
-            local tl = tx:lower()
-            if tx:find("เอาชนะ", 1, true) or tl:find("defeat", 1, true)
-               or tl:find("dragon crew", 1, true) or tx:match("%d+%s*/%s*%d+")
-               or tl:find("quest") then
-                n += 1
-                local path = d:GetFullName():gsub("^.-PlayerGui%.", "")
-                log(string.format("  [%s] %s", path, tx:sub(1, 60)), "G")
-            end
-        end
+        log("ไม่มี Main.Quest", "R")
     end
     local on, title = hasActiveQuest(pickQuestForLevel(getLevel()))
-    log(string.format("สรุป hasActiveQuest=%s | %s", tostring(on), title), on and "G" or "R")
+    log(string.format("สรุป hasActiveQuest=%s | %s", tostring(on), title ~= "" and title or "(ว่าง)"), on and "G" or "Y")
+    if not on then log("→ ยังไม่มีเควส = ต้องไปรับที่ NPC", "Y") end
     log("════ จบ Spy เควส — Copy ส่งมาได้ ════", "Y")
 end
 
@@ -1260,9 +1189,10 @@ local function mainLoop()
             end
             refreshStatus(quest)
 
-            -- ── มีเควสแล้ว? (UI ใหม่อาจไม่ใช่ Main.Quest.Visible) ──
+            -- ── มีเควสแล้ว? ใช้ Main.Quest.Visible เท่านั้น ──
             local hasQ, qTxt = hasActiveQuest(quest)
             if not hasQ then
+                log("ยังไม่มีเควส (Quest UI ปิด) → ไปรับที่ NPC", "Y")
                 local pos, src = resolveNpcTarget(quest)
                 if pos == "COMPASS_STEP" then
                     setNoclip(true)
@@ -1351,12 +1281,22 @@ local function mainLoop()
             log("มีเควสแล้ว: " .. tostring(qTxt) .. " → ไปตีมอน", "G")
 
             local titleTxt = qTxt ~= "" and qTxt or questTitle()
-            if titleTxt ~= "" and quest.mob and not titleTxt:lower():find(quest.mob:lower():sub(1, 8), 1, true)
-               and not titleTxt:find(quest.displayName or "", 1, true)
-               and not titleTxt:find("เอาชนะ", 1, true) then
-                log("เควสไม่ตรง (" .. titleTxt .. ") → Abandon", "Y")
+            local mobKey = (quest.mob or ""):lower()
+            local titleOk = titleTxt ~= "" and (
+                (mobKey ~= "" and titleTxt:lower():find(mobKey:sub(1, math.min(10, #mobKey)), 1, true))
+                or (quest.displayName and titleTxt:find(quest.displayName, 1, true))
+            )
+            if questUIVisible() and titleTxt ~= "" and not titleOk then
+                log("เควสไม่ตรง (" .. titleTxt .. ") → Abandon แล้วรอเคลียร์", "Y")
                 pcall(function() cf:InvokeServer("AbandonQuest") end)
-                task.wait(0.8)
+                local t0 = os.clock()
+                while questUIVisible() and os.clock() - t0 < 3 and _G.BF04C_ON do
+                    task.wait(0.15)
+                end
+                if questUIVisible() then
+                    log("Abandon แล้วยังเปิดอยู่ — รอสักครู่", "O")
+                    task.wait(1.5)
+                end
                 return
             end
 
