@@ -714,16 +714,56 @@ local function readCompassUI()
     return info
 end
 
-local function compassWorldDir(arrowRot)
+-- เครื่องหมายมุม GuideIcon↔กล้อง (ทดจากเมตรลด; Spy หมุนกล้องแล้วทิศต้องคงที่)
+if _G.BF04C_YAW_SIGN ~= 1 and _G.BF04C_YAW_SIGN ~= -1 then
+    _G.BF04C_YAW_SIGN = 1 -- ลอง + ก่อน (สูตรเก่า -ang ทำให้ทิศกระโดดตามกล้อง)
+end
+
+local function compassWorldDir(arrowRot, yawSign)
     local cam = Workspace.CurrentCamera
     if not cam then return nil end
     local look = cam.CFrame.LookVector
     local flat = Vector3.new(look.X, 0, look.Z)
     if flat.Magnitude < 0.05 then flat = Vector3.new(0, 0, -1) else flat = flat.Unit end
-    local ang = math.rad(arrowRot or 0)
+    local sign = yawSign or _G.BF04C_YAW_SIGN or 1
+    local ang = math.rad(arrowRot or 0) * sign
     local cf = CFrame.lookAt(Vector3.zero, flat)
-    local dir = (cf * CFrame.Angles(0, -ang, 0)).LookVector
-    return Vector3.new(dir.X, 0, dir.Z).Unit
+    local dir = (cf * CFrame.Angles(0, ang, 0)).LookVector
+    local out = Vector3.new(dir.X, 0, dir.Z)
+    if out.Magnitude < 0.05 then return flat end
+    return out.Unit
+end
+
+-- หันกล้องให้ |GuideIcon| ≈ 0 แล้วบินตามหน้ากล้อง (เสถียรกว่าแปลงมุม)
+local function alignCameraToGuide(maxSec)
+    local cam = Workspace.CurrentCamera
+    if not cam then return false, 0 end
+    local t0 = os.clock()
+    local sign = _G.BF04C_YAW_SIGN or 1
+    local lastAbs = 999
+    while os.clock() - t0 < (maxSec or 0.9) do
+        local ui = readCompassUI()
+        local rot = ui.arrowAbs or ui.arrowRot
+        if rot == nil then return false, lastAbs end
+        lastAbs = math.abs(rot)
+        if lastAbs <= 6 then return true, rot end
+        -- หมุนกล้องทีละก้อนตามเครื่องหมายที่ calibrate
+        local step = math.clamp(lastAbs, 8, 55) * sign
+        -- ถ้าหมุนแล้ว |rot| แย่ลงในรอบก่อน — สลับเครื่องหมาย
+        cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(step * 0.85), 0)
+        task.wait(0.04)
+        local ui2 = readCompassUI()
+        local rot2 = ui2.arrowAbs or ui2.arrowRot or rot
+        if math.abs(rot2) > lastAbs + 3 then
+            sign = -sign
+            _G.BF04C_YAW_SIGN = sign
+            cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(-step * 0.85), 0) -- ถอย
+            cam.CFrame = cam.CFrame * CFrame.Angles(0, math.rad(-step * 0.85), 0) -- ลองฝั่งตรงข้าม
+            task.wait(0.04)
+        end
+    end
+    local uiF = readCompassUI()
+    return math.abs(uiF.arrowAbs or uiF.arrowRot or 99) <= 20, (uiF.arrowAbs or uiF.arrowRot or 0)
 end
 
 -- ทิศจากตำแหน่งบนจอ (เลข 1737m / ไอคอน !) → รังสีกล้อง
@@ -846,7 +886,7 @@ local function resolveGuideFlyDir(ui)
         local d = compassWorldDir(rot)
         if d then
             local tag = (math.abs(rot) < 2) and "GuideIcon≈หน้ากล้อง" or "GuideIconหมุน"
-            return d, dist, tag .. string.format("(%.0f°)", rot), meter
+            return d, dist, tag .. string.format("(%.0f° s=%s)", rot, tostring(_G.BF04C_YAW_SIGN)), meter
         end
     end
 
@@ -1338,10 +1378,16 @@ local function dumpCompassDeep()
         log(string.format("★ ลูกศร ! Rotation=%.1f Abs=%.1f name=%s",
             info.arrowRot or 0, info.arrowAbs or 0, tostring(info.arrowName)), "G")
         if info.arrowPath then log("  path ลูกศร: " .. info.arrowPath, "B") end
-        local dir = compassWorldDir(rot)
-        if dir then
-            log(string.format("  ทิศโลกจากลูกศร: %.2f, 0, %.2f", dir.X, dir.Z), "Y")
+        local dPlus = compassWorldDir(rot, 1)
+        local dMinus = compassWorldDir(rot, -1)
+        if dPlus then
+            log(string.format("  ทิศ yawSign=+1: %.2f, 0, %.2f", dPlus.X, dPlus.Z), "Y")
         end
+        if dMinus then
+            log(string.format("  ทิศ yawSign=-1: %.2f, 0, %.2f", dMinus.X, dMinus.Z), "Y")
+        end
+        log(string.format("  ใช้ yawSign=%s (เมตรลดแล้วล็อค / เมตรเพิ่มจะสลับ)",
+            tostring(_G.BF04C_YAW_SIGN)), "B")
     else
         log("ยังไม่เจอลูกศรใน Guide", "O")
     end
@@ -1649,19 +1695,31 @@ local function flyByCompassStep(opts)
         pcall(function() firesignal(ui.navigateBtn.MouseButton1Click) end)
     end
 
-    -- ทิศ: Billboard/เลขบนจอ (1737m) ก่อน — GuideIcon Rotation มักค้าง 0
-    local dir, dUse, how = resolveGuideFlyDir(ui)
-    if dUse then d0 = dUse end
     local _, hrp = getChar()
-    if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร (" .. tostring(how) .. ")" end
+    if not hrp then return false, "ไม่มีตัวละคร" end
+
+    -- 1) หันกล้องให้เข็ม ≈ 0 แล้วบินตามหน้ากล้อง (ไม่แปลงมุมแบบกระโดดตามกล้อง)
+    local aligned, rotLeft = alignCameraToGuide(1.0)
+    local cam = Workspace.CurrentCamera
+    local dir = nil
+    local how = "หน้ากล้องหลังหันเข็ม"
+    if cam then
+        local look = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+        if look.Magnitude > 0.05 then dir = look.Unit end
+    end
+    if not dir or not aligned then
+        local dir2, dUse, how2 = resolveGuideFlyDir(ui)
+        if dUse then d0 = dUse end
+        if dir2 then dir = dir2; how = how2 end
+    end
+    if not dir then return false, "ไม่มีทิศ (" .. tostring(how) .. ")" end
 
     local fullStuds = d0 * 3
-    -- ระยะไกล (ข้ามเกาะ) กระโดดท่อนใหญ่ขึ้น ตามเข็มให้ถึงเกาะเร็ว
     local hopMax = (d0 >= 800) and 3200 or ((d0 >= 300) and 2200 or 1400)
-    local hopStuds = math.clamp(fullStuds * 0.65, 100, hopMax)
+    local hopStuds = math.clamp(fullStuds * 0.55, 100, hopMax)
     if compassStuck >= 2 then
-        hopStuds = math.clamp(fullStuds * 0.45, 120, math.min(hopMax, 1600))
-        local off = (compassStuck % 2 == 0) and 40 or -40
+        hopStuds = math.clamp(fullStuds * 0.4, 120, math.min(hopMax, 1600))
+        local off = (compassStuck % 2 == 0) and 35 or -35
         local ang = math.rad(off)
         dir = Vector3.new(
             dir.X * math.cos(ang) - dir.Z * math.sin(ang),
@@ -1676,23 +1734,49 @@ local function flyByCompassStep(opts)
         dest = Vector3.new(dest.X, math.max(dest.Y, hrp.Position.Y + 80, 120), dest.Z)
     end
     hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(dest.X, hrp.Position.Y, dest.Z))
-    log(string.format("บิน→%s: %dม. ≈ %.0f studs Y=%.0f (rot=%.0f)",
-        tostring(how), d0, hopStuds, dest.Y, rot or 0), "B")
-    flyTo(CFrame.new(dest), "เลขบนจอ/เข็ม")
+    log(string.format("บิน→%s: %dม. ≈ %.0f studs Y=%.0f (เข็มเหลือ=%.0f° s=%s)",
+        tostring(how), d0, hopStuds, dest.Y, rotLeft or rot or 0, tostring(_G.BF04C_YAW_SIGN)), "B")
+    flyTo(CFrame.new(dest), "GuideIcon")
     task.wait(0.7)
     if scanAfterMove() then return true, 0 end
 
     local ui2 = readCompassUI()
     local d1 = ui2.distance
     if d1 and d1 < d0 - 3 then
-        log(string.format("เมตรลด %d → %d ✓", d0, d1), "G")
+        log(string.format("เมตรลด %d → %d ✓ (ล็อค yawSign=%s)", d0, d1, tostring(_G.BF04C_YAW_SIGN)), "G")
         compassStuck = 0
         lastMeter = d1
         return true, d1
     end
     if d1 and d1 >= d0 - 3 then
+        -- สลับเครื่องหมายมุม แล้วลองกระโดดย้อน/ฝั่งตรงข้ามครั้งเดียว
+        _G.BF04C_YAW_SIGN = -(_G.BF04C_YAW_SIGN or 1)
+        log(string.format("เมตรไม่ลด %d → %s → สลับ yawSign=%s ลองทิศตรงข้าม",
+            d0, tostring(d1), tostring(_G.BF04C_YAW_SIGN)), "O")
+        local dirFlip = compassWorldDir(ui2.arrowAbs or ui2.arrowRot or rot or 0)
+        if not dirFlip and cam then
+            dirFlip = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+            if dirFlip.Magnitude > 0.05 then dirFlip = dirFlip.Unit else dirFlip = nil end
+            -- หลังสลับ sign หันใหม่
+            alignCameraToGuide(0.7)
+            cam = Workspace.CurrentCamera
+            if cam then
+                local lk = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+                if lk.Magnitude > 0.05 then dirFlip = lk.Unit end
+            end
+        end
+        if dirFlip and hrp then
+            local back = hrp.Position + dirFlip * math.clamp(hopStuds * 0.7, 200, hopMax) + Vector3.new(0, yBoost, 0)
+            flyTo(CFrame.new(back), "yawSign flip")
+            task.wait(0.5)
+            local ui3 = readCompassUI()
+            if ui3.distance and ui3.distance < d0 - 5 then
+                log(string.format("หลังสลับเมตรลด → %d ✓", ui3.distance), "G")
+                compassStuck = 0
+                return true, ui3.distance
+            end
+        end
         compassStuck += 1
-        log(string.format("เมตรไม่ลด %d → %s stuck=%d → เข้า Probe", d0, tostring(d1), compassStuck), "O")
         lastMeter = d1 or d0
         if compassStuck >= 1 then
             probe8Phase(targetName, placeName, d1 or d0)
