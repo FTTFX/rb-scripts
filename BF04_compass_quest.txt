@@ -1068,10 +1068,59 @@ local KNOWN_MOB_ALT = {
         Vector3.new(-2100, 100, -10550),
         Vector3.new(-2000, 90, -10450),
     },
+    ["snow demon"] = {
+        Vector3.new(-880.2, 71.2, -14538.6),
+        Vector3.new(-950, 80, -14500),
+        Vector3.new(-800, 70, -14600),
+        Vector3.new(-1100, 50, -14450),
+    },
+    ["candy pirate"] = {
+        Vector3.new(-1310.5, 26, -14562.4),
+        Vector3.new(-1200, 30, -14500),
+        Vector3.new(-1400, 30, -14600),
+    },
 }
+
+-- ── persist hub ลงไฟล์เครื่อง (เขียน/อ่าน) — จำระยะยาวข้ามโหลด/เข้าใหม่ ──
+local HUB_FILE = "BF04_hubs.txt"
+local function loadHubsFromFile()
+    if not isfile or not readfile then return end
+    if not isfile(HUB_FILE) then return end
+    local ok, data = pcall(function() return readfile(HUB_FILE) end)
+    if not ok or not data or data == "" then return end
+    local n = 0
+    for line in tostring(data):gmatch("[^\r\n]+") do
+        local kind, key, x, y, z = line:match("^([^|]+)|([^|]+)|([%d%.%-]+)%,([%d%.%-]+)%,([%d%.%-]+)$")
+        if kind and key and x and y and z then
+            _G.BF04C_HUBS[kind] = _G.BF04C_HUBS[kind] or {}
+            _G.BF04C_HUBS[kind][key:lower()] = Vector3.new(tonumber(x) or 0, tonumber(y) or 0, tonumber(z) or 0)
+            n = n + 1
+        end
+    end
+    if n > 0 then print("[BF04] โหลด hub จากไฟล์: " .. n .. " จุด") end
+end
+local hubSaveCd = 0
+local function persistHubs()
+    if not writefile or not isfile then return end
+    if os.clock() < hubSaveCd then return end
+    hubSaveCd = os.clock() + 12
+    local out, hubs = {}, _G.BF04C_HUBS
+    for _, kind in ipairs({"npc", "mob"}) do
+        local map = hubs[kind]
+        if map then
+            for k, v in pairs(map) do
+                if typeof(v) == "Vector3" then
+                    out[#out + 1] = string.format("%s|%s|%.2f,%.2f,%.2f", kind, k, v.X, v.Y, v.Z)
+                end
+            end
+        end
+    end
+    pcall(function() writefile(HUB_FILE, table.concat(out, "\n")) end)
+end
 
 -- hub ที่เคยถึงสำเร็จ — คงข้ามโหลดสคริปต์ในเซสชันเดียวกัน
 _G.BF04C_HUBS = _G.BF04C_HUBS or { npc = {}, mob = {} }
+loadHubsFromFile()
 local function rememberHub(kind, key, pos)
     if not key or not pos then return end
     local k = tostring(key):lower()
@@ -1085,6 +1134,7 @@ local function rememberHub(kind, key, pos)
     end
     _G.BF04C_HUBS[kind] = _G.BF04C_HUBS[kind] or {}
     _G.BF04C_HUBS[kind][k] = v
+    persistHubs()
     if kind == "npc" then
         NPC_CACHE[k] = v
         KNOWN_NPC[k] = v
