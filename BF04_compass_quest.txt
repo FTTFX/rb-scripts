@@ -813,47 +813,44 @@ local function findGuideMeterWorld()
     return best
 end
 
--- รวมทิศไปเป้า: โลกจาก Billboard > รังสีจอจากเลข Xm > ลูกศร GuideIcon
+-- รวมทิศไปเป้า: Billboardโลก > GuideIconหมุน > กล้อง (rot≈0)
+-- ห้ามรังสีจาก Subtitle2/เลข PlayerGui — ตำแหน่งจอคงที่ ไม่ใช่ทิศเป้า
 local function resolveGuideFlyDir(ui)
     local meter = findGuideMeterWorld()
-    if meter and meter.worldPos then
+    local dist = (meter and meter.meters) or (ui and ui.distance)
+
+    if meter and meter.worldPos and meter.kind == "billboard" then
         local _, hrp = getChar()
         if hrp then
             local flat = Vector3.new(meter.worldPos.X - hrp.Position.X, 0, meter.worldPos.Z - hrp.Position.Z)
             if flat.Magnitude > 5 then
-                return flat.Unit, meter.meters or ui.distance, "billboard→โลก", meter
+                return flat.Unit, dist, "billboard→โลก", meter
             end
         end
     end
-    if meter and meter.screenDir then
-        return meter.screenDir, meter.meters or ui.distance, "เลขบนจอ→รังสี", meter
-    end
-    -- Guide Subtitle2 ตำแหน่งบนจอ
-    local main = pg:FindFirstChild("Main")
-    local sub2 = main and main:FindFirstChild("Guide")
-        and main.Guide:FindFirstChild("TopFrame")
-        and main.Guide.TopFrame:FindFirstChild("Subtitle2")
-    if sub2 and sub2:IsA("GuiObject") then
-        local sd = dirFromScreenPos(sub2.AbsolutePosition, sub2.AbsoluteSize)
-        if sd then
-            return sd, ui.distance, "Subtitle2→รังสี", meter
-        end
-    end
-    local icon = main and main:FindFirstChild("Guide")
-        and main.Guide:FindFirstChild("LeftFrame")
-        and main.Guide.LeftFrame:FindFirstChild("IconFrame")
-    if icon then
-        local sd = dirFromScreenPos(icon.AbsolutePosition, icon.AbsoluteSize)
-        if sd then
-            return sd, ui.distance, "IconFrame→รังสี", meter
-        end
-    end
+
     local rot = ui and (ui.arrowAbs or ui.arrowRot)
+    if rot == nil then
+        -- อ่าน GuideIcon ตรงๆ ถ้า ui ยังไม่มี
+        local main = pg:FindFirstChild("Main")
+        local gi = main and main:FindFirstChild("Guide")
+            and main.Guide:FindFirstChild("LeftFrame")
+            and main.Guide.LeftFrame:FindFirstChild("IconFrame")
+            and main.Guide.LeftFrame.IconFrame:FindFirstChild("GuideIcon")
+        if gi and gi:IsA("GuiObject") then
+            rot = gi.AbsoluteRotation
+            if math.abs(rot) < 0.05 then rot = gi.Rotation end
+        end
+    end
     if rot ~= nil then
         local d = compassWorldDir(rot)
-        if d then return d, ui.distance, "GuideIconหมุน", meter end
+        if d then
+            local tag = (math.abs(rot) < 2) and "GuideIcon≈หน้ากล้อง" or "GuideIconหมุน"
+            return d, dist, tag .. string.format("(%.0f°)", rot), meter
+        end
     end
-    return nil, ui and ui.distance, "ไม่มีทิศ", meter
+
+    return nil, dist, "ไม่มีทิศ", meter
 end
 
 -- พิกัดจริงอยู่ที่ workspace.NPCs ตอนโหลด — ไม่มี remote พิกัดที่ใช้ได้
@@ -1367,6 +1364,12 @@ local function dumpCompassDeep()
         if dirR then
             log(string.format("★ ทิศบินใช้: %s → %.2f, 0, %.2f (ระยะ %s)",
                 tostring(how), dirR.X, dirR.Z, tostring(mR)), "Y")
+            if info.arrowAbs or info.arrowRot then
+                local dArrow = compassWorldDir(info.arrowAbs or info.arrowRot)
+                if dArrow and (dArrow - dirR).Magnitude > 0.35 then
+                    log(string.format("  (เทียบลูกศรอย่างเดียว: %.2f, 0, %.2f)", dArrow.X, dArrow.Z), "S")
+                end
+            end
         else
             log("ทิศบิน: " .. tostring(how), "O")
         end
@@ -2253,85 +2256,132 @@ local function huntMobOrSweep(quest)
         return near >= 5 and matchWant == 0
     end
 
-    -- 1) ตามเข็มทิศก่อนเสมอถ้ายังไกล — ไปเกาะถูกก่อนก้นหอย
+    -- 1) คนละเกาะ + มีเควสตีมอน → ไปจุดมอน (cache/known) ก่อน — อย่าตาม Guide "Find NPC at Sea of Treats"
     do
         local ui = readCompassUI()
         local titleL = (ui.title or ""):lower()
         local rot = ui.arrowAbs or ui.arrowRot
         local d = ui.distance
-        local pointsIsland = titleL:find("sea of treats", 1, true)
-            or titleL:find("nuts", 1, true)
-            or titleL:find("find the npc at", 1, true)
-            or titleL:find("island", 1, true)
-            or titleL:find("great tree", 1, true)
-            or titleL:find("hydra", 1, true)
-            or titleL:find("treats", 1, true)
+        local guideIsFindNpc = titleL:find("find the npc at", 1, true) ~= nil
+        local farmingMob = quest and quest.mob and quest.mob ~= ""
         local wrong = onWrongIsland()
-        if wrong then
-            log("รอบตัวไม่ใช่มอนเควส → น่าจะคนละเกาะ บังคับตามเข็ม", "O")
-        end
-        -- มีระยะ Xm ก็พอ (ไม่ต้องรอ GuideIcon หมุน — มักค้าง 0)
-        local hasDir = (resolveGuideFlyDir(ui) ~= nil) or (rot ~= nil)
-        local mustFollow = (d and hasDir and (
-            d >= 150
-            or (d >= 80 and pointsIsland)
-            or (d >= 40 and pointsIsland)
-            or (wrong and d >= 30)
-        )) or (wrong and hasDir and (d == nil or d >= 20))
 
-        if mustFollow then
-            local rounds = ((d or 999) >= 1000) and 14 or (((d or 999) >= 400) and 10 or 6)
-            log(string.format("★ ตามเลขบนจอ/เข็มไปเกาะ %sm [%s] (%d ก้าว)",
-                tostring(d or "?"), (ui.title or "?"):sub(1, 42), rounds), "Y")
-            for i = 1, rounds do
-                if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
-                mob, md = findMob(quest.mob)
-                if mob then return mob, md end
-                local uiN = readCompassUI()
-                local dN = uiN.distance
-                if not dN then
-                    local met = findGuideMeterWorld()
-                    if met then dN = met.meters end
+        if farmingMob and wrong then
+            local hint, src = mobSpawnHint(quest.mob)
+            local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
+            if hint or alts then
+                log(string.format("คนละเกาะ + เควส %s → บินจุดมอน (%s) ไม่ตาม Guide หาเกาะ",
+                    quest.mob, tostring(src or "alt")), "Y")
+                local pts = {}
+                if hint then table.insert(pts, hint) end
+                if alts then
+                    for _, p in ipairs(alts) do
+                        if not hint or (p - hint).Magnitude > 30 then table.insert(pts, p) end
+                    end
                 end
-                local tN = (uiN.title or ""):lower()
-                local stillIsland = tN:find("find the npc at", 1, true)
-                    or tN:find("sea of treats", 1, true)
-                    or tN:find("treats", 1, true)
-                local dirN = resolveGuideFlyDir(uiN)
-                if not dirN and not (uiN.arrowAbs or uiN.arrowRot) and not dN then
-                    log("ไม่มีทิศ/ระยะบนจอ → ก้นหอยรอบนี้", "O")
-                    break
+                for i, pt in ipairs(pts) do
+                    if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
+                    log(string.format("บินจุดมอน #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
+                    flyTo(CFrame.new(pt + Vector3.new(0, 40, 0)), "จุดมอน")
+                    holdNoFall()
+                    mob, md = findMob(quest.mob)
+                    if mob then return mob, md end
                 end
-                if dN and dN <= 100 and not stillIsland and not onWrongIsland() then
-                    log(string.format("เข็มใกล้แล้ว (%dม.) → ก้นหอยค้นบนเกาะ", dN), "G")
-                    break
+                local _, hNow = getChar()
+                if hNow then
+                    resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 80), hNow.Position.Z))
                 end
-                if dN and dN <= 50 and stillIsland then
-                    log(string.format("ถึงแถวเกาะแล้ว (%dม.) → ก้นหอยหามอน", dN), "G")
-                    break
-                end
-                if findMob(quest.mob) then
-                    return findMob(quest.mob)
-                end
-                log(string.format("ตามเลขจอ ก้าว %d/%d — เหลือ %sm", i, rounds, tostring(dN or "?")), "B")
-                flyByCompassStep({
-                    skipNpcCache = true,
-                    noKnown = true,
-                    highY = true,
-                })
-                holdNoFall()
-                mob, md = findMob(quest.mob)
-                if mob then return mob, md end
+                -- ต่อด้วยก้นหอยด้านล่าง
+            elseif wrong then
+                log("คนละเกาะ แต่ยังไม่มีจุดมอนจำ — ก้นหอย/probe", "O")
             end
-            local _, hNow = getChar()
-            if hNow then
-                resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 400), hNow.Position.Z))
+        elseif not farmingMob or not guideIsFindNpc then
+            -- ตาม Guide เฉพาะตอนยังไม่มีเควสตีมอน หรือ Guide ไม่ใช่ Find-NPC คนละเรื่อง
+            local pointsIsland = titleL:find("sea of treats", 1, true)
+                or titleL:find("nuts", 1, true)
+                or guideIsFindNpc
+                or titleL:find("island", 1, true)
+                or titleL:find("great tree", 1, true)
+                or titleL:find("hydra", 1, true)
+                or titleL:find("treats", 1, true)
+            if wrong then
+                log("รอบตัวไม่ใช่มอนเควส → ตาม GuideIcon", "O")
+            end
+            local hasDir = (resolveGuideFlyDir(ui) ~= nil) or (rot ~= nil)
+            local mustFollow = (d and hasDir and (
+                d >= 150
+                or (d >= 80 and pointsIsland)
+                or (d >= 40 and pointsIsland)
+                or (wrong and d >= 30)
+            )) or (wrong and hasDir and (d == nil or d >= 20))
+
+            if mustFollow then
+                local rounds = ((d or 999) >= 1000) and 14 or (((d or 999) >= 400) and 10 or 6)
+                log(string.format("★ ตาม GuideIcon ไป %sm [%s] (%d ก้าว)",
+                    tostring(d or "?"), (ui.title or "?"):sub(1, 42), rounds), "Y")
+                for i = 1, rounds do
+                    if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
+                    mob, md = findMob(quest.mob)
+                    if mob then return mob, md end
+                    local uiN = readCompassUI()
+                    local dN = uiN.distance
+                    if not dN then
+                        local met = findGuideMeterWorld()
+                        if met then dN = met.meters end
+                    end
+                    local tN = (uiN.title or ""):lower()
+                    local stillIsland = tN:find("find the npc at", 1, true)
+                        or tN:find("sea of treats", 1, true)
+                        or tN:find("treats", 1, true)
+                    local dirN = resolveGuideFlyDir(uiN)
+                    if not dirN and not (uiN.arrowAbs or uiN.arrowRot) and not dN then
+                        log("ไม่มีทิศ GuideIcon → ก้นหอยรอบนี้", "O")
+                        break
+                    end
+                    if dN and dN <= 100 and not stillIsland and not onWrongIsland() then
+                        log(string.format("เข็มใกล้แล้ว (%dม.) → ก้นหอยค้นบนเกาะ", dN), "G")
+                        break
+                    end
+                    if dN and dN <= 50 and stillIsland then
+                        log(string.format("ถึงแถวเกาะแล้ว (%dม.) → ก้นหอยหามอน", dN), "G")
+                        break
+                    end
+                    if findMob(quest.mob) then
+                        return findMob(quest.mob)
+                    end
+                    log(string.format("ตาม GuideIcon ก้าว %d/%d — เหลือ %sm", i, rounds, tostring(dN or "?")), "B")
+                    flyByCompassStep({
+                        skipNpcCache = true,
+                        noKnown = true,
+                        highY = true,
+                    })
+                    holdNoFall()
+                    mob, md = findMob(quest.mob)
+                    if mob then return mob, md end
+                end
+                local _, hNow = getChar()
+                if hNow then
+                    resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 400), hNow.Position.Z))
+                end
+            else
+                if d then
+                    log(string.format("เข็ม %sm → ก้นหอย", tostring(d)), "S")
+                else
+                    log("ไม่มีระยะเข็ม → ก้นหอย", "O")
+                end
             end
         else
-            if d then
-                log(string.format("เข็ม %sm → ก้นหอย", tostring(d)), "S")
-            else
-                log("ไม่มีระยะเข็ม → ก้นหอย (ถ้าคนละเกาะจะตามเข็มรอบถัดไป)", "O")
+            -- มีเควส Defeat + Guide ยังโชว์ Find NPC คนละเรื่อง → ไม่ตาม Guide
+            log("มีเควสตีมอน — ข้าม Guide Find-NPC (คนละเป้า)", "S")
+            if wrong then
+                local hint, src = mobSpawnHint(quest.mob)
+                if hint then
+                    log("บินจุดมอน " .. tostring(src), "Y")
+                    flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "จุดมอน")
+                    holdNoFall()
+                    mob, md = findMob(quest.mob)
+                    if mob then return mob, md end
+                end
             end
         end
     end
