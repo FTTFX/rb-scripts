@@ -3461,8 +3461,14 @@ local function mainLoop()
                     forceQuestLabel = quest.mob or "StartQuest"
                     resetSpiral(nil) -- รับเควสใหม่ → อย่าใช้ก้นหอยเกาะเก่า
                     if quest.mob then
-                        local mh = mobSpawnHint(quest.mob)
-                        if mh then rememberHub("mob", quest.mob, mh) end
+                        local mh, ms = mobSpawnHint(quest.mob)
+                        if mh then
+                            rememberHub("mob", quest.mob, mh)
+                            log(string.format("รับเควสแล้ว → บินจุดมอนทันที (%s)", tostring(ms)), "Y")
+                            flyTo(CFrame.new(mh + Vector3.new(0, 45, 0)), "จุดมอนหลังรับ")
+                            holdNoFall()
+                            resetSpiral(Vector3.new(mh.X, math.max(mh.Y + 40, 90), mh.Z))
+                        end
                     end
                     log("ตั้งโหมดมีเควส 25วิ (รอ UI) + จำ hub", "G")
                 elseif ires == "timeout" then
