@@ -998,6 +998,11 @@ local KNOWN_MOB = {
     -- Nuts Island (ไม่ใช่ Haunted — อย่าก้นหอยรอบมัมมี่)
     ["peanut scout"] = Vector3.new(-2126.41, 90.56, -10301.96),
     ["peanut president"] = Vector3.new(-2118.75, 70.30, -10509.32),
+    -- Sea of Treats / Cake
+    ["cookie crafter"] = Vector3.new(-2322, 37, -12217),
+    ["cake guard"] = Vector3.new(-1418, 37, -12256),
+    ["baking staff"] = Vector3.new(-1980, 37, -12984),
+    ["head baker"] = Vector3.new(-2252, 52, -13033),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
