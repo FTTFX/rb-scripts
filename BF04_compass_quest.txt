@@ -1753,48 +1753,58 @@ local function resetSpiral(origin, keepTried)
     end
 end
 
+local function holdNoFall()
+    setNoclip(true)
+    local _, hrp, hum = getChar()
+    if hrp then
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end
+    pcall(function()
+        if hum then
+            hum.PlatformStand = true
+            hum.Sit = false
+            hum.AutoRotate = false
+        end
+    end)
+end
+
 local function nextSpiralPoint(mobName)
     local _, hrp = getChar()
     if not hrp then return nil end
     if not spiralOrigin then
-        -- ศูนย์กลาง = จุดมอนเควสเท่านั้น (ห้าม Warrior / ตำแหน่งตัวเองต่ำ)
         local hint = mobSpawnHint(mobName)
             or mobSpawnHint((pickQuestForLevel(getLevel()) or {}).mob or "")
         if hint then
-            local minY = (tostring(mobName or ""):lower():find("hydra", 1, true)) and 550 or 380
-            spiralOrigin = Vector3.new(hint.X, math.max(hint.Y, minY), hint.Z)
+            local minY = (tostring(mobName or ""):lower():find("hydra", 1, true)) and 550 or 400
+            spiralOrigin = Vector3.new(hint.X, math.max(hint.Y + 40, minY), hint.Z)
         else
-            spiralOrigin = hrp.Position + Vector3.new(0, 250, 0)
-            if spiralOrigin.Y < 350 then
-                spiralOrigin = Vector3.new(spiralOrigin.X, 380, spiralOrigin.Z)
-            end
+            spiralOrigin = Vector3.new(hrp.Position.X, math.max(hrp.Position.Y, 420), hrp.Position.Z)
         end
-        log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d",
+        log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d (บินวนไม่หยุด)",
             spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
     end
-    local ang = spiralStep * (math.pi / 4)
+    -- 12 จุด/วง เรียบกว่า 8
+    local ang = spiralStep * (math.pi / 6)
     spiralStep += 1
-    if spiralStep >= 8 then
+    if spiralStep >= 12 then
         spiralStep = 0
-        spiralR += 150
-        if spiralR > 1200 then
+        spiralR += 120
+        if spiralR > 1400 then
             spiralR = 150
-            -- รีเซ็ตกลับจุด known ของมอนเควส ไม่ใช่ตำแหน่งตัว (กันหลงเกาะล่าง)
             local hint = mobSpawnHint(mobName)
             if hint then
-                spiralOrigin = Vector3.new(hint.X, math.max(hint.Y, 380), hint.Z)
+                spiralOrigin = Vector3.new(hint.X, math.max(hint.Y + 40, 400), hint.Z)
                 log("ก้นหอยครบ → กลับจุด known สูง", "O")
             else
-                spiralOrigin = Vector3.new(hrp.Position.X, 400, hrp.Position.Z)
+                spiralOrigin = Vector3.new(hrp.Position.X, 420, hrp.Position.Z)
                 log("ก้นหอยครบ → เริ่มใหม่รอบตัว (สูง)", "O")
             end
         else
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
     end
-    local baseY = math.max(spiralOrigin.Y, 200)
-    -- ห้ามบังคับ Y≤520 — Hydra Town อยู่ ~1000
-    local y = baseY + (spiralR > 400 and 40 or 0)
+    local y = math.max(spiralOrigin.Y, 400)
     return Vector3.new(
         spiralOrigin.X + math.cos(ang) * spiralR,
         y,
@@ -1830,6 +1840,92 @@ local function logNearbyEnemies(radius)
     end
 end
 
+-- บินวนก้นหอยต่อเนื่อง ไม่หยุดตก — สแกนมอนระหว่างทาง
+local function flySpiralSeek(quest, maxHops)
+    maxHops = maxHops or 16
+    local mob, md = findMob(quest.mob)
+    if mob then return mob, md end
+
+    local spd = FLY_SPEED
+    if type(_G.BF04C_FLY) == "table" then
+        spd = tonumber(_G.BF04C_FLY.normal) or spd
+    end
+    holdNoFall()
+    log(string.format("ก้นหอยวนต่อเนื่อง %d จุด spd=%.0f", maxHops, spd), "B")
+
+    if flyLock then hardStopFly() end
+    flyLock = true
+    local okRun, err = pcall(function()
+        for hop = 1, maxHops do
+            if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
+            mob, md = findMob(quest.mob)
+            if mob then return end
+
+            local pt = nextSpiralPoint(quest.mob)
+            if not pt then break end
+            local destY = math.max(pt.Y, (spiralOrigin and spiralOrigin.Y) or 400)
+            local dest = Vector3.new(pt.X, destY, pt.Z)
+
+            local _, hrp = getChar()
+            if not hrp then break end
+            holdNoFall()
+            setNoclip(true)
+
+            local dist = (hrp.Position - dest).Magnitude
+            if dist < 15 then
+                hrp.CFrame = CFrame.new(dest)
+                hrp.AssemblyLinearVelocity = Vector3.zero
+            else
+                local dur = math.clamp(dist / math.max(spd, 40), 0.12, 4)
+                stopFlyTween()
+                local look = dest - hrp.Position
+                local lookFlat = Vector3.new(look.X, 0, look.Z)
+                local cf = lookFlat.Magnitude > 1
+                    and CFrame.new(dest, dest + lookFlat)
+                    or CFrame.new(dest)
+                local tw = TweenService:Create(hrp,
+                    TweenInfo.new(dur, Enum.EasingStyle.Linear),
+                    { CFrame = cf })
+                currentTween = tw
+                tw:Play()
+                local tEnd = os.clock() + dur + 0.05
+                while currentTween == tw and os.clock() < tEnd
+                      and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
+                    holdNoFall()
+                    local _, h2 = getChar()
+                    if h2 then
+                        -- ล็อกความสูง กันตกกลางทาง
+                        if h2.Position.Y < destY - 25 then
+                            h2.CFrame = CFrame.new(h2.Position.X, destY, h2.Position.Z)
+                        end
+                        h2.AssemblyLinearVelocity = Vector3.zero
+                        hrp = h2
+                    end
+                    -- สแกนระหว่างบิน
+                    mob, md = findMob(quest.mob)
+                    if mob then
+                        stopFlyTween()
+                        return
+                    end
+                    task.wait(0.03)
+                end
+                stopFlyTween()
+            end
+            -- ไม่ pause / ไม่รอตก — ต่อจุดถัดไปทันที
+            if hop % 6 == 0 then
+                log(string.format("ก้นหอย r=%d hop=%d", spiralR, hop), "S")
+            end
+        end
+    end)
+    flyLock = false
+    holdNoFall()
+    if not okRun then log("ก้นหอย error: " .. tostring(err), "R") end
+    if mob then return mob, md end
+    mob, md = findMob(quest.mob)
+    if not mob then logNearbyEnemies(1200) end
+    return mob, md
+end
+
 local function huntMobOrSweep(quest)
     local mob, md = findMob(quest.mob)
     if mob then return mob, md end
@@ -1842,7 +1938,7 @@ local function huntMobOrSweep(quest)
         end
     end
 
-    -- หลุดเกาะ/ดีดกลับไกลจากจุดมอน → บินช้ากลับ known ก่อนก้นหอย
+    -- หลุดเกาะ/ดีดกลับไกลจากจุดมอน → บินกลับ known ก่อนก้นหอย
     do
         local hint = mobSpawnHint(quest.mob)
         local _, hrp0 = getChar()
@@ -1850,24 +1946,24 @@ local function huntMobOrSweep(quest)
             log(string.format("อยู่ไกลจุดมอน %.0f → บินกลับ known ก่อน",
                 (hrp0.Position - hint).Magnitude), "O")
             flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "กลับเกาะมอน")
-            task.wait(0.5)
+            holdNoFall()
             mob, md = findMob(quest.mob)
             if mob then return mob, md end
             resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 200), hint.Z))
         end
     end
 
-    -- มีจุดที่เคยเจอ Archer แล้ว → บินกลับที่นั่นก่อน (ห้ามไป NPC)
+    -- มีจุดที่เคยเจอ → บินกลับก่อน
     local cached = MOB_CACHE[(quest.mob or ""):lower()]
     if cached then
         log(string.format("กลับจุดมอนที่จำไว้ @ %.0f,%.0f,%.0f", cached.X, cached.Y, cached.Z), "G")
         flyTo(CFrame.new(cached + Vector3.new(0, 30, 0)), "cacheมอน")
-        task.wait(0.8)
+        holdNoFall()
         mob, md = findMob(quest.mob)
         if mob then return mob, md end
     end
 
-    -- ตามเข็มทิศเฉพาะตอนข้อความไม่ใช่ Find Quest Giver
+    -- ตามเข็มทิศเฉพาะตอนไม่ใช่ Find Quest Giver
     local ui = readCompassUI()
     local titleL = (ui.title or ""):lower()
     local compassOk = ui.distance and ui.distance > 8 and (ui.arrowAbs or ui.arrowRot) ~= nil
@@ -1876,7 +1972,7 @@ local function huntMobOrSweep(quest)
     if compassOk then
         log(string.format("เข็มทิศชี้เป้า %d ม. (ไม่กลับ NPC)", ui.distance), "Y")
         flyByCompassStep({ skipNpcCache = true, highY = true })
-        task.wait(0.35)
+        holdNoFall()
         mob, md = findMob(quest.mob)
         if mob then return mob, md end
     end
@@ -1887,32 +1983,24 @@ local function huntMobOrSweep(quest)
         triedKnownHigh = true
         local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
         local list = alts or { hint }
-        -- บอส: ลองจุดน้อยลง แล้วสลับเควสเร็ว
-        local maxTry = isBossQuest(quest) and math.min(3, #list) or #list
+        local maxTry = isBossQuest(quest) and math.min(3, #list) or math.min(4, #list)
         for i = 1, maxTry do
             local pt = list[i]
             log(string.format("ลองจุดสูง #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
-            flyTo(CFrame.new(pt), "จุดมอนสูง")
-            task.wait(isBossQuest(quest) and 0.8 or 1.4)
+            flyTo(CFrame.new(pt + Vector3.new(0, 40, 0)), "จุดมอนสูง")
+            holdNoFall()
+            task.wait(0.15) -- สั้นมาก แค่ให้โหลดชิ้นแมพ
             mob, md = findMob(quest.mob)
             if mob then return mob, md end
-            logNearbyEnemies(1500)
         end
         if isBossQuest(quest) then
-            -- นับหนักหลังกวาดจุด known แล้วไม่เจอ
             bossMissCount += 2
             log(string.format("บอสไม่เจอหลังจุด known (สะสม %d/6)", bossMissCount), "Y")
         end
     end
 
-    local pt = nextSpiralPoint(quest.mob)
-    if not pt then return nil end
-    log(string.format("ก้นหอย r=%d @ %.0f,%.0f,%.0f", spiralR, pt.X, pt.Y, pt.Z), "B")
-    flyTo(CFrame.new(pt), "ก้นหอย")
-    task.wait(1.4)
-    mob, md = findMob(quest.mob)
-    if not mob then logNearbyEnemies(1500) end
-    return mob, md
+    -- ค้นหลัก: บินวนก้นหอยต่อเนื่อง ไม่หยุดตก
+    return flySpiralSeek(quest, isBossQuest(quest) and 10 or 16)
 end
 
 -- Spy: สแกนว่ามอนเกิด/โหลดที่ไหน + หาใน Data/แมพ
