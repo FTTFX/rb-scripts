@@ -2799,6 +2799,24 @@ local function pressKey(key, hold)
     return true
 end
 
+-- ฮาคิ (Buso) — กด J ครั้งเดียวก่อนตี ถ้ายังไม่ติด
+local function hasBusoOn()
+    local char = LP.Character
+    return char and char:FindFirstChild("HasBuso") ~= nil
+end
+
+local function ensureBusoHaki()
+    if hasBusoOn() then return true end
+    log("เปิดฮาคิ (J)", "B")
+    pressKey(Enum.KeyCode.J, 0.1)
+    pcall(function()
+        local cf = getCommF()
+        if cf then cf:InvokeServer("Buso") end
+    end)
+    task.wait(0.2)
+    return hasBusoOn()
+end
+
 local function getToolByTip(tip)
     local char = LP.Character
     local bp = LP:FindFirstChild("Backpack")
@@ -3046,6 +3064,7 @@ local function holdFarmSpot(myHrp, anchor, height)
 end
 
 local function attackMob(mob, mobNameHint)
+    ensureBusoHaki()
     equipSword()
     local rA, rH = getCombatRemotes()
     local _, myHrp = getChar()
@@ -3775,7 +3794,8 @@ local function mainLoop()
                 return
             end
 
-            -- ก่อนตี: ให้มีร่างพระ + ดาบ
+            -- ก่อนตี: ฮาคิ + ร่างพระ + ดาบ
+            ensureBusoHaki()
             ensureBuddhaSword(false)
 
             local mob, md = huntMobOrSweep(quest)
