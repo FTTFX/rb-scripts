@@ -3,7 +3,7 @@
     ย้ายเกาะ / หามอน:
       A) ตามเข็มทิศก่อน (ระยะ UI เช่น 1800ม.) — บินไปเกาะที่ถูก
       B) ใกล้แล้วค่อยก้นหอยค้น (ไม่ใช้จุดจำ/known เป็นหลัก)
-      C) ใกล้ NPC จริงเท่านั้นค่อย StartQuest
+      C) ลองรีโมต StartQuest ก่อน — ไม่ติดค่อยบินไป NPC
     ═══════════════════════════════════════════════════════════════════ ]]
 
 local Players = game:GetService("Players")
@@ -3041,6 +3041,8 @@ end
 
 local forceQuestUntil = 0
 local forceQuestLabel = ""
+local remoteQuestCooldownUntil = 0 -- รีโมตล้มเหลว → พักก่อนลองซ้ำ
+if _G.BF04C_REMOTE_QUEST == nil then _G.BF04C_REMOTE_QUEST = true end
 
 local function guiReallyVisible(gui)
     if not gui or not gui:IsA("GuiObject") then return false end
@@ -3477,6 +3479,55 @@ local function mainLoop()
             end
 
             if not hasQ then
+                -- ── ลองรีโมต StartQuest ก่อน (ไม่บินไกล) ──
+                if _G.BF04C_REMOTE_QUEST ~= false
+                   and os.clock() >= remoteQuestCooldownUntil
+                   and quest and quest.qName then
+                    local _, hBefore = getChar()
+                    local posBefore = hBefore and hBefore.Position
+                    log(string.format("★ ลองรีโมต StartQuest(%s, %s) — ไม่บินไป NPC ก่อน",
+                        quest.qName, tostring(quest.qNum)), "Y")
+                    equipSword()
+                    local iok, ires = invokeCF(cf, "StartQuest", quest.qName, quest.qNum)
+                    log("รีโมตผล: ok=" .. tostring(iok) .. " res=" .. tostring(ires), "B")
+                    task.wait(0.9)
+                    -- กันดีดยาง: ถ้ารีโมตแล้วตำแหน่งกระโดดผิดปกติ ปล่อยให้ logic ต่อ
+                    local _, hAfter = getChar()
+                    if posBefore and hAfter then
+                        local jump = (hAfter.Position - posBefore).Magnitude
+                        if jump > 800 then
+                            log(string.format("รีโมตแล้วดีดไกล %.0f studs — อาจโดนดึงไป NPC", jump), "O")
+                        end
+                    end
+                    local hasR, txtR = hasActiveQuest(quest)
+                    if not hasR then
+                        task.wait(0.7)
+                        hasR, txtR = hasActiveQuest(quest)
+                    end
+                    if hasR then
+                        forceQuestUntil = os.clock() + 25
+                        forceQuestLabel = quest.mob or "RemoteStart"
+                        resetSpiral(nil)
+                        log("รีโมตรับเควสสำเร็จ: " .. tostring(txtR or quest.mob), "G")
+                        if quest.mob then
+                            local mh, ms = mobSpawnHint(quest.mob)
+                            if mh then
+                                rememberHub("mob", quest.mob, mh)
+                                log(string.format("→ บินจุดมอนทันที (%s)", tostring(ms)), "Y")
+                                flyTo(CFrame.new(mh + Vector3.new(0, 45, 0)), "จุดมอนหลังรีโมต")
+                                holdNoFall()
+                                resetSpiral(Vector3.new(mh.X, math.max(mh.Y + 40, 90), mh.Z))
+                            end
+                        end
+                        task.wait(0.2)
+                        return
+                    end
+                    remoteQuestCooldownUntil = os.clock() + 8
+                    log("รีโมตยังไม่ติดเควสบน UI → บินไป NPC แบบเดิม", "O")
+                elseif _G.BF04C_REMOTE_QUEST == false then
+                    log("รีโมตรับเควสปิด (_G.BF04C_REMOTE_QUEST=false)", "S")
+                end
+
                 log("ยังไม่มีเควส (Quest UI ปิด) → ไปรับที่ NPC", "Y")
                 local pos, src = resolveNpcTarget(quest)
                 if pos == "COMPASS_STEP" then
