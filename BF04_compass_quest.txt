@@ -667,6 +667,9 @@ local KNOWN_NPC = {
     -- Great Tree (เก่า BF04 + หลายชั้นความสูง)
     ["npc at great tree"] = Vector3.new(2180.54, 27.82, -6741.55),
     ["great tree"] = Vector3.new(2180.54, 27.82, -6741.55),
+    -- Nuts Island (Peanut) — คนละเกาะกับ Haunted
+    ["nuts island quest giver"] = Vector3.new(-2104.36, 38.13, -10194.07),
+    ["peanut quest giver"] = Vector3.new(-2104.36, 38.13, -10194.07),
 }
 local KNOWN_NPC_ALT = {
     ["hydra town quest giver"] = {
@@ -694,6 +697,11 @@ local KNOWN_NPC_ALT = {
         Vector3.new(2180, 800, -6741),
         Vector3.new(2300, 500, -6600),
     },
+    ["nuts island quest giver"] = {
+        Vector3.new(-2104.36, 38.13, -10194.07),
+        Vector3.new(-2100, 80, -10190),
+        Vector3.new(-2000, 50, -10200),
+    },
 }
 -- จุดเกาะมอน (Archer = เมืองบน ไม่ใช่จุด Warrior)
 local MOB_CACHE = {} -- lowerName -> Vector3
@@ -707,6 +715,9 @@ local KNOWN_MOB = {
     ["venomous assailant"] = Vector3.new(5166, 1004, 757),
     ["marine commodore"] = Vector3.new(2490.08, 190.42, -7160.05),
     ["marine rear admiral"] = Vector3.new(3951.39, 229.12, -6912.82),
+    -- Nuts Island (ไม่ใช่ Haunted — อย่าก้นหอยรอบมัมมี่)
+    ["peanut scout"] = Vector3.new(-2126.41, 90.56, -10301.96),
+    ["peanut president"] = Vector3.new(-2118.75, 70.30, -10509.32),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
@@ -751,6 +762,19 @@ local KNOWN_MOB_ALT = {
         Vector3.new(3800, 250, -7000),
         Vector3.new(2490, 190, -7160),
         Vector3.new(3000, 400, -7200),
+    },
+    ["peanut scout"] = {
+        Vector3.new(-2126.41, 90.56, -10301.96),
+        Vector3.new(-1993, 187, -10103),
+        Vector3.new(-2200, 100, -10350),
+        Vector3.new(-2050, 80, -10250),
+        Vector3.new(-2300, 90, -10400),
+    },
+    ["peanut president"] = {
+        Vector3.new(-2118.75, 70.30, -10509.32),
+        Vector3.new(-2215, 159, -10474),
+        Vector3.new(-2100, 100, -10550),
+        Vector3.new(-2000, 90, -10450),
     },
 }
 
@@ -1943,13 +1967,14 @@ local function huntMobOrSweep(quest)
         local hint = mobSpawnHint(quest.mob)
         local _, hrp0 = getChar()
         if hint and hrp0 and (hrp0.Position - hint).Magnitude > 2500 then
-            log(string.format("อยู่ไกลจุดมอน %.0f → บินกลับ known ก่อน",
+            log(string.format("อยู่คนละเกาะ (ห่าง %.0f) → บินไปเกาะมอนก่อนก้นหอย",
                 (hrp0.Position - hint).Magnitude), "O")
-            flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "กลับเกาะมอน")
+            flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "ข้ามเกาะมอน")
             holdNoFall()
             mob, md = findMob(quest.mob)
             if mob then return mob, md end
             resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 200), hint.Z))
+            triedKnownHigh = false -- ให้ลองจุด known บนเกาะใหม่อีก
         end
     end
 
