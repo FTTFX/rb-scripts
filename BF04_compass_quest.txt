@@ -1362,10 +1362,11 @@ local function flyByCompassStep(opts)
     if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร" end
 
     local fullStuds = d0 * 3
-    -- อย่ากระโดด 2000 ทุกครั้ง — ครึ่งระยะพอประมาณ
-    local hopStuds = math.clamp(fullStuds * 0.55, 80, 1400)
+    -- ระยะไกล (ข้ามเกาะ) กระโดดท่อนใหญ่ขึ้น ตามเข็มให้ถึงเกาะเร็ว
+    local hopMax = (d0 >= 800) and 3200 or ((d0 >= 300) and 2200 or 1400)
+    local hopStuds = math.clamp(fullStuds * 0.65, 100, hopMax)
     if compassStuck >= 2 then
-        hopStuds = math.clamp(fullStuds * 0.4, 100, 800)
+        hopStuds = math.clamp(fullStuds * 0.45, 120, math.min(hopMax, 1600))
         local off = (compassStuck % 2 == 0) and 40 or -40
         local ang = math.rad(off)
         dir = Vector3.new(
@@ -1938,20 +1939,57 @@ local function huntMobOrSweep(quest)
     local mob, md = findMob(quest.mob)
     if mob then return mob, md end
 
-    -- 1) ตามเข็มทิศก่อน — ถ้าระยะไกล (เช่น 1800ม.) บินไปเกาะที่ถูกก่อนก้นหอย
-    --    ไม่ใช้จุดจำ / known / cache
+    -- อยู่คนละเกาะชัดเจน? (มอนรอบตัวไม่ใช่เป้าเควส แต่เป็น Haunted ฯลฯ)
+    local function onWrongIsland()
+        local want = (quest.mob or ""):lower()
+        if want == "" then return false end
+        local enemies = Workspace:FindFirstChild("Enemies")
+        local _, hrp = getChar()
+        if not enemies or not hrp then return false end
+        local near = 0
+        local matchWant = 0
+        for _, e in ipairs(enemies:GetChildren()) do
+            local eh = e:FindFirstChild("HumanoidRootPart")
+            local hum = e:FindFirstChildOfClass("Humanoid")
+            if eh and hum and hum.Health > 0
+               and (eh.Position - hrp.Position).Magnitude < 900 then
+                near += 1
+                if e.Name:lower():find(want:sub(1, math.min(8, #want)), 1, true) then
+                    matchWant += 1
+                end
+            end
+        end
+        return near >= 5 and matchWant == 0
+    end
+
+    -- 1) ตามเข็มทิศก่อนเสมอถ้ายังไกล — ไปเกาะถูกก่อนก้นหอย
     do
         local ui = readCompassUI()
         local titleL = (ui.title or ""):lower()
         local rot = ui.arrowAbs or ui.arrowRot
         local d = ui.distance
-        local guideOk = d and rot ~= nil and d > 15
-            and not titleL:find("quest giver", 1, true)
-            and not titleL:find("find the", 1, true)
-        if guideOk then
-            -- ไกลมาก → ตามเข็มหลายก้าวจนใกล้ (หาเกาะถูก)
-            local rounds = (d >= 800) and 8 or ((d >= 200) and 4 or 2)
-            log(string.format("★ ตามเข็มก่อน %dม. → บินหาเกาะถูก (%d ก้าว)", d, rounds), "Y")
+        local pointsIsland = titleL:find("sea of treats", 1, true)
+            or titleL:find("nuts", 1, true)
+            or titleL:find("find the npc at", 1, true)
+            or titleL:find("island", 1, true)
+            or titleL:find("great tree", 1, true)
+            or titleL:find("hydra", 1, true)
+            or titleL:find("treats", 1, true)
+        local wrong = onWrongIsland()
+        if wrong then
+            log("รอบตัวไม่ใช่มอนเควส → น่าจะคนละเกาะ บังคับตามเข็ม", "O")
+        end
+        local mustFollow = (d and rot ~= nil and (
+            d >= 150
+            or (d >= 80 and pointsIsland)
+            or (d >= 40 and pointsIsland)
+            or (wrong and d >= 30)
+        )) or (wrong and rot ~= nil and (d == nil or d >= 20))
+
+        if mustFollow and rot ~= nil then
+            local rounds = ((d or 999) >= 1000) and 14 or (((d or 999) >= 400) and 10 or 6)
+            log(string.format("★ ตามเข็มไปเกาะถูกก่อน %sm [%s] (%d ก้าว)",
+                tostring(d or "?"), (ui.title or "?"):sub(1, 42), rounds), "Y")
             for i = 1, rounds do
                 if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
                 mob, md = findMob(quest.mob)
@@ -1959,11 +1997,26 @@ local function huntMobOrSweep(quest)
                 local uiN = readCompassUI()
                 local dN = uiN.distance
                 local rotN = uiN.arrowAbs or uiN.arrowRot
-                if not dN or not rotN or dN <= 80 then
-                    log(string.format("เข็มใกล้แล้ว (%sม.) → ก้นหอยค้นบนเกาะ", tostring(dN)), "G")
+                local tN = (uiN.title or ""):lower()
+                local stillIsland = tN:find("find the npc at", 1, true)
+                    or tN:find("sea of treats", 1, true)
+                    or tN:find("treats", 1, true)
+                if not rotN then
+                    log("เข็มไม่มีลูกศร → ก้นหอยรอบนี้", "O")
                     break
                 end
-                log(string.format("ตามเข็มก้าว %d/%d — เหลือ %dม.", i, rounds, dN), "B")
+                if dN and dN <= 100 and not stillIsland and not onWrongIsland() then
+                    log(string.format("เข็มใกล้แล้ว (%dม.) → ก้นหอยค้นบนเกาะ", dN), "G")
+                    break
+                end
+                if dN and dN <= 50 and stillIsland then
+                    log(string.format("ถึงแถวเกาะแล้ว (%dม.) → ก้นหอยหามอน", dN), "G")
+                    break
+                end
+                if findMob(quest.mob) then
+                    return findMob(quest.mob)
+                end
+                log(string.format("ตามเข็มก้าว %d/%d — เหลือ %sm", i, rounds, tostring(dN or "?")), "B")
                 flyByCompassStep({
                     skipNpcCache = true,
                     noKnown = true,
@@ -1973,15 +2026,20 @@ local function huntMobOrSweep(quest)
                 mob, md = findMob(quest.mob)
                 if mob then return mob, md end
             end
-            -- ศูนย์ก้นหอย = ตำแหน่งปัจจุบันบนเกาะที่บินมาถึง (ไม่ใช้ known)
             local _, hNow = getChar()
             if hNow then
                 resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 400), hNow.Position.Z))
             end
+        else
+            if d then
+                log(string.format("เข็ม %sm → ก้นหอย", tostring(d)), "S")
+            else
+                log("ไม่มีระยะเข็ม → ก้นหอย (ถ้าคนละเกาะจะตามเข็มรอบถัดไป)", "O")
+            end
         end
     end
 
-    -- 2) ใกล้แล้ว / ไม่มีเข็มชี้มอน → ก้นหอยวนค้นรอบตัว
+    -- 2) ก้นหอยวนค้นรอบตำแหน่งปัจจุบัน
     return flySpiralSeek(quest, isBossQuest(quest) and 10 or 16)
 end
 
@@ -2912,7 +2970,7 @@ local function mainLoop()
                 local pos, src = resolveNpcTarget(quest)
                 if pos == "COMPASS_STEP" then
                     setNoclip(true)
-                    flyByCompassStep()
+                    flyByCompassStep({ noKnown = true, highY = true })
                     local part2 = findQuestGiver(quest)
                     if part2 then
                         log("โหลด NPC แล้วหลังตามเข็มทิศ", "G")
