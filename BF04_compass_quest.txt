@@ -726,6 +726,136 @@ local function compassWorldDir(arrowRot)
     return Vector3.new(dir.X, 0, dir.Z).Unit
 end
 
+-- ทิศจากตำแหน่งบนจอ (เลข 1737m / ไอคอน !) → รังสีกล้อง
+local function dirFromScreenPos(absPos, absSize)
+    local cam = Workspace.CurrentCamera
+    if not cam or not absPos then return nil end
+    local sx = absPos.X + (absSize and absSize.X or 0) * 0.5
+    local sy = absPos.Y + (absSize and absSize.Y or 0) * 0.5
+    local ok, ray = pcall(function()
+        return cam:ViewportPointToRay(sx, sy)
+    end)
+    if not ok or not ray then return nil end
+    local d = Vector3.new(ray.Direction.X, 0, ray.Direction.Z)
+    if d.Magnitude < 0.05 then return nil end
+    return d.Unit
+end
+
+-- หา Label ระยะ Xm + Billboard ในโลก (ตัวเลขบนจอที่ชี้เป้า)
+local function findGuideMeterWorld()
+    local best = nil -- { meters, gui, worldPos, screenDir, path, kind }
+    local function considerLabel(d, kind)
+        if not (d:IsA("TextLabel") or d:IsA("TextButton")) then return end
+        local t = tostring(d.Text or ""):gsub(",", "")
+        local m = t:match("(%d+)%s*m%s*away") or t:match("(%d+)%s*m") or t:match("(%d+)m")
+        local meters = m and tonumber(m)
+        if not meters or meters < 5 then return end
+        local ap, as = d.AbsolutePosition, d.AbsoluteSize
+        local screenDir = dirFromScreenPos(ap, as)
+        local worldPos = nil
+        local p = d.Parent
+        while p and p ~= game do
+            if p:IsA("BillboardGui") then
+                local ad = p.Adornee or p.Parent
+                if ad then
+                    if ad:IsA("BasePart") then worldPos = ad.Position
+                    elseif ad:IsA("Model") then
+                        local ok, piv = pcall(function() return ad:GetPivot().Position end)
+                        if ok then worldPos = piv end
+                    elseif ad:IsA("Attachment") then worldPos = ad.WorldPosition
+                    end
+                end
+                break
+            end
+            p = p.Parent
+        end
+        local score = meters
+        -- ชอบ Billboard / ตำแหน่งกลางจอ
+        if worldPos then score = score + 100000 end
+        if kind == "billboard" then score = score + 50000 end
+        local vp = Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize
+        if vp and ap then
+            local cx, cy = vp.X * 0.5, vp.Y * 0.45
+            local dist = (Vector2.new(ap.X + as.X * 0.5, ap.Y + as.Y * 0.5) - Vector2.new(cx, cy)).Magnitude
+            score = score - dist -- ใกล้กลางจอดีกว่า
+        end
+        if not best or score > (best.score or 0) then
+            best = {
+                meters = meters, gui = d, worldPos = worldPos, screenDir = screenDir,
+                path = d:GetFullName():gsub("^.-PlayerGui%.", ""):gsub("^Workspace%.", "WS."),
+                kind = kind or "gui", score = score, ap = ap, as = as,
+            }
+        end
+    end
+
+    for _, d in ipairs(pg:GetDescendants()) do
+        considerLabel(d, "playergui")
+    end
+    -- Billboard ในแมพ (เบาๆ — เฉพาะ Map/Islands)
+    pcall(function()
+        local roots = {
+            Workspace:FindFirstChild("Map"),
+            Workspace:FindFirstChild("Islands"),
+            Workspace:FindFirstChild("Areas"),
+        }
+        for _, root in ipairs(roots) do
+            if root then
+                for _, d in ipairs(root:GetDescendants()) do
+                    if d:IsA("BillboardGui") then
+                        for _, c in ipairs(d:GetDescendants()) do
+                            if c:IsA("TextLabel") then considerLabel(c, "billboard") end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return best
+end
+
+-- รวมทิศไปเป้า: โลกจาก Billboard > รังสีจอจากเลข Xm > ลูกศร GuideIcon
+local function resolveGuideFlyDir(ui)
+    local meter = findGuideMeterWorld()
+    if meter and meter.worldPos then
+        local _, hrp = getChar()
+        if hrp then
+            local flat = Vector3.new(meter.worldPos.X - hrp.Position.X, 0, meter.worldPos.Z - hrp.Position.Z)
+            if flat.Magnitude > 5 then
+                return flat.Unit, meter.meters or ui.distance, "billboard→โลก", meter
+            end
+        end
+    end
+    if meter and meter.screenDir then
+        return meter.screenDir, meter.meters or ui.distance, "เลขบนจอ→รังสี", meter
+    end
+    -- Guide Subtitle2 ตำแหน่งบนจอ
+    local main = pg:FindFirstChild("Main")
+    local sub2 = main and main:FindFirstChild("Guide")
+        and main.Guide:FindFirstChild("TopFrame")
+        and main.Guide.TopFrame:FindFirstChild("Subtitle2")
+    if sub2 and sub2:IsA("GuiObject") then
+        local sd = dirFromScreenPos(sub2.AbsolutePosition, sub2.AbsoluteSize)
+        if sd then
+            return sd, ui.distance, "Subtitle2→รังสี", meter
+        end
+    end
+    local icon = main and main:FindFirstChild("Guide")
+        and main.Guide:FindFirstChild("LeftFrame")
+        and main.Guide.LeftFrame:FindFirstChild("IconFrame")
+    if icon then
+        local sd = dirFromScreenPos(icon.AbsolutePosition, icon.AbsoluteSize)
+        if sd then
+            return sd, ui.distance, "IconFrame→รังสี", meter
+        end
+    end
+    local rot = ui and (ui.arrowAbs or ui.arrowRot)
+    if rot ~= nil then
+        local d = compassWorldDir(rot)
+        if d then return d, ui.distance, "GuideIconหมุน", meter end
+    end
+    return nil, ui and ui.distance, "ไม่มีทิศ", meter
+end
+
 -- พิกัดจริงอยู่ที่ workspace.NPCs ตอนโหลด — ไม่มี remote พิกัดที่ใช้ได้
 -- cache ตอนเจอ + จุดที่ยืนยันจาก Spy (Dragon Crew)
 local NPC_CACHE = {} -- lowerName -> Vector3
@@ -1219,6 +1349,29 @@ local function dumpCompassDeep()
         log("ยังไม่เจอลูกศรใน Guide", "O")
     end
 
+    -- ทิศจริง: เลขบนจอ / Billboard (ไม่พึ่ง Rotation=0)
+    do
+        local dirR, mR, how, meter = resolveGuideFlyDir(info)
+        if meter then
+            log(string.format("★ เลขเป้า: %dm path=%s kind=%s",
+                meter.meters or 0, tostring(meter.path), tostring(meter.kind)), "G")
+            if meter.ap then
+                log(string.format("  จอ(%.0f,%.0f) size=%.0fx%.0f",
+                    meter.ap.X, meter.ap.Y, meter.as and meter.as.X or 0, meter.as and meter.as.Y or 0), "B")
+            end
+            if meter.worldPos then
+                log(string.format("  โลก Billboard: %.0f,%.0f,%.0f",
+                    meter.worldPos.X, meter.worldPos.Y, meter.worldPos.Z), "G")
+            end
+        end
+        if dirR then
+            log(string.format("★ ทิศบินใช้: %s → %.2f, 0, %.2f (ระยะ %s)",
+                tostring(how), dirR.X, dirR.Z, tostring(mR)), "Y")
+        else
+            log("ทิศบิน: " .. tostring(how), "O")
+        end
+    end
+
     -- สแกนทุกข้อความแบบ Xm ใน Main (เทียบกับกล่องแดงบนจอ)
     log("── สแกน Label แบบ Xm ทั้ง Main ──", "Y")
     local main = pg:FindFirstChild("Main")
@@ -1232,11 +1385,14 @@ local function dumpCompassDeep()
                     foundXm += 1
                     if foundXm <= 12 then
                         local ap = d.AbsolutePosition
-                        local vis = d.Visible
-                        local p = d.Parent and d.Parent.Visible
+                        local as = d.AbsoluteSize
+                        local sd = dirFromScreenPos(ap, as)
                         log(string.format("  Xm#%d \"%s\" vis=%s @จอ(%.0f,%.0f) %s",
-                            foundXm, t, tostring(vis), ap.X, ap.Y,
+                            foundXm, t, tostring(d.Visible), ap.X, ap.Y,
                             d:GetFullName():gsub("^.-PlayerGui%.", "")), "S")
+                        if sd then
+                            log(string.format("    → รังสีจอ: %.2f, 0, %.2f", sd.X, sd.Z), "Y")
+                        end
                     end
                 end
             end
@@ -1284,8 +1440,12 @@ local function dumpCompassDeep()
 
     local _, hrp = getChar()
     if info.distance and hrp then
-        log(string.format("สรุป: UI=%dม. | เรา@ %.0f,%.0f,%.0f → ตามเข็มไปทิศลูกศร",
-            info.distance, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "Y")
+        local dirR, _, how = resolveGuideFlyDir(info)
+        log(string.format("สรุป: UI=%dม. | เรา@ %.0f,%.0f,%.0f → %s",
+            info.distance, hrp.Position.X, hrp.Position.Y, hrp.Position.Z, tostring(how)), "Y")
+        if dirR then
+            log(string.format("  ทิศบิน: %.2f, 0, %.2f", dirR.X, dirR.Z), "G")
+        end
     end
     log("════ จบ Spy เข็ม — Copy ส่งมาได้ ════", "Y")
     return info
@@ -1399,14 +1559,20 @@ local function flyByCompassStep(opts)
         return true, 0
     end
 
-    if not d0 or rot == nil then
+    -- เติมระยะจากเลขบนจอถ้า Guide ยังไม่อ่าน
+    if not d0 then
+        local meter = findGuideMeterWorld()
+        if meter and meter.meters then d0 = meter.meters end
+    end
+
+    if not d0 then
         -- ไม่มีระยะ → probe เลยถ้าเป็นเกาะ
         if isPlaceGuide then
             probe8Phase(targetName, placeName, 300)
             scanAfterMove()
             return true, 0
         end
-        return false, "ไม่มีระยะ/ลูกศรจาก Guide UI"
+        return false, "ไม่มีระยะจาก Guide UI / เลขบนจอ"
     end
 
     -- noKnown / ตามเข็มอย่างเดียว — ไม่กระโดดไปจุดจำ
@@ -1480,9 +1646,11 @@ local function flyByCompassStep(opts)
         pcall(function() firesignal(ui.navigateBtn.MouseButton1Click) end)
     end
 
-    local dir = compassWorldDir(rot)
+    -- ทิศ: Billboard/เลขบนจอ (1737m) ก่อน — GuideIcon Rotation มักค้าง 0
+    local dir, dUse, how = resolveGuideFlyDir(ui)
+    if dUse then d0 = dUse end
     local _, hrp = getChar()
-    if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร" end
+    if not dir or not hrp then return false, "ไม่มีทิศ/ตัวละคร (" .. tostring(how) .. ")" end
 
     local fullStuds = d0 * 3
     -- ระยะไกล (ข้ามเกาะ) กระโดดท่อนใหญ่ขึ้น ตามเข็มให้ถึงเกาะเร็ว
@@ -1505,9 +1673,9 @@ local function flyByCompassStep(opts)
         dest = Vector3.new(dest.X, math.max(dest.Y, hrp.Position.Y + 80, 120), dest.Z)
     end
     hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(dest.X, hrp.Position.Y, dest.Z))
-    log(string.format("บินตรงระยะ UI: %dม. ≈ %.0f studs Y=%.0f (rot=%.0f)",
-        d0, hopStuds, dest.Y, rot), "B")
-    flyTo(CFrame.new(dest), "เข็มทิศ")
+    log(string.format("บิน→%s: %dม. ≈ %.0f studs Y=%.0f (rot=%.0f)",
+        tostring(how), d0, hopStuds, dest.Y, rot or 0), "B")
+    flyTo(CFrame.new(dest), "เลขบนจอ/เข็ม")
     task.wait(0.7)
     if scanAfterMove() then return true, 0 end
 
@@ -2102,16 +2270,18 @@ local function huntMobOrSweep(quest)
         if wrong then
             log("รอบตัวไม่ใช่มอนเควส → น่าจะคนละเกาะ บังคับตามเข็ม", "O")
         end
-        local mustFollow = (d and rot ~= nil and (
+        -- มีระยะ Xm ก็พอ (ไม่ต้องรอ GuideIcon หมุน — มักค้าง 0)
+        local hasDir = (resolveGuideFlyDir(ui) ~= nil) or (rot ~= nil)
+        local mustFollow = (d and hasDir and (
             d >= 150
             or (d >= 80 and pointsIsland)
             or (d >= 40 and pointsIsland)
             or (wrong and d >= 30)
-        )) or (wrong and rot ~= nil and (d == nil or d >= 20))
+        )) or (wrong and hasDir and (d == nil or d >= 20))
 
-        if mustFollow and rot ~= nil then
+        if mustFollow then
             local rounds = ((d or 999) >= 1000) and 14 or (((d or 999) >= 400) and 10 or 6)
-            log(string.format("★ ตามเข็มไปเกาะถูกก่อน %sm [%s] (%d ก้าว)",
+            log(string.format("★ ตามเลขบนจอ/เข็มไปเกาะ %sm [%s] (%d ก้าว)",
                 tostring(d or "?"), (ui.title or "?"):sub(1, 42), rounds), "Y")
             for i = 1, rounds do
                 if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
@@ -2119,13 +2289,17 @@ local function huntMobOrSweep(quest)
                 if mob then return mob, md end
                 local uiN = readCompassUI()
                 local dN = uiN.distance
-                local rotN = uiN.arrowAbs or uiN.arrowRot
+                if not dN then
+                    local met = findGuideMeterWorld()
+                    if met then dN = met.meters end
+                end
                 local tN = (uiN.title or ""):lower()
                 local stillIsland = tN:find("find the npc at", 1, true)
                     or tN:find("sea of treats", 1, true)
                     or tN:find("treats", 1, true)
-                if not rotN then
-                    log("เข็มไม่มีลูกศร → ก้นหอยรอบนี้", "O")
+                local dirN = resolveGuideFlyDir(uiN)
+                if not dirN and not (uiN.arrowAbs or uiN.arrowRot) and not dN then
+                    log("ไม่มีทิศ/ระยะบนจอ → ก้นหอยรอบนี้", "O")
                     break
                 end
                 if dN and dN <= 100 and not stillIsland and not onWrongIsland() then
@@ -2139,7 +2313,7 @@ local function huntMobOrSweep(quest)
                 if findMob(quest.mob) then
                     return findMob(quest.mob)
                 end
-                log(string.format("ตามเข็มก้าว %d/%d — เหลือ %sm", i, rounds, tostring(dN or "?")), "B")
+                log(string.format("ตามเลขจอ ก้าว %d/%d — เหลือ %sm", i, rounds, tostring(dN or "?")), "B")
                 flyByCompassStep({
                     skipNpcCache = true,
                     noKnown = true,
