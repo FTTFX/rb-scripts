@@ -2345,7 +2345,7 @@ local function huntMobOrSweep(quest)
                 local d = distFlat(hrp.Position, p)
                 if d < bestD then bestD = d; bestP = p end
             end
-            if bestD > 500 then
+            if bestD > 50 then
                 log(string.format("ไม่เจอ %s + ไกลจุดมอน %.0f → บินไปก่อนก้นหอย (%s)",
                     quest.mob, bestD, tostring(src or "known")), "Y")
                 for i, pt in ipairs(pts) do
