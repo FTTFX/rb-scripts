@@ -451,10 +451,16 @@ local function isBossQuest(q)
     if m:find("commodore", 1, true) then return false end
     if m:find("enforcer", 1, true) or m:find("assailant", 1, true) then return false end
     if m:find("warrior", 1, true) or m:find("archer", 1, true) then return false end
+    if m:find("cake guard", 1, true) or m:find("cookie crafter", 1, true) then return false end
+    if m:find("baking staff", 1, true) or m:find("head baker", 1, true) then return false end
+    if m:find("peanut", 1, true) or m:find("scout", 1, true) then return false end
+    -- need ≥ 3 = ฟาร์มจำนวน ไม่ใช่บอส
+    if type(q.need) == "number" and q.need >= 3 then return false end
     -- บอสชื่อชัด
     if m:find("kilo admiral", 1, true) then return true end
     if m:find("hydra leader", 1, true) then return true end
     if m:find("island empress", 1, true) then return true end
+    if m:find("cake queen", 1, true) or m:find("cake prince", 1, true) then return true end
     if type(q.need) == "number" and q.need == 1 then
         -- need=1 ของมอนฟาร์มทะเล → ไม่นับ
         if m:find("marine", 1, true) and not m:find("kilo", 1, true) then return false end
@@ -463,6 +469,45 @@ local function isBossQuest(q)
     return m:find("leader", 1, true) ~= nil
         or m:find("boss", 1, true) ~= nil
         or m:find("king", 1, true) ~= nil
+        or m:find("queen", 1, true) ~= nil
+end
+
+-- หาเควสจากชื่อมอนบน UI (เช่น Cake Guards → Cake Guard)
+local function findQuestByMobHint(hint, lv)
+    if not hint or hint == "" then return nil end
+    local want = hint:lower():gsub("%s+$", ""):gsub("%.$", "")
+    want = want:gsub("s$", "") -- Guards → Guard (หยาบๆ)
+    local data = getQuests()
+    if not data then return nil end
+    local best = nil
+    for qName, entry in pairs(data) do
+        if type(entry) == "table" then
+            for num, sub in pairs(entry) do
+                if type(sub) == "table" and type(sub.Task) == "table" then
+                    local mob, need = next(sub.Task)
+                    if mob and type(need) == "number" then
+                        local ml = mob:lower()
+                        if ml == want or ml:find(want, 1, true) or want:find(ml, 1, true) then
+                            local cand = {
+                                qName = qName,
+                                qNum = tonumber(num) or num,
+                                mob = mob,
+                                need = need,
+                                levelReq = sub.LevelReq or 0,
+                                displayName = sub.Name or mob,
+                            }
+                            if not lv or cand.levelReq <= lv + 50 then
+                                if not best or cand.levelReq > best.levelReq then
+                                    best = cand
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
 end
 
 local function pickQuestForLevel(lv, opts)
@@ -3662,6 +3707,28 @@ local function mainLoop()
             end
 
             log("มีเควสแล้ว: " .. tostring(qTxt) .. " → ไปตีมอน", "G")
+
+            -- ซิงค์เควสจาก UI จริง (มี Cake Guard แต่ pick ได้ Baking Staff → ตีตาม UI)
+            do
+                local raw = tostring(qTxt or "")
+                local mobHint = raw:match("[Dd]efeat%s+%d+%s+([^%(]+)")
+                    or raw:match("เอาชนะ%s*%d*%s*([^%(]+)")
+                if mobHint then
+                    mobHint = mobHint:gsub("%s+$", ""):gsub("%.$", "")
+                    local mk = (quest.mob or ""):lower()
+                    local hk = mobHint:lower():gsub("s$", "")
+                    if mk == "" or not (mk:find(hk:sub(1, math.min(8, #hk)), 1, true)
+                        or hk:find(mk:sub(1, math.min(8, #mk)), 1, true)) then
+                        local synced = findQuestByMobHint(mobHint, lv)
+                        if synced then
+                            log(string.format("ซิงค์จาก UI: %s → %s#%s %s",
+                                tostring(quest.mob), synced.qName, tostring(synced.qNum), synced.mob), "Y")
+                            quest = synced
+                            refreshStatus(quest)
+                        end
+                    end
+                end
+            end
 
             -- บอส: ต้องมีเควสบอสจริงก่อนตี (กันตี Kilo ตอนยังเป็นเควสฟาร์ม)
             if isBossQuest(quest) then
