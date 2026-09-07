@@ -4284,5 +4284,6 @@ end)
 
 log("โหลด Compass Quest แล้ว", "G")
 log("แนวทาง: เข็มทิศ→ชื่อ NPC→พิกัด (ไม่เดาลูกศรเป็นหลัก)", "Y")
-log("ใช้: เปิดเควสแนะนำ → AUTO | ค้าง→ Spy เข็ม → Copy", "Y")
+log("ใช้: AUTO (รีโมตรับเควสก่อน|ไม่ติดค่อยบิน NPC) | Spy เข็ม → Copy", "Y")
+log("ปิดรีโมต: _G.BF04C_REMOTE_QUEST=false", "S")
 refreshStatus(pickQuestForLevel(getLevel()))
