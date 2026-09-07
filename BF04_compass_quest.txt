@@ -590,14 +590,15 @@ local function dumpValue(v, depth)
     return tostring(v)
 end
 
--- อ่าน UI เข็มทิศ — path จริง: Main.Guide (Spy ยืนยัน)
--- ระยะ = TopFrame.Subtitle2 เช่น "232m away"
--- ลูกศร = LeftFrame.IconFrame.GuideIcon
+-- อ่าน UI เข็มทิศ — path: Main.Guide + สแกนข้อความ "2090m" / ลูกศร !
+-- ระยะ = TopFrame.Subtitle2 หรือ Label แบบ "2090m"
+-- ลูกศร = LeftFrame.IconFrame.GuideIcon / Arrow
 local function readCompassUI()
     local info = {
         texts = {}, distance = nil, title = nil,
         arrowRot = nil, arrowAbs = nil, arrowName = nil,
         navigateBtn = nil, frame = nil,
+        distPath = nil, arrowPath = nil,
     }
     local main = pg:FindFirstChild("Main")
     if not main then return info end
@@ -615,12 +616,15 @@ local function readCompassUI()
             if sub2 and sub2:IsA("TextLabel") then
                 local t = tostring(sub2.Text)
                 info.texts[#info.texts+1] = t
-                -- "232m away" | "ห่างออกไป 232เมตร" | "232 m"
                 local meters = t:match("(%d+)%s*m%s*away")
                     or t:match("(%d+)%s*เมตร")
                     or t:match("ห่างออกไป%s*(%d+)")
-                    or t:match("^(%d+)%s*m")
-                if meters then info.distance = tonumber(meters) end
+                    or t:match("(%d+)%s*m")
+                    or t:match("^(%d+)$")
+                if meters then
+                    info.distance = tonumber(meters)
+                    info.distPath = "Guide.TopFrame.Subtitle2"
+                end
             end
         end
         local track = guide:FindFirstChild("Track")
@@ -633,13 +637,79 @@ local function readCompassUI()
                 local bg = iconFrame:FindFirstChild("Background")
                 needle = bg and bg:FindFirstChild("Arrow")
             end
+            if not needle then
+                for _, d in ipairs(iconFrame:GetDescendants()) do
+                    if d:IsA("ImageLabel") or d:IsA("ImageButton") or d:IsA("Frame") then
+                        local n = d.Name:lower()
+                        if n:find("arrow", 1, true) or n:find("guide", 1, true)
+                           or n:find("needle", 1, true) then
+                            needle = d
+                            break
+                        end
+                    end
+                end
+            end
             if needle then
                 info.arrowRot = needle.Rotation
                 info.arrowAbs = needle.AbsoluteRotation
-                info.arrowName = needle:GetFullName():gsub("^.-PlayerGui%.", "")
+                info.arrowName = needle.Name
+                info.arrowPath = needle:GetFullName():gsub("^.-PlayerGui%.", "")
             end
         end
-        return info
+    end
+
+    -- สำรอง: สแกนทั้ง Main หาข้อความ "2090m" (ไอคอน ! ข้างจอ)
+    if not info.distance then
+        local bestM, bestPath = nil, nil
+        local root = guide or main
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                local t = tostring(d.Text or ""):gsub(",", "")
+                local m = t:match("^(%d+)%s*m%s*$")
+                    or t:match("^(%d+)%s*m%s*away")
+                    or t:match("(%d+)%s*m%s*away")
+                    or t:match("^(%d+)m$")
+                if m then
+                    local n = tonumber(m)
+                    if n and n > 0 and (not bestM or n > bestM) then
+                        -- ชอบค่าที่ Visible
+                        if d.Visible ~= false then
+                            bestM = n
+                            bestPath = d:GetFullName():gsub("^.-PlayerGui%.", "")
+                        end
+                    end
+                end
+            end
+        end
+        if bestM then
+            info.distance = bestM
+            info.distPath = bestPath
+        end
+    end
+
+    -- สำรองลูกศร: Gui ที่หมุนได้ใกล้ Guide
+    if info.arrowRot == nil and guide then
+        local best
+        for _, d in ipairs(guide:GetDescendants()) do
+            if (d:IsA("ImageLabel") or d:IsA("ImageButton") or d:IsA("Frame"))
+               and typeof(d.Rotation) == "number" then
+                local n = d.Name:lower()
+                if n:find("arrow", 1, true) or n:find("guide", 1, true)
+                   or math.abs(d.Rotation) > 0.01 or math.abs(d.AbsoluteRotation) > 0.01 then
+                    if n:find("arrow", 1, true) or n:find("guide", 1, true) then
+                        best = d
+                        break
+                    end
+                    best = best or d
+                end
+            end
+        end
+        if best then
+            info.arrowRot = best.Rotation
+            info.arrowAbs = best.AbsoluteRotation
+            info.arrowName = best.Name
+            info.arrowPath = best:GetFullName():gsub("^.-PlayerGui%.", "")
+        end
     end
     return info
 end
@@ -1123,22 +1193,81 @@ local function reverseCompassToPos(quest)
 end
 
 local function dumpCompassDeep()
-    log("════ Spy เข็มทิศ (ตีกลับชื่อ→พิกัด) ════", "Y")
+    log("════ Spy เข็มทิศ (! + ระยะ Xm) ════", "Y")
     local info = readCompassUI()
     local targetName = parseTargetNameFromTitle(info.title)
     if info.title then log("หัวข้อ: " .. info.title, "G") end
     if targetName then log("ชื่อเป้าที่ตีกลับ: " .. targetName, "Y") end
+
     if info.distance then
-        log(string.format("★ ระยะจาก UI: %d ม. (≈ %d studs)", info.distance, info.distance * 3), "G")
+        log(string.format("★ ระยะจอ: %d ม. (≈ %d studs)", info.distance, info.distance * 3), "G")
+        if info.distPath then log("  path ระยะ: " .. info.distPath, "B") end
     else
-        log("ยังไม่อ่านระยะ — เช็ค Main.Guide.TopFrame.Subtitle2", "O")
-    end
-    if info.arrowRot ~= nil then
-        log(string.format("ลูกศร Rotation=%.1f (ใช้อ้างอิงเท่านั้น)", info.arrowRot), "S")
+        log("ยังไม่อ่านระยะ Xm — จะสแกนทั้ง GUI", "O")
     end
 
+    local rot = info.arrowAbs or info.arrowRot
+    if rot ~= nil then
+        log(string.format("★ ลูกศร ! Rotation=%.1f Abs=%.1f name=%s",
+            info.arrowRot or 0, info.arrowAbs or 0, tostring(info.arrowName)), "G")
+        if info.arrowPath then log("  path ลูกศร: " .. info.arrowPath, "B") end
+        local dir = compassWorldDir(rot)
+        if dir then
+            log(string.format("  ทิศโลกจากลูกศร: %.2f, 0, %.2f", dir.X, dir.Z), "Y")
+        end
+    else
+        log("ยังไม่เจอลูกศรใน Guide", "O")
+    end
+
+    -- สแกนทุกข้อความแบบ Xm ใน Main (เทียบกับกล่องแดงบนจอ)
+    log("── สแกน Label แบบ Xm ทั้ง Main ──", "Y")
     local main = pg:FindFirstChild("Main")
+    local foundXm = 0
+    if main then
+        for _, d in ipairs(main:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                local t = tostring(d.Text or ""):gsub(",", "")
+                local m = t:match("(%d+)%s*m")
+                if m and tonumber(m) and tonumber(m) >= 5 then
+                    foundXm += 1
+                    if foundXm <= 12 then
+                        local ap = d.AbsolutePosition
+                        local vis = d.Visible
+                        local p = d.Parent and d.Parent.Visible
+                        log(string.format("  Xm#%d \"%s\" vis=%s @จอ(%.0f,%.0f) %s",
+                            foundXm, t, tostring(vis), ap.X, ap.Y,
+                            d:GetFullName():gsub("^.-PlayerGui%.", "")), "S")
+                    end
+                end
+            end
+        end
+    end
+    log("รวม Label *m*: " .. foundXm, foundXm > 0 and "G" or "O")
+
+    -- สแกนลูกศร/ไอคอนที่หมุนใน Guide
+    log("── สแกนลูกศร/ไอคอนหมุนใน Guide ──", "Y")
     local guide = main and main:FindFirstChild("Guide")
+    local nArrow = 0
+    if guide then
+        for _, d in ipairs(guide:GetDescendants()) do
+            if d:IsA("GuiObject") and (math.abs(d.Rotation) > 0.05 or math.abs(d.AbsoluteRotation) > 0.05
+                or d.Name:lower():find("arrow", 1, true) or d.Name:lower():find("guide", 1, true)
+                or d.Name:lower():find("icon", 1, true)) then
+                nArrow += 1
+                if nArrow <= 15 then
+                    local ap = d.AbsolutePosition
+                    local as = d.AbsoluteSize
+                    log(string.format("  #%d %s:%s rot=%.1f abs=%.1f จอ(%.0f,%.0f) size=%.0fx%.0f",
+                        nArrow, d.ClassName, d.Name, d.Rotation, d.AbsoluteRotation,
+                        ap.X, ap.Y, as.X, as.Y), "S")
+                end
+            end
+        end
+    else
+        log("ไม่มี Main.Guide", "R")
+    end
+    log("รวมไอคอนใน Guide: " .. nArrow, "B")
+
     spyGuideLinks(guide)
 
     if targetName then
@@ -1149,22 +1278,16 @@ local function dumpCompassDeep()
             log(string.format("✓ เจอ %s d=%.0f", realName or targetName, dist or 0), "G")
             log(string.format("  CFrame.new(%.2f, %.2f, %.2f)", p.X, p.Y, p.Z), "G")
         else
-            log("✗ ยังไม่โหลด — จะใช้ known/cache ถ้ามี", "O")
-            local cached, csrc = npcFromTitle(info.title)
-            if cached then
-                log(string.format("  มีจำไว้ (%s): CFrame.new(%.2f, %.2f, %.2f)",
-                    csrc, cached.X, cached.Y, cached.Z), "G")
-            end
+            log("✗ ยังไม่โหลดในแมพ — AUTO จะตามเข็ม (ไม่ใช้จุดจำ)", "O")
         end
     end
 
     local _, hrp = getChar()
     if info.distance and hrp then
-        log(string.format("ตอนนี้ UI=%d ม. | เรา@ %.0f,%.0f,%.0f",
+        log(string.format("สรุป: UI=%dม. | เรา@ %.0f,%.0f,%.0f → ตามเข็มไปทิศลูกศร",
             info.distance, hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "Y")
     end
-    log("════ จบ Spy — Copy ส่งมาได้ ════", "Y")
-    dumpNpcList()
+    log("════ จบ Spy เข็ม — Copy ส่งมาได้ ════", "Y")
     return info
 end
 
