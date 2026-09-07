@@ -1,11 +1,9 @@
 --[[ ═══════════════════════════════════════════════════════════════════
     BF04 Compass Quest — ต้นแบบฟาร์มตามเข็มทิศเกม
-    ย้ายเกาะ (ถาวร — ห้ามข้ามขั้นตอน):
-      A) รู้เป้า: เข็มทิศ→ชื่อ → cache/known hub → ค่อย probe
-      B) บินช้าแบ่งท่อน (FLY_SPEED_LONG) + ยืนยันถึงจริง
-      C) ใกล้ NPC จริงเท่านั้นค่อย StartQuest (ห้ามรับระยะไกล)
-      D) จำ hub ที่สำเร็จไว้ใน _G.BF04C_HUBS → เกาะเดิมไม่ต้องหาใหม่
-      E) รับเควสแล้วรีเซ็ตก้นหอย / ไกลจุดมอน→บินกลับ known ก่อน
+    ย้ายเกาะ / หามอน:
+      A) ตามเข็มทิศก่อน (ระยะ UI เช่น 1800ม.) — บินไปเกาะที่ถูก
+      B) ใกล้แล้วค่อยก้นหอยค้น (ไม่ใช้จุดจำ/known เป็นหลัก)
+      C) ใกล้ NPC จริงเท่านั้นค่อย StartQuest
     ═══════════════════════════════════════════════════════════════════ ]]
 
 local Players = game:GetService("Players")
@@ -1099,7 +1097,7 @@ local function reverseCompassToPos(quest)
         log("→ ยังอ่านชื่อจาก Guide ไม่ได้", "R")
     end
 
-    -- 1) หาในแมพตามชื่อที่เข็มทิศบอก
+    -- 1) หาในแมพตามชื่อที่เข็มทิศบอก (โหลดแล้วเท่านั้น)
     if targetName then
         local part, dist, realName = findNpcByExactName(targetName)
         if part then
@@ -1108,18 +1106,10 @@ local function reverseCompassToPos(quest)
                 realName or targetName, dist or 0, part.Position.X, part.Position.Y, part.Position.Z), "G")
             return part.Position, "name→NPCs:" .. (realName or targetName)
         end
-        log("→ ยังไม่โหลดในแมพ: " .. targetName, "O")
+        log("→ ยังไม่โหลดในแมพ: " .. targetName .. " → ตามเข็มทิศ (ไม่ใช้จุดจำ)", "O")
     end
 
-    -- 2) cache / known จากชื่อเดิม
-    local cached, csrc = npcFromTitle(ui.title)
-    if cached then
-        log(string.format("→ ใช้พิกัดจำไว้ (%s) @ %.0f,%.0f,%.0f",
-            csrc, cached.X, cached.Y, cached.Z), "G")
-        return cached, csrc
-    end
-
-    -- 3) สำรอง: หา Quest Giver ในแมพ (ชื่อจาก Guide ก่อน)
+    -- 2) สำรอง: หา Quest Giver ในแมพใกล้ ๆ
     if findQuestGiver then
         local part2 = findQuestGiver(quest, targetName)
         if part2 then
@@ -1128,7 +1118,7 @@ local function reverseCompassToPos(quest)
         end
     end
 
-    -- 4) ไม่มีพิกัด → ให้ resolve ใช้ COMPASS_STEP
+    -- 3) ไม่มีในแมพ → ตามเข็มทิศอย่างเดียว (ไม่กระโดดจุดจำ)
     return nil, ui
 end
 
@@ -1296,7 +1286,8 @@ local function flyByCompassStep(opts)
         return false, "ไม่มีระยะ/ลูกศรจาก Guide UI"
     end
 
-    if not opts.skipNpcCache then
+    -- noKnown / ตามเข็มอย่างเดียว — ไม่กระโดดไปจุดจำ
+    if not opts.skipNpcCache and not opts.noKnown then
         local cached, csrc = npcFromTitle(ui.title)
         if cached then
             log(string.format("มีพิกัดแล้ว (%s) — ไม่เดาลูกศร", csrc), "G")
@@ -1328,6 +1319,8 @@ local function flyByCompassStep(opts)
                 end
             end
         end
+    elseif opts.noKnown then
+        log(string.format("ตามเข็มอย่างเดียว %sม. (ไม่ใช้จุดจำ)", tostring(d0)), "Y")
     end
 
     if d0 <= 12 then
@@ -1797,15 +1790,9 @@ local function nextSpiralPoint(mobName)
     local _, hrp = getChar()
     if not hrp then return nil end
     if not spiralOrigin then
-        local hint = mobSpawnHint(mobName)
-            or mobSpawnHint((pickQuestForLevel(getLevel()) or {}).mob or "")
-        if hint then
-            local minY = (tostring(mobName or ""):lower():find("hydra", 1, true)) and 550 or 400
-            spiralOrigin = Vector3.new(hint.X, math.max(hint.Y + 40, minY), hint.Z)
-        else
-            spiralOrigin = Vector3.new(hrp.Position.X, math.max(hrp.Position.Y, 420), hrp.Position.Z)
-        end
-        log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d (บินวนไม่หยุด)",
+        -- ศูนย์ = ตำแหน่งปัจจุบัน (หลังตามเข็มมาถึงเกาะ) — ไม่ใช้จุดจำ
+        spiralOrigin = Vector3.new(hrp.Position.X, math.max(hrp.Position.Y, 400), hrp.Position.Z)
+        log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d (รอบจุดปัจจุบัน)",
             spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
     end
     -- 12 จุด/วง เรียบกว่า 8
@@ -1816,14 +1803,11 @@ local function nextSpiralPoint(mobName)
         spiralR += 120
         if spiralR > 1400 then
             spiralR = 150
-            local hint = mobSpawnHint(mobName)
-            if hint then
-                spiralOrigin = Vector3.new(hint.X, math.max(hint.Y + 40, 400), hint.Z)
-                log("ก้นหอยครบ → กลับจุด known สูง", "O")
-            else
-                spiralOrigin = Vector3.new(hrp.Position.X, 420, hrp.Position.Z)
-                log("ก้นหอยครบ → เริ่มใหม่รอบตัว (สูง)", "O")
+            local _, h2 = getChar()
+            if h2 then
+                spiralOrigin = Vector3.new(h2.Position.X, math.max(h2.Position.Y, 400), h2.Position.Z)
             end
+            log("ก้นหอยครบ → เริ่มใหม่รอบตำแหน่งปัจจุบัน", "O")
         else
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
@@ -1954,77 +1938,50 @@ local function huntMobOrSweep(quest)
     local mob, md = findMob(quest.mob)
     if mob then return mob, md end
 
-    -- เปลี่ยนมอนเควส → รีเซ็ตก้นหอย
-    if spiralOrigin and quest and quest.mob then
-        local hint = mobSpawnHint(quest.mob)
-        if hint and (spiralOrigin - hint).Magnitude > 800 then
-            resetSpiral(Vector3.new(hint.X, hint.Y, hint.Z))
-        end
-    end
-
-    -- หลุดเกาะ/ดีดกลับไกลจากจุดมอน → บินกลับ known ก่อนก้นหอย
+    -- 1) ตามเข็มทิศก่อน — ถ้าระยะไกล (เช่น 1800ม.) บินไปเกาะที่ถูกก่อนก้นหอย
+    --    ไม่ใช้จุดจำ / known / cache
     do
-        local hint = mobSpawnHint(quest.mob)
-        local _, hrp0 = getChar()
-        if hint and hrp0 and (hrp0.Position - hint).Magnitude > 2500 then
-            log(string.format("อยู่คนละเกาะ (ห่าง %.0f) → บินไปเกาะมอนก่อนก้นหอย",
-                (hrp0.Position - hint).Magnitude), "O")
-            flyTo(CFrame.new(hint + Vector3.new(0, 40, 0)), "ข้ามเกาะมอน")
-            holdNoFall()
-            mob, md = findMob(quest.mob)
-            if mob then return mob, md end
-            resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 200), hint.Z))
-            triedKnownHigh = false -- ให้ลองจุด known บนเกาะใหม่อีก
+        local ui = readCompassUI()
+        local titleL = (ui.title or ""):lower()
+        local rot = ui.arrowAbs or ui.arrowRot
+        local d = ui.distance
+        local guideOk = d and rot ~= nil and d > 15
+            and not titleL:find("quest giver", 1, true)
+            and not titleL:find("find the", 1, true)
+        if guideOk then
+            -- ไกลมาก → ตามเข็มหลายก้าวจนใกล้ (หาเกาะถูก)
+            local rounds = (d >= 800) and 8 or ((d >= 200) and 4 or 2)
+            log(string.format("★ ตามเข็มก่อน %dม. → บินหาเกาะถูก (%d ก้าว)", d, rounds), "Y")
+            for i = 1, rounds do
+                if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
+                mob, md = findMob(quest.mob)
+                if mob then return mob, md end
+                local uiN = readCompassUI()
+                local dN = uiN.distance
+                local rotN = uiN.arrowAbs or uiN.arrowRot
+                if not dN or not rotN or dN <= 80 then
+                    log(string.format("เข็มใกล้แล้ว (%sม.) → ก้นหอยค้นบนเกาะ", tostring(dN)), "G")
+                    break
+                end
+                log(string.format("ตามเข็มก้าว %d/%d — เหลือ %dม.", i, rounds, dN), "B")
+                flyByCompassStep({
+                    skipNpcCache = true,
+                    noKnown = true,
+                    highY = true,
+                })
+                holdNoFall()
+                mob, md = findMob(quest.mob)
+                if mob then return mob, md end
+            end
+            -- ศูนย์ก้นหอย = ตำแหน่งปัจจุบันบนเกาะที่บินมาถึง (ไม่ใช้ known)
+            local _, hNow = getChar()
+            if hNow then
+                resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 400), hNow.Position.Z))
+            end
         end
     end
 
-    -- มีจุดที่เคยเจอ → บินกลับก่อน
-    local cached = MOB_CACHE[(quest.mob or ""):lower()]
-    if cached then
-        log(string.format("กลับจุดมอนที่จำไว้ @ %.0f,%.0f,%.0f", cached.X, cached.Y, cached.Z), "G")
-        flyTo(CFrame.new(cached + Vector3.new(0, 30, 0)), "cacheมอน")
-        holdNoFall()
-        mob, md = findMob(quest.mob)
-        if mob then return mob, md end
-    end
-
-    -- ตามเข็มทิศเฉพาะตอนไม่ใช่ Find Quest Giver
-    local ui = readCompassUI()
-    local titleL = (ui.title or ""):lower()
-    local compassOk = ui.distance and ui.distance > 8 and (ui.arrowAbs or ui.arrowRot) ~= nil
-        and not titleL:find("quest giver", 1, true)
-        and not titleL:find("find the", 1, true)
-    if compassOk then
-        log(string.format("เข็มทิศชี้เป้า %d ม. (ไม่กลับ NPC)", ui.distance), "Y")
-        flyByCompassStep({ skipNpcCache = true, highY = true })
-        holdNoFall()
-        mob, md = findMob(quest.mob)
-        if mob then return mob, md end
-    end
-
-    local hint = mobSpawnHint(quest.mob)
-    if hint and not triedKnownHigh then
-        resetSpiral(Vector3.new(hint.X, math.max(hint.Y, 200), hint.Z), true)
-        triedKnownHigh = true
-        local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
-        local list = alts or { hint }
-        local maxTry = isBossQuest(quest) and math.min(3, #list) or math.min(4, #list)
-        for i = 1, maxTry do
-            local pt = list[i]
-            log(string.format("ลองจุดสูง #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
-            flyTo(CFrame.new(pt + Vector3.new(0, 40, 0)), "จุดมอนสูง")
-            holdNoFall()
-            task.wait(0.15) -- สั้นมาก แค่ให้โหลดชิ้นแมพ
-            mob, md = findMob(quest.mob)
-            if mob then return mob, md end
-        end
-        if isBossQuest(quest) then
-            bossMissCount += 2
-            log(string.format("บอสไม่เจอหลังจุด known (สะสม %d/6)", bossMissCount), "Y")
-        end
-    end
-
-    -- ค้นหลัก: บินวนก้นหอยต่อเนื่อง ไม่หยุดตก
+    -- 2) ใกล้แล้ว / ไม่มีเข็มชี้มอน → ก้นหอยวนค้นรอบตัว
     return flySpiralSeek(quest, isBossQuest(quest) and 10 or 16)
 end
 
