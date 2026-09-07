@@ -2054,35 +2054,38 @@ local function findMob(mobName)
     local best, bestD = nil, math.huge
     local wantL = (mobName or ""):lower()
     local wantBoss = isBossMobName(mobName)
-    -- คำท้ายสั้น ๆ ที่มักชนกับบอส — ห้ามใช้เดี่ยว ๆ
+    -- คำท้ายสั้น ๆ ที่มักชนชื่ออื่น — ห้ามใช้เดี่ยว ๆ
     local BAD_TAIL = {
         admiral = true, leader = true, king = true, queen = true,
         captain = true, boss = true, pirate = true, reaper = true,
+        demon = true, soul = true, guard = true, staff = true,
+        scout = true, crew = true, island = true, baker = true,
     }
-    local keys = {}
-    if mobName and mobName ~= "" then
-        keys[#keys+1] = mobName
-        if mobName:find(" ", 1, true) then
-            local last = mobName:match("(%S+)$")
-            if last and #last >= 4 and not BAD_TAIL[last:lower()] then
-                keys[#keys+1] = last
+    local wantTok = {}
+    for w in wantL:gmatch("%S+") do
+        wantTok[#wantTok + 1] = w
+    end
+    local function nameMatches(el)
+        if wantL == "" then return false end
+        -- ชื่อเต็ม / มีชื่อเต็มเป็นส่วน
+        if el == wantL or el:find(wantL, 1, true) then return true end
+        -- หลายคำ: ต้องครบทุกคำ (Snow+Demon ≠ Demonic Soul)
+        if #wantTok >= 2 then
+            for _, t in ipairs(wantTok) do
+                if not el:find(t, 1, true) then return false end
             end
+            return true
         end
+        -- คำเดียว: ตรงหรือมีคำนั้น (กันสั้นเกิน)
+        local only = wantTok[1]
+        if only and #only >= 4 and el:find(only, 1, true) then
+            return true
+        end
+        return false
     end
     for _, e in ipairs(enemies:GetChildren()) do
         local el = e.Name:lower()
-        local match = false
-        -- ตรงชื่อเต็มก่อน
-        if wantL ~= "" and el:find(wantL, 1, true) then
-            match = true
-        else
-            for _, k in ipairs(keys) do
-                if k and k:lower() ~= wantL and e.Name:find(k, 1, true) then
-                    match = true
-                    break
-                end
-            end
-        end
+        local match = nameMatches(el)
         -- เควสฟาร์มห้ามไปจับบอส (เช่น Admiral → Kilo Admiral)
         if match and isBossMobName(e.Name) and not wantBoss then
             match = false
