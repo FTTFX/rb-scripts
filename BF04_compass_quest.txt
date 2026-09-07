@@ -1003,6 +1003,8 @@ local KNOWN_MOB = {
     ["cake guard"] = Vector3.new(-1418, 37, -12256),
     ["baking staff"] = Vector3.new(-1980, 37, -12984),
     ["head baker"] = Vector3.new(-2252, 52, -13033),
+    ["candy pirate"] = Vector3.new(-1310.5, 26, -14562.4),
+    ["snow demon"] = Vector3.new(-880.2, 71.2, -14538.6),
 }
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
