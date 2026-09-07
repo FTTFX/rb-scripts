@@ -1006,6 +1006,11 @@ local KNOWN_MOB = {
     ["candy pirate"] = Vector3.new(-1310.5, 26, -14562.4),
     ["snow demon"] = Vector3.new(-880.2, 71.2, -14538.6),
 }
+-- จุดฝังถาวร — ห้ามให้ cache/hub ผิดทับ (เช่น Demonic Soul → Snow Demon)
+local KNOWN_MOB_SEED = {}
+for k, v in pairs(KNOWN_MOB) do
+    KNOWN_MOB_SEED[k] = v
+end
 local KNOWN_MOB_ALT = {
     ["dragon crew archer"] = {
         Vector3.new(6762, 484, 111),
@@ -1072,6 +1077,12 @@ local function rememberHub(kind, key, pos)
     local k = tostring(key):lower()
     local v = typeof(pos) == "Vector3" and pos or pos.Position
     if not v then return end
+    -- กัน cache ผิดเกาะ: ห่างจุดฝัง >1200 อย่าจำทับ
+    if kind == "mob" and KNOWN_MOB_SEED[k] then
+        if (v - KNOWN_MOB_SEED[k]).Magnitude > 1200 then
+            return -- ทิ้งจุดผิด (เช่น Haunted ตอนเควส Snow Demon)
+        end
+    end
     _G.BF04C_HUBS[kind] = _G.BF04C_HUBS[kind] or {}
     _G.BF04C_HUBS[kind][k] = v
     if kind == "npc" then
@@ -1079,7 +1090,11 @@ local function rememberHub(kind, key, pos)
         KNOWN_NPC[k] = v
     elseif kind == "mob" then
         MOB_CACHE[k] = v
-        KNOWN_MOB[k] = v
+        -- อัป KNOWN เฉพาะใกล้จุดเดิม — ห้ามทับ seed คนละเกาะ
+        local seed = KNOWN_MOB_SEED[k]
+        if not seed or (v - seed).Magnitude <= 1200 then
+            KNOWN_MOB[k] = v
+        end
     end
 end
 do
@@ -1090,18 +1105,30 @@ do
             KNOWN_NPC[k] = v
         end
     end
+    local purged = 0
     for k, v in pairs(hubs.mob or {}) do
         if typeof(v) == "Vector3" then
-            MOB_CACHE[k] = v
-            KNOWN_MOB[k] = v
+            local seed = KNOWN_MOB_SEED[k]
+            if seed and (v - seed).Magnitude > 1200 then
+                hubs.mob[k] = nil
+                purged += 1
+            else
+                MOB_CACHE[k] = v
+                if not seed or (v - seed).Magnitude <= 1200 then
+                    KNOWN_MOB[k] = v
+                end
+            end
         end
+    end
+    -- คืน seed ที่เคยถูกทับผิด
+    for k, v in pairs(KNOWN_MOB_SEED) do
+        KNOWN_MOB[k] = v
     end
     local nN, nM = 0, 0
     for _ in pairs(hubs.npc or {}) do nN = nN + 1 end
     for _ in pairs(hubs.mob or {}) do nM = nM + 1 end
-    if nN + nM > 0 then
-        -- log หลัง GUI พร้อม — เรียกทีหลังไม่ได้ตรงนี้ ใช้ print
-        print(string.format("[BF04] โหลด hub จำไว้: NPC=%d mob=%d", nN, nM))
+    if nN + nM > 0 or purged > 0 then
+        print(string.format("[BF04] โหลด hub: NPC=%d mob=%d (ล้างจุดผิด=%d)", nN, nM, purged))
     end
 end
 
@@ -2105,7 +2132,6 @@ local function findMob(mobName)
                 if d < bestD then
                     bestD = d; best = e
                     if mobName then
-                        MOB_CACHE[mobName:lower()] = hrp.Position
                         rememberHub("mob", mobName, hrp.Position)
                     end
                 end
@@ -2288,7 +2314,18 @@ end)
 
 local function mobSpawnHint(mobName)
     local key = (mobName or ""):lower()
-    if MOB_CACHE[key] then return MOB_CACHE[key], "cache" end
+    local seed = KNOWN_MOB_SEED[key]
+    local cache = MOB_CACHE[key]
+    -- cache คนละเกาะกับจุดฝัง → ทิ้ง ใช้ known
+    if seed and cache and (cache - seed).Magnitude > 1200 then
+        MOB_CACHE[key] = nil
+        if _G.BF04C_HUBS and _G.BF04C_HUBS.mob then
+            _G.BF04C_HUBS.mob[key] = nil
+        end
+        return seed, "known(ทิ้งcacheผิด)"
+    end
+    if cache then return cache, "cache" end
+    if seed then return seed, "known" end
     if KNOWN_MOB[key] then return KNOWN_MOB[key], "known" end
     return nil
 end
