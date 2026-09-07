@@ -1121,7 +1121,9 @@ local function iterNpcModels(cb)
             local nl = d.Name:lower()
             if nl:find("quest giver", 1, true) or nl:find("questgiver", 1, true)
                or nl:find("hydra", 1, true) or nl:find("dragon crew", 1, true)
-               or nl:find("great tree", 1, true) or nl:find("marine", 1, true) then
+               or nl:find("great tree", 1, true) or nl:find("marine", 1, true)
+               or nl:find("peanut", 1, true) or nl:find("nuts", 1, true)
+               or nl:find("treats", 1, true) or nl:find("cake", 1, true) then
                 add(d)
             end
         end
@@ -1323,10 +1325,46 @@ end
 -- forward declare (กันเรียกก่อนนิยามแล้วได้ nil)
 local findQuestGiver
 
+-- กวาด Quest Giver / NPC มี Prompt ใกล้ตัว (ตอน ! ทับหัวแล้ว)
+local function findNearestQuestNpc(maxD)
+    maxD = maxD or 200
+    local _, myHrp = getChar()
+    if not myHrp then return nil end
+    local best, bestD, bestName = nil, maxD, nil
+    iterNpcModels(function(model)
+        local nl = model.Name:lower()
+        local part = modelPart(model)
+        if not part then return end
+        local d = (part.Position - myHrp.Position).Magnitude
+        if d > bestD then return end
+        local ok = nl:find("quest giver", 1, true) or nl:find("questgiver", 1, true)
+            or (nl:find("quest", 1, true) and nl:find("giver", 1, true))
+            or (nl:find("peanut", 1, true) and nl:find("quest", 1, true))
+            or (nl:find("nuts", 1, true) and nl:find("quest", 1, true))
+        if not ok then
+            for _, x in ipairs(model:GetDescendants()) do
+                if x:IsA("ProximityPrompt") or x:IsA("ClickDetector") then
+                    -- ข้ามมอน/ศัตรู
+                    if not nl:find("scout", 1, true) and not nl:find("enemy", 1, true) then
+                        ok = true
+                        break
+                    end
+                end
+            end
+        end
+        if ok then
+            bestD = d
+            best = part
+            bestName = model.Name
+        end
+    end)
+    return best, bestD, bestName
+end
+
 -- หัวใจ: ชื่อจากเข็มทิศ → พิกัด
 local function reverseCompassToPos(quest)
     local ui = readCompassUI()
-    local targetName = parseTargetNameFromTitle(ui.title)
+    local targetName, placeName = parseTargetNameFromTitle(ui.title)
     if ui.title then log("เข็มทิศข้อความ: " .. ui.title, "O") end
     if targetName then
         log("→ ตีกลับชื่อเป้า: [" .. targetName .. "]", "Y")
@@ -1346,12 +1384,47 @@ local function reverseCompassToPos(quest)
         log("→ ยังไม่โหลดในแมพ: " .. targetName .. " → ตามเข็มทิศ (ไม่ใช้จุดจำ)", "O")
     end
 
+    -- 1b) แบบ "Find the NPC at X" → ลอง "X Quest Giver" / ชื่อเกาะ
+    if placeName and placeName ~= "" then
+        local tries = {
+            placeName .. " Quest Giver",
+            placeName,
+            "Nuts Island Quest Giver", -- Sea of Treats โซนถั่ว
+            "Peanut Quest Giver",
+        }
+        for _, nm in ipairs(tries) do
+            local part, dist, realName = findNpcByExactName(nm)
+            if part then
+                rememberNpc(part)
+                log(string.format("→ เจอจากชื่อเกาะ: %s (%.0f)", realName or nm, dist or 0), "G")
+                return part.Position, "place→NPCs:" .. (realName or nm)
+            end
+        end
+    end
+
+    -- 1c) ระยะใกล้แล้ว (หรือ ! ทับตัว) → กวาด Quest Giver ใกล้ตัว
+    local dUi = ui.distance
+    if dUi == nil or dUi <= 50 then
+        local near, nd, nn = findNearestQuestNpc(240)
+        if near then
+            rememberNpc(near, nn)
+            log(string.format("→ NPC ใกล้ตัว (UI=%sม.): %s d=%.0f",
+                tostring(dUi or "?"), tostring(nn), nd or 0), "G")
+            return near.Position, "nearQuestNPC"
+        end
+    end
+
     -- 2) สำรอง: หา Quest Giver ในแมพใกล้ ๆ
     if findQuestGiver then
-        local part2 = findQuestGiver(quest, targetName)
+        local part2 = findQuestGiver(quest, placeName and (placeName .. " Quest Giver") or targetName)
         if part2 then
-            rememberNpc(part2)
-            return part2.Position, "quest→NPCs"
+            local _, hrp = getChar()
+            local d2 = hrp and (part2.Position - hrp.Position).Magnitude or 9999
+            -- ถ้าตัวที่เจอไกลมาก อย่ากระโดดไป — รอ near/เข็ม
+            if d2 < 800 then
+                rememberNpc(part2)
+                return part2.Position, "quest→NPCs"
+            end
         end
     end
 
@@ -1867,9 +1940,39 @@ local function resolveNpcTarget(quest)
 
     local ui = type(srcOrUi) == "table" and srcOrUi or readCompassUI()
     local rot = ui.arrowAbs or ui.arrowRot
-    if ui.distance and rot ~= nil and ui.distance > 5 then
+    local d = ui.distance
+
+    -- ถึงแถวเป้าแล้ว (เมตรน้อย / ไม่โชว์ระยะ) แต่ชื่อ "NPC at X" ไม่มีในแมพ
+    if d == nil or d <= 40 then
+        local near, nd, nn = findNearestQuestNpc(280)
+        if near then
+            rememberNpc(near, nn)
+            log(string.format("★ ถึงเป้าแล้ว → ใช้ NPC ใกล้ตัว: %s d=%.0f", tostring(nn), nd or 0), "G")
+            return near.Position, "nearQuestNPC"
+        end
+        local kn = NPC_CACHE["nuts island quest giver"] or KNOWN_NPC["nuts island quest giver"]
+            or NPC_CACHE["peanut quest giver"] or KNOWN_NPC["peanut quest giver"]
+        if kn then
+            local _, hrp = getChar()
+            if hrp and (hrp.Position - kn).Magnitude < 450 then
+                log("★ ใช้จุด known Nuts ใกล้ตัว", "G")
+                return kn, "knownNutsNear"
+            end
+        end
+    end
+
+    if d and rot ~= nil and d > 5 then
         return "COMPASS_STEP", "compassUI(ยังไม่รู้พิกัด)"
     end
+
+    -- ระยะ ≤5 หรือไม่มีระยะ — กวาดรัศมีกว้างขึ้น
+    local near2, nd2, nn2 = findNearestQuestNpc(450)
+    if near2 then
+        rememberNpc(near2, nn2)
+        log(string.format("★ กวาด NPC ใน 450: %s d=%.0f", tostring(nn2), nd2 or 0), "G")
+        return near2.Position, "nearQuestNPC450"
+    end
+
     return nil, "ยังไม่มีชื่อ/พิกัดจากเข็มทิศ"
 end
 
@@ -3388,14 +3491,24 @@ local function mainLoop()
                 end
                 if not pos then
                     log("รอเป้า NPC... (" .. tostring(src) .. ")", "Y")
-                    local mob, md = findMob(quest.mob)
-                    if mob and md and md > 80 then
-                        local mhrp = mob:FindFirstChild("HumanoidRootPart")
-                        if mhrp then flyTo(mhrp.CFrame * CFrame.new(0, 20, 0), "ใกล้เกาะมอน") end
+                    -- ! ทับหัวแต่ชื่อไม่ตรงแมพ → กวาดรอบตัวอีกครั้ง
+                    local near, nd, nn = findNearestQuestNpc(500)
+                    if near then
+                        log(string.format("พบ NPC ใกล้ตัวตอนรอ: %s d=%.0f → StartQuest", tostring(nn), nd or 0), "G")
+                        pos = near.Position
+                        src = "nearWait"
+                        rememberNpc(near, nn)
+                    else
+                        local mob, md = findMob(quest.mob)
+                        if mob and md and md > 80 then
+                            local mhrp = mob:FindFirstChild("HumanoidRootPart")
+                            if mhrp then flyTo(mhrp.CFrame * CFrame.new(0, 20, 0), "ใกล้เกาะมอน") end
+                        end
+                        task.wait(1.5)
+                        return
                     end
-                    task.wait(1.5)
-                    return
                 end
+                if not pos then return end
                 local _, hrp = getChar()
                 local dist = hrp and (hrp.Position - pos).Magnitude or 9999
                 local nearDist = isBigForm() and 55 or 28
