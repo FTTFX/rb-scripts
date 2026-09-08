@@ -1121,6 +1121,8 @@ end
 -- hub ที่เคยถึงสำเร็จ — คงข้ามโหลดสคริปต์ในเซสชันเดียวกัน
 _G.BF04C_HUBS = _G.BF04C_HUBS or { npc = {}, mob = {} }
 loadHubsFromFile()
+local lastNpcHub = nil -- NPC ที่เข็มทิศพาไปรับเควส — หามอนในรัศมีนี้
+local FARM_AROUND = 1000
 local function rememberHub(kind, key, pos)
     if not key or not pos then return end
     local k = tostring(key):lower()
@@ -1136,6 +1138,7 @@ local function rememberHub(kind, key, pos)
     _G.BF04C_HUBS[kind][k] = v
     persistHubs()
     if kind == "npc" then
+        lastNpcHub = v
         NPC_CACHE[k] = v
         KNOWN_NPC[k] = v
     elseif kind == "mob" then
@@ -2362,21 +2365,31 @@ task.spawn(function()
     enemies.ChildAdded:Connect(onBoss)
 end)
 
+-- จุดมอน: ชื่อตรง cache/seed ใช้ได้เฉพาะเมื่ออยู่เกาะเดียวกับ NPC ที่รับเควส
 local function mobSpawnHint(mobName)
     local key = (mobName or ""):lower()
     local seed = KNOWN_MOB_SEED[key]
     local cache = MOB_CACHE[key]
-    -- cache คนละเกาะกับจุดฝัง → ทิ้ง ใช้ known
+    local anchor = lastNpcHub
+    local function nearAnchor(p)
+        if not p then return false end
+        if not anchor then return true end
+        return (p - anchor).Magnitude <= FARM_AROUND + 200
+    end
     if seed and cache and (cache - seed).Magnitude > 1200 then
         MOB_CACHE[key] = nil
         if _G.BF04C_HUBS and _G.BF04C_HUBS.mob then
             _G.BF04C_HUBS.mob[key] = nil
         end
-        return seed, "known(ทิ้งcacheผิด)"
+        cache = nil
     end
+    if cache and nearAnchor(cache) then return cache, "cache" end
+    if seed and nearAnchor(seed) then return seed, "known" end
+    if KNOWN_MOB[key] and nearAnchor(KNOWN_MOB[key]) then return KNOWN_MOB[key], "known" end
+    -- มี NPC แล้วแต่จุดจำคนละเกาะ → ไม่ใช้ หามอนรอบ NPC
+    if anchor then return nil, "รอบNPC" end
     if cache then return cache, "cache" end
     if seed then return seed, "known" end
-    if KNOWN_MOB[key] then return KNOWN_MOB[key], "known" end
     return nil
 end
 
@@ -2425,7 +2438,7 @@ local function nextSpiralPoint(mobName)
     if spiralStep >= 12 then
         spiralStep = 0
         spiralR += 120
-        if spiralR > 1400 then
+        if spiralR > FARM_AROUND then
             spiralR = 150
             local _, h2 = getChar()
             if h2 then
@@ -2567,8 +2580,8 @@ local function huntMobOrSweep(quest)
         return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
     end
 
-    -- 0) มีเควสตีมอนแต่ยังไม่เจอ → บินจุด cache/known ก่อนก้นหอย
-    --    (ทะเลว่างไม่มีมอนรอบตัว — ห้ามก้นหอยค้างที่นี่)
+    -- 0) มีเควสแล้ว: จุดที่เคยเจอชื่อตรง (ถ้าอยู่เกาะเดียวกับ NPC) หรือวนรอบ NPC ≤1000
+    --    เข็มทิศยังใช้ตอนไกล / ยังไม่รู้เกาะ — ไม่ตัดทิ้ง
     if quest and quest.mob and quest.mob ~= "" then
         local hint, src = mobSpawnHint(quest.mob)
         local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
@@ -2577,12 +2590,20 @@ local function huntMobOrSweep(quest)
         if hint then table.insert(pts, hint) end
         if alts then
             for _, p in ipairs(alts) do
-                local dup = false
-                for _, q in ipairs(pts) do
-                    if (q - p).Magnitude < 40 then dup = true; break end
+                if lastNpcHub and (p - lastNpcHub).Magnitude > FARM_AROUND + 200 then
+                    -- คนละเกาะกับ NPC ที่เข็มทิศพาไป — ข้าม
+                else
+                    local dup = false
+                    for _, q in ipairs(pts) do
+                        if (q - p).Magnitude < 40 then dup = true; break end
+                    end
+                    if not dup then table.insert(pts, p) end
                 end
-                if not dup then table.insert(pts, p) end
             end
+        end
+        if #pts == 0 and lastNpcHub then
+            table.insert(pts, lastNpcHub)
+            src = src or "รอบNPC"
         end
         if #pts > 0 and hrp then
             local bestD, bestP = math.huge, pts[1]
@@ -2591,8 +2612,8 @@ local function huntMobOrSweep(quest)
                 if d < bestD then bestD = d; bestP = p end
             end
             if bestD > 50 then
-                log(string.format("ไม่เจอ %s + ไกลจุดมอน %.0f → บินไปก่อนก้นหอย (%s)",
-                    quest.mob, bestD, tostring(src or "known")), "Y")
+                log(string.format("ไม่เจอ %s + ไกลจุดฟาร์ม %.0f → บิน (%s) แล้วก้นหอย≤%d",
+                    quest.mob, bestD, tostring(src or "npc"), FARM_AROUND), "Y")
                 for i, pt in ipairs(pts) do
                     if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
                     log(string.format("บินจุดมอน #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
@@ -2600,13 +2621,17 @@ local function huntMobOrSweep(quest)
                     holdNoFall()
                     mob, md = findMob(quest.mob)
                     if mob then return mob, md end
+                    if lastNpcHub and (pt - lastNpcHub).Magnitude <= FARM_AROUND then
+                        break -- ถึงโซน NPC แล้ว ไม่ไล่จุดคนละเกาะ
+                    end
                 end
                 local _, hNow = getChar()
-                if hNow then
-                    resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 90), hNow.Position.Z))
+                local ox = lastNpcHub or (hNow and hNow.Position)
+                if ox then
+                    resetSpiral(Vector3.new(ox.X, math.max(ox.Y, 90), ox.Z))
                 end
             else
-                log(string.format("ใกล้จุดมอน %.0f studs → ก้นหอยรอบนี้", bestD), "S")
+                log(string.format("ใกล้จุดฟาร์ม %.0f → ก้นหอยรอบนี้ (≤%d)", bestD, FARM_AROUND), "S")
                 if bestP then
                     resetSpiral(Vector3.new(bestP.X, math.max(bestP.Y + 40, 90), bestP.Z), true)
                 end
@@ -3670,14 +3695,18 @@ local function mainLoop()
                         forceQuestLabel = quest.mob or "RemoteStart"
                         resetSpiral(nil)
                         log("รีโมตรับเควสสำเร็จ: " .. tostring(txtR or quest.mob), "G")
+                        if lastNpcHub then
+                            resetSpiral(Vector3.new(lastNpcHub.X, math.max(lastNpcHub.Y + 40, 90), lastNpcHub.Z))
+                        end
                         if quest.mob then
                             local mh, ms = mobSpawnHint(quest.mob)
-                            if mh then
-                                rememberHub("mob", quest.mob, mh)
-                                log(string.format("→ บินจุดมอนทันที (%s)", tostring(ms)), "Y")
-                                flyTo(CFrame.new(mh + Vector3.new(0, 45, 0)), "จุดมอนหลังรีโมต")
+                            local dest = mh or lastNpcHub
+                            if dest then
+                                if mh then rememberHub("mob", quest.mob, mh) end
+                                log(string.format("→ บินโซนฟาร์ม (%s)", tostring(ms or "รอบNPC")), "Y")
+                                flyTo(CFrame.new(dest + Vector3.new(0, 45, 0)), "โซนหลังรีโมต")
                                 holdNoFall()
-                                resetSpiral(Vector3.new(mh.X, math.max(mh.Y + 40, 90), mh.Z))
+                                resetSpiral(Vector3.new(dest.X, math.max(dest.Y + 40, 90), dest.Z))
                             end
                         end
                         task.wait(0.2)
@@ -3752,6 +3781,7 @@ local function mainLoop()
                     return
                 end
                 -- จำ hub เกาะนี้ — รอบหน้าไม่ต้องหาใหม่
+                lastNpcHub = pos
                 if quest.npc then rememberHub("npc", quest.npc, pos) end
                 rememberHub("npc", tostring(src):gsub("^known:", ""):gsub("^cache:", ""), pos)
                 log(string.format("StartQuest(%s, %s) ร่างใหญ่=%s ระยะ=%.0f",
@@ -3761,16 +3791,15 @@ local function mainLoop()
                 if iok and ires ~= "timeout" then
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
-                    resetSpiral(nil) -- รับเควสใหม่ → อย่าใช้ก้นหอยเกาะเก่า
+                    resetSpiral(Vector3.new(pos.X, math.max(pos.Y + 40, 90), pos.Z))
                     if quest.mob then
                         local mh, ms = mobSpawnHint(quest.mob)
-                        if mh then
-                            rememberHub("mob", quest.mob, mh)
-                            log(string.format("รับเควสแล้ว → บินจุดมอนทันที (%s)", tostring(ms)), "Y")
-                            flyTo(CFrame.new(mh + Vector3.new(0, 45, 0)), "จุดมอนหลังรับ")
-                            holdNoFall()
-                            resetSpiral(Vector3.new(mh.X, math.max(mh.Y + 40, 90), mh.Z))
-                        end
+                        local dest = mh or pos
+                        if mh then rememberHub("mob", quest.mob, mh) end
+                        log(string.format("รับเควสแล้ว → หามอนรอบ NPC ≤%d (%s)", FARM_AROUND, tostring(ms or "รอบNPC")), "Y")
+                        flyTo(CFrame.new(dest + Vector3.new(0, 45, 0)), "โซนหลังรับ")
+                        holdNoFall()
+                        resetSpiral(Vector3.new(dest.X, math.max(dest.Y + 40, 90), dest.Z))
                     end
                     log("ตั้งโหมดมีเควส 25วิ (รอ UI) + จำ hub", "G")
                 elseif ires == "timeout" then
