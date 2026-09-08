@@ -456,7 +456,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,8)
 local titleLbl = Instance.new("TextLabel")
 titleLbl.Size = UDim2.new(1,-40,0,26); titleLbl.Position = UDim2.new(0,10,0,2)
 titleLbl.BackgroundTransparency = 1; titleLbl.TextColor3 = Color3.fromRGB(255,200,100)
-titleLbl.Text = "BF04 Auto Quest v10.6 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
+titleLbl.Text = "BF04 Auto Quest v10.7 (ปุ่มทะเล 3 ตีเองครบ 50)"; titleLbl.Font = Enum.Font.GothamBold; titleLbl.TextSize = 13
 titleLbl.TextXAlignment = Enum.TextXAlignment.Left; titleLbl.Parent = frame
 
 local function stopTween()
@@ -1380,10 +1380,12 @@ local function bringMobsToTarget(primaryTarget, mobName)
                     oHum.PlatformStand = true
                     oHum.Sit = true
                     oHrp.CanCollide = false
-                    oHrp.Velocity = Vector3.new(0, 0, 0)
+                    oHrp.AssemblyLinearVelocity = Vector3.zero
+                    oHrp.AssemblyAngularVelocity = Vector3.zero
                     oHrp.Anchored = false
+                    -- แพ็กแน่นรอบตัว (เดิม ±6 → ±2) ให้อยู่ในระยะดาเมจชัวร์
                     oHrp.CFrame = pHrp.CFrame * CFrame.new(
-                        math.random(-6, 6), 0, math.random(-6, 6)
+                        math.random(-2, 2), -1, math.random(-2, 2)
                     )
                 end)
                 -- ดึงสำเร็จจริงเมื่อเซิร์ฟเวอร์ยอมรับตำแหน่งใหม่ (ไม่ดีดกลับ)
@@ -1449,7 +1451,7 @@ local function directRemoteAttack(mobTarget, mobName)
         local enemies = Workspace:FindFirstChild("Enemies")
         if enemies then
             for _, e in ipairs(enemies:GetChildren()) do
-                if #othersEnemies >= 8 then break end
+                if #othersEnemies >= 14 then break end
                 if e ~= mobTarget then
                     local isBoss = string.find(e.Name, "Boss")
                         or string.find(e.Name, "King")
@@ -1477,9 +1479,10 @@ local function directRemoteAttack(mobTarget, mobName)
         end
     end)
 
-    -- 2. ยิง RegisterHit ส่งทั้งกองใน call เดียว
+    -- 2. ยิง RegisterHit x2 ต่อรอบ = ดาเมจทะลุเร็วขึ้น (กอง Magnet + ตัวหลัก)
     pcall(function()
         if rHit then
+            rHit:FireServer(mainPart, othersEnemies)
             rHit:FireServer(mainPart, othersEnemies)
         end
     end)
@@ -1761,7 +1764,7 @@ local function mainLoop()
                             aimCam(v)
                         end
 
-                        if MAGNET_ON and os.clock() - lastMagnetT >= 0.25 then
+                        if MAGNET_ON and os.clock() - lastMagnetT >= 0.1 then
                             lastMagnetT = os.clock()
                             bringMobsToTarget(v, qdata.mob)
                         end
@@ -1769,7 +1772,7 @@ local function mainLoop()
 
                     directRemoteAttack(v, fillerMode and v.Name or qdata.mob)
                     hitCount += 1
-                    task.wait(0.05)
+                    task.wait(0.025)
                 end
 
                 if v.Parent and v.Humanoid.Health <= 0 then
@@ -1853,7 +1856,7 @@ local function killNamedBoss(bossName)
                 equipWeapon()
                 aimCam(v)
                 directRemoteAttack(v, bossName)
-                task.wait(0.05)
+                task.wait(0.025)
             end
             if v.Humanoid.Health <= 0 then
                 setState(bossName .. " ตาย ✓", "G")
@@ -2613,10 +2616,10 @@ sea3Btn.MouseButton1Click:Connect(function()
     end)
 end)
 
-log("BF04 v10.6 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
+log("BF04 v10.7 พร้อม (หาผล 1M+ ทั้งสตอร์และแบ็คแพ็ก)", "G")
 log("ทะเลที่ตรวจได้: Sea " .. getSea() .. " (PlaceId " .. game.PlaceId .. ")", "S")
 log("เลเวลปัจจุบัน: " .. getMyLevel(), "B")
 log("จุดเกิดเดิมของคุณ: " .. tostring(ORIGINAL_SPAWN or "ยังไม่ได้ปัก"), "Y")
 log("  Bypass TP จะเปลี่ยนจุดเกิด → กลับมาที่นี่แล้วกด 'ปักจุดเกิดที่นี่' เพื่อคืนค่า", "S")
 log("AUTO = ฟาร์ม | FRUIT = เก็บผล | BUY = Buso Haki 25k", "S")
-warn("[BF04] Auto Quest v10.6 loaded")
+warn("[BF04] Auto Quest v10.7 loaded")
