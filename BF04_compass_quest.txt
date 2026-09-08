@@ -1539,6 +1539,67 @@ local function dumpNpcList()
     log("════ จบ Spy NPC — Copy ส่งมาได้ ════", "Y")
 end
 
+-- Spy เงื่อนไขเกาะใต้น้ำ: เข้าทางเรือดำน้ำ ไม่ใช่ดิ่งทะลุทะเล
+local function dumpSubmergedSpy()
+    log("════ Spy ใต้น้ำ / เงื่อนไขเข้าเกาะ ════", "Y")
+    local _, hrp = getChar()
+    if hrp then
+        log(string.format("ตำแหน่งเรา: %.0f, %.0f, %.0f  (Y<40 = ในน้ำ/ผิวทะเล)",
+            hrp.Position.X, hrp.Position.Y, hrp.Position.Z), "B")
+    end
+    local ui = readCompassUI()
+    log(string.format("เข็ม: %s | ระยะ=%sม.", tostring(ui.title), tostring(ui.distance)), "B")
+    log("วิกิ: Submerged Island อยู่ใต้ทะเล Tiki Outpost", "S")
+    log("เข้าได้: พูดกับ Submarine Worker ที่ Sub Port 01 (ท่าเรือ 2)", "S")
+    log("ล็อก: ต้องชนะบอส Tyrant of the Skies ก่อน Worker ยอมส่ง", "S")
+    log("ดิ่ง/วาปทะลุน้ำ = เซิร์ฟดีดกลับ + จมน้ำตาย (ไม่ใช่ทางเข้า)", "O")
+
+    local keys = { "submarine", "sub port", "tiki", "tyrant", "worker", "submerged", "oxygen", "drown" }
+    local hits = 0
+    iterNpcModels(function(model)
+        local nl = model.Name:lower()
+        local ok = false
+        for _, k in ipairs(keys) do
+            if nl:find(k, 1, true) then ok = true break end
+        end
+        if not ok then return end
+        local p = modelPart(model)
+        if not p then return end
+        hits += 1
+        local d = hrp and (p.Position - hrp.Position).Magnitude or -1
+        log(string.format("★ NPC %s @ %.0f,%.0f,%.0f d=%.0f",
+            model.Name, p.Position.X, p.Position.Y, p.Position.Z, d), "G")
+        NPC_CACHE[model.Name:lower()] = p.Position
+        rememberNpc(p, model.Name)
+    end)
+
+    pcall(function()
+        for _, inst in ipairs(Workspace:GetDescendants()) do
+            local n = inst.Name:lower()
+            if n:find("submarine", 1, true) or n:find("subport", 1, true)
+               or n:find("sub port", 1, true) or n:find("oxygen", 1, true) then
+                local pos = nil
+                if inst:IsA("BasePart") then pos = inst.Position
+                elseif inst:IsA("Model") then
+                    local ok, piv = pcall(function() return inst:GetPivot().Position end)
+                    if ok then pos = piv end
+                end
+                if pos then
+                    hits += 1
+                    log(string.format("• WS %s [%s] @ %.0f,%.0f,%.0f",
+                        inst.Name, inst.ClassName, pos.X, pos.Y, pos.Z), "S")
+                    if hits > 40 then return end
+                end
+            end
+        end
+    end)
+    if hits == 0 then
+        log("ยังไม่เจอ Submarine Worker / Sub Port ในแมพนี้ (ยังไม่สตรีม หรือยังไม่ปลดล็อก)", "O")
+        log("ไป Tiki Outpost ท่าเรือ 2 แล้วกด Spy NPC อีกครั้ง", "Y")
+    end
+    log("════ จบ Spy ใต้น้ำ — Copy ส่งมาได้ ════", "Y")
+end
+
 local function npcFromTitle(title)
     local who, place = parseTargetNameFromTitle(title)
     if not who and not place then return nil end
@@ -2224,9 +2285,9 @@ local function flyByCompassStep(opts)
     else
         dest = hrp.Position + dir * hopStuds + Vector3.new(0, yBoost, 0)
         if submerged then
-            dest = Vector3.new(dest.X, hrp.Position.Y, dest.Z)
+            dest = Vector3.new(dest.X, math.max(hrp.Position.Y, 90), dest.Z)
             how = "ราบใต้น้ำ"
-            log(string.format("ใต้น้ำเฟส1 วาปราบ %.0f studs Y=%.0f (เข็ม %dม. ยัง>10)",
+            log(string.format("ใต้น้ำเฟส1 วาปราบเหนือน้ำ %.0f studs Y=%.0f (เข็ม %dม. ยัง>10)",
                 hopStuds, dest.Y, d0), "B")
         elseif lastNpcHub and d0 and d0 < 200 then
             dest = Vector3.new(dest.X, lastNpcHub.Y + 10, dest.Z)
@@ -4767,7 +4828,10 @@ questSpyBtn.MouseButton1Click:Connect(function()
 end)
 
 npcSpyBtn.MouseButton1Click:Connect(function()
-    task.spawn(dumpNpcList)
+    task.spawn(function()
+        dumpNpcList()
+        dumpSubmergedSpy()
+    end)
 end)
 
 mobSpyBtn.MouseButton1Click:Connect(function()
