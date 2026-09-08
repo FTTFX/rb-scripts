@@ -543,14 +543,36 @@ local function travelArrive(pos, label, nearOk)
     return left <= nearOk, left
 end
 
-local function pinSpawnHere(cf)
+local function getSpawnName()
+    local ok, name = pcall(function()
+        return LP.Data.SpawnPoint.Value
+    end)
+    if ok and type(name) == "string" and name ~= "" then return name end
+end
+
+local function pinSpawnHere(cf, force)
+    -- ปักได้เมื่ออยู่ใกล้เป้าจริง (เข็มสั้น) หรือ force หลังวาปติด
+    if not force then
+        local ui = readCompassUI()
+        if ui.distance and ui.distance > 40 then
+            return false
+        end
+    end
     cf = cf or getCommF()
     if not cf then return false end
+    local before = getSpawnName()
     pcall(function() cf:InvokeServer("SetSpawnPoint") end)
-    task.wait(0.12)
+    task.wait(0.25)
     pcall(function() cf:InvokeServer("SetSpawnPoint") end)
-    log("ปักจุดเกิดที่นี่ (SetSpawnPoint) — ตายแล้วเกิดเมืองนี้", "G")
-    return true
+    task.wait(0.25)
+    local now = getSpawnName()
+    if now and now ~= before then
+        log(string.format("เซฟจุดเกิดสำเร็จ: %s → %s", tostring(before), tostring(now)), "G")
+        return true
+    end
+    log(string.format("เซฟจุดเกิดไม่เปลี่ยน (ยังเป็น %s) — ยังไม่ถึงเมือง/เกาะ",
+        tostring(now or before or "?")), "O")
+    return false
 end
 
 -- InvokeServer มี timeout กันค้างเงียบ
@@ -2185,8 +2207,8 @@ local function flyByCompassStep(opts)
             if hNear then
                 local destP = wpos or (hNear.Position + Vector3.new(0, -math.clamp((d0 or 10) * 3, 80, 500), 0))
                 log(string.format("ใต้น้ำ: เข็ม≤%dม. → วาปดิ่งครั้งเดียวไปเป้า", SUB_NEAR_M), "B")
-                flyTo(CFrame.new(destP) * CFrame.new(0, 4, 0), "SubDive/near")
-                pinSpawnHere()
+                local okDive = flyTo(CFrame.new(destP) * CFrame.new(0, 4, 0), "SubDive/near")
+                if okDive then pinSpawnHere(nil, true) end
                 task.wait(0.15)
             end
         end
@@ -2240,8 +2262,8 @@ local function flyByCompassStep(opts)
                 flat, below, wpos.Y), "S")
             if flat <= 90 and below > 40 then
                 log("อยู่บนหัว NPC แล้ว → วาปดิ่งครั้งเดียว + ปักจุดเกิด", "G")
-                flyTo(CFrame.new(wpos + Vector3.new(0, 4, 0)), "SubDive/over")
-                pinSpawnHere()
+                local okDive = flyTo(CFrame.new(wpos + Vector3.new(0, 4, 0)), "SubDive/over")
+                if okDive then pinSpawnHere(nil, true) end
                 compassStuck = 0
                 _G.BF04C_SUB_PHASE[subKey] = nil
                 if scanAfterMove() then return true, 0 end
@@ -2289,6 +2311,7 @@ local function flyByCompassStep(opts)
     end
     if compassStuck >= 2 and not (submerged and subPhase == "dive") then
         hopStuds = math.clamp(fullStuds * 0.4, 120, math.min(hopMax, 1600))
+        if submerged then hopStuds = math.clamp(hopStuds, 180, 320) end
         local off = (compassStuck % 2 == 0) and 35 or -35
         local ang = math.rad(off)
         dir = Vector3.new(
@@ -2354,19 +2377,19 @@ local function flyByCompassStep(opts)
                 local below = hAfter.Position.Y - wpos.Y
                 if flat <= 90 and below > 40 then
                     log(string.format("เมตรลดแล้วอยู่บนหัว (XZ %.0f) → วาปดิ่งครั้งเดียว", flat), "G")
-                    flyTo(CFrame.new(wpos + Vector3.new(0, 4, 0)), "SubDive/over")
-                    pinSpawnHere()
+                    local okDive = flyTo(CFrame.new(wpos + Vector3.new(0, 4, 0)), "SubDive/over")
+                    if okDive then pinSpawnHere(nil, true) end
                     if scanAfterMove() then return true, 0 end
                 end
             end
-            -- เข็มชี้เกือบตรง + เมตรลดน้อย = เหลือแต่ดิ่ง
+            -- เข็ม 2D ≈ 0 แค่แปลว่าบินถูกทิศราบ — ดิ่งเมื่อเหลือระยะสั้นจริง
             local needle = math.abs(rotLeft or rot or 99)
-            if d1 and d1 > SUB_NEAR_M and needle < 12 and (d0 - d1) < 25 then
-                local dive = math.clamp(d1 * 3, 80, 700)
-                log(string.format("เข็มชี้ลงใต้ตัว (%.0f°) เหลือ %dม. → วาปดิ่ง ↓%.0f", needle, d1, dive), "Y")
+            if d1 and d1 <= 45 and needle < 20 then
+                local dive = math.clamp(d1 * 3, 80, 500)
+                log(string.format("บนหัวแล้ว (เข็ม %dม. มุม %.0f°) → วาปดิ่ง ↓%.0f", d1, needle, dive), "Y")
                 local from = hAfter or hrp
-                flyTo(CFrame.new(from.Position + Vector3.new(0, -dive, 0)), "SubDive/over")
-                pinSpawnHere()
+                local okDive = flyTo(CFrame.new(from.Position + Vector3.new(0, -dive, 0)), "SubDive/over")
+                if okDive then pinSpawnHere(nil, true) end
             end
         end
         return true, d1
