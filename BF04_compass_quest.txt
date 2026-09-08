@@ -550,7 +550,13 @@ local function getSpawnName()
     if ok and type(name) == "string" and name ~= "" then return name end
 end
 
-local function pinSpawnHere(cf, force)
+local function onSubmergedIsland()
+    local sp = getSpawnName()
+    if sp and tostring(sp):lower():find("submerged", 1, true) then return true, sp end
+    local _, h = getChar()
+    if h and h.Position.Y < -800 then return true, sp end
+    return false, sp
+end
     -- ปักได้เมื่ออยู่ใกล้เป้าจริง (เข็มสั้น) หรือ force หลังวาปติด
     if not force then
         local ui = readCompassUI()
@@ -566,6 +572,10 @@ local function pinSpawnHere(cf, force)
     pcall(function() cf:InvokeServer("SetSpawnPoint") end)
     task.wait(0.25)
     local now = getSpawnName()
+    if now and tostring(now):lower():find("submerged", 1, true) then
+        log("จุดเกิดอยู่ที่ " .. now .. " แล้ว ✓", "G")
+        return true
+    end
     if now and now ~= before then
         log(string.format("เซฟจุดเกิดสำเร็จ: %s → %s", tostring(before), tostring(now)), "G")
         return true
@@ -2059,7 +2069,8 @@ local function flyByCompassStep(opts)
         placeName:lower():find("tree", 1, true)
         or placeName:lower():find("great", 1, true)
     )
-    local submerged = isSubmergedHint(ui.title, targetName, placeName, opts.submergedHint)
+    local onIsland = onSubmergedIsland()
+    local submerged = (not onIsland) and isSubmergedHint(ui.title, targetName, placeName, opts.submergedHint)
     local subKey = tostring(targetName or placeName or opts.submergedHint or ui.title or "sub")
     if not _G.BF04C_SUB_PHASE then _G.BF04C_SUB_PHASE = {} end
     -- ใต้น้ำ: บินราบก่อน → พอใกล้/เมตรไม่ลดค่อยดิ่งทะลุ
@@ -4096,8 +4107,13 @@ local function mainLoop()
             end
 
             if not hasQ then
-                local subQuest = isSubmergedHint(quest.qName, quest.mob, quest.npc)
-                -- ใต้น้ำ: ห้ามรีโมตรับจากไกล — บินราบตามเข็มจน ≤10ม. แล้วค่อยรับ
+                local onIsland, spawnNm = onSubmergedIsland()
+                local subQuest = isSubmergedHint(quest.qName, quest.mob, quest.npc) and not onIsland
+                -- อยู่เกาะแล้ว: ห้ามวนคุย Submarine Worker — ไป Quest Giver / ตีมอนปกติ
+                if onIsland then
+                    log(string.format("อยู่เกาะแล้ว (%s) → รับเควส/ตีมอนแบบปกติ ไม่คุยเรือดำน้ำ",
+                        tostring(spawnNm or "Yลึก")), "G")
+                end
                 if subQuest then
                     local uiSub = readCompassUI()
                     local dSub = uiSub.distance
@@ -4276,7 +4292,7 @@ local function mainLoop()
                 if iok and ires ~= "timeout" then
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
-                    local subQ0 = isSubmergedHint(quest.mob, quest.qName, quest.npc)
+                    local subQ0 = isSubmergedHint(quest.mob, quest.qName, quest.npc) and not onSubmergedIsland()
                     if subQ0 then
                         resetSpiral(Vector3.new(pos.X, pos.Y, pos.Z))
                     else
