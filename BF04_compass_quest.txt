@@ -398,16 +398,14 @@ local function flyTo(posOrCF, label)
     local dest = typeof(posOrCF) == "CFrame" and posOrCF
         or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
     local lab = tostring(label or "")
-    -- ใต้น้ำทั้งราบ+ดิ่ง ต้องวาป (tween ในน้ำ = จมตาย) — SubFlat/SubDive/probe/dive
-    local subMove = lab:find("Sub", 1, true)
+    -- ดิ่งใต้น้ำครั้งเดียวเท่านั้นที่วาป — ราบใช้บินธรรมดา (วาปพัน studs = ดีด+จมน้ำ)
+    local diveLab = lab:find("SubDive", 1, true)
         or lab:find("probe/dive", 1, true)
         or lab:find("NPC/dive", 1, true)
         or lab:find("/dive", 1, true)
-        or lab:find("ใต้น้ำ", 1, true)
-    local deepDown = dest.Position.Y < hrp.Position.Y - 60
-    local alreadyWet = hrp.Position.Y < 40 and dest.Position.Y < 50
-    if subMove or deepDown or alreadyWet then
-        return warpTo(dest, label or "sub")
+    local deepDown = dest.Position.Y < hrp.Position.Y - 80
+    if diveLab or deepDown then
+        return warpTo(dest, label or "dive")
     end
     if flyLock then
         local t0 = os.clock()
@@ -543,6 +541,16 @@ local function travelArrive(pos, label, nearOk)
         left = h2 and (h2.Position - pos).Magnitude or 99999
     end
     return left <= nearOk, left
+end
+
+local function pinSpawnHere(cf)
+    cf = cf or getCommF()
+    if not cf then return false end
+    pcall(function() cf:InvokeServer("SetSpawnPoint") end)
+    task.wait(0.12)
+    pcall(function() cf:InvokeServer("SetSpawnPoint") end)
+    log("ปักจุดเกิดที่นี่ (SetSpawnPoint) — ตายแล้วเกิดเมืองนี้", "G")
+    return true
 end
 
 -- InvokeServer มี timeout กันค้างเงียบ
@@ -2162,17 +2170,24 @@ local function flyByCompassStep(opts)
         log(string.format("ตามเข็มอย่างเดียว %sม. (ไม่ใช้จุดจำ)", tostring(d0)), "Y")
     end
 
-    -- ใต้น้ำใกล้เข็ม ≤10ม. แล้วค่อยดิ่ง/สแกน NPC
+    -- ใต้น้ำ: บินราบท่อนสั้นเหนือน้ำ → พอ XZ ตรงหัว NPC ค่อยวาปดิ่งครั้งเดียว
     local SUB_NEAR_M = 10
+    local SUB_FLY_Y = 120
+    local function subWorld()
+        local meter = findGuideMeterWorld()
+        return meter and meter.worldPos, meter
+    end
     if d0 <= SUB_NEAR_M then
         if submerged then
             _G.BF04C_SUB_PHASE[subKey] = "dive"
             local _, hNear = getChar()
-            if hNear and hNear.Position.Y > -50 then
-                local dive = math.clamp((d0 or 10) * 8 + 120, 150, 600)
-                log(string.format("ใต้น้ำ: เข็ม≤%dม. → วาปดิ่ง ↓%.0f แล้วหา NPC", SUB_NEAR_M, dive), "B")
-                flyTo(CFrame.new(hNear.Position + Vector3.new(0, -dive, 0)), "SubDive/near")
-                task.wait(0.2)
+            local wpos = subWorld()
+            if hNear then
+                local destP = wpos or (hNear.Position + Vector3.new(0, -math.clamp((d0 or 10) * 3, 80, 500), 0))
+                log(string.format("ใต้น้ำ: เข็ม≤%dม. → วาปดิ่งครั้งเดียวไปเป้า", SUB_NEAR_M), "B")
+                flyTo(CFrame.new(destP) * CFrame.new(0, 4, 0), "SubDive/near")
+                pinSpawnHere()
+                task.wait(0.15)
             end
         end
         if scanAfterMove() then return true, 0 end
@@ -2215,6 +2230,26 @@ local function flyByCompassStep(opts)
     local _, hrp = getChar()
     if not hrp then return false, "ไม่มีตัวละคร" end
 
+    -- ใต้น้ำ: ถ้าอยู่บนหัวเป้าแล้ว (XZ ใกล้ แต่ Y ยังสูง) → วาปดิ่งครั้งเดียว ไม่กระโดดพัน
+    if submerged then
+        local wpos = select(1, subWorld())
+        if wpos then
+            local flat = Vector3.new(wpos.X - hrp.Position.X, 0, wpos.Z - hrp.Position.Z).Magnitude
+            local below = hrp.Position.Y - wpos.Y
+            log(string.format("ใต้น้ำเช็คดิ่ง: XZ=%.0f ใต้เรา=%.0f (เป้าY=%.0f)",
+                flat, below, wpos.Y), "S")
+            if flat <= 90 and below > 40 then
+                log("อยู่บนหัว NPC แล้ว → วาปดิ่งครั้งเดียว + ปักจุดเกิด", "G")
+                flyTo(CFrame.new(wpos + Vector3.new(0, 4, 0)), "SubDive/over")
+                pinSpawnHere()
+                compassStuck = 0
+                _G.BF04C_SUB_PHASE[subKey] = nil
+                if scanAfterMove() then return true, 0 end
+                return true, readCompassUI().distance or d0
+            end
+        end
+    end
+
     -- 1) หันกล้องให้เข็ม ≈ 0 แล้วบินตามหน้ากล้อง (ไม่แปลงมุมแบบกระโดดตามกล้อง)
     local aligned, rotLeft = alignCameraToGuide(1.0)
     local cam = Workspace.CurrentCamera
@@ -2248,9 +2283,9 @@ local function flyByCompassStep(opts)
     local hopMax = (d0 >= 800) and 3200 or ((d0 >= 300) and 2200 or 1400)
     local hopStuds = math.clamp(fullStuds * 0.55, 100, hopMax)
     if submerged then
-        -- กระโดดราบสั้น-กลาง วัดเมตรลดก่อน (อย่าวาป 2000 ผิดทิศ)
-        hopMax = math.min(hopMax, (d0 >= 500) and 1100 or 700)
-        hopStuds = math.clamp(fullStuds * 0.32, 150, hopMax)
+        -- ท่อนสั้น บิน (ไม่วาป) — วาป 1000+ ดีดกลับเข็มเดิม
+        hopMax = 320
+        hopStuds = math.clamp(fullStuds * 0.12, 180, hopMax)
     end
     if compassStuck >= 2 and not (submerged and subPhase == "dive") then
         hopStuds = math.clamp(fullStuds * 0.4, 120, math.min(hopMax, 1600))
@@ -2285,9 +2320,9 @@ local function flyByCompassStep(opts)
     else
         dest = hrp.Position + dir * hopStuds + Vector3.new(0, yBoost, 0)
         if submerged then
-            dest = Vector3.new(dest.X, math.max(hrp.Position.Y, 90), dest.Z)
+            dest = Vector3.new(dest.X, SUB_FLY_Y, dest.Z)
             how = "ราบใต้น้ำ"
-            log(string.format("ใต้น้ำเฟส1 วาปราบเหนือน้ำ %.0f studs Y=%.0f (เข็ม %dม. ยัง>10)",
+            log(string.format("ใต้น้ำเฟส1 บินราบท่อนสั้น %.0f studs Y=%.0f (เข็ม %dม.)",
                 hopStuds, dest.Y, d0), "B")
         elseif lastNpcHub and d0 and d0 < 200 then
             dest = Vector3.new(dest.X, lastNpcHub.Y + 10, dest.Z)
@@ -2301,8 +2336,8 @@ local function flyByCompassStep(opts)
     end
     log(string.format("บิน→%s: %dม. ≈ %.0f studs Y=%.0f (เข็มเหลือ=%.0f° s=%s)",
         tostring(how), d0, hopStuds, dest.Y, rotLeft or rot or 0, tostring(_G.BF04C_YAW_SIGN)), "B")
-    flyTo(CFrame.new(dest), submerged and (subPhase == "dive" and "SubDive" or "SubFlat") or "GuideIcon")
-    task.wait(submerged and 0.25 or 0.7)
+    flyTo(CFrame.new(dest), submerged and (subPhase == "dive" and "SubDive" or "GuideIcon") or "GuideIcon")
+    task.wait(submerged and 0.2 or 0.7)
     if scanAfterMove() then return true, 0 end
 
     local ui2 = readCompassUI()
@@ -2311,9 +2346,28 @@ local function flyByCompassStep(opts)
         log(string.format("เมตรลด %d → %d ✓ (ล็อค yawSign=%s)", d0, d1, tostring(_G.BF04C_YAW_SIGN)), "G")
         compassStuck = 0
         lastMeter = d1
-        if submerged and d1 <= SUB_NEAR_M then
-            _G.BF04C_SUB_PHASE[subKey] = "dive"
-            log("ใต้น้ำ: เข็ม≤10 → รอบถัดไปวาปดิ่ง + รับเควสได้", "Y")
+        if submerged then
+            local wpos = select(1, subWorld())
+            local _, hAfter = getChar()
+            if wpos and hAfter then
+                local flat = Vector3.new(wpos.X - hAfter.Position.X, 0, wpos.Z - hAfter.Position.Z).Magnitude
+                local below = hAfter.Position.Y - wpos.Y
+                if flat <= 90 and below > 40 then
+                    log(string.format("เมตรลดแล้วอยู่บนหัว (XZ %.0f) → วาปดิ่งครั้งเดียว", flat), "G")
+                    flyTo(CFrame.new(wpos + Vector3.new(0, 4, 0)), "SubDive/over")
+                    pinSpawnHere()
+                    if scanAfterMove() then return true, 0 end
+                end
+            end
+            -- เข็มชี้เกือบตรง + เมตรลดน้อย = เหลือแต่ดิ่ง
+            local needle = math.abs(rotLeft or rot or 99)
+            if d1 and d1 > SUB_NEAR_M and needle < 12 and (d0 - d1) < 25 then
+                local dive = math.clamp(d1 * 3, 80, 700)
+                log(string.format("เข็มชี้ลงใต้ตัว (%.0f°) เหลือ %dม. → วาปดิ่ง ↓%.0f", needle, d1, dive), "Y")
+                local from = hAfter or hrp
+                flyTo(CFrame.new(from.Position + Vector3.new(0, -dive, 0)), "SubDive/over")
+                pinSpawnHere()
+            end
         end
         return true, d1
     end
@@ -2335,8 +2389,8 @@ local function flyByCompassStep(opts)
             local _, h2 = getChar()
             if h2 then
                 local back = h2.Position + dirFlip * math.clamp(hopStuds * 0.75, 180, hopMax)
-                back = Vector3.new(back.X, h2.Position.Y, back.Z)
-                flyTo(CFrame.new(back), "SubFlat/flip")
+                back = Vector3.new(back.X, SUB_FLY_Y, back.Z)
+                flyTo(CFrame.new(back), "GuideIcon")
                 task.wait(0.2)
                 local ui3 = readCompassUI()
                 if ui3.distance and ui3.distance < d0 - 5 then
@@ -4001,9 +4055,17 @@ local function mainLoop()
                 if subQuest then
                     local uiSub = readCompassUI()
                     local dSub = uiSub.distance
+                    local worker = select(1, findNpcByExactName("Submarine Worker"))
+                    if worker then
+                        log(string.format("ใต้น้ำ: เจอ Submarine Worker @ %.0f,%.0f,%.0f — ไปคุยเพื่อวาปเกาะ",
+                            worker.Position.X, worker.Position.Y, worker.Position.Z), "G")
+                        flyTo(CFrame.new(worker.Position + Vector3.new(0, 6, 0)), "SubmarineWorker")
+                        task.wait(0.4)
+                        return
+                    end
                     if not dSub or dSub > 10 then
                         log(string.format(
-                            "ใต้น้ำ: เข็มยัง %sม. (ต้อง≤10) — วาปราบตามเข็ม ยังไม่รับเควส",
+                            "ใต้น้ำ: เข็มยัง %sม. — หา Submarine Worker ที่ Tiki (ห้ามดิ่งทะเล)",
                             tostring(dSub or "?")), "Y")
                         flyByCompassStep({
                             skipNpcCache = true,
