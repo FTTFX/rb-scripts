@@ -510,18 +510,31 @@ Instance.new("UICorner", hakiBtn).CornerRadius = UDim.new(0,5)
 
 local MAGNET_ON = false
 local magnetBtn = Instance.new("TextButton")
-magnetBtn.Size = UDim2.new(0, 350, 0, 24); magnetBtn.Position = UDim2.new(0, 10, 0, 98)
+magnetBtn.Size = UDim2.new(0, 175, 0, 24); magnetBtn.Position = UDim2.new(0, 10, 0, 98)
 magnetBtn.BackgroundColor3 = Color3.fromRGB(50,50,70); magnetBtn.TextColor3 = Color3.new(1,1,1)
-magnetBtn.Text = "MAGNET: OFF (ปิดไว้ = ตีมอนตัวเดียวแต่โดนชัวร์)"
+magnetBtn.Text = "MAGNET: OFF"
 magnetBtn.Font = Enum.Font.GothamBold; magnetBtn.TextSize = 12; magnetBtn.BorderSizePixel = 0
 magnetBtn.Parent = frame
 Instance.new("UICorner", magnetBtn).CornerRadius = UDim.new(0,5)
 magnetBtn.MouseButton1Click:Connect(function()
     MAGNET_ON = not MAGNET_ON
-    magnetBtn.Text = MAGNET_ON
-        and "MAGNET: ON (ดึงทุกตัวมากอง + โฟกัสตัวหลัก)"
-        or "MAGNET: OFF (ปิดไว้ = ตีมอนตัวเดียวแต่โดนชัวร์)"
+    magnetBtn.Text = MAGNET_ON and "MAGNET: ON (กองมอน)" or "MAGNET: OFF"
     magnetBtn.BackgroundColor3 = MAGNET_ON and Color3.fromRGB(90,60,150) or Color3.fromRGB(50,50,70)
+end)
+
+-- ⚡ Fast Attack: ตีเร็ว + ตีแรง (แก้คูลดาวน์ CombatFramework ตรง ๆ — วิธีจาก MUXHUB/Infinite)
+local FAST_ON = true
+local fastBtn = Instance.new("TextButton")
+fastBtn.Size = UDim2.new(0, 175, 0, 24); fastBtn.Position = UDim2.new(0, 195, 0, 98)
+fastBtn.BackgroundColor3 = Color3.fromRGB(40,120,50); fastBtn.TextColor3 = Color3.new(1,1,1)
+fastBtn.Text = "FAST ATK: ON (เร็ว+แรง)"
+fastBtn.Font = Enum.Font.GothamBold; fastBtn.TextSize = 12; fastBtn.BorderSizePixel = 0
+fastBtn.Parent = frame
+Instance.new("UICorner", fastBtn).CornerRadius = UDim.new(0,5)
+fastBtn.MouseButton1Click:Connect(function()
+    FAST_ON = not FAST_ON
+    fastBtn.Text = FAST_ON and "FAST ATK: ON (เร็ว+แรง)" or "FAST ATK: OFF"
+    fastBtn.BackgroundColor3 = FAST_ON and Color3.fromRGB(40,120,50) or Color3.fromRGB(50,50,70)
 end)
 
 local SABER_ON = false
@@ -1323,6 +1336,41 @@ local function closeDialogue()
     end)
 end
 
+-- ⚡ Fast Attack: แก้คูลดาวน์/ระยะตีตรงตัว controller ฝั่งไคลเอนต์
+-- (เทคนิคเดียวกับ MUXHUB/Infinite — timeToNextAttack ต่ำ = ยิงติด ไม่หน่วงระหว่างคอมโบ)
+local CombatFrameworkR = nil
+local function requireCombat()
+    if CombatFrameworkR then return CombatFrameworkR end
+    pcall(function()
+        local cf = LP:FindFirstChild("PlayerScripts") and LP.PlayerScripts:FindFirstChild("CombatFramework")
+        if cf then CombatFrameworkR = require(cf) end
+    end)
+    return CombatFrameworkR
+end
+
+local function boostAttack()
+    if not FAST_ON then return end
+    pcall(function()
+        local cf = requireCombat()
+        local ac = cf and cf.activeController
+        if not ac then return end
+        ac.attacking = false
+        ac.blocking = false
+        ac.timeToNextAttack = 0
+        ac.timeToNextBlock = 0
+        ac.increment = 3
+        ac.hitboxMagnitude = 60
+    end)
+    -- ล้าง stun/sit ทุกครั้ง กันตัวละครชะงักกลางคอมโบ
+    pcall(function()
+        local char = LP.Character
+        if not char then return end
+        if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = false end
+    end)
+end
+
 -- 🧲 ระบบ Mob Magnet / รวมมอนสเตอร์รอบข้าง
 -- ขยาย SimulationRadius เพื่อให้เราเป็นเจ้าของฟิสิกส์มอน (Network Ownership)
 -- ถ้าไม่ทำเซาะตรงนี้ CFrame ที่เราตั้งจะไม่ replicate ไปเซิร์ฟ = มอนไม่ขยับจริง
@@ -1771,6 +1819,7 @@ local function mainLoop()
                     end
 
                     directRemoteAttack(v, fillerMode and v.Name or qdata.mob)
+                    boostAttack()
                     hitCount += 1
                     task.wait(0.025)
                 end
@@ -1856,6 +1905,7 @@ local function killNamedBoss(bossName)
                 equipWeapon()
                 aimCam(v)
                 directRemoteAttack(v, bossName)
+                boostAttack()
                 task.wait(0.025)
             end
             if v.Humanoid.Health <= 0 then
