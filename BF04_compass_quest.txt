@@ -2138,12 +2138,14 @@ local function isBossMobName(name)
     return false
 end
 
-local function findMob(mobName)
+local function findMob(mobName, farmPt, farmR)
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return nil end
     local _, myHrp = getChar()
     local best, bestD = nil, math.huge
-    local wantL = (mobName or ""):lower()
+    local wantL = (mobName or ""):lower():gsub("s$", "") -- Outlaws → Outlaw
+    local farm = farmPt or lastNpcHub
+    local maxFarm = farmR or (farm and 350) or nil
     local wantBoss = isBossMobName(mobName)
     -- คำท้ายสั้น ๆ ที่มักชนชื่ออื่น — ห้ามใช้เดี่ยว ๆ
     local BAD_TAIL = {
@@ -2190,6 +2192,11 @@ local function findMob(mobName)
             local hum = e:FindFirstChildOfClass("Humanoid")
             local hrp = e:FindFirstChild("HumanoidRootPart")
             if hum and hrp and hum.Health > 0 then
+                if farm and maxFarm and (hrp.Position - farm).Magnitude > maxFarm then
+                    match = false
+                end
+            end
+            if match and hum and hrp and hum.Health > 0 then
                 local d = myHrp and (hrp.Position - myHrp.Position).Magnitude or 0
                 if d < bestD then
                     bestD = d; best = e
@@ -2582,18 +2589,18 @@ local function flySpiralSeek(quest, maxHops)
 end
 
 local function huntMobOrSweep(quest)
-    local mob, md = findMob(quest.mob)
-    if mob then return mob, md end
-
     local function distFlat(a, b)
         if not a or not b then return math.huge end
         return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
     end
 
-    -- 0) มีเควสแล้ว: จุดที่เคยเจอชื่อตรง (ถ้าอยู่เกาะเดียวกับ NPC) หรือวนรอบ NPC ≤1000
-    --    เข็มทิศยังใช้ตอนไกล / ยังไม่รู้เกาะ — ไม่ตัดทิ้ง
+    local hint, src = mobSpawnHint(quest and quest.mob)
+    local farm = hint or lastNpcHub
+    local mob, md = findMob(quest.mob, farm, 350)
+    if mob then return mob, md end
+
+    -- มีจุดบันทึก → ไปค้างที่นั่น รอเกิด ไม่ก้นหอย ไม่ไล่มอนไกล
     if quest and quest.mob and quest.mob ~= "" then
-        local hint, src = mobSpawnHint(quest.mob)
         local alts = KNOWN_MOB_ALT[(quest.mob or ""):lower()]
         local _, hrp = getChar()
         local pts = {}
@@ -2601,7 +2608,6 @@ local function huntMobOrSweep(quest)
         if alts then
             for _, p in ipairs(alts) do
                 if lastNpcHub and (p - lastNpcHub).Magnitude > FARM_AROUND + 200 then
-                    -- คนละเกาะกับ NPC ที่เข็มทิศพาไป — ข้าม
                 else
                     local dup = false
                     for _, q in ipairs(pts) do
@@ -2621,35 +2627,25 @@ local function huntMobOrSweep(quest)
                 local d = distFlat(hrp.Position, p)
                 if d < bestD then bestD = d; bestP = p end
             end
-            if bestD > 50 then
-                log(string.format("ไม่เจอ %s + ไกลจุดฟาร์ม %.0f → บิน (%s) แล้วก้นหอย≤%d",
-                    quest.mob, bestD, tostring(src or "npc"), FARM_AROUND), "Y")
-                for i, pt in ipairs(pts) do
-                    if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
-                    log(string.format("บินจุดมอน #%d @ %.0f,%.0f,%.0f", i, pt.X, pt.Y, pt.Z), "B")
-                    flyTo(CFrame.new(pt + Vector3.new(0, 45, 0)), "จุดมอน")
-                    holdNoFall()
-                    mob, md = findMob(quest.mob)
-                    if mob then return mob, md end
-                    if lastNpcHub and (pt - lastNpcHub).Magnitude <= FARM_AROUND then
-                        break -- ถึงโซน NPC แล้ว ไม่ไล่จุดคนละเกาะ
-                    end
-                end
-                local _, hNow = getChar()
-                local ox = lastNpcHub or (hNow and hNow.Position)
-                if ox then
-                    resetSpiral(Vector3.new(ox.X, math.max(ox.Y, 90), ox.Z))
-                end
+            farm = bestP
+            if bestD > 80 then
+                log(string.format("ไปจุดที่บันทึก %s d=%.0f (%s)", quest.mob, bestD, tostring(src or "hub")), "Y")
+                flyTo(CFrame.new(bestP + Vector3.new(0, 18, 0)), "จุดบันทึก")
+                holdNoFall()
             else
-                log(string.format("ใกล้จุดฟาร์ม %.0f → ก้นหอยรอบนี้ (≤%d)", bestD, FARM_AROUND), "S")
-                if bestP then
-                    resetSpiral(Vector3.new(bestP.X, math.max(bestP.Y + 40, 90), bestP.Z), true)
-                end
+                log(string.format("อยู่จุดบันทึกแล้ว %.0f — รอสแกน ไม่ก้นหอย", bestD), "S")
             end
+            for _ = 1, 8 do
+                if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
+                mob, md = findMob(quest.mob, farm, 350)
+                if mob then return mob, md end
+                task.wait(0.35)
+            end
+            return nil
         end
     end
 
-    mob, md = findMob(quest.mob)
+    mob, md = findMob(quest.mob, farm, 350)
     if mob then return mob, md end
 
     -- 1) ตาม Guide เฉพาะตอนยังไม่มีเควสตีมอน
