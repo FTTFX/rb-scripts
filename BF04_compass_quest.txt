@@ -2914,7 +2914,15 @@ local spiralStep = 0
 local spiralOrigin = nil
 local triedKnownHigh = false
 
-local function resetSpiral(origin, keepTried)
+local function farmKeepY()
+    local _, hrp = getChar()
+    if onSubmergedIsland() then
+        if lastNpcHub then return lastNpcHub.Y + 8 end
+        return (hrp and hrp.Position.Y) or -2100
+    end
+    if lastNpcHub then return math.max(lastNpcHub.Y + 40, 50) end
+    return math.max(hrp and hrp.Position.Y or 90, 90)
+end
     spiralR = 150
     spiralStep = 0
     spiralOrigin = origin
@@ -2943,7 +2951,7 @@ local function nextSpiralPoint(mobName)
     local _, hrp = getChar()
     if not hrp then return nil end
     if not spiralOrigin then
-        local y0 = lastNpcHub and (lastNpcHub.Y + 40) or math.max(hrp.Position.Y, 90)
+        local y0 = farmKeepY()
         spiralOrigin = Vector3.new(hrp.Position.X, y0, hrp.Position.Z)
         log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d (รอบจุดปัจจุบัน)",
             spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
@@ -2958,14 +2966,14 @@ local function nextSpiralPoint(mobName)
             spiralR = 150
             local _, h2 = getChar()
             if h2 then
-                spiralOrigin = Vector3.new(h2.Position.X, lastNpcHub and (lastNpcHub.Y + 40) or math.max(h2.Position.Y, 90), h2.Position.Z)
+                spiralOrigin = Vector3.new(h2.Position.X, farmKeepY(), h2.Position.Z)
             end
             log("ก้นหอยครบ → เริ่มใหม่รอบตำแหน่งปัจจุบัน", "O")
         else
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
     end
-    local y = lastNpcHub and math.max(lastNpcHub.Y + 40, 50) or math.max(spiralOrigin.Y, 90)
+    local y = farmKeepY()
     return Vector3.new(
         spiralOrigin.X + math.cos(ang) * spiralR,
         y,
@@ -3024,8 +3032,7 @@ local function flySpiralSeek(quest, maxHops)
 
             local pt = nextSpiralPoint(quest.mob)
             if not pt then break end
-            local destY = lastNpcHub and math.max(lastNpcHub.Y + 40, 50)
-                or math.max(pt.Y, (spiralOrigin and spiralOrigin.Y) or 90)
+            local destY = farmKeepY()
             local dest = Vector3.new(pt.X, destY, pt.Z)
 
             local _, hrp = getChar()
@@ -4294,8 +4301,11 @@ local function mainLoop()
                 if iok and ires ~= "timeout" then
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
-                    local subQ0 = isSubmergedHint(quest.mob, quest.qName, quest.npc) and not onSubmergedIsland()
-                    if subQ0 then
+                    local onIsle = onSubmergedIsland()
+                    local subQ0 = isSubmergedHint(quest.mob, quest.qName, quest.npc) and not onIsle
+                    if onIsle then
+                        resetSpiral(Vector3.new(pos.X, pos.Y, pos.Z))
+                    elseif subQ0 then
                         resetSpiral(Vector3.new(pos.X, pos.Y, pos.Z))
                     else
                         resetSpiral(Vector3.new(pos.X, math.max(pos.Y + 40, 90), pos.Z))
@@ -4304,10 +4314,12 @@ local function mainLoop()
                         local mh, ms = mobSpawnHint(quest.mob)
                         local dest = mh or pos
                         if mh then rememberHub("mob", quest.mob, mh) end
-                        local subQ = subQ0 or isSubmergedHint(quest.mob, quest.qName, quest.npc)
-                        log(string.format("รับเควสแล้ว → หามอนรอบ NPC ≤%d (%s)%s",
-                            FARM_AROUND, tostring(ms or "รอบNPC"), subQ and " [ใต้น้ำ]" or ""), "Y")
-                        if subQ then
+                        log(string.format("รับเควสแล้ว → หามอนรอบ NPC ≤%d (%s)",
+                            FARM_AROUND, tostring(ms or "รอบNPC")), "Y")
+                        if onIsle then
+                            flyTo(CFrame.new(dest + Vector3.new(0, 8, 0)), "โซนหลังรับ")
+                            resetSpiral(Vector3.new(dest.X, dest.Y, dest.Z))
+                        elseif subQ0 then
                             local near = Vector3.new(dest.X, dest.Y + 6, dest.Z)
                             flyTo(CFrame.new(near), "SubDive/โซนหลังรับ")
                             resetSpiral(Vector3.new(dest.X, dest.Y, dest.Z))
