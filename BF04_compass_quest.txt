@@ -1933,9 +1933,18 @@ local function flyByCompassStep(opts)
         ).Unit
     end
 
-    local yBoost = tallIsland and 180 or (opts.highY and 60 or 35)
-    local dest = hrp.Position + dir * hopStuds + Vector3.new(0, yBoost, 0)
+    local yBoost = 20
     if tallIsland then
+        yBoost = 180
+    elseif opts.highY and d0 and d0 >= 250 then
+        yBoost = 60 -- ข้ามทะเลเท่านั้น
+    elseif opts.highY then
+        yBoost = 12
+    end
+    local dest = hrp.Position + dir * hopStuds + Vector3.new(0, yBoost, 0)
+    if lastNpcHub and d0 and d0 < 200 then
+        dest = Vector3.new(dest.X, lastNpcHub.Y + 10, dest.Z)
+    elseif tallIsland then
         dest = Vector3.new(dest.X, math.max(dest.Y, hrp.Position.Y + 80, 120), dest.Z)
     end
     hrp.CFrame = CFrame.new(hrp.Position, Vector3.new(dest.X, hrp.Position.Y, dest.Z))
@@ -2427,8 +2436,8 @@ local function nextSpiralPoint(mobName)
     local _, hrp = getChar()
     if not hrp then return nil end
     if not spiralOrigin then
-        -- ศูนย์ = ตำแหน่งปัจจุบัน (หลังตามเข็มมาถึงเกาะ) — ไม่ใช้จุดจำ
-        spiralOrigin = Vector3.new(hrp.Position.X, math.max(hrp.Position.Y, 400), hrp.Position.Z)
+        local y0 = lastNpcHub and (lastNpcHub.Y + 40) or math.max(hrp.Position.Y, 90)
+        spiralOrigin = Vector3.new(hrp.Position.X, y0, hrp.Position.Z)
         log(string.format("ก้นหอยเริ่มที่ %.0f,%.0f,%.0f รัศมี %d (รอบจุดปัจจุบัน)",
             spiralOrigin.X, spiralOrigin.Y, spiralOrigin.Z, spiralR), "Y")
     end
@@ -2442,14 +2451,14 @@ local function nextSpiralPoint(mobName)
             spiralR = 150
             local _, h2 = getChar()
             if h2 then
-                spiralOrigin = Vector3.new(h2.Position.X, math.max(h2.Position.Y, 400), h2.Position.Z)
+                spiralOrigin = Vector3.new(h2.Position.X, lastNpcHub and (lastNpcHub.Y + 40) or math.max(h2.Position.Y, 90), h2.Position.Z)
             end
             log("ก้นหอยครบ → เริ่มใหม่รอบตำแหน่งปัจจุบัน", "O")
         else
             log("ก้นหอยขยายรัศมี → " .. spiralR .. " studs", "Y")
         end
     end
-    local y = math.max(spiralOrigin.Y, 400)
+    local y = lastNpcHub and math.max(lastNpcHub.Y + 40, 50) or math.max(spiralOrigin.Y, 90)
     return Vector3.new(
         spiralOrigin.X + math.cos(ang) * spiralR,
         y,
@@ -2508,7 +2517,8 @@ local function flySpiralSeek(quest, maxHops)
 
             local pt = nextSpiralPoint(quest.mob)
             if not pt then break end
-            local destY = math.max(pt.Y, (spiralOrigin and spiralOrigin.Y) or 400)
+            local destY = lastNpcHub and math.max(lastNpcHub.Y + 40, 50)
+                or math.max(pt.Y, (spiralOrigin and spiralOrigin.Y) or 90)
             local dest = Vector3.new(pt.X, destY, pt.Z)
 
             local _, hrp = getChar()
@@ -2711,7 +2721,7 @@ local function huntMobOrSweep(quest)
                 end
                 local _, hNow = getChar()
                 if hNow then
-                    resetSpiral(Vector3.new(hNow.Position.X, math.max(hNow.Position.Y, 400), hNow.Position.Z))
+                    resetSpiral(Vector3.new(hNow.Position.X, lastNpcHub and (lastNpcHub.Y + 40) or math.max(hNow.Position.Y, 90), hNow.Position.Z))
                 end
             end
         end
@@ -4024,8 +4034,11 @@ local function mainLoop()
                 log(string.format("เควส progress %d/%d", pc, pn), "B")
                 if pc >= pn then
                     forceQuestUntil = 0
-                    log("★ เควสครบแล้ว → กลับไปรับใหม่", "Y")
-                    task.wait(0.4)
+                    log("★ เควสครบแล้ว → กลับ NPC (ไม่ขึ้นฟ้า)", "Y")
+                    if lastNpcHub then
+                        flyTo(CFrame.new(lastNpcHub + Vector3.new(0, 8, 0)), "กลับNPC")
+                    end
+                    task.wait(0.3)
                     return
                 end
             elseif guideWantsQuestGiver() then
