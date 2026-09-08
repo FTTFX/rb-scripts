@@ -557,6 +557,8 @@ local function onSubmergedIsland()
     if h and h.Position.Y < -800 then return true, sp end
     return false, sp
 end
+
+local function pinSpawnHere(cf, force)
     -- ปักได้เมื่ออยู่ใกล้เป้าจริง (เข็มสั้น) หรือ force หลังวาปติด
     if not force then
         local ui = readCompassUI()
