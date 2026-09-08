@@ -1979,7 +1979,7 @@ local function flyByCompassStep(opts)
     if not d0 then
         -- ไม่มีระยะ → probe เลยถ้าเป็นเกาะ
         if isPlaceGuide then
-            probe8Phase(targetName, placeName, 300)
+            probe8Phase(targetName, placeName, 300, ui.title)
             scanAfterMove()
             return true, 0
         end
@@ -2026,7 +2026,7 @@ local function flyByCompassStep(opts)
     if d0 <= 12 then
         if scanAfterMove() then return true, 0 end
         -- ใกล้แล้วแต่ยังไม่เจอ NPC → probe ขึ้นลงรอบตัว
-        if probe8Phase(targetName, placeName, d0) and scanAfterMove() then return true, 0 end
+        if probe8Phase(targetName, placeName, d0, ui.title) and scanAfterMove() then return true, 0 end
         return false, "ใกล้แล้ว (" .. d0 .. "ม.)"
     end
 
