@@ -2217,12 +2217,22 @@ local function flyByCompassStep(opts)
         return false, "ใกล้แล้ว (" .. d0 .. "ม.)"
     end
 
-    -- stuck / เกาะสูง — ใต้น้ำที่ยังไกล (>10ม.) ห้ามดิ่ง แค่สลับทิศราบ
+    -- stuck: ใต้น้ำ + เมตรค้างช่วงกลาง = เหลือความลึก ดิ่งครั้งเดียว
     if compassStuck >= 1 or (tallIsland and compassStuck >= 0 and probeStep > 0 and compassStuck >= 1) then
         if compassStuck >= 1 then
-            if submerged and d0 > SUB_NEAR_M then
-                log(string.format("ใต้น้ำค้างแต่เข็มยัง %dม. (>10) → วาปราบหาทิศ ห้ามดิ่ง", d0), "Y")
-                -- ไม่ดิ่ง ไม่ probe ลึก — ปล่อยให้ logic ราบด้านล่างสลับ yaw
+            if submerged and d0 > SUB_NEAR_M and d0 <= 400 then
+                local _, hDive = getChar()
+                if hDive then
+                    local dive = math.clamp(d0 * 3, 180, 900)
+                    log(string.format("บินราบแล้วเข็มค้าง %dม. → น่าจะเหลือแต่ความลึก วาปดิ่ง ↓%.0f", d0, dive), "Y")
+                    local okDive = flyTo(CFrame.new(hDive.Position + Vector3.new(0, -dive, 0)), "SubDive/over")
+                    if okDive then pinSpawnHere(nil, true) end
+                    compassStuck = 0
+                    if scanAfterMove() then return true, 0 end
+                    return true, readCompassUI().distance or d0
+                end
+            elseif submerged and d0 > 400 then
+                log(string.format("ใต้น้ำค้าง เข็ม %dม. ยังไกล → บินราบต่อ", d0), "Y")
             elseif not submerged then
                 if probe8Phase(targetName, placeName, d0, ui.title) then
                     return true, readCompassUI().distance or d0
@@ -2394,10 +2404,23 @@ local function flyByCompassStep(opts)
         end
         return true, d1
     end
-    -- ใต้น้ำไกล: เมตรไม่ลด = สลับทิศราบ ห้ามดิ่ง
-    if submerged and d0 > SUB_NEAR_M and d1 and d1 >= d0 - 3 then
+    -- ใต้น้ำ: บินราบแล้วเมตรไม่ลด/เพิ่ม = อยู่บนหัวแล้ว เหลือแต่ดิ่ง
+    if submerged and d0 > SUB_NEAR_M and d1 and d1 >= d0 - 8 then
+        if d0 <= 400 then
+            local _, h2 = getChar()
+            if h2 then
+                local dive = math.clamp(d0 * 3, 180, 900)
+                log(string.format("ราบแล้วเมตรไม่ลด %d→%s → วาปดิ่งครั้งเดียว ↓%.0f",
+                    d0, tostring(d1), dive), "Y")
+                local okDive = flyTo(CFrame.new(h2.Position + Vector3.new(0, -dive, 0)), "SubDive/over")
+                if okDive then pinSpawnHere(nil, true) end
+                compassStuck = 0
+                if scanAfterMove() then return true, 0 end
+                return true, readCompassUI().distance or d0
+            end
+        end
         _G.BF04C_YAW_SIGN = -(_G.BF04C_YAW_SIGN or 1)
-        log(string.format("ใต้น้ำราบ เมตรไม่ลด %d→%s → สลับทิศ (ยังไม่ดิ่ง เข็ม>10)",
+        log(string.format("ใต้น้ำราบ เมตรไม่ลด %d→%s (ยังไกล) → สลับทิศ",
             d0, tostring(d1)), "O")
         local dirFlip = compassWorldDir(ui2.arrowAbs or ui2.arrowRot or rot or 0)
         if not dirFlip and cam then
