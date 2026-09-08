@@ -347,9 +347,65 @@ local function hardStopFly()
     flyLock = false
 end
 
+-- วาปทันที (ใช้ตอนดิ่งใต้น้ำ — บินช้าในน้ำ = จมตาย)
+local function warpTo(posOrCF, label)
+    local _, hrp = getChar()
+    if not hrp then return false end
+    if flyLock then
+        local t0 = os.clock()
+        while flyLock and os.clock() - t0 < 4 and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
+            task.wait(0.05)
+        end
+        if flyLock then hardStopFly() end
+    end
+    flyLock = true
+    setNoclip(true)
+    local dest = typeof(posOrCF) == "CFrame" and posOrCF or CFrame.new(posOrCF)
+    local dist = (hrp.Position - dest.Position).Magnitude
+    log(string.format("วาป→%s %.0f studs (กันจมน้ำ)", label or "dive", dist), "B")
+    local ok = false
+    pcall(function()
+        for _ = 1, 4 do
+            if not (_G.BF04C_ON or _G.BF04C_SPYFLY) or _G.BF04C_GEN ~= MY_GEN then break end
+            local _, h = getChar()
+            if not h then break end
+            setNoclip(true)
+            h.CFrame = dest
+            h.AssemblyLinearVelocity = Vector3.zero
+            h.AssemblyAngularVelocity = Vector3.zero
+            pcall(function()
+                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.PlatformStand = true
+                    hum.Sit = false
+                end
+            end)
+            task.wait(0.04)
+            if (h.Position - dest.Position).Magnitude <= 80 then
+                ok = true
+                break
+            end
+        end
+    end)
+    flyLock = false
+    return ok
+end
+
 local function flyTo(posOrCF, label)
     local _, hrp = getChar()
     if not hrp then return false end
+    local dest = typeof(posOrCF) == "CFrame" and posOrCF
+        or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
+    local lab = tostring(label or "")
+    -- ดิ่งใต้น้ำ / ลงลึกมาก → วาป ไม่ tween ในน้ำ
+    local diveLab = lab:find("SubDive", 1, true)
+        or lab:find("probe/dive", 1, true)
+        or lab:find("NPC/dive", 1, true)
+        or lab:find("/dive", 1, true)
+    local deepDown = dest.Position.Y < hrp.Position.Y - 90
+    if diveLab or deepDown then
+        return warpTo(dest, label or "dive")
+    end
     if flyLock then
         local t0 = os.clock()
         while flyLock and os.clock() - t0 < 8 and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
@@ -359,8 +415,6 @@ local function flyTo(posOrCF, label)
     end
     flyLock = true
     setNoclip(true)
-    local dest = typeof(posOrCF) == "CFrame" and posOrCF
-        or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
     local dist = (hrp.Position - dest.Position).Magnitude
     log(string.format("บิน→%s %.0f studs", label or "เป้า", dist), "B")
 
