@@ -1961,20 +1961,23 @@ local function flyByCompassStep(opts)
         placeName:lower():find("tree", 1, true)
         or placeName:lower():find("great", 1, true)
     )
-    local submerged = isSubmergedHint(ui.title, targetName, placeName)
-    local subKey = tostring(targetName or placeName or ui.title or "sub")
+    local submerged = isSubmergedHint(ui.title, targetName, placeName, opts.submergedHint)
+    local subKey = tostring(targetName or placeName or opts.submergedHint or ui.title or "sub")
     if not _G.BF04C_SUB_PHASE then _G.BF04C_SUB_PHASE = {} end
     -- ใต้น้ำ: บินราบก่อน → พอใกล้/เมตรไม่ลดค่อยดิ่งทะลุ
     local subPhase = _G.BF04C_SUB_PHASE[subKey] or "flat"
+    local huntingMob = opts.forMob == true or opts.noNpcScan == true
 
     local function scanAfterMove()
+        -- หามอนอยู่ — ห้ามบินไป NPC แถว ๆ (ตัวการดึงกลับผิดทิศใน log)
+        if huntingMob then return false end
         local part
         if targetName then part = select(1, findNpcByExactName(targetName)) end
         if not part and placeName then
             part = select(1, findNpcByExactName(placeName))
         end
-        -- เกาะ: รับ Quest Giver ตัวใดก็ได้ที่ใกล้จุด known เกาะ
-        if not part and (isPlaceGuide or tallIsland or submerged) then
+        -- เกาะสูงเท่านั้น: รับ Quest Giver ใกล้ ๆ — ห้ามใช้กับใต้น้ำ (เจอ NPC ผิวน้ำผิดตัว)
+        if not part and (isPlaceGuide or tallIsland) and not submerged then
             local _, myHrp = getChar()
             local best, bestD = nil, math.huge
             iterNpcModels(function(model)
@@ -1987,16 +1990,27 @@ local function flyByCompassStep(opts)
             end)
             part = best
         end
-        if not part and findQuestGiver then
+        -- ใต้น้ำ: ต้องชื่อตรงเท่านั้น
+        if not part and submerged and targetName then
+            part = select(1, findNpcByExactName(targetName))
+        end
+        if not part and findQuestGiver and not submerged then
             part = findQuestGiver(nil, placeName and (placeName .. " Quest Giver") or targetName)
         end
         if part then
+            -- ใต้น้ำ: ยืนยันชื่อมี submerged ไม่งั้นข้าม (กัน NPC ผิด)
+            if submerged then
+                local nm = (part.Parent and part.Parent.Name or part.Name or ""):lower()
+                if not nm:find("submerged", 1, true) then
+                    log("ข้าม NPC ผิดตัว (ไม่ใช่ Submerged): " .. tostring(part.Parent and part.Parent.Name or part.Name), "O")
+                    return false
+                end
+            end
             rememberNpc(part)
             if placeName then
                 NPC_CACHE[("npc at " .. placeName):lower()] = part.Position
                 NPC_CACHE[placeName:lower()] = part.Position
             end
-            -- ใต้น้ำที่ยังอยู่ผิวน้ำ: ไป XZ ของ NPC ราบก่อน แล้วค่อยดิ่งลง Y
             if submerged and part.Position.Y < 40 then
                 local _, myH = getChar()
                 if myH and myH.Position.Y > part.Position.Y + 40 then
@@ -2004,14 +2018,14 @@ local function flyByCompassStep(opts)
                     local flatDist = (Vector3.new(myH.Position.X, 0, myH.Position.Z)
                         - Vector3.new(part.Position.X, 0, part.Position.Z)).Magnitude
                     if flatDist > 45 then
-                        log(string.format("ใต้น้ำ: บินราบเหนือ NPC ก่อน (XZ %.0f)", flatDist), "B")
-                        flyTo(CFrame.new(flatAbove), "NPC/flat")
-                        task.wait(0.4)
+                        log(string.format("ใต้น้ำ: วาปราบเหนือ NPC (XZ %.0f)", flatDist), "B")
+                        flyTo(CFrame.new(flatAbove), "SubFlat/NPC")
+                        task.wait(0.2)
                     end
-                    log(string.format("ใต้น้ำ: ดิ่งทะลุลง Y %.0f→%.0f", myH.Position.Y, part.Position.Y + 4), "B")
-                    flyTo(CFrame.new(part.Position + approachYOffset(part.Position)), "NPC/dive")
+                    log(string.format("ใต้น้ำ: วาปดิ่ง Y %.0f→%.0f", myH.Position.Y, part.Position.Y + 4), "B")
+                    flyTo(CFrame.new(part.Position + approachYOffset(part.Position)), "SubDive/NPC")
                 else
-                    flyTo(CFrame.new(part.Position + approachYOffset(part.Position)), "NPC")
+                    flyTo(CFrame.new(part.Position + approachYOffset(part.Position)), "SubDive/NPC")
                 end
             else
                 flyTo(CFrame.new(part.Position + approachYOffset(part.Position)), "NPC")
@@ -2165,6 +2179,11 @@ local function flyByCompassStep(opts)
     local fullStuds = d0 * 3
     local hopMax = (d0 >= 800) and 3200 or ((d0 >= 300) and 2200 or 1400)
     local hopStuds = math.clamp(fullStuds * 0.55, 100, hopMax)
+    -- ใต้น้ำหามอน: กระโดดสั้นกว่า กันวาปผิดทิศแล้วเมตรไม่ลด
+    if submerged and huntingMob then
+        hopMax = math.min(hopMax, 900)
+        hopStuds = math.clamp(fullStuds * 0.28, 120, hopMax)
+    end
     if compassStuck >= 2 and not (submerged and subPhase == "dive") then
         hopStuds = math.clamp(fullStuds * 0.4, 120, math.min(hopMax, 1600))
         local off = (compassStuck % 2 == 0) and 35 or -35
@@ -2216,7 +2235,7 @@ local function flyByCompassStep(opts)
     log(string.format("บิน→%s: %dม. ≈ %.0f studs Y=%.0f (เข็มเหลือ=%.0f° s=%s)",
         tostring(how), d0, hopStuds, dest.Y, rotLeft or rot or 0, tostring(_G.BF04C_YAW_SIGN)), "B")
     flyTo(CFrame.new(dest), submerged and (subPhase == "dive" and "SubDive" or "SubFlat") or "GuideIcon")
-    task.wait(0.7)
+    task.wait(submerged and 0.25 or 0.7)
     if scanAfterMove() then return true, 0 end
 
     local ui2 = readCompassUI()
@@ -2945,7 +2964,12 @@ local function huntMobOrSweep(quest)
                     if not _G.BF04C_ON or _G.BF04C_GEN ~= MY_GEN then break end
                     mob, md = findMob(quest.mob)
                     if mob then return mob, md end
-                    flyByCompassStep({ skipNpcCache = true, noKnown = true, highY = true })
+                    flyByCompassStep({
+                        skipNpcCache = true,
+                        noKnown = true,
+                        forMob = true,
+                        submergedHint = quest and quest.mob,
+                    })
                     holdNoFall()
                     mob, md = findMob(quest.mob)
                     if mob then return mob, md end
@@ -4030,15 +4054,28 @@ local function mainLoop()
                 if iok and ires ~= "timeout" then
                     forceQuestUntil = os.clock() + 25
                     forceQuestLabel = quest.mob or "StartQuest"
-                    resetSpiral(Vector3.new(pos.X, math.max(pos.Y + 40, 90), pos.Z))
+                    local subQ0 = isSubmergedHint(quest.mob, quest.qName, quest.npc)
+                    if subQ0 then
+                        resetSpiral(Vector3.new(pos.X, pos.Y, pos.Z))
+                    else
+                        resetSpiral(Vector3.new(pos.X, math.max(pos.Y + 40, 90), pos.Z))
+                    end
                     if quest.mob then
                         local mh, ms = mobSpawnHint(quest.mob)
                         local dest = mh or pos
                         if mh then rememberHub("mob", quest.mob, mh) end
-                        log(string.format("รับเควสแล้ว → หามอนรอบ NPC ≤%d (%s)", FARM_AROUND, tostring(ms or "รอบNPC")), "Y")
-                        flyTo(CFrame.new(dest + Vector3.new(0, 45, 0)), "โซนหลังรับ")
-                        holdNoFall()
-                        resetSpiral(Vector3.new(dest.X, math.max(dest.Y + 40, 90), dest.Z))
+                        local subQ = subQ0 or isSubmergedHint(quest.mob, quest.qName, quest.npc)
+                        log(string.format("รับเควสแล้ว → หามอนรอบ NPC ≤%d (%s)%s",
+                            FARM_AROUND, tostring(ms or "รอบNPC"), subQ and " [ใต้น้ำ]" or ""), "Y")
+                        if subQ then
+                            local near = Vector3.new(dest.X, dest.Y + 6, dest.Z)
+                            flyTo(CFrame.new(near), "SubDive/โซนหลังรับ")
+                            resetSpiral(Vector3.new(dest.X, dest.Y, dest.Z))
+                        else
+                            flyTo(CFrame.new(dest + Vector3.new(0, 45, 0)), "โซนหลังรับ")
+                            holdNoFall()
+                            resetSpiral(Vector3.new(dest.X, math.max(dest.Y + 40, 90), dest.Z))
+                        end
                     end
                     log("ตั้งโหมดมีเควส 25วิ (รอ UI) + จำ hub", "G")
                 elseif ires == "timeout" then
