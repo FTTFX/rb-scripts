@@ -53,13 +53,17 @@ local AURA_RADIUS = tonumber(_G.BF04C_AURA_R) or 96
 _G.BF04C_AURA = AURA_ON
 _G.BF04C_AURA_R = AURA_RADIUS
 
+-- ⚡ Fast Attack: แก้คูลดาวน์/ระยะตีตรง controller (วิธี MUXHUB/Infinite)
+local FAST_ON = (_G.BF04C_FAST ~= false)
+_G.BF04C_FAST = FAST_ON
+
 -- ── GUI ────────────────────────────────────────────────────────────
 local old = pg:FindFirstChild("BF04CompassGUI"); if old then old:Destroy() end
 local sg = Instance.new("ScreenGui")
 sg.Name = "BF04CompassGUI"; sg.ResetOnSpawn = false; sg.Parent = pg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 470, 0, 520); frame.Position = UDim2.new(0, 10, 0, 10)
+frame.Size = UDim2.new(0, 520, 0, 520); frame.Position = UDim2.new(0, 10, 0, 10)
 frame.BackgroundColor3 = Color3.fromRGB(12, 14, 20); frame.BorderSizePixel = 0
 frame.Active = true; frame.Draggable = true; frame.ClipsDescendants = true
 frame.Parent = sg
@@ -97,6 +101,8 @@ local bossSpyBtn = mkBtn("Spy บอส", 316, 30, 52, Color3.fromRGB(160, 50, 8
 local copyBtn = mkBtn("Copy", 372, 30, 48, Color3.fromRGB(30, 100, 50))
 local auraBtn = mkBtn(AURA_ON and "Aura: ON" or "Aura: OFF", 424, 30, 40,
     AURA_ON and Color3.fromRGB(140, 50, 90) or Color3.fromRGB(50, 50, 60))
+local fastBtn = mkBtn(FAST_ON and "Fast: ON" or "Fast: OFF", 468, 30, 44,
+    FAST_ON and Color3.fromRGB(40, 120, 50) or Color3.fromRGB(50, 50, 60))
 local flySpyBtn = mkBtn("Spy ความเร็ว", 8, 62, 88, Color3.fromRGB(90, 60, 140))
 local flyApplyLbl = Instance.new("TextLabel")
 flyApplyLbl.Size = UDim2.new(0, 360, 0, 18); flyApplyLbl.Position = UDim2.new(0, 100, 0, 62)
@@ -226,6 +232,81 @@ local function getCombatRemotes()
         end
     end)
     return RegisterAttack, RegisterHit
+end
+
+-- Fast Attack: แก้คูลดาวน์/ระยะตีตรง CombatFramework (require → upvalues → getgc)
+local activeCtrl = nil
+local activeCtrlTried = false
+local function resolveController()
+    if activeCtrl then return activeCtrl end
+    pcall(function()
+        local mod = LP:FindFirstChild("PlayerScripts")
+            and LP.PlayerScripts:FindFirstChild("CombatFramework")
+        if not mod then return end
+        local CF = require(mod)
+        if CF and CF.activeController then
+            activeCtrl = CF.activeController
+            return
+        end
+        if debug and debug.getupvalues then
+            local ups = debug.getupvalues(CF)
+            if ups and ups[2] and ups[2].activeController then
+                activeCtrl = ups[2].activeController
+            end
+        end
+        if not activeCtrl and debug and debug.getupvalue then
+            for i = 1, 10 do
+                local ok, uv = pcall(debug.getupvalue, CF, i)
+                if ok and type(uv) == "table" and uv.activeController then
+                    activeCtrl = uv.activeController
+                    break
+                end
+            end
+        end
+    end)
+    if activeCtrl then return activeCtrl end
+    pcall(function()
+        if not getgc then return end
+        for _, v in ipairs(getgc(true)) do
+            if type(v) == "table" and rawget(v, "hitboxMagnitude")
+               and rawget(v, "timeToNextAttack") and rawget(v, "attacking") ~= nil then
+                activeCtrl = v
+                break
+            end
+        end
+    end)
+    return activeCtrl
+end
+
+local function boostAttack()
+    if not FAST_ON then return end
+    pcall(function()
+        local ac = resolveController()
+        if not ac then
+            if not activeCtrlTried then
+                activeCtrlTried = true
+                log("FAST ATK: หา CombatFramework ไม่เจอ (ใช้แค่ RegisterHit)", "Y")
+            end
+            return
+        end
+        if not activeCtrlTried then
+            activeCtrlTried = true
+            log("FAST ATK: CombatFramework ✓", "G")
+        end
+        ac.attacking = false
+        ac.blocking = false
+        ac.timeToNextAttack = tick() - 1
+        ac.timeToNextBlock = 0
+        ac.increment = 3
+        ac.hitboxMagnitude = 120
+    end)
+    pcall(function()
+        local char = LP.Character
+        if not char then return end
+        if char:FindFirstChild("Stun") then char.Stun.Value = 0 end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Sit = false end
+    end)
 end
 
 local noclipConn
@@ -3932,6 +4013,7 @@ local function mainLoop()
                 if flat < 20 then useH = math.max(useH, 56) end
                 equipSword()
                 lockOnMobHead(mob, myHrp, useH)
+                boostAttack()
                 attackMob(mob, quest.mob)
                 if os.clock() - lastCheck >= 1.0 then
                     lastCheck = os.clock()
@@ -4115,6 +4197,7 @@ local function spyAttackRange()
                             my.CFrame = CFrame.new(anchorPos) * CFrame.new(0, height, horiz)
                             pcall(function() mhrp.CFrame = CFrame.new(anchorPos) end)
                         end
+                        boostAttack()
                         attackMob(mob)
                         task.wait(0.05)
                     end
@@ -4394,6 +4477,14 @@ auraBtn.MouseButton1Click:Connect(function()
     log(AURA_ON
         and string.format("Aura เปิด — ตีรอบตัว %.0f studs (มอน+ผู้เล่นใกล้)", AURA_RADIUS)
         or "Aura ปิด — ตีเฉพาะเป้าเควส", AURA_ON and "G" or "O")
+end)
+
+fastBtn.MouseButton1Click:Connect(function()
+    FAST_ON = not FAST_ON
+    _G.BF04C_FAST = FAST_ON
+    fastBtn.Text = FAST_ON and "Fast: ON" or "Fast: OFF"
+    fastBtn.BackgroundColor3 = FAST_ON and Color3.fromRGB(40, 120, 50) or Color3.fromRGB(50, 50, 60)
+    log(FAST_ON and "Fast Attack เปิด — ตีเร็ว+แรง (แก้คูลดาวน์ + ระยะตี)" or "Fast Attack ปิด", FAST_ON and "G" or "O")
 end)
 
 flySpyBtn.MouseButton1Click:Connect(function()
