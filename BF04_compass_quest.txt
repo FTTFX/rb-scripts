@@ -352,42 +352,43 @@ local function warpTo(posOrCF, label)
     local _, hrp = getChar()
     if not hrp then return false end
     if flyLock then
-        local t0 = os.clock()
-        while flyLock and os.clock() - t0 < 4 and _G.BF04C_ON and _G.BF04C_GEN == MY_GEN do
-            task.wait(0.05)
-        end
-        if flyLock then hardStopFly() end
+        hardStopFly()
     end
     flyLock = true
+    stopFlyTween()
     setNoclip(true)
     local dest = typeof(posOrCF) == "CFrame" and posOrCF or CFrame.new(posOrCF)
     local dist = (hrp.Position - dest.Position).Magnitude
-    log(string.format("วาป→%s %.0f studs (กันจมน้ำ)", label or "dive", dist), "B")
+    log(string.format("วาป→%s %.0f studs (กันจมน้ำ)", label or "sub", dist), "B")
     local ok = false
     pcall(function()
-        for _ = 1, 4 do
+        local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.PlatformStand = true
+            hum.Sit = false
+            hum.AutoRotate = false
+        end
+        -- วางซ้ำหลายเฟรม กันเซิร์ฟ/น้ำดีดกลับ
+        for i = 1, 8 do
             if not (_G.BF04C_ON or _G.BF04C_SPYFLY) or _G.BF04C_GEN ~= MY_GEN then break end
             local _, h = getChar()
             if not h then break end
             setNoclip(true)
+            h.Anchored = false
             h.CFrame = dest
             h.AssemblyLinearVelocity = Vector3.zero
             h.AssemblyAngularVelocity = Vector3.zero
-            pcall(function()
-                local hum = LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    hum.PlatformStand = true
-                    hum.Sit = false
-                end
-            end)
-            task.wait(0.04)
-            if (h.Position - dest.Position).Magnitude <= 80 then
+            task.wait(0.03)
+            if (h.Position - dest.Position).Magnitude <= 100 then
                 ok = true
-                break
+                if i >= 3 then break end
             end
         end
     end)
     flyLock = false
+    if not ok then
+        log("วาปอาจถูกดีด — จะลองใหม่", "Y")
+    end
     return ok
 end
 
@@ -397,14 +398,16 @@ local function flyTo(posOrCF, label)
     local dest = typeof(posOrCF) == "CFrame" and posOrCF
         or CFrame.new(posOrCF + Vector3.new(0, 5, 0))
     local lab = tostring(label or "")
-    -- ดิ่งใต้น้ำ / ลงลึกมาก → วาป ไม่ tween ในน้ำ
-    local diveLab = lab:find("SubDive", 1, true)
+    -- ใต้น้ำทั้งราบ+ดิ่ง ต้องวาป (tween ในน้ำ = จมตาย) — SubFlat/SubDive/probe/dive
+    local subMove = lab:find("Sub", 1, true)
         or lab:find("probe/dive", 1, true)
         or lab:find("NPC/dive", 1, true)
         or lab:find("/dive", 1, true)
-    local deepDown = dest.Position.Y < hrp.Position.Y - 90
-    if diveLab or deepDown then
-        return warpTo(dest, label or "dive")
+        or lab:find("ใต้น้ำ", 1, true)
+    local deepDown = dest.Position.Y < hrp.Position.Y - 60
+    local alreadyWet = hrp.Position.Y < 40 and dest.Position.Y < 50
+    if subMove or deepDown or alreadyWet then
+        return warpTo(dest, label or "sub")
     end
     if flyLock then
         local t0 = os.clock()
@@ -2198,7 +2201,7 @@ local function flyByCompassStep(opts)
         if submerged then
             dest = Vector3.new(dest.X, hrp.Position.Y, dest.Z)
             how = "ราบใต้น้ำ"
-            log(string.format("ใต้น้ำเฟส1 บินราบ %.0f studs คง Y=%.0f (%dม.)",
+            log(string.format("ใต้น้ำเฟส1 วาปราบ %.0f studs คง Y=%.0f (%dม.)",
                 hopStuds, dest.Y, d0), "B")
         elseif lastNpcHub and d0 and d0 < 200 then
             dest = Vector3.new(dest.X, lastNpcHub.Y + 10, dest.Z)
