@@ -1,6 +1,7 @@
--- Egg01_HoldTest.lua v1.0 — ใกล้ไข่แล้วลองข้าม Hold ได้ไหม?
--- วิธีใช้: ยืนใกล้ไข่ (เห็นปุ่ม Steal) → กด TEST → ดูว่าวิธีไหนสำเร็จ
--- สำเร็จ = ถือไข่ / RE FieldEggCarry / prompt หาย
+-- Egg01_HoldTest.lua v1.1 — ใกล้ไข่แล้วลองข้าม Hold ได้ไหม?
+-- v1.1: ดัมพ์ table จาก RE FieldEggCarry + ปุ่ม STEAL0 + ลอง RF ด้วย table
+-- วิธีใช้: ยืนใกล้ไข่ (เห็นปุ่ม Steal) → กด TEST หรือ STEAL0
+-- สำเร็จ = RE FieldEggCarry / FieldEggShifted
 if _G.EGG01HT_GUI then pcall(function() _G.EGG01HT_GUI:Destroy() end) end
 if _G.EGG01HT_CONNS then
     for _, c in pairs(_G.EGG01HT_CONNS) do pcall(function() c:Disconnect() end) end
@@ -35,6 +36,29 @@ local function L(s)
     OUT[#OUT + 1] = ("[%5.2f] %s"):format(os.clock() - T0, s)
     if #OUT > 400 then table.remove(OUT, 1) end
     redraw()
+end
+
+local lastCarryTbl = nil
+local function ser(v, depth)
+    depth = depth or 0
+    local t = typeof(v)
+    if t == "table" then
+        if depth > 3 then return "{...}" end
+        local parts, n = {}, 0
+        for k, val in pairs(v) do
+            n += 1
+            if n > 16 then parts[#parts + 1] = "..." break end
+            parts[#parts + 1] = tostring(k) .. "=" .. ser(val, depth + 1)
+        end
+        return "{" .. table.concat(parts, ", ") .. "}"
+    elseif t == "Instance" then
+        return "<" .. v.ClassName .. ":" .. v.Name .. ">"
+    elseif t == "string" then
+        return '"' .. (v:len() > 60 and v:sub(1, 60) .. "…" or v) .. '"'
+    elseif t == "Vector3" then
+        return ("V3(%.1f,%.1f,%.1f)"):format(v.X, v.Y, v.Z)
+    end
+    return tostring(v)
 end
 
 local function hbtn(txt, x, w, col)
@@ -119,7 +143,12 @@ task.spawn(function()
                 local parts = {}
                 for i = 1, math.min(n, 6) do
                     local v = select(i, ...)
-                    parts[i] = typeof(v) == "Instance" and ("<" .. v.ClassName .. ":" .. v.Name .. ">") or tostring(v)
+                    if typeof(v) == "table" then
+                        lastCarryTbl = v
+                        parts[i] = ser(v)
+                    else
+                        parts[i] = typeof(v) == "Instance" and ("<" .. v.ClassName .. ":" .. v.Name .. ">") or tostring(v)
+                    end
                 end
                 L(("← RE %s(%s)"):format(d.Name, table.concat(parts, ", ")))
             end))
@@ -231,12 +260,36 @@ local function runTests()
         tryMethod("AskFieldEggCarry(prompt)", function()
             rf:InvokeServer(pp)
         end)
+        if lastCarryTbl then
+            tryMethod("AskFieldEggCarry(lastCarryTbl จาก RE)", function()
+                rf:InvokeServer(lastCarryTbl)
+            end)
+        else
+            L("ยังไม่มี lastCarryTbl จาก RE — ลอง fp ก่อนรอบหน้า")
+        end
     else
         L("ไม่เจอ AskFieldEggCarry")
     end
 
     L("=== จบทุกวิธี — ส่ง COPY มาได้ ===")
 end
+
+-- ปุ่มด่วน: แค่ Hold=0+fp ใกล้สุด
+local stealB = hbtn("STEAL0", 286, 80, Color3.fromRGB(160, 90, 30))
+stealB.MouseButton1Click:Connect(function()
+    task.spawn(function()
+        local pp, dist = nearestSteal(30)
+        if not pp then L("❌ ไม่เจอ Steal ใกล้ๆ") return end
+        local orig = pp.HoldDuration
+        L(("STEAL0 dist=%.1f hold→0"):format(dist or -1))
+        pp.HoldDuration = 0
+        if fp then fp(pp) else L("❌ ไม่มี fp") end
+        task.wait(0.1)
+        pp.HoldDuration = orig
+        task.wait(0.4)
+        L(carryHit > 0 and ("✅ RE hit=" .. carryHit) or "❓ ยังไม่เห็น RE")
+    end)
+end)
 
 testB.MouseButton1Click:Connect(function()
     task.spawn(runTests)
