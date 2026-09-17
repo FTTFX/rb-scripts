@@ -1,6 +1,7 @@
--- Egg01_Auto.lua v1.2 — ถือไข่ → เดินเข้าหา HOME ทีละช่วง → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
--- v1.2: เลิกวาป CFrame / VIM / PivotTo (BAC) — ใช้ Humanoid:MoveTo อย่างเดียว
--- วิธีใช้: ยืนจุดเกิด → HOME → START → ไปขโมยไข่เอง → ถือแล้วระบบเดิน+ทิ้ง+เก็บ
+-- Egg01_Auto.lua v1.3 — ถือไข่ → เดินเข้าหา HOME ทีละช่วง → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
+-- v1.3: ถ้า START ที่บ้าน (homeDist≈0) จะไม่จบทันที — รอให้ห่างบ้านก่อนค่อยเดินกลับ
+-- v1.2: เลิกวาป CFrame / VIM — ใช้ MoveTo
+-- วิธีใช้: ยืนจุดเกิด → HOME → START → ไปขโมยไข่ให้ห่างบ้าน → ระบบเดินกลับอัตโนมัติ
 if _G.EGG01AUTO_GUI then pcall(function() _G.EGG01AUTO_GUI:Destroy() end) end
 if _G.EGG01AUTO_CONNS then
     for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
@@ -318,8 +319,31 @@ local function waitCarry(msg)
 end
 
 local function mainLoop()
+    -- ต้องถือไข่ และห่างจาก HOME ก่อน (กันกด START ที่บ้านแล้วจบทันที)
     if not waitCarry() then return end
-    L("เริ่มเดิน → HOME @" .. posStr(HOME))
+
+    local _, d0 = nearHome()
+    if d0 >= 0 and d0 <= homeRadius then
+        setStatus("ไปขโมยไข่ก่อน…")
+        L(("อยู่ใกล้ HOME (d=%.0f) — รอให้ห่าง > %.0f แล้วค่อยเดินกลับ"):format(d0, homeRadius + 30))
+        while running do
+            syncCarry()
+            local _, d = nearHome()
+            if carrying and d > homeRadius + 30 then
+                L(("ห่างบ้านแล้ว d=%.0f — เริ่มเดินกลับ"):format(d))
+                break
+            end
+            setStatus(("ไปขโมย… ถือ=%s d=%.0f"):format(carrying and "Y" or "n", d or -1))
+            task.wait(0.3)
+        end
+        if not running then return end
+    end
+
+    if not carrying then
+        if not waitCarry("รอถือไข่ห่างบ้าน…") then return end
+    end
+
+    L("เริ่มเดินกลับ → HOME @" .. posStr(HOME))
 
     while running do
         syncCarry()
@@ -334,6 +358,7 @@ local function mainLoop()
 
         if not carrying then
             if not waitCarry("รอถือไข่…") then break end
+            -- ถ้าเก็บไข่แล้วยังอยู่บ้าน ไม่จบจนกว่าจะเคยออกไป
         end
 
         hopWalkTowardHome()
@@ -349,7 +374,8 @@ local function mainLoop()
 
         if carrying then
             setStatus("DROP")
-            hum():MoveTo(hrp().Position) -- หยุดเดินก่อนทิ้ง
+            local h, r = hum(), hrp()
+            if h and r then pcall(function() h:MoveTo(r.Position) end) end
             task.wait(0.1)
             if not doDrop() then
                 L("DROP ไม่สำเร็จ — รอคุณทิ้งมือ หรือลองต่อ")
@@ -399,7 +425,7 @@ startB.MouseButton1Click:Connect(function()
     running = true
     startB.Text = "…"
     T0 = os.clock()
-    L("START v1.2 walk-only (ไม่วาป)")
+    L("START v1.3 walk-only — ถ้าอยู่บ้านจะรอให้ไปขโมยก่อน")
     task.spawn(mainLoop)
 end)
 
@@ -439,6 +465,6 @@ task.spawn(function()
     end
 end)
 
-L("Egg01 Auto v1.2 | เดินอย่างเดียว ไม่วาป")
-L("รีจอยก่อน → HOME → START → ขโมยไข่เอง")
+L("Egg01 Auto v1.3 | เดินอย่างเดียว ไม่วาป")
+L("HOME → START → ไปขโมยให้ห่างบ้าน → ระบบเดินกลับ")
 setStatus("กด HOME ที่จุดเกิด")
