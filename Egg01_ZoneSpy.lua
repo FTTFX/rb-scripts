@@ -1,9 +1,9 @@
--- Egg01_ZoneSpy.lua v1.0 — spy โซนมอน: ทิ้งในโซนแล้วไข่วาปกลับ nest ไหม?
+-- Egg01_ZoneSpy.lua v1.1 — spy โซนมอน: ทิ้งในโซนแล้วไข่วาปกลับ nest ไหม?
+-- v1.1: แก้ชื่อ remote จริง `RE/EggWorld/FieldEggCarry` (เมื่อก่อน match ไม่ติด)
 -- วิธีใช้:
---   1) ขโมยไข่ → กด MARK_NEST (หรือออโต้จาก FieldEggShifted)
---   2) วิ่ง/วาปออกนอกบ้านมอน → กด DROP (หรือกดปุ่มทิ้งของเกม)
---   3) ดู log: SAFE_DROP (ไข่อยู่จุดทิ้ง) vs NEST_RECALL (วาปกลับ nest)
---   4) COPY ส่งมา
+--   1) ขโมยไข่ก่อน (ต้องเห็น 🎒 CARRY) → NEST จับเอง
+--   2) ออกนอกโซนมอน → DROP / ปุ่มทิ้งเกม
+--   3) ดู SAFE_DROP vs NEST_RECALL → COPY
 if _G.EGG01ZS_GUI then pcall(function() _G.EGG01ZS_GUI:Destroy() end) end
 if _G.EGG01ZS_CONNS then
     for _, c in pairs(_G.EGG01ZS_CONNS) do pcall(function() c:Disconnect() end) end
@@ -216,29 +216,39 @@ task.spawn(function()
     local net = RS:FindFirstChild("Packages")
     net = net and net:FindFirstChild("Networking")
     if not net then L("❌ ไม่เจอ Networking") return end
-    local watch = {
-        FieldEggCarry = onCarry,
-        FieldEggShifted = onShifted,
-    }
-    for _, d in ipairs(net:GetDescendants()) do
-        if d:IsA("RemoteEvent") then
-            local nm = d.Name
-            if watch[nm] then
-                table.insert(_G.EGG01ZS_CONNS, d.OnClientEvent:Connect(function(a, ...)
-                    if typeof(a) == "table" then watch[nm](a)
-                    else L(("← %s(%s)"):format(nm, ser(a))) end
-                end))
-                L("ฟัง " .. nm)
-            elseif nm:find("Guard") or nm:find("Zone") or nm == "FieldEggGone" then
-                table.insert(_G.EGG01ZS_CONNS, d.OnClientEvent:Connect(function(...)
-                    local n = select("#", ...)
-                    local parts = {}
-                    for i = 1, math.min(n, 4) do parts[i] = ser(select(i, ...)) end
-                    L(("← %s(%s)"):format(nm, table.concat(parts, ", ")))
-                end))
-            end
+
+    local function bind(d)
+        local nm = d.Name
+        local path = short(d)
+        if nm:find("FieldEggCarry", 1, true) or path:find("FieldEggCarry", 1, true) then
+            table.insert(_G.EGG01ZS_CONNS, d.OnClientEvent:Connect(function(a, ...)
+                if typeof(a) == "table" then onCarry(a)
+                else L(("← Carry(%s)"):format(ser(a))) end
+            end))
+            L("ฟัง Carry ← " .. path)
+        elseif nm:find("FieldEggShifted", 1, true) or path:find("FieldEggShifted", 1, true) then
+            table.insert(_G.EGG01ZS_CONNS, d.OnClientEvent:Connect(function(a, ...)
+                if typeof(a) == "table" then onShifted(a)
+                else L(("← Shifted(%s)"):format(ser(a))) end
+            end))
+            L("ฟัง Shifted ← " .. path)
+        elseif nm:find("Guard", 1, true) or nm:find("Zone", 1, true)
+            or nm:find("FieldEggGone", 1, true) or nm:find("FieldEggBatch", 1, true) then
+            table.insert(_G.EGG01ZS_CONNS, d.OnClientEvent:Connect(function(...)
+                local n = select("#", ...)
+                local parts = {}
+                for i = 1, math.min(n, 4) do parts[i] = ser(select(i, ...)) end
+                L(("← %s(%s)"):format(nm, table.concat(parts, ", ")))
+            end))
         end
     end
+
+    for _, d in ipairs(net:GetDescendants()) do
+        if d:IsA("RemoteEvent") then bind(d) end
+    end
+    table.insert(_G.EGG01ZS_CONNS, net.DescendantAdded:Connect(function(d)
+        if d:IsA("RemoteEvent") then task.defer(bind, d) end
+    end))
 end)
 
 -- กด DropHeldEgg ของเกม
@@ -359,6 +369,6 @@ closeB.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01ZS_GUI = nil
 end)
 
-L("Egg01 ZoneSpy v1.0")
-L("steal → (ในโซนมอนทิ้ง=RECALL) → ออกนอกโซน → DROP → ดู SAFE/RECALL")
-L("ปุ่ม: HOME=จุดเกิด | NEST=รัง | DROP=ทิ้ง | ZONES=สแกนชื่อ")
+L("Egg01 ZoneSpy v1.1")
+L("สำคัญ: ขโมยไข่ให้ขึ้น 🎒 CARRY ก่อน แล้วค่อย DROP")
+L("steal → ออกนอกโซน → DROP → ดู SAFE/RECALL | HOME/NEST/ZONES")
