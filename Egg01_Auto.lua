@@ -29,18 +29,21 @@ local OUT, T0 = {}, os.clock()
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "Egg01Auto"; gui.ResetOnSpawn = false
-gui.DisplayOrder = 60
+gui.DisplayOrder = 200
 gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent = PG end
 _G.EGG01AUTO_GUI = gui
 
 local bar = Instance.new("Frame", gui)
-bar.Size = UDim2.new(0, 290, 0, 34)
-bar.Position = UDim2.new(1, -298, 0, 8)
+bar.Name = "Bar"
+bar.Size = UDim2.new(0, 300, 0, 36)
+bar.Position = UDim2.new(0, 8, 0, 8) -- มุมบนซ้าย กันโดน HUD ขวา
 bar.BackgroundColor3 = Color3.fromRGB(20, 35, 25)
-bar.BackgroundTransparency = 0.15
+bar.BackgroundTransparency = 0.1
 bar.BorderSizePixel = 0
+bar.ZIndex = 10
 
 local box = Instance.new("TextBox", gui)
 box.Size = UDim2.new(0, 440, 0, 180)
@@ -57,16 +60,20 @@ box.MultiLine = true
 box.ClearTextOnFocus = false
 box.TextEditable = false
 box.Active = false
+box.ZIndex = 5
 
 local status = Instance.new("TextLabel", gui)
-status.Size = UDim2.new(0, 290, 0, 22)
-status.Position = UDim2.new(1, -298, 0, 44)
+status.Size = UDim2.new(0, 300, 0, 22)
+status.Position = UDim2.new(0, 8, 0, 46)
 status.BackgroundTransparency = 1
 status.TextColor3 = Color3.fromRGB(255, 230, 120)
 status.Font = Enum.Font.GothamBold
 status.TextSize = 13
-status.TextXAlignment = Enum.TextXAlignment.Right
+status.TextXAlignment = Enum.TextXAlignment.Left
 status.Text = "IDLE"
+status.ZIndex = 10
+
+local homeHoldUntil = 0 -- กัน status ทับข้อความ HOME
 
 local function redraw() box.Text = table.concat(OUT, "\n") end
 local function L(s)
@@ -74,11 +81,13 @@ local function L(s)
     if #OUT > 100 then table.remove(OUT, 1) end
     redraw()
 end
-local function setStatus(s) status.Text = s end
+local function setStatus(s)
+    status.Text = s
+end
 
 local function hbtn(txt, x, w, col)
     local b = Instance.new("TextButton", bar)
-    b.Size = UDim2.new(0, w, 0, 28)
+    b.Size = UDim2.new(0, w, 0, 30)
     b.Position = UDim2.new(0, x, 0, 3)
     b.Text = txt
     b.Font = Enum.Font.GothamBold
@@ -86,13 +95,17 @@ local function hbtn(txt, x, w, col)
     b.BackgroundColor3 = col or Color3.fromRGB(40, 100, 60)
     b.TextColor3 = Color3.new(1, 1, 1)
     b.BorderSizePixel = 0
+    b.AutoButtonColor = true
+    b.Active = true
+    b.ZIndex = 11
     return b
 end
 local startB = hbtn("START", 4, 70, Color3.fromRGB(40, 140, 70))
-local stopB  = hbtn("STOP", 76, 60, Color3.fromRGB(140, 50, 50))
-local homeB  = hbtn("HOME", 138, 56, Color3.fromRGB(60, 90, 140))
-local copyB  = hbtn("COPY", 196, 56)
-local closeB = hbtn("✕", 254, 28, Color3.fromRGB(120, 40, 40))
+local stopB  = hbtn("STOP", 76, 56, Color3.fromRGB(140, 50, 50))
+local homeB  = hbtn("HOME", 134, 56, Color3.fromRGB(60, 90, 140))
+local copyB  = hbtn("COPY", 192, 56)
+local closeB = hbtn("✕", 250, 28, Color3.fromRGB(120, 40, 40))
+bar.Size = UDim2.new(0, 286, 0, 36)
 
 local function hrp()
     return LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -482,26 +495,45 @@ local function mainLoop()
     if status.Text:find("จบ") == nil then setStatus("หยุด") end
 end
 
-homeB.MouseButton1Click:Connect(function()
+local function markHome()
     local r = hrp()
-    if not r then return end
-    HOME = r.Position
+    if not r then
+        L("❌ HOME ไม่ได้ — ไม่มี Character/HRP รอเกิดก่อน")
+        setStatus("รอตัวละครก่อน")
+        return false
+    end
+    HOME = Vector3.new(r.Position.X, r.Position.Y, r.Position.Z)
+    homeHoldUntil = os.clock() + 3
     L("🏠 HOME = " .. posStr(HOME))
-    setStatus("HOME OK — กด START")
-end)
+    setStatus("HOME OK @" .. posStr(HOME))
+    homeB.Text = "OK!"
+    homeB.BackgroundColor3 = Color3.fromRGB(40, 160, 70)
+    task.delay(1.2, function()
+        if homeB.Parent then
+            homeB.Text = "HOME"
+            homeB.BackgroundColor3 = Color3.fromRGB(60, 90, 140)
+        end
+    end)
+    return true
+end
+
+homeB.MouseButton1Click:Connect(markHome)
+homeB.Activated:Connect(markHome)
 
 startB.MouseButton1Click:Connect(function()
     if running then return end
     if not HOME then
-        L("❌ กด HOME ที่จุดเกิดก่อน")
-        setStatus("ต้อง HOME ก่อน")
-        return
+        L("ยังไม่มี HOME — ตั้งจากจุดยืนตอนนี้ให้")
+        if not markHome() then
+            setStatus("ต้องมีตัวละครก่อน")
+            return
+        end
     end
     syncCarry()
     running = true
     startB.Text = "…"
     T0 = os.clock()
-    L("START v1.5 — ถือไข่เมื่อปุ่มทิ้งโชว์จริง")
+    L("START v1.5b — HOME @" .. posStr(HOME))
     task.spawn(mainLoop)
 end)
 
@@ -533,7 +565,7 @@ end)
 
 task.spawn(function()
     while gui.Parent do
-        if not running then
+        if not running and os.clock() > homeHoldUntil then
             syncCarry()
             setStatus(("IDLE | HOME=%s | ถือ=%s"):format(HOME and "OK" or "?", carrying and "YES" or "no"))
         end
@@ -541,6 +573,6 @@ task.spawn(function()
     end
 end)
 
-L("Egg01 Auto v1.5 | เดิน + ทิ้ง/เก็บ")
-L("ถือ=YES เฉพาะตอนมีปุ่มทิ้งกลางจอโชว์")
+L("Egg01 Auto v1.5b | ปุ่มมุมบนซ้าย")
+L("กด HOME (หรือ START จะจำจุดยืนเป็นบ้าน)")
 setStatus("กด HOME ที่จุดเกิด")
