@@ -1,7 +1,8 @@
--- Egg01_Auto.lua v1.3 — ถือไข่ → เดินเข้าหา HOME ทีละช่วง → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
--- v1.3: ถ้า START ที่บ้าน (homeDist≈0) จะไม่จบทันที — รอให้ห่างบ้านก่อนค่อยเดินกลับ
--- v1.2: เลิกวาป CFrame / VIM — ใช้ MoveTo
--- วิธีใช้: ยืนจุดเกิด → HOME → START → ไปขโมยไข่ให้ห่างบ้าน → ระบบเดินกลับอัตโนมัติ
+-- Egg01_Auto.lua v1.4 — ถือไข่ → เดิน hop → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
+-- v1.4: DROP ใช้ getconnections.Function + AskFieldEggDrop; ทิ้งไม่ได้→รอมือ 20วิ ไม่เดินต่อทั้งถือ
+-- v1.3: รอห่างบ้านก่อนเริ่ม
+-- v1.2: ไม่วาป ใช้ MoveTo
+-- วิธีใช้: HOME → START → ไปขโมยห่างบ้าน → เดิน/ทิ้ง/เก็บ วน จนถึงบ้าน
 if _G.EGG01AUTO_GUI then pcall(function() _G.EGG01AUTO_GUI:Destroy() end) end
 if _G.EGG01AUTO_CONNS then
     for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
@@ -108,7 +109,7 @@ local function findRemote(substr)
     net = net and net:FindFirstChild("Networking")
     if not net then return nil end
     for _, d in ipairs(net:GetDescendants()) do
-        if d:IsA("RemoteEvent") and d.Name:find(substr, 1, true) then
+        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and d.Name:find(substr, 1, true) then
             return d
         end
     end
@@ -204,38 +205,65 @@ local function getDropButton()
     return g:FindFirstChild("Button", true) or g:FindFirstChildWhichIsA("GuiButton", true)
 end
 
--- DROP เบา: firesignal / getconnections เท่านั้น — ไม่กดเมาส์จำลอง
+-- DROP: GUI connections + RF AskFieldEggDrop
 local function doDrop()
     syncCarry()
+    if not carrying then return true end
+    local r = hrp()
+    L("DROP @" .. posStr(r and r.Position) .. " uid=" .. tostring(carryUid))
+
     local btn = getDropButton()
-    if not btn then
-        L("❌ ไม่มีปุ่มทิ้ง")
-        return false
+    if btn then
+        L("  ปุ่ม: " .. btn:GetFullName():gsub("^Players%..-%.PlayerGui%.", "PG."))
+        -- วิธีที่เกมมักผูก: Function() ตรงๆ
+        pcall(function()
+            if getconnections then
+                for _, sig in ipairs({ btn.Activated, btn.MouseButton1Click, btn.MouseButton1Down }) do
+                    for _, c in ipairs(getconnections(sig)) do
+                        pcall(function()
+                            if c.Function then c.Function() end
+                        end)
+                        pcall(function() c:Fire() end)
+                    end
+                end
+            end
+        end)
+        pcall(function() if fsig then fsig(btn.Activated) end end)
+        pcall(function() if fsig then fsig(btn.MouseButton1Click) end end)
+        pcall(function()
+            if typeof(btn.Activate) == "function" then btn:Activate() end
+        end)
+    else
+        L("  ⚠ ไม่เจอ DropHeldEgg.Button")
     end
-    L("DROP @" .. posStr(hrp() and hrp().Position))
-    pcall(function()
-        if fsig then fsig(btn.Activated) end
-    end)
-    pcall(function()
-        if fsig then fsig(btn.MouseButton1Click) end
-    end)
-    pcall(function()
-        if getconnections then
-            for _, c in ipairs(getconnections(btn.Activated)) do
-                pcall(function()
-                    if c.Function then c:Fire() else c:Fire() end
-                end)
-            end
-            for _, c in ipairs(getconnections(btn.MouseButton1Click)) do
-                pcall(function() c:Fire() end)
-            end
-        end
-    end)
+
+    -- RF สำรอง
+    local rf = findRemote("AskFieldEggDrop")
+    if rf and rf:IsA("RemoteFunction") then
+        L("  ลอง AskFieldEggDrop…")
+        pcall(function() rf:InvokeServer() end)
+        task.wait(0.05)
+        pcall(function() rf:InvokeServer(carryUid) end)
+        task.wait(0.05)
+        pcall(function() rf:InvokeServer({ Uid = carryUid }) end)
+    end
+
     local t0 = os.clock()
-    while os.clock() - t0 < 2 do
+    while os.clock() - t0 < 1.5 do
         syncCarry()
         if not carrying then L("DROP OK"); return true end
         task.wait(0.1)
+    end
+
+    -- รอผู้ใช้ทิ้งมือ (ห้ามเดินต่อทั้งที่ยังถือ)
+    L("DROP ออโต้ไม่ได้ — กดปุ่มทิ้งกลางจอเอง (รอ 20วิ)")
+    setStatus("ทิ้งไข่เอง!")
+    t0 = os.clock()
+    while running and os.clock() - t0 < 20 do
+        syncCarry()
+        if not carrying then L("DROP มือ OK"); return true end
+        setStatus(("ทิ้งเอง! %.0fs"):format(20 - (os.clock() - t0)))
+        task.wait(0.2)
     end
     syncCarry()
     return not carrying
@@ -366,37 +394,38 @@ local function mainLoop()
         syncCarry()
 
         atHome, dHome = nearHome()
+        -- ใกล้บ้านแล้วและถือไข่ = จบ (ไม่ทิ้งที่บ้าน)
         if atHome and carrying then
             setStatus("จบ ✅ ที่บ้าน")
-            L("ถึงบ้าน — จบ")
+            L("ถึงบ้าน — จบ (วางคอกเอง)")
             break
         end
 
-        if carrying then
+        -- ยังไกล → ต้องทิ้งก่อนค่อยเก็บวิ่งต่อ (ถ้าทิ้งไม่ได้จะหยุดรอ)
+        if carrying and dHome > homeRadius then
             setStatus("DROP")
-            local h, r = hum(), hrp()
-            if h and r then pcall(function() h:MoveTo(r.Position) end) end
-            task.wait(0.1)
+            local h, rr = hum(), hrp()
+            if h and rr then pcall(function() h:MoveTo(rr.Position) end) end
+            task.wait(0.15)
             if not doDrop() then
-                L("DROP ไม่สำเร็จ — รอคุณทิ้งมือ หรือลองต่อ")
-                task.wait(1)
+                L("ยังถือไข่ — หยุดรอบนี้ รอทิ้งก่อน START ใหม่")
+                break
             end
-        end
 
-        if not running then break end
-        local w0 = os.clock()
-        while running and os.clock() - w0 < dropWait do
-            setStatus(("รอ %.1f"):format(dropWait - (os.clock() - w0)))
-            task.wait(0.1)
-        end
-        if not running then break end
+            if not running then break end
+            local w0 = os.clock()
+            while running and os.clock() - w0 < dropWait do
+                setStatus(("รอ %.1f"):format(dropWait - (os.clock() - w0)))
+                task.wait(0.1)
+            end
+            if not running then break end
 
-        syncCarry()
-        if not carrying then
             setStatus("STEAL")
             if not doSteal() then
                 L("เก็บออโต้ไม่ได้ — รอคุณเก็บ")
                 waitCarry("รอถือไข่หลังทิ้ง…")
+            else
+                L("เก็บสำเร็จ")
             end
         end
     end
@@ -425,7 +454,7 @@ startB.MouseButton1Click:Connect(function()
     running = true
     startB.Text = "…"
     T0 = os.clock()
-    L("START v1.3 walk-only — ถ้าอยู่บ้านจะรอให้ไปขโมยก่อน")
+    L("START v1.4 — เดิน+ทิ้ง (ทิ้งไม่ได้จะรอคุณกดทิ้ง)")
     task.spawn(mainLoop)
 end)
 
@@ -465,6 +494,6 @@ task.spawn(function()
     end
 end)
 
-L("Egg01 Auto v1.3 | เดินอย่างเดียว ไม่วาป")
-L("HOME → START → ไปขโมยให้ห่างบ้าน → ระบบเดินกลับ")
+L("Egg01 Auto v1.4 | เดิน + ทิ้ง/เก็บ")
+L("HOME → START → ขโมยห่างบ้าน | ถ้าขึ้นทิ้งเอง! = กดปุ่มทิ้งกลางจอ")
 setStatus("กด HOME ที่จุดเกิด")
