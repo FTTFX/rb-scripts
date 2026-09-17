@@ -1,6 +1,8 @@
--- Egg01_PlaceSpy.lua v1.1 — ดักตอนวางไข่จากมือ (Prompt + RF + GUI ปุ่ม)
--- v1.1: HIDE ไม่บังปุ่มเกม + ดักคลิก GuiButton + ปุ่ม DUMPUI หาปุ่มวาง/ทิ้ง
--- วิธีใช้: ถือไข่ → กด HIDE → กดปุ่มวางของเกม → กด SHOW → COPY
+-- Egg01_PlaceSpy.lua v1.2 — ดักตอนวางไข่จากมือ (Prompt + RF + GUI ปุ่ม)
+-- v1.2: ตอนกด Drop/Place ดัมพ์ sibling GUI หาชื่อปุ่มวางจริง
+-- v1.1: HIDE ไม่บังปุ่มเกม + ดักคลิก GuiButton + ปุ่ม DUMPUI
+-- วิธีใช้: ถือไข่ → HIDE → กดปุ่มวาง (ไม่ใช่ถัง) → SHOW → COPY
+-- ระวัง: PG.DropHeldEgg = ทิ้งตกพื้น | ปุ่มวาง = อีกปุ่มหนึ่ง
 if _G.EGG01PS_GUI then pcall(function() _G.EGG01PS_GUI:Destroy() end) end
 if _G.EGG01PS_CONNS then
     for _, c in pairs(_G.EGG01PS_CONNS) do pcall(function() c:Disconnect() end) end
@@ -272,6 +274,11 @@ local function hookBtn(btn)
             L("   text='" .. tostring(btn.Text):sub(1, 60) .. "'")
         end
         dumpHeld()
+        -- ทุกครั้งที่กดปุ่มใน DropHeldEgg / Place* ให้ลิสต์พี่น้องด้วย
+        local sn = short(btn):lower()
+        if sn:find("drop") or sn:find("place") or sn:find("held") then
+            dumpHeldEggUI()
+        end
     end))
     if btn:IsA("GuiButton") then
         table.insert(_G.EGG01PS_CONNS, btn.MouseButton1Click:Connect(function()
@@ -331,7 +338,41 @@ task.spawn(function()
     L("ฟัง RE ขากลับ " .. n .. " ตัว + GUI click")
 end)
 
-nearB.MouseButton1Click:Connect(function() listNear(80); dumpHeld() end)
+local function dumpHeldEggUI()
+    L("--- GUI ตอนถือไข่ (หา Place vs Drop) ---")
+    local drop = PG:FindFirstChild("DropHeldEgg", true)
+    if drop then
+        L("  เจอ DropHeldEgg @ " .. short(drop))
+        local root = drop.Parent
+        if root then
+            for _, c in ipairs(root:GetChildren()) do
+                L(("  sibling: %s [%s] Vis=%s"):format(c.Name, c.ClassName, tostring(c:IsA("GuiObject") and c.Visible)))
+                for _, d in ipairs(c:GetDescendants()) do
+                    if d:IsA("GuiButton") then
+                        L(("    btn '%s' Vis=%s @ %s"):format(d.Name, tostring(d.Visible), short(d)))
+                    end
+                end
+            end
+        end
+    else
+        L("  ยังไม่เจอ DropHeldEgg ใน PG")
+    end
+    for _, d in ipairs(PG:GetDescendants()) do
+        local n = d.Name:lower()
+        if d:IsA("ScreenGui") or d:IsA("Frame") or d:IsA("GuiButton") then
+            if n:find("place") or n:find("drop") or n:find("held") or n:find("carry") or n:find("deposit") then
+                L(("  ★ %s [%s] Vis=%s @ %s"):format(d.Name, d.ClassName,
+                    tostring(d:IsA("GuiObject") and d.Visible), short(d)))
+            end
+        end
+    end
+end
+
+nearB.MouseButton1Click:Connect(function()
+    listNear(80)
+    dumpHeld()
+    dumpHeldEggUI()
+end)
 dumpB.MouseButton1Click:Connect(dumpVisibleUI)
 clearB.MouseButton1Click:Connect(function() OUT = {}; redraw() end)
 copyB.MouseButton1Click:Connect(function()
