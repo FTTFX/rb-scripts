@@ -1,8 +1,9 @@
--- Egg01_Auto.lua v1.4 — ถือไข่ → เดิน hop → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
--- v1.4: DROP ใช้ getconnections.Function + AskFieldEggDrop; ทิ้งไม่ได้→รอมือ 20วิ ไม่เดินต่อทั้งถือ
--- v1.3: รอห่างบ้านก่อนเริ่ม
--- v1.2: ไม่วาป ใช้ MoveTo
--- วิธีใช้: HOME → START → ไปขโมยห่างบ้าน → เดิน/ทิ้ง/เก็บ วน จนถึงบ้าน
+-- Egg01_Auto.lua v1.5 — ถือไข่ → เดิน hop → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
+-- v1.5: ถือไข่ = ปุ่ม DropHeldEgg ต้อง Visible จริง (กัน GUI ค้างแล้วคิดว่าถือ)
+-- v1.4: DROP + รอมือ
+-- v1.3: รอห่างบ้าน
+-- v1.2: ไม่วาป
+-- วิธีใช้: HOME → START → ไปขโมย | สถานะถือ=YES ต้องเห็นปุ่มทิ้งกลางจอจริง
 if _G.EGG01AUTO_GUI then pcall(function() _G.EGG01AUTO_GUI:Destroy() end) end
 if _G.EGG01AUTO_CONNS then
     for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
@@ -116,9 +117,40 @@ local function findRemote(substr)
     return nil
 end
 
+-- ถือไข่จริง = มี DropHeldEgg และปุ่มทิ้งมองเห็น (Enabled+Visible)
 local function syncCarry()
-    carrying = PG:FindFirstChild("DropHeldEgg") ~= nil
-    return carrying
+    local g = PG:FindFirstChild("DropHeldEgg")
+    if not g then
+        carrying = false
+        return false
+    end
+    if g:IsA("LayerCollector") and g.Enabled == false then
+        carrying = false
+        return false
+    end
+    local btn = g:FindFirstChild("Button", true) or g:FindFirstChildWhichIsA("GuiButton", true)
+    if not btn then
+        carrying = false
+        return false
+    end
+    if btn.AbsoluteSize.X < 4 or btn.AbsoluteSize.Y < 4 then
+        carrying = false
+        return false
+    end
+    local p = btn
+    while p and p ~= g do
+        if p:IsA("GuiObject") and p.Visible == false then
+            carrying = false
+            return false
+        end
+        p = p.Parent
+    end
+    if btn.Visible == false then
+        carrying = false
+        return false
+    end
+    carrying = true
+    return true
 end
 
 local function bindCarry()
@@ -127,22 +159,37 @@ local function bindCarry()
         table.insert(_G.EGG01AUTO_CONNS, re.OnClientEvent:Connect(function(tbl)
             if typeof(tbl) ~= "table" then return end
             if tbl.IsCarrying == true then
-                carrying = true
                 carryUid = tbl.Uid
+                task.defer(function()
+                    task.wait(0.05)
+                    if syncCarry() then L("RE+GUI: ถือไข่ uid=" .. tostring(carryUid)) end
+                end)
             elseif tbl.IsCarrying == false then
+                carryUid = nil
                 carrying = false
+                L("RE: ไม่ถือไข่")
             end
         end))
         L("ฟัง FieldEggCarry ✅")
     end
     table.insert(_G.EGG01AUTO_CONNS, PG.ChildAdded:Connect(function(ch)
-        if ch.Name == "DropHeldEgg" then carrying = true L("ถือไข่แล้ว") end
+        if ch.Name == "DropHeldEgg" then
+            task.defer(function()
+                task.wait(0.1)
+                if syncCarry() then L("GUI: ถือไข่ (ปุ่มทิ้งโชว์)") end
+            end)
+        end
     end))
     table.insert(_G.EGG01AUTO_CONNS, PG.ChildRemoved:Connect(function(ch)
-        if ch.Name == "DropHeldEgg" then carrying = false L("วาง/ทิ้งไข่แล้ว") end
+        if ch.Name == "DropHeldEgg" then
+            carrying = false
+            carryUid = nil
+            L("GUI: ไม่ถือไข่")
+        end
     end))
+    -- ถ้า GUI ค้างแต่ปุ่มซ่อน = ไม่ถือ
     syncCarry()
-    L("ถือตอนนี้: " .. (carrying and "YES" or "no"))
+    L("ถือตอนนี้: " .. (carrying and "YES (ปุ่มทิ้งโชว์)" or "no"))
 end
 bindCarry()
 
@@ -454,7 +501,7 @@ startB.MouseButton1Click:Connect(function()
     running = true
     startB.Text = "…"
     T0 = os.clock()
-    L("START v1.4 — เดิน+ทิ้ง (ทิ้งไม่ได้จะรอคุณกดทิ้ง)")
+    L("START v1.5 — ถือไข่เมื่อปุ่มทิ้งโชว์จริง")
     task.spawn(mainLoop)
 end)
 
@@ -494,6 +541,6 @@ task.spawn(function()
     end
 end)
 
-L("Egg01 Auto v1.4 | เดิน + ทิ้ง/เก็บ")
-L("HOME → START → ขโมยห่างบ้าน | ถ้าขึ้นทิ้งเอง! = กดปุ่มทิ้งกลางจอ")
+L("Egg01 Auto v1.5 | เดิน + ทิ้ง/เก็บ")
+L("ถือ=YES เฉพาะตอนมีปุ่มทิ้งกลางจอโชว์")
 setStatus("กด HOME ที่จุดเกิด")
