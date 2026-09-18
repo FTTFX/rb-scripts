@@ -1,9 +1,9 @@
--- Egg01_Auto.lua v2.1 — เขียนใหม่
--- ถือไข่ใช้ RE FieldEggCarry เท่านั้น (ไม่เชื่อ GUI DropHeldEgg ที่ค้าง)
--- ลูป: ขโมยหลัง START → เดินเข้า HOME → ทิ้ง → รอ → เก็บ → จนถึงบ้าน
+-- Egg01_Auto.lua v2.2 — เขียนใหม่
+-- ถือไข่ = RE FieldEggCarry | ทิ้งได้เมื่อนอก GuardAreas / ใน SafeZone เท่านั้น
+-- ลูป: ขโมย → เดินกลับ → (ถ้ายังในโซนมอน=เดินต่อ) → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
 -- ไม่วาป
 --
--- ใช้: HOME ที่จุดเกิด → START → ค่อยไปขโมยไข่ (ต้องขึ้น log server: ถือไข่แล้ว)
+-- ใช้: HOME → START → ค่อยขโมยไข่
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
     if _G.EGG01_V2.conns then
@@ -173,6 +173,49 @@ local function hopHome()
     return false
 end
 
+local function inBox(cf, size, pos, yPad)
+    yPad = yPad or 30
+    local lp = cf:PointToObjectSpace(pos)
+    return math.abs(lp.X) <= size.X * 0.5
+        and math.abs(lp.Y) <= size.Y * 0.5 + yPad
+        and math.abs(lp.Z) <= size.Z * 0.5
+end
+
+-- ทิ้งได้เมื่ออยู่นอก GuardAreas หรือใน SafeZone (ในโซนมอนทิ้งแล้วไข่กลับ nest)
+local function isDropSafe()
+    local r = hrp()
+    if not r then return false, "no-hrp" end
+    local pos = r.Position
+    local areas = workspace:FindFirstChild("__OBJECTS")
+    areas = areas and areas:FindFirstChild("Areas")
+    if not areas then
+        if HOME and dist2(pos, HOME) < 220 then return true, "nearHome" end
+        return false, "no-Areas"
+    end
+
+    local eggBounds = areas:FindFirstChild("EggCarryBounds")
+    local safe = eggBounds and eggBounds:FindFirstChild("SafeZone")
+    if safe and safe:IsA("BasePart") and inBox(safe.CFrame, safe.Size, pos) then
+        return true, "SafeZone"
+    end
+
+    local guards = areas:FindFirstChild("GuardAreas")
+    if guards then
+        for _, biome in ipairs(guards:GetChildren()) do
+            local ok, cf, size = pcall(function()
+                return biome:GetBoundingBox()
+            end)
+            if ok and cf and size then
+                local big = size + Vector3.new(24, 50, 24)
+                if inBox(cf, big, pos) then
+                    return false, "Guard:" .. biome.Name
+                end
+            end
+        end
+    end
+    return true, "outside-Guard"
+end
+
 local function doDrop()
     if not isCarry() then return true end
     local g = PG:FindFirstChild("DropHeldEgg")
@@ -192,7 +235,6 @@ local function doDrop()
     if b and firesignal then
         pcall(function() firesignal(b.Activated) end)
     end
-    -- รอหลุด หรือให้ผู้ใช้กดเอง
     local t0 = os.clock()
     while RUN and os.clock() - t0 < 15 do
         if not isCarry() then
@@ -304,16 +346,32 @@ local function loop()
             r = hrp()
             d = r and HOME and dist2(r.Position, HOME) or 9999
             if isCarry() and d > HOME_R then
-                local h = hum()
-                if h and r then h:MoveTo(r.Position) end
-                task.wait(0.2)
-                if doDrop() then
-                    say(string.format("รอ %.0f วิ…", WAIT_DROP))
-                    task.wait(WAIT_DROP)
-                    if RUN then doSteal() end
+                local safe, why = isDropSafe()
+                if not safe then
+                    say("ยังในโซนมอน (" .. tostring(why) .. ") — เดินออกก่อนค่อยทิ้ง")
+                    -- เดินต่อรอบหน้า ไม่ทิ้ง
                 else
-                    say("ทิ้งไม่สำเร็จ — หยุด")
-                    break
+                    say("พ้นโซนมอน (" .. tostring(why) .. ") — ทิ้งได้")
+                    local h = hum()
+                    if h and r then h:MoveTo(r.Position) end
+                    task.wait(0.2)
+                    if doDrop() then
+                        say(string.format("รอ %.0f วิ…", WAIT_DROP))
+                        task.wait(WAIT_DROP)
+                        if RUN then
+                            if not doSteal() then
+                                say("เก็บไม่ทัน — รอคุณเก็บใกล้ๆ")
+                                local t1 = os.clock()
+                                while RUN and os.clock() - t1 < 25 and not isCarry() do
+                                    lab.Text = "เก็บไข่จุดทิ้ง…"
+                                    task.wait(0.3)
+                                end
+                            end
+                        end
+                    else
+                        say("ทิ้งไม่สำเร็จ — หยุด")
+                        break
+                    end
                 end
             end
         else
@@ -375,5 +433,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.1 พร้อม")
-say("HOME → START → ค่อยขโมยไข่ (รอคำว่า server: ถือไข่แล้ว)")
+say("Egg01 Auto v2.2 พร้อม")
+say("ทิ้งเฉพาะนอกโซนมอน / ใน SafeZone")
+say("HOME → START → ค่อยขโมยไข่")
