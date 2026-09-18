@@ -1,4 +1,4 @@
--- Egg01_StealRangeSpy.lua v1.2
+-- Egg01_StealRangeSpy.lua v1.3
 -- วัดระยะที่ steal (fireproximityprompt) สำเร็จ
 -- START → เดินเข้าใกล้เอง → สคริปต์ยิง prompt ถี่ๆ → ได้ไข่แล้วล็อกระยะ
 
@@ -26,6 +26,7 @@ local lastDist = nil
 local lastMax = nil
 local gotOnce = false
 local dumpedShift = false
+local carryUid = nil
 local fireCount = 0
 
 local gui = Instance.new("ScreenGui")
@@ -185,8 +186,11 @@ local function dumpTbl(prefix, t)
             local n = 0
             for _ in pairs(v) do n = n + 1 end
             say(string.format("  %s = {%d}", tostring(k), n))
-        elseif tv == "Vector3" or tv == "CFrame" then
-            say(string.format("  %s = <%s>", tostring(k), tv))
+        elseif tv == "Vector3" then
+            say(string.format("  %s = (%.2f, %.2f, %.2f)", tostring(k), v.X, v.Y, v.Z))
+        elseif tv == "CFrame" then
+            local p = v.Position
+            say(string.format("  %s = pos(%.0f,%.0f,%.0f)", tostring(k), p.X, p.Y, p.Z))
         else
             local s = tostring(v)
             if #s > 80 then s = s:sub(1, 77) .. "..." end
@@ -203,16 +207,18 @@ do
             if typeof(t) ~= "table" then return end
             if t.IsCarrying == true then
                 carrying = true
+                carryUid = t.Uid
                 if t.AreaId then eggArea = t.AreaId end
                 if RUN and not gotOnce then
                     gotOnce = true
+                    dumpedShift = false -- รอ Shifted ของ Uid นี้
                     local pp, d, part = nearestSteal(250)
                     local dist = lastDist or d
                     local maxA = lastMax or (pp and pp.MaxActivationDistance)
                     say(string.format("✅ ได้ไข่! dist=%.1f | MaxAct=%.1f | โซน=%s | fire#%d",
                         dist or -1, maxA or -1, tostring(eggArea or t.AreaId or "?"), fireCount))
-                    say(string.format("   ชนิด=%s scale=? (ดู Shifted)",
-                        tostring(t.AssetCategory or "?")))
+                    say(string.format("   ชนิด=%s Uid=%s (รอ Shifted เฉพาะ Uid นี้)",
+                        tostring(t.AssetCategory or "?"), tostring(carryUid or "?"):sub(1, 12)))
                     dumpTbl("📦 FieldEggCarry", t)
                     if part then
                         local r = hrp()
@@ -247,13 +253,15 @@ do
         table.insert(_G.EGG01_RANGE.conns, sh.OnClientEvent:Connect(function(t)
             if typeof(t) ~= "table" then return end
             if not gotOnce or dumpedShift then return end
+            if not carryUid or t.Uid ~= carryUid then return end -- กันไข่คนละใบ
             local st = tostring(t.State or "")
             if st ~= "Carried" and st ~= "Dropped" then return end
             dumpedShift = true
-            say(string.format("📥 Shifted State=%s Scale=%s Mut=%s",
+            say(string.format("📥 Shifted State=%s Scale=%.3f Mut=%s | %s",
                 st,
-                tostring(t.AssetScale or t.Scale or "?"),
-                typeof(t.Mutations) == "table" and "table" or tostring(t.Mutations)))
+                tonumber(t.AssetScale) or -1,
+                typeof(t.Mutations) == "table" and "table" or tostring(t.Mutations),
+                tostring(t.AssetCategory or "?")))
             dumpTbl("📦 FieldEggShifted", t)
         end))
         say("ฟัง FieldEggShifted ✅")
@@ -268,6 +276,7 @@ local function loop()
     fireCount = 0
     gotOnce = false
     dumpedShift = false
+    carryUid = nil
     lastPrompt, lastDist, lastMax = nil, nil, nil
     say("START — เดินเข้าใกล้ไข่ (ยิง remote ถี่ๆ)")
     local tLog = 0
@@ -329,5 +338,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RANGE = nil
 end)
 
-say("Egg01 StealRange Spy v1.2")
+say("Egg01 StealRange Spy v1.3")
 say("START → เดินเข้าใกล้ไข่เอง → ได้ไข่แล้วล็อกระยะ")
