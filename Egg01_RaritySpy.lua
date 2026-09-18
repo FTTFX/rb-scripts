@@ -1,4 +1,4 @@
--- Egg01_RaritySpy.lua v1.0
+-- Egg01_RaritySpy.lua v1.1
 -- หาแหล่ง "Legendary" / rarity ของไข่หรือสัตว์
 -- วิธี: ยืนใกล้ไข่หรือสัตว์ที่มีป้าย Legendary → SCAN / DUMP → COPY
 
@@ -48,7 +48,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Rarity Spy v1.0"
+title.Text = "Egg01 Rarity Spy v1.1"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -241,39 +241,125 @@ bScan.MouseButton1Click:Connect(function()
 end)
 
 bRF.MouseButton1Click:Connect(function()
-    say("── ลอง RF EggRecord / Snapshot ──")
-    for _, name in ipairs({ "AskEggRecord", "AskFieldEggSnapshot", "AskLiveSnapshot", "AskPenRoster", "AskIndex" }) do
+    say("── ลอง RF rarity / snapshot ──")
+
+    -- ตัวเดาหลักจาก log
+    local rfShow = findNet("AskFieldEggRarityShows")
+    if rfShow and rfShow:IsA("RemoteFunction") then
+        local ok, res = pcall(function() return rfShow:InvokeServer() end)
+        say(string.format("RF AskFieldEggRarityShows() → %s %s", tostring(ok), typeof(res)))
+        if ok and typeof(res) == "table" then
+            local n = 0
+            for k, v in pairs(res) do
+                n = n + 1
+                if n <= 25 then
+                    if typeof(v) == "table" then
+                        say(string.format("  [%s] = {table}", tostring(k)))
+                        shallowDump(v, "    ", 0)
+                    else
+                        say(string.format("  [%s] = %s", tostring(k), tostring(v)))
+                    end
+                end
+            end
+            -- ถ้าเป็น array ของ record
+            if res[1] then
+                say("  -- row[1] keys --")
+                shallowDump(res[1], "  ", 0)
+                for i, row in ipairs(res) do
+                    if i > 12 then break end
+                    if typeof(row) == "table" then
+                        say(string.format("  #%d cat=%s rar=%s scale=%s area=%s uid=%s",
+                            i,
+                            tostring(row.AssetCategory or row.Category or row.Name or "?"),
+                            tostring(row.Rarity or row.Tier or row.Quality or row.RarityId or "?"),
+                            tostring(row.AssetScale or row.Scale or "?"),
+                            tostring(row.AreaId or "?"),
+                            tostring(row.Uid or "?"):sub(1, 10)))
+                    end
+                end
+            end
+        elseif not ok then
+            say("  err: " .. tostring(res))
+        end
+    else
+        say("⚠ ไม่เจอ AskFieldEggRarityShows")
+    end
+
+    local snap = findNet("AskFieldEggSnapshot")
+    if snap and snap:IsA("RemoteFunction") then
+        local ok, res = pcall(function() return snap:InvokeServer() end)
+        say(string.format("RF AskFieldEggSnapshot → %s %s", tostring(ok), typeof(res)))
+        if ok and typeof(res) == "table" then
+            local rec = res.Records or res.records or res
+            local i = 0
+            if typeof(rec) == "table" then
+                for uid, row in pairs(rec) do
+                    if typeof(row) == "table" then
+                        i = i + 1
+                        if i <= 15 then
+                            local keys = {}
+                            for k in pairs(row) do keys[#keys + 1] = tostring(k) end
+                            table.sort(keys)
+                            say(string.format("  Rec %s keys=%s", tostring(uid):sub(1, 10), table.concat(keys, ",")))
+                            say(string.format("    cat=%s rar=%s scale=%s state=%s",
+                                tostring(row.AssetCategory or "?"),
+                                tostring(row.Rarity or row.Tier or row.Quality or row.RarityId or "?"),
+                                tostring(row.AssetScale or "?"),
+                                tostring(row.State or "?")))
+                        end
+                    end
+                end
+                say("  Records count≈" .. i)
+            end
+        end
+    end
+
+    for _, name in ipairs({ "AskEggRecord", "AskLiveSnapshot" }) do
         local rf = findNet(name)
         if rf and rf:IsA("RemoteFunction") then
             local ok, res = pcall(function() return rf:InvokeServer() end)
-            say(string.format("RF %s → %s %s", name, tostring(ok), typeof(res)))
-            if ok and typeof(res) == "table" then
-                shallowDump(res, "  " .. name)
-            elseif ok then
-                say("  = " .. tostring(res):sub(1, 80))
-            end
-        else
-            say("ไม่เจอ " .. name)
-        end
-    end
-    -- ค้นชื่อที่มี rar/tier ใน Networking
-    local pkg = RS:FindFirstChild("Packages")
-    local net = pkg and pkg:FindFirstChild("Networking")
-    if net then
-        local n = 0
-        for _, d in ipairs(net:GetDescendants()) do
-            local nm = d.Name:lower()
-            if nm:find("rar") or nm:find("tier") or nm:find("quality")
-                or nm:find("record") or nm:find("codex") or nm:find("index") then
-                n = n + 1
-                if n <= 30 then
-                    say(string.format("NET %s %s", d.ClassName, d.Name))
-                end
+            say(string.format("RF %s → %s %s", name, tostring(ok), ok and typeof(res) or tostring(res)))
+            if ok and typeof(res) == "table" and res[1] then
+                local keys = {}
+                for k in pairs(res[1]) do keys[#keys + 1] = tostring(k) end
+                table.sort(keys)
+                say("  [1] keys=" .. table.concat(keys, ","))
+                shallowDump(res[1], "  ", 0)
             end
         end
-        say("NET ชื่อเกี่ยว rarity/record ≈" .. n)
     end
 end)
+
+-- ฟัง RE FieldEggRaritiesShown
+do
+    local re = findNet("FieldEggRaritiesShown")
+    if re and re:IsA("RemoteEvent") then
+        table.insert(_G.EGG01_RAR.conns, re.OnClientEvent:Connect(function(...)
+            local args = { ... }
+            say("← FieldEggRaritiesShown args=" .. #args)
+            for i, a in ipairs(args) do
+                if typeof(a) == "table" then
+                    say(string.format("  arg%d = table", i))
+                    shallowDump(a, "    ", 0)
+                    if a[1] then
+                        for j, row in ipairs(a) do
+                            if j > 10 then break end
+                            if typeof(row) == "table" then
+                                say(string.format("    #%d %s", j, tostring(row.Rarity or row.AssetCategory or row.Uid or "?")))
+                                shallowDump(row, "      ", 0)
+                            end
+                        end
+                    end
+                else
+                    say(string.format("  arg%d = %s", i, tostring(a):sub(1, 80)))
+                end
+            end
+        end))
+        say("ฟัง FieldEggRaritiesShown ✅")
+    else
+        say("⚠ ไม่เจอ FieldEggRaritiesShown")
+    end
+end
 
 bCopy.MouseButton1Click:Connect(function()
     local t = "=== Egg01 Rarity Spy ===\n" .. table.concat(lines, "\n")
@@ -289,5 +375,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RAR = nil
 end)
 
-say("Rarity Spy — ยืนใกล้ Cosmic Gecko ที่มีป้าย Legendary")
-say("SCAN = หา Text/attr | RF = ลอง remote")
+say("Rarity Spy v1.1 — เจอ AskFieldEggRarityShows / FieldEggRaritiesShown")
+say("กด RF ดัมพ์ rarity | เดินใกล้ไข่ดู RE")
