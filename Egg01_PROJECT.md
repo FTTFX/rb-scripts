@@ -22,6 +22,7 @@
 | `Egg01_MoveSpy.lua` | ทดสอบกลับ HOME; HOP14 stable / HOP16 edge + ตรวจ rollback | v1.4 SAFE |
 | `Egg01_UidStealTest.lua` | ทดสอบขโมยด้วย UID table / Snapshot row / EggCmds wrapper ทีละคำขอ | v1.0 |
 | `Egg01_TreadmillAuto.lua` | หา TreadmillBottom ใกล้สุด → เดินไป → วิ่งบนเครื่อง 45 วินาที | v1.0 |
+| `Egg01_InviteFriend.lua` | กรอก UserId เพื่อน → เปิด Roblox Invite Prompt ทางการ | v1.0 |
 | `Egg01_SizeEPS.lua` | GUIDE auto-refresh; พับแผงได้; ไม่มี log บนจอ | **v2.5** |
 | `Egg01_PROJECT.md` | เอกสารนี้ | — |
 
