@@ -1,4 +1,4 @@
--- Egg01_Auto.lua v3.1
+-- Egg01_Auto.lua v3.2
 -- เดินปกติทั้งเส้น | ทิ้ง/เก็บเมื่อพ้นโซนสี = ตั้งค่าใน GUI ได้
 
 if _G.EGG01_V2 then
@@ -58,7 +58,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Auto v3.1"
+title.Text = "Egg01 Auto v3.2"
 
 local function mkBtn(parent, text, x, y, w, color)
     local b = Instance.new("TextButton", parent)
@@ -325,10 +325,28 @@ local function isFinalStretch()
     local r = hrp()
     if not r or not HOME then return false end
     if inSafeZone() then return true, "เขตปลอดภัย" end
-    if dist2(r.Position, HOME) <= math.max(HOME_R * 2.5, 150) then
+    if dist2(r.Position, HOME) <= math.max(HOME_R * 4, 220) then
         return true, "ใกล้ HOME"
     end
     return false
+end
+
+local function arrivedHome()
+    local r = hrp()
+    return r and HOME and dist2(r.Position, HOME) <= HOME_R
+end
+
+-- วิ่งเข้า HOME จนถึงหรือหมดเวลา (ไม่ประกาศจบกลางทาง)
+local function runIntoHome(why)
+    say(tostring(why or "ใกล้บ้าน") .. " — วิ่งเข้าบ้าน")
+    local t0 = os.clock()
+    while RUN and isCarry() and os.clock() - t0 < 45 do
+        if arrivedHome() then return true end
+        walkTo(HOME, 12)
+        if arrivedHome() then return true end
+        task.wait(0.15)
+    end
+    return arrivedHome()
 end
 
 local function doDrop()
@@ -464,7 +482,7 @@ local function loop()
         if r then
             local d = dist2(r.Position, HOME)
 
-            if isCarry() and d <= HOME_R then
+            if isCarry() and arrivedHome() then
                 say("ถึงบ้านแล้ว — จบ (วางคอกเอง)")
                 break
             end
@@ -475,37 +493,35 @@ local function loop()
                 if not RUN then break end
             end
 
-            -- รอบสุดท้าย: เขตปลอดภัย / ใกล้ HOME → วิ่งเข้าจุดที่บันทึกเลย ไม่ทิ้ง
+            -- รอบสุดท้าย: วิ่งซ้ำเข้า HOME จนถึง — ห้ามจบกลางทาง
             local fin, finWhy = isFinalStretch()
             if isCarry() and fin then
-                say(tostring(finWhy) .. " — วิ่งเข้าบ้านเลย")
-                walkTo(HOME, 20)
-                if isCarry() then
+                if runIntoHome(finWhy) then
                     say("ถึงบ้านแล้ว — จบ (วางคอกเอง)")
                     break
                 end
-            end
-
-            -- วิ่งปกติ: hop → (ถ้าเปิด) พ้นโซนสีค่อยทิ้ง/เก็บ
-            readCfg()
-            if hopHome() then
-                if isCarry() then
-                    say("ถึงบ้านแล้ว — จบ")
-                    break
-                end
-            end
-
-            r = hrp()
-            d = r and HOME and dist2(r.Position, HOME) or 9999
-            fin = isFinalStretch()
-            if CFG.dropPick and isCarry() and d > HOME_R and not fin then
-                local safe, why = isDropSafe()
-                if not safe then
-                    say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
-                else
-                    if not dropThenPick(why) then
-                        say("ทิ้งไม่สำเร็จ — หยุด")
+                say(string.format("ยังไม่ถึงบ้าน d=%.0f — วิ่งต่อ", hrp() and dist2(hrp().Position, HOME) or -1))
+            else
+                -- วิ่งปกติ: hop → (ถ้าเปิด) พ้นโซนสีค่อยทิ้ง/เก็บ
+                readCfg()
+                if hopHome() then
+                    if isCarry() and arrivedHome() then
+                        say("ถึงบ้านแล้ว — จบ")
                         break
+                    end
+                end
+
+                local r2 = hrp()
+                local d2 = r2 and HOME and dist2(r2.Position, HOME) or 9999
+                if CFG.dropPick and isCarry() and d2 > HOME_R and not isFinalStretch() then
+                    local safe, why = isDropSafe()
+                    if not safe then
+                        say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
+                    else
+                        if not dropThenPick(why) then
+                            say("ทิ้งไม่สำเร็จ — หยุด")
+                            break
+                        end
                     end
                 end
             end
@@ -557,7 +573,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Auto v3.1 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Auto v3.2 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -572,5 +588,5 @@ bClose.MouseButton1Click:Connect(function()
 end)
 
 paintDrop()
-say("Egg01 Auto v3.1 พร้อม")
+say("Egg01 Auto v3.2 พร้อม")
 say("ตั้งค่า: ทิ้ง/เก็บ | รอทิ้ง | ก้าว — แล้ว HOME → START")
