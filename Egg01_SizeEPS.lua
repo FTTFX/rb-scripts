@@ -22,14 +22,22 @@ local STEAL_RANGE = 16
 local RUN = false
 local GUIDE = false
 local lines = {}
-local eggDB = {} -- [uid] = { scale, cat, area, pos, state, nest, mutN, ver }
+local eggDB = {} -- [uid] = { scale, cat, area, pos, state, nest, mutN, ver, rar }
 local carrying = false
 local carryUid = nil
+local oddsByUid = {}
+
+local RARITY_RANK = {
+    common = 1, uncommon = 2, rare = 3, epic = 4,
+    legendary = 5, mythic = 6, cosmic = 7, secret = 8,
+    eternal = 9, divine = 10,
+}
 
 local CFG = {
-    minScale = 1.5, -- Gorilla~2.0 / ปกติ~0.9
-    onlySlot = true, -- เป้าแค่ไข่ในรัง (Slot) ไม่เอา Dropped คนอื่น
-    guideMax = false, -- false=ใกล้สุดที่ผ่าน MinScale | true=ใหญ่สุดในแมพ
+    minScale = 1.0,
+    minRarity = "Legendary",
+    onlySlot = true,
+    guideMax = false,
 }
 
 local gui = Instance.new("ScreenGui")
@@ -44,7 +52,7 @@ if not gui.Parent then gui.Parent = PG end
 _G.EGG01_SIZE.gui = gui
 
 local panel = Instance.new("Frame", gui)
-panel.Size = UDim2.new(0, 300, 0, 130)
+panel.Size = UDim2.new(0, 300, 0, 148)
 panel.Position = UDim2.new(0, 12, 0, 12)
 panel.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
 panel.BackgroundTransparency = 0.1
@@ -59,7 +67,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.4"
+title.Text = "Egg01 Size EPS v1.5"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -83,31 +91,36 @@ local bStart  = mkBtn("START", 166, 32, 48, Color3.fromRGB(40, 150, 70))
 local bStop   = mkBtn("STOP", 218, 32, 40, Color3.fromRGB(160, 50, 50))
 local bCopy   = mkBtn("COPY", 262, 32, 30, Color3.fromRGB(70, 70, 70))
 
-local lb = Instance.new("TextLabel", panel)
-lb.Size = UDim2.new(0, 70, 0, 16)
-lb.Position = UDim2.new(0, 10, 0, 64)
-lb.BackgroundTransparency = 1
-lb.TextColor3 = Color3.fromRGB(170, 170, 170)
-lb.Font = Enum.Font.Gotham
-lb.TextSize = 11
-lb.TextXAlignment = Enum.TextXAlignment.Left
-lb.Text = "MinScale"
+local function mkField(label, x, y, w, def)
+    local lb = Instance.new("TextLabel", panel)
+    lb.Size = UDim2.new(0, 70, 0, 14)
+    lb.Position = UDim2.new(0, x, 0, y)
+    lb.BackgroundTransparency = 1
+    lb.TextColor3 = Color3.fromRGB(170, 170, 170)
+    lb.Font = Enum.Font.Gotham
+    lb.TextSize = 10
+    lb.TextXAlignment = Enum.TextXAlignment.Left
+    lb.Text = label
+    local tb = Instance.new("TextBox", panel)
+    tb.Size = UDim2.new(0, w, 0, 22)
+    tb.Position = UDim2.new(0, x, 0, y + 14)
+    tb.BackgroundColor3 = Color3.fromRGB(40, 42, 48)
+    tb.TextColor3 = Color3.new(1, 1, 1)
+    tb.Font = Enum.Font.GothamBold
+    tb.TextSize = 11
+    tb.Text = tostring(def)
+    tb.ClearTextOnFocus = false
+    tb.BorderSizePixel = 0
+    Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 4)
+    return tb
+end
 
-local tMin = Instance.new("TextBox", panel)
-tMin.Size = UDim2.new(0, 54, 0, 24)
-tMin.Position = UDim2.new(0, 80, 0, 60)
-tMin.BackgroundColor3 = Color3.fromRGB(40, 42, 48)
-tMin.TextColor3 = Color3.new(1, 1, 1)
-tMin.Font = Enum.Font.GothamBold
-tMin.TextSize = 12
-tMin.Text = tostring(CFG.minScale)
-tMin.ClearTextOnFocus = false
-tMin.BorderSizePixel = 0
-Instance.new("UICorner", tMin).CornerRadius = UDim.new(0, 4)
+local tMin = mkField("MinScale", 10, 62, 54, CFG.minScale)
+local tRar = mkField("MinRarity", 70, 62, 100, CFG.minRarity)
 
 local lab = Instance.new("TextLabel", panel)
 lab.Size = UDim2.new(1, -20, 0, 34)
-lab.Position = UDim2.new(0, 10, 0, 90)
+lab.Position = UDim2.new(0, 10, 0, 108)
 lab.BackgroundTransparency = 1
 lab.TextColor3 = Color3.fromRGB(255, 220, 100)
 lab.Font = Enum.Font.GothamBold
@@ -119,7 +132,7 @@ lab.Text = "ฟัง Shifted → SCAN / START (ขโมยเฉพาะไ�
 
 local log = Instance.new("TextBox", gui)
 log.Size = UDim2.new(0, 300, 0, 170)
-log.Position = UDim2.new(0, 12, 0, 150)
+log.Position = UDim2.new(0, 12, 0, 168)
 log.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 log.BackgroundTransparency = 0.3
 log.TextColor3 = Color3.fromRGB(180, 240, 180)
@@ -141,9 +154,24 @@ local function say(msg)
     lab.Text = msg
 end
 
+local function rarRank(s)
+    if not s or s == "" or s == "-" then return 0 end
+    return RARITY_RANK[tostring(s):lower()] or 0
+end
+
+local function normUid(u)
+    return tostring(u or ""):lower():gsub("%-", "")
+end
+
 local function readCfg()
     local n = tonumber(tMin.Text)
-    if n and n > 0 then CFG.minScale = n end
+    if n and n >= 0 then CFG.minScale = n end
+    local rr = tostring(tRar.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if rr == "" or rr == "-" or rr:lower() == "any" then
+        CFG.minRarity = ""
+    else
+        CFG.minRarity = rr
+    end
 end
 
 local function hrp()
@@ -188,18 +216,66 @@ local function upsertEgg(t)
     e.mutN = mutCount(t.Mutations)
     local p = posFromTbl(t)
     if p then e.pos = p end
+    local o = oddsByUid[normUid(uid)]
+    if o then e.rar = o end
     e.t = os.clock()
     eggDB[uid] = e
 end
 
--- ไข่ใหญ่ใน DB: ใกล้สุด หรือ ใหญ่สุดทั้งแมพ
+local function syncOdds()
+    local rf = findNet("AskFieldEggRarityShows")
+    if rf and rf:IsA("RemoteFunction") then
+        pcall(function() rf:InvokeServer() end)
+        task.wait(0.45)
+    end
+    local folder = workspace:FindFirstChild("ClientRenderedAssets")
+    if not folder then return 0 end
+    local n = 0
+    oddsByUid = {}
+    for _, asset in ipairs(folder:GetChildren()) do
+        local uidPart = asset.Name:match("_(%x+)$")
+        if uidPart then
+            local data = asset:FindFirstChild("Data")
+            local odds = data and data:FindFirstChild("Odds")
+            local rar
+            if odds then
+                if odds:IsA("TextLabel") or odds:IsA("TextButton") then
+                    rar = odds.Text
+                else
+                    local tl = odds:FindFirstChildWhichIsA("TextLabel", true)
+                    rar = tl and tl.Text
+                end
+            end
+            if rar and rar ~= "" and rarRank(rar) > 0 then
+                oddsByUid[uidPart:lower()] = rar
+                n = n + 1
+            end
+        end
+    end
+    for uid, e in pairs(eggDB) do
+        local o = oddsByUid[normUid(uid)]
+        if o then e.rar = o end
+    end
+    return n
+end
+
+local function passesFilter(e)
+    if not e or e.state == "Carried" or not e.pos then return false end
+    if CFG.minScale > 0 and (not e.scale or e.scale < CFG.minScale) then return false end
+    if CFG.minRarity ~= "" then
+        local need = rarRank(CFG.minRarity)
+        if need > 0 and (not e.rar or rarRank(e.rar) < need) then return false end
+    end
+    return true
+end
+
 local function nearestBig(maxScan)
     readCfg()
     local r = hrp()
     if not r then return nil end
     local best, bestD, bestUid
     for uid, e in pairs(eggDB) do
-        if e.scale and e.scale >= CFG.minScale and e.pos and e.state ~= "Carried" then
+        if passesFilter(e) then
             local d = (e.pos - r.Position).Magnitude
             if (not maxScan or d <= maxScan) and (not bestD or d < bestD) then
                 best, bestD, bestUid = e, d, uid
@@ -214,8 +290,8 @@ local function biggestEgg()
     local r = hrp()
     local best, bestD, bestUid
     for uid, e in pairs(eggDB) do
-        if e.scale and e.pos and e.state ~= "Carried" then
-            if not best or e.scale > best.scale then
+        if passesFilter(e) then
+            if not best or (e.scale or 0) > (best.scale or 0) then
                 local d = r and (e.pos - r.Position).Magnitude or -1
                 best, bestD, bestUid = e, d, uid
             end
@@ -246,11 +322,15 @@ local function topBig(n)
     readCfg()
     local arr = {}
     for uid, e in pairs(eggDB) do
-        if e.scale then
+        if e.scale or e.rar then
             arr[#arr + 1] = { uid = uid, e = e }
         end
     end
-    table.sort(arr, function(a, b) return (a.e.scale or 0) > (b.e.scale or 0) end)
+    table.sort(arr, function(a, b)
+        local ra, rb = rarRank(a.e.rar), rarRank(b.e.rar)
+        if ra ~= rb then return ra > rb end
+        return (a.e.scale or 0) > (b.e.scale or 0)
+    end)
     local out = {}
     for i = 1, math.min(n or 8, #arr) do out[i] = arr[i] end
     return out
@@ -345,11 +425,11 @@ local function updateGuide()
     guidePart.CFrame = CFrame.new(nb.pos + Vector3.new(0, 3, 0))
     local mode = CFG.guideMax and "MAX" or "NEAR"
     if guideBill then
-        guideBill.Text = string.format("★%s %s\nsc=%.2f  d=%.0f",
-            mode, tostring(nb.cat or "?"), nb.scale or 0, nd or -1)
+        guideBill.Text = string.format("★%s %s\n%s sc=%.2f d=%.0f",
+            mode, tostring(nb.cat or "?"), tostring(nb.rar or "?"), nb.scale or 0, nd or -1)
     end
-    lab.Text = string.format("GUIDE[%s] → %s sc=%.2f ห่าง %.0f",
-        mode, tostring(nb.cat), nb.scale, nd)
+    lab.Text = string.format("GUIDE[%s] → %s %s sc=%.2f ห่าง %.0f",
+        mode, tostring(nb.rar or "?"), tostring(nb.cat), nb.scale or 0, nd)
 end
 
 local function setGuide(on)
@@ -516,13 +596,13 @@ local function tryFire(pp)
 end
 
 local function dbCount()
-    local n, big = 0, 0
     readCfg()
+    local n, ok = 0, 0
     for _, e in pairs(eggDB) do
         n = n + 1
-        if e.scale and e.scale >= CFG.minScale then big = big + 1 end
+        if passesFilter(e) then ok = ok + 1 end
     end
-    return n, big
+    return n, ok
 end
 
 -- remotes
@@ -579,6 +659,8 @@ end
 
 bScan.MouseButton1Click:Connect(function()
     readCfg()
+    local on = syncOdds()
+    say(string.format("syncOdds=%d (MinRarity=%s)", on, CFG.minRarity == "" and "any" or CFG.minRarity))
     -- ขอ snapshot ถ้ามี
     for _, name in ipairs({ "AskFieldEggSnapshot", "AskLiveSnapshot" }) do
         local rf = findNet(name)
@@ -598,21 +680,23 @@ bScan.MouseButton1Click:Connect(function()
         end
     end
     local n, big = dbCount()
-    say(string.format("── SCAN db=%d (≥%.2f มี %d) ──", n, CFG.minScale, big))
-    say("── Top scale ในแมพ ──")
-    for _, row in ipairs(topBig(8)) do
+    say(string.format("── SCAN db=%d (ผ่าน %d) sc≥%.2f rar≥%s ──",
+        n, big, CFG.minScale, CFG.minRarity == "" and "any" or CFG.minRarity))
+    say("── Top rarity/scale ──")
+    for _, row in ipairs(topBig(10)) do
         local e = row.e
-        local mark = e.scale >= CFG.minScale and "★" or " "
+        local mark = passesFilter(e) and "★" or " "
         local r = hrp()
         local dMe = (r and e.pos) and (e.pos - r.Position).Magnitude or -1
-        say(string.format("%s sc=%.3f %s [%s] dMe=%.0f %s",
-            mark, e.scale, tostring(e.cat or "?"), tostring(e.area or "?"),
-            dMe, tostring(e.state or "?")))
+        say(string.format("%s %s sc=%.2f %s [%s] d=%.0f",
+            mark, tostring(e.rar or "?"), e.scale or -1,
+            tostring(e.cat or "?"), tostring(e.area or "?"), dMe))
     end
     local nb, nd = guideTarget()
     if nb then
-        say(string.format("→ GUIDE[%s]: %s sc=%.3f อยู่ห่าง %.0f studs",
-            CFG.guideMax and "MAX" or "NEAR", tostring(nb.cat), nb.scale, nd))
+        say(string.format("→ GUIDE[%s]: %s %s sc=%.3f ห่าง %.0f",
+            CFG.guideMax and "MAX" or "NEAR", tostring(nb.rar or "?"),
+            tostring(nb.cat), nb.scale or 0, nd))
     end
     local list = listStealNear(150)
     if #list == 0 then
@@ -656,15 +740,15 @@ local function loop()
             local list = listStealNear(200)
             local target
             for _, it in ipairs(list) do
-                if it.dist <= STEAL_RANGE and it.scale and it.scale >= CFG.minScale then
+                if it.dist <= STEAL_RANGE and it.egg and passesFilter(it.egg) then
                     target = it
                     break
                 end
             end
             if target then
-                say(string.format("ยิง ★ scale≈%.2f %s d=%.1f (%s)",
-                    target.scale, tostring(target.egg and target.egg.cat or "?"),
-                    target.dist, tostring(target.src)))
+                say(string.format("ยิง ★ %s sc≈%.2f %s d=%.1f",
+                    tostring(target.egg.rar or "?"), target.scale or -1,
+                    tostring(target.egg.cat or "?"), target.dist))
                 tryFire(target.pp)
             else
                 local nb, nd = nearestBig()
@@ -703,15 +787,26 @@ end
 bStart.MouseButton1Click:Connect(function()
     if RUN then return end
     if not fp then say("⚠ ไม่มี fireproximityprompt"); return end
-    if not GUIDE then setGuide(true) end -- เปิดเส้นนำอัตโนมัติตอน START
-    RUN = true
-    bStart.Text = "..."
-    task.spawn(loop)
+    readCfg()
+    task.spawn(function()
+        syncOdds()
+        if not GUIDE then setGuide(true) end
+        RUN = true
+        bStart.Text = "..."
+        loop()
+    end)
 end)
 
 bGuide.MouseButton1Click:Connect(function()
     readCfg()
-    setGuide(not GUIDE)
+    if not GUIDE then
+        task.spawn(function()
+            syncOdds()
+            setGuide(true)
+        end)
+    else
+        setGuide(false)
+    end
 end)
 
 bMode.MouseButton1Click:Connect(function()
@@ -748,5 +843,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.4 — NEAR=ใกล้สุด | MAX=ใหญ่สุดแมพ | GUIDE=เส้นเหลือง")
-say("กด NEAR/MAX สลับโหมด แล้ว GUIDE")
+say("Size EPS v1.5 — กรอง MinScale + MinRarity (Odds)")
+say("MinRarity=Legendary | MinScale=1 | NEAR/MAX + GUIDE")
