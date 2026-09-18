@@ -1,442 +1,360 @@
--- Egg01_Auto.lua v1.7 — ฐานจาก v1.4 (GUI/log ใช้ได้) + ถือไข่เช็ค Visible + รอห่างบ้าน
--- วิธีใช้: ยืนจุดเกิด → HOME → START → ไปขโมยห่างบ้าน → เดิน/ทิ้ง/เก็บ จนถึงบ้าน
-if _G.EGG01AUTO_GUI then pcall(function() _G.EGG01AUTO_GUI:Destroy() end) end
-if _G.EGG01AUTO_CONNS then
-    for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
+-- Egg01_Auto.lua v2.0 — เขียนใหม่ทั้งหมด
+-- ลูป: คุณขโมยไข่เอง → เดินเข้าหา HOME ทีละช่วง → ทิ้ง → รอ 2วิ → เก็บ → ซ้ำจนถึงบ้าน
+-- ไม่วาป (กัน BAC)
+--
+-- ใช้: ยืนจุดเกิด → กด HOME → START → ไปขโมยไข่ให้ห่างบ้าน
+if _G.EGG01_V2 then
+    pcall(function() _G.EGG01_V2.gui:Destroy() end)
+    if _G.EGG01_V2.conns then
+        for _, c in ipairs(_G.EGG01_V2.conns) do pcall(function() c:Disconnect() end) end
+    end
 end
-_G.EGG01AUTO_CONNS = {}
+_G.EGG01_V2 = { conns = {} }
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
-
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local fsig = firesignal or (getgenv and getgenv().firesignal)
 
 local HOME = nil
-local running = false
-local carrying = false
-local carryUid = nil
-local hopStuds = 140
-local dropWait = 2.0
-local homeRadius = 55
-local OUT, T0 = {}, os.clock()
+local RUN = false
+local HOP = 140
+local WAIT_DROP = 2
+local HOME_R = 60
+local lines = {}
 
+-- ===== GUI ง่ายๆ =====
 local gui = Instance.new("ScreenGui")
-gui.Name = "Egg01Auto"
+gui.Name = "Egg01_V2"
 gui.ResetOnSpawn = false
-gui.DisplayOrder = 100
+gui.DisplayOrder = 999
 gui.IgnoreGuiInset = true
-pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
+pcall(function()
+    gui.Parent = (gethui and gethui()) or game:GetService("CoreGui")
+end)
 if not gui.Parent then gui.Parent = PG end
-_G.EGG01AUTO_GUI = gui
+_G.EGG01_V2.gui = gui
 
-local bar = Instance.new("Frame", gui)
-bar.Size = UDim2.new(0, 290, 0, 34)
-bar.Position = UDim2.new(0, 8, 0, 8)
-bar.BackgroundColor3 = Color3.fromRGB(20, 35, 25)
-bar.BackgroundTransparency = 0.15
-bar.BorderSizePixel = 0
-
-local box = Instance.new("TextBox", gui)
-box.Name = "Egg01Log"
-box.Size = UDim2.new(0, 440, 0, 180)
-box.Position = UDim2.new(0, 8, 1, -188)
-box.BackgroundColor3 = Color3.new(0, 0, 0)
-box.BackgroundTransparency = 0.15
-box.TextColor3 = Color3.fromRGB(200, 255, 200)
-box.TextSize = 12
-box.Font = Enum.Font.Code
-box.TextXAlignment = Enum.TextXAlignment.Left
-box.TextYAlignment = Enum.TextYAlignment.Top
-box.TextWrapped = true
-box.MultiLine = true
-box.ClearTextOnFocus = false
-box.TextEditable = false
-box.Text = ""
-
-local status = Instance.new("TextLabel", gui)
-status.Size = UDim2.new(0, 290, 0, 22)
-status.Position = UDim2.new(0, 8, 0, 44)
-status.BackgroundTransparency = 1
-status.TextColor3 = Color3.fromRGB(255, 230, 120)
-status.Font = Enum.Font.GothamBold
-status.TextSize = 13
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.Text = "IDLE"
-
-local function L(s)
-    OUT[#OUT + 1] = ("[%5.1f] %s"):format(os.clock() - T0, s)
-    if #OUT > 100 then table.remove(OUT, 1) end
-    box.Text = table.concat(OUT, "\n")
-end
-local function setStatus(s) status.Text = s end
-
-local function hbtn(txt, x, w, col)
-    local b = Instance.new("TextButton", bar)
-    b.Size = UDim2.new(0, w, 0, 28)
-    b.Position = UDim2.new(0, x, 0, 3)
-    b.Text = txt
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
-    b.BackgroundColor3 = col or Color3.fromRGB(40, 100, 60)
+local function btn(text, x, color)
+    local b = Instance.new("TextButton", gui)
+    b.Size = UDim2.new(0, 64, 0, 30)
+    b.Position = UDim2.new(0, x, 0, 10)
+    b.BackgroundColor3 = color
     b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    b.Text = text
     b.BorderSizePixel = 0
     return b
 end
-local startB = hbtn("START", 4, 70, Color3.fromRGB(40, 140, 70))
-local stopB  = hbtn("STOP", 76, 56, Color3.fromRGB(140, 50, 50))
-local homeB  = hbtn("HOME", 136, 56, Color3.fromRGB(60, 90, 140))
-local copyB  = hbtn("COPY", 196, 56)
-local closeB = hbtn("X", 256, 28, Color3.fromRGB(120, 40, 40))
+
+local bHome  = btn("HOME", 10, Color3.fromRGB(50, 100, 180))
+local bStart = btn("START", 80, Color3.fromRGB(40, 150, 70))
+local bStop  = btn("STOP", 150, Color3.fromRGB(160, 50, 50))
+local bCopy  = btn("COPY", 220, Color3.fromRGB(70, 70, 70))
+local bClose = btn("X", 290, Color3.fromRGB(100, 40, 40))
+
+local lab = Instance.new("TextLabel", gui)
+lab.Size = UDim2.new(0, 340, 0, 22)
+lab.Position = UDim2.new(0, 10, 0, 44)
+lab.BackgroundTransparency = 1
+lab.TextColor3 = Color3.fromRGB(255, 220, 100)
+lab.Font = Enum.Font.GothamBold
+lab.TextSize = 13
+lab.TextXAlignment = Enum.TextXAlignment.Left
+lab.Text = "พร้อม — กด HOME ที่จุดเกิด"
+
+local log = Instance.new("TextBox", gui)
+log.Size = UDim2.new(0, 400, 0, 150)
+log.Position = UDim2.new(0, 10, 1, -160)
+log.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+log.BackgroundTransparency = 0.25
+log.TextColor3 = Color3.fromRGB(200, 255, 200)
+log.Font = Enum.Font.Code
+log.TextSize = 12
+log.TextXAlignment = Enum.TextXAlignment.Left
+log.TextYAlignment = Enum.TextYAlignment.Top
+log.ClearTextOnFocus = false
+log.TextEditable = false
+log.MultiLine = true
+log.TextWrapped = true
+log.Text = ""
+
+local function say(msg)
+    lines[#lines + 1] = msg
+    if #lines > 60 then table.remove(lines, 1) end
+    log.Text = table.concat(lines, "\n")
+    lab.Text = msg
+end
 
 local function hrp()
-    return LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    local c = LP.Character
+    return c and c:FindFirstChild("HumanoidRootPart")
 end
 local function hum()
-    return LP.Character and LP.Character:FindFirstChildOfClass("Humanoid")
-end
-local function posStr(p)
-    if not p then return "?" end
-    return ("%.0f,%.0f,%.0f"):format(p.X, p.Y, p.Z)
-end
-local function flatDist(a, b)
-    if not a or not b then return 1e9 end
-    return (Vector3.new(a.X, 0, a.Z) - Vector3.new(b.X, 0, b.Z)).Magnitude
+    local c = LP.Character
+    return c and c:FindFirstChildOfClass("Humanoid")
 end
 
-local function findRemote(substr)
-    local net = RS:FindFirstChild("Packages")
-    net = net and net:FindFirstChild("Networking")
+local function dist2(a, b)
+    local dx, dz = a.X - b.X, a.Z - b.Z
+    return math.sqrt(dx * dx + dz * dz)
+end
+
+-- ถือไข่ไหม = มีปุ่มทิ้งโชว์
+local function isCarry()
+    local g = PG:FindFirstChild("DropHeldEgg")
+    if not g then return false end
+    local b = g:FindFirstChildWhichIsA("GuiButton", true)
+    if not b then return false end
+    if not b.Visible then return false end
+    if b.AbsoluteSize.X < 5 then return false end
+    return true
+end
+
+local function findNet(namePart)
+    local pkg = RS:FindFirstChild("Packages")
+    local net = pkg and pkg:FindFirstChild("Networking")
     if not net then return nil end
     for _, d in ipairs(net:GetDescendants()) do
-        if (d:IsA("RemoteEvent") or d:IsA("RemoteFunction")) and d.Name:find(substr, 1, true) then
-            return d
-        end
+        if d.Name:find(namePart, 1, true) then return d end
     end
     return nil
 end
 
--- ถือไข่ = มีปุ่มทิ้งโชว์จริง (ไม่ใช่แค่มี GUI ค้าง)
-local function syncCarry()
-    local g = PG:FindFirstChild("DropHeldEgg")
-    if not g then carrying = false return false end
-    if g:IsA("LayerCollector") and g.Enabled == false then carrying = false return false end
-    local btn = g:FindFirstChild("Button", true) or g:FindFirstChildWhichIsA("GuiButton", true)
-    if not btn or btn.Visible == false then carrying = false return false end
-    if btn.AbsoluteSize.X < 4 then carrying = false return false end
-    local p = btn.Parent
-    while p and p ~= g do
-        if p:IsA("GuiObject") and p.Visible == false then carrying = false return false end
-        p = p.Parent
-    end
-    carrying = true
-    return true
-end
-
-local function bindCarry()
-    local re = findRemote("FieldEggCarry")
-    if re then
-        table.insert(_G.EGG01AUTO_CONNS, re.OnClientEvent:Connect(function(tbl)
-            if typeof(tbl) ~= "table" then return end
-            if tbl.IsCarrying == true then
-                carryUid = tbl.Uid
-                task.defer(function()
-                    task.wait(0.05)
-                    syncCarry()
-                end)
-            elseif tbl.IsCarrying == false then
-                carryUid = nil
-                carrying = false
+-- ฟัง carry จาก server (เสริม)
+do
+    local re = findNet("FieldEggCarry")
+    if re and re:IsA("RemoteEvent") then
+        table.insert(_G.EGG01_V2.conns, re.OnClientEvent:Connect(function(t)
+            if typeof(t) == "table" and t.IsCarrying == false then
+                -- ไม่บังคับ false จาก RE อย่างเดียว ใช้ GUI เป็นหลัก
             end
         end))
-        L("ฟัง FieldEggCarry ✅")
     end
-    table.insert(_G.EGG01AUTO_CONNS, PG.ChildAdded:Connect(function(ch)
-        if ch.Name == "DropHeldEgg" then
-            task.defer(function() task.wait(0.1); syncCarry() end)
-        end
-    end))
-    table.insert(_G.EGG01AUTO_CONNS, PG.ChildRemoved:Connect(function(ch)
-        if ch.Name == "DropHeldEgg" then carrying = false; carryUid = nil end
-    end))
-    syncCarry()
-    L("ถือตอนนี้: " .. (carrying and "YES" or "no"))
-end
-bindCarry()
-
-local function nearHome()
-    local r = hrp()
-    if not r or not HOME then return false, -1 end
-    local d = flatDist(r.Position, HOME)
-    return d <= homeRadius, d
 end
 
-local function walkTo(dest, timeout)
+local function walkTo(pos, sec)
     local h, r = hum(), hrp()
-    if not h or not r or not dest then return false end
-    local target = Vector3.new(dest.X, r.Position.Y, dest.Z)
-    L("เดิน → " .. posStr(target))
-    h:MoveTo(target)
+    if not h or not r then return false end
+    local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
+    say(string.format("เดิน → %.0f,%.0f,%.0f", goal.X, goal.Y, goal.Z))
+    h:MoveTo(goal)
     local t0 = os.clock()
-    timeout = timeout or 12
-    while running and os.clock() - t0 < timeout do
+    while RUN and os.clock() - t0 < (sec or 12) do
         r = hrp()
         if not r then break end
-        if flatDist(r.Position, target) < 8 then return true end
-        if (os.clock() - t0) % 2 < 0.12 then h:MoveTo(target) end
-        task.wait(0.15)
-    end
-    r = hrp()
-    return r and flatDist(r.Position, target) < 20
-end
-
-local function hopWalkTowardHome()
-    local r = hrp()
-    if not r or not HOME then return false, -1 end
-    local me = r.Position
-    local flat = Vector3.new(HOME.X - me.X, 0, HOME.Z - me.Z)
-    local dist = flat.Magnitude
-    if dist <= homeRadius then return false, dist end
-    local step = math.min(hopStuds, math.max(40, dist - homeRadius * 0.4))
-    local dest = me + flat.Unit * step
-    setStatus(("เดิน hop %.0f d=%.0f"):format(step, dist))
-    walkTo(dest, 15)
-    r = hrp()
-    return true, r and flatDist(r.Position, HOME) or dist
-end
-
-local function getDropButton()
-    local g = PG:FindFirstChild("DropHeldEgg")
-    if not g then return nil end
-    return g:FindFirstChild("Button", true) or g:FindFirstChildWhichIsA("GuiButton", true)
-end
-
-local function doDrop()
-    syncCarry()
-    if not carrying then return true end
-    L("DROP @" .. posStr(hrp() and hrp().Position))
-    local btn = getDropButton()
-    if btn then
-        pcall(function()
-            if getconnections then
-                for _, sig in ipairs({ btn.Activated, btn.MouseButton1Click, btn.MouseButton1Down }) do
-                    for _, c in ipairs(getconnections(sig)) do
-                        pcall(function() if c.Function then c.Function() end end)
-                        pcall(function() c:Fire() end)
-                    end
-                end
-            end
-        end)
-        pcall(function() if fsig then fsig(btn.Activated) end end)
-        pcall(function() if fsig then fsig(btn.MouseButton1Click) end end)
-    end
-    local rf = findRemote("AskFieldEggDrop")
-    if rf and rf:IsA("RemoteFunction") then
-        pcall(function() rf:InvokeServer() end)
-        pcall(function() rf:InvokeServer(carryUid) end)
-        pcall(function() rf:InvokeServer({ Uid = carryUid }) end)
-    end
-    local t0 = os.clock()
-    while os.clock() - t0 < 1.5 do
-        syncCarry()
-        if not carrying then L("DROP OK"); return true end
-        task.wait(0.1)
-    end
-    L("DROP ออโต้ไม่ได้ — กดทิ้งกลางจอเอง (รอ 20วิ)")
-    setStatus("ทิ้งไข่เอง!")
-    t0 = os.clock()
-    while running and os.clock() - t0 < 20 do
-        syncCarry()
-        if not carrying then L("DROP มือ OK"); return true end
-        setStatus(("ทิ้งเอง! %.0fs"):format(20 - (os.clock() - t0)))
-        task.wait(0.2)
-    end
-    syncCarry()
-    return not carrying
-end
-
-local function nearestSteal(maxDist)
-    maxDist = maxDist or 40
-    local r = hrp()
-    if not r then return nil end
-    local best, bestD
-    local roots = {}
-    local slots = workspace:FindFirstChild("AreaEggSlotsClient")
-    if slots then roots[#roots + 1] = slots end
-    local objs = workspace:FindFirstChild("__OBJECTS")
-    if objs then roots[#roots + 1] = objs end
-    if #roots == 0 then roots[1] = workspace end
-    local function consider(d)
-        if not d:IsA("ProximityPrompt") or not d.Enabled then return end
-        local act = tostring(d.ActionText):lower()
-        local par = d.Parent
-        if not (act:find("steal") or (par and tostring(par.Name):find("CarryAreaEgg"))) then return end
-        local part = par:IsA("BasePart") and par or par:FindFirstChildWhichIsA("BasePart", true)
-        if not part then return end
-        local dist = (part.Position - r.Position).Magnitude
-        if dist <= maxDist and (not bestD or dist < bestD) then best, bestD = d, dist end
-    end
-    for _, root in ipairs(roots) do
-        for _, d in ipairs(root:GetDescendants()) do consider(d) end
-    end
-    return best, bestD
-end
-
-local function doSteal()
-    if not fp then L("ไม่มี fp — เก็บมือ"); return false end
-    local t0 = os.clock()
-    while running and os.clock() - t0 < 10 do
-        syncCarry()
-        if carrying then return true end
-        local pp, dist = nearestSteal(40)
-        if pp then
-            L(("STEAL d=%.0f"):format(dist or -1))
-            local orig = pp.HoldDuration
-            pcall(function() pp.HoldDuration = 0 end)
-            pcall(fp, pp)
-            pcall(function() pp.HoldDuration = orig end)
+        if dist2(r.Position, goal) < 10 then return true end
+        if os.clock() - t0 > 2 and math.floor(os.clock() - t0) % 2 == 0 then
+            h:MoveTo(goal)
         end
-        task.wait(0.35)
-    end
-    syncCarry()
-    return carrying
-end
-
-local function waitCarry(msg)
-    setStatus(msg or "รอถือไข่…")
-    L(msg or "รอถือไข่…")
-    while running do
-        syncCarry()
-        if carrying then L("ถือไข่ ✅"); return true end
-        task.wait(0.25)
+        task.wait(0.2)
     end
     return false
 end
 
-local function mainLoop()
-    if not waitCarry() then return end
-    local _, d0 = nearHome()
-    if d0 >= 0 and d0 <= homeRadius then
-        setStatus("ไปขโมยไข่ก่อน…")
-        L(("อยู่ใกล้ HOME (d=%.0f) — รอห่าง > %.0f"):format(d0, homeRadius + 30))
-        while running do
-            syncCarry()
-            local _, d = nearHome()
-            if carrying and d > homeRadius + 30 then
-                L(("ห่างบ้าน d=%.0f — เริ่มเดินกลับ"):format(d))
-                break
-            end
-            setStatus(("ไปขโมย… ถือ=%s d=%.0f"):format(carrying and "Y" or "n", d or -1))
-            task.wait(0.3)
-        end
-        if not running then return end
-    end
-    if not carrying and not waitCarry("รอถือไข่ห่างบ้าน…") then return end
-
-    L("เริ่มเดินกลับ → HOME @" .. posStr(HOME))
-    while running do
-        syncCarry()
-        local atHome, dHome = nearHome()
-        L(("carry=%s homeDist=%.0f"):format(tostring(carrying), dHome or -1))
-        if atHome and carrying then
-            setStatus("จบ ✅ ที่บ้าน")
-            L("ถึงจุดเกิด — จบ (วางคอกเอง)")
-            break
-        end
-        if not carrying and not waitCarry("รอถือไข่…") then break end
-
-        hopWalkTowardHome()
-        task.wait(0.2)
-        syncCarry()
-        atHome, dHome = nearHome()
-        if atHome and carrying then
-            setStatus("จบ ✅ ที่บ้าน")
-            L("ถึงบ้าน — จบ")
-            break
-        end
-
-        if carrying and dHome > homeRadius then
-            setStatus("DROP")
-            local h, rr = hum(), hrp()
-            if h and rr then pcall(function() h:MoveTo(rr.Position) end) end
-            task.wait(0.15)
-            if not doDrop() then
-                L("ยังถือไข่ — หยุดรอบนี้")
-                break
-            end
-            local w0 = os.clock()
-            while running and os.clock() - w0 < dropWait do
-                setStatus(("รอ %.1f"):format(dropWait - (os.clock() - w0)))
-                task.wait(0.1)
-            end
-            if not running then break end
-            setStatus("STEAL")
-            if not doSteal() then
-                waitCarry("รอถือไข่หลังทิ้ง…")
-            else
-                L("เก็บสำเร็จ")
-            end
-        end
-    end
-    running = false
-    startB.Text = "START"
-    if not status.Text:find("จบ") then setStatus("หยุด") end
+local function hopHome()
+    local r = hrp()
+    if not r or not HOME then return false end
+    local d = dist2(r.Position, HOME)
+    if d <= HOME_R then return true end
+    local flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
+    local step = math.min(HOP, math.max(50, d - HOME_R * 0.5))
+    local dest = r.Position + flat.Unit * step
+    walkTo(dest, 14)
+    return false
 end
 
-homeB.MouseButton1Click:Connect(function()
+local function doDrop()
+    if not isCarry() then return true end
+    local g = PG:FindFirstChild("DropHeldEgg")
+    local b = g and g:FindFirstChildWhichIsA("GuiButton", true)
+    say("ทิ้งไข่…")
+    if b and getconnections then
+        for _, sig in ipairs({ b.Activated, b.MouseButton1Click }) do
+            pcall(function()
+                for _, c in ipairs(getconnections(sig)) do
+                    pcall(function()
+                        if c.Function then c.Function() end
+                    end)
+                end
+            end)
+        end
+    end
+    if b and firesignal then
+        pcall(function() firesignal(b.Activated) end)
+    end
+    -- รอหลุด หรือให้ผู้ใช้กดเอง
+    local t0 = os.clock()
+    while RUN and os.clock() - t0 < 15 do
+        if not isCarry() then
+            say("ทิ้งแล้ว ✅")
+            return true
+        end
+        lab.Text = string.format("กดปุ่มทิ้งกลางจอ! (%.0f)", 15 - (os.clock() - t0))
+        task.wait(0.2)
+    end
+    return not isCarry()
+end
+
+local function doSteal()
+    if isCarry() then return true end
+    if not fp then
+        say("ไม่มี fireproximityprompt — เก็บมือ")
+        local t0 = os.clock()
+        while RUN and os.clock() - t0 < 20 do
+            if isCarry() then return true end
+            task.wait(0.3)
+        end
+        return isCarry()
+    end
+    local t0 = os.clock()
+    while RUN and os.clock() - t0 < 12 do
+        if isCarry() then return true end
+        local r = hrp()
+        if r then
+            local best, bestD
+            for _, d in ipairs(workspace:GetDescendants()) do
+                if d:IsA("ProximityPrompt") and d.Enabled then
+                    local a = tostring(d.ActionText):lower()
+                    if a:find("steal") then
+                        local p = d.Parent
+                        local part = p and (p:IsA("BasePart") and p or p:FindFirstChildWhichIsA("BasePart", true))
+                        if part then
+                            local dd = (part.Position - r.Position).Magnitude
+                            if dd < 35 and (not bestD or dd < bestD) then
+                                best, bestD = d, dd
+                            end
+                        end
+                    end
+                end
+            end
+            if best then
+                say(string.format("เก็บไข่ d=%.0f", bestD))
+                local old = best.HoldDuration
+                best.HoldDuration = 0
+                pcall(fp, best)
+                best.HoldDuration = old
+            end
+        end
+        task.wait(0.4)
+    end
+    return isCarry()
+end
+
+local function loop()
+    say("รอถือไข่…")
+    while RUN and not isCarry() do task.wait(0.25) end
+    if not RUN then return end
+
+    -- ต้องห่างบ้านก่อน
+    while RUN do
+        local r = hrp()
+        if not r or not HOME then break end
+        local d = dist2(r.Position, HOME)
+        if isCarry() and d > HOME_R + 40 then
+            say(string.format("ห่างบ้าน %.0f — เริ่มกลับ", d))
+            break
+        end
+        lab.Text = string.format("ไปขโมยไข่… ถือ=%s d=%.0f", isCarry() and "Y" or "N", d)
+        task.wait(0.3)
+    end
+    if not RUN then return end
+
+    while RUN do
+        local r = hrp()
+        if r then
+            local d = dist2(r.Position, HOME)
+
+            if isCarry() and d <= HOME_R then
+                say("ถึงบ้านแล้ว — จบ (วางคอกเอง)")
+                break
+            end
+
+            if not isCarry() then
+                say("รอถือไข่…")
+                while RUN and not isCarry() do task.wait(0.25) end
+                if not RUN then break end
+            end
+
+            if hopHome() then
+                if isCarry() then
+                    say("ถึงบ้านแล้ว — จบ")
+                    break
+                end
+            end
+
+            r = hrp()
+            d = r and HOME and dist2(r.Position, HOME) or 9999
+            if isCarry() and d > HOME_R then
+                local h = hum()
+                if h and r then h:MoveTo(r.Position) end
+                task.wait(0.2)
+                if doDrop() then
+                    say(string.format("รอ %.0f วิ…", WAIT_DROP))
+                    task.wait(WAIT_DROP)
+                    if RUN then doSteal() end
+                else
+                    say("ทิ้งไม่สำเร็จ — หยุด")
+                    break
+                end
+            end
+        else
+            task.wait(0.5)
+        end
+    end
+
+    RUN = false
+    bStart.Text = "START"
+end
+
+-- ปุ่ม
+bHome.MouseButton1Click:Connect(function()
     local r = hrp()
     if not r then
-        L("❌ ไม่มี HRP")
+        say("ยังไม่มีตัวละคร")
         return
     end
     HOME = r.Position
-    L("🏠 HOME = " .. posStr(HOME))
-    setStatus("HOME OK — กด START")
-    homeB.Text = "OK!"
-    task.delay(1, function() if homeB.Parent then homeB.Text = "HOME" end end)
+    say(string.format("HOME = %.0f, %.0f, %.0f", HOME.X, HOME.Y, HOME.Z))
+    bHome.Text = "OK!"
+    task.delay(1, function() if bHome.Parent then bHome.Text = "HOME" end end)
 end)
 
-startB.MouseButton1Click:Connect(function()
-    if running then return end
+bStart.MouseButton1Click:Connect(function()
+    if RUN then return end
     if not HOME then
         local r = hrp()
-        if not r then L("❌ กด HOME / มีตัวละครก่อน"); return end
+        if not r then say("กด HOME ก่อน"); return end
         HOME = r.Position
-        L("🏠 AUTO HOME = " .. posStr(HOME))
+        say(string.format("HOME อัตโนมัติ = %.0f, %.0f, %.0f", HOME.X, HOME.Y, HOME.Z))
     end
-    running = true
-    startB.Text = "…"
-    T0 = os.clock()
-    L("START v1.7")
-    task.spawn(mainLoop)
+    RUN = true
+    bStart.Text = "..."
+    task.spawn(loop)
 end)
 
-stopB.MouseButton1Click:Connect(function()
-    running = false
-    startB.Text = "START"
-    setStatus("หยุด")
-    L("STOP")
+bStop.MouseButton1Click:Connect(function()
+    RUN = false
+    bStart.Text = "START"
+    say("หยุด")
 end)
 
-copyB.MouseButton1Click:Connect(function()
-    local text = ("=== Egg01 Auto ===\nTime: %s\nHome: %s\n\n%s")
-        :format(os.date("%Y-%m-%d %H:%M:%S"), posStr(HOME), table.concat(OUT, "\n"))
+bCopy.MouseButton1Click:Connect(function()
+    local t = "=== Egg01 Auto v2 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
-    local ok = clip and pcall(clip, text)
-    copyB.Text = ok and "OK!" or "?"
-    task.delay(1, function() if copyB.Parent then copyB.Text = "COPY" end end)
+    if clip then pcall(clip, t) end
+    bCopy.Text = "OK"
+    task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 
-closeB.MouseButton1Click:Connect(function()
-    running = false
-    if _G.EGG01AUTO_CONNS then
-        for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
-    end
-    gui:Destroy(); _G.EGG01AUTO_GUI = nil
+bClose.MouseButton1Click:Connect(function()
+    RUN = false
+    for _, c in ipairs(_G.EGG01_V2.conns) do pcall(function() c:Disconnect() end) end
+    gui:Destroy()
+    _G.EGG01_V2 = nil
 end)
 
-L("Egg01 Auto v1.7 (GUI แบบ v1.4)")
-L("HOME → START → ไปขโมยห่างบ้าน")
-setStatus("กด HOME ที่จุดเกิด")
+say("Egg01 Auto v2.0 พร้อม")
+say("1) HOME ที่จุดเกิด  2) START  3) ไปขโมยไข่")
