@@ -1,6 +1,6 @@
--- Egg01_RaritySpy.lua v1.2
--- หาแหล่ง "Legendary" / rarity ของไข่หรือสัตว์
--- วิธี: ยืนใกล้ไข่หรือสัตว์ที่มีป้าย Legendary → SCAN / DUMP → COPY
+-- Egg01_RaritySpy.lua v1.3
+-- Focused capture for the missing FieldEgg UID -> rarity relationship.
+-- ClientRenderedAssets Odds are NOT trusted because player pets/monsters are mixed in.
 
 if _G.EGG01_RAR then
     pcall(function() _G.EGG01_RAR.gui:Destroy() end)
@@ -48,7 +48,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Rarity Spy v1.2"
+title.Text = "Egg01 Field Rarity Link Spy v1.3"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -66,7 +66,7 @@ end
 
 local bClose = mkBtn("X", 264, 4, 28, Color3.fromRGB(120, 45, 45))
 local bScan  = mkBtn("SCAN", 10, 36, 54, Color3.fromRGB(50, 100, 180))
-local bOdds  = mkBtn("ODDS", 70, 36, 54, Color3.fromRGB(160, 100, 40))
+local bOdds  = mkBtn("SHOW", 70, 36, 54, Color3.fromRGB(160, 100, 40))
 local bRF    = mkBtn("RF", 130, 36, 54, Color3.fromRGB(100, 70, 140))
 local bCopy  = mkBtn("COPY", 190, 36, 54, Color3.fromRGB(70, 70, 70))
 
@@ -78,7 +78,7 @@ lab.TextColor3 = Color3.fromRGB(255, 220, 100)
 lab.Font = Enum.Font.GothamBold
 lab.TextSize = 11
 lab.TextXAlignment = Enum.TextXAlignment.Left
-lab.Text = "ยืนใกล้ไข่/สัตว์ที่มีป้าย Legendary → SCAN"
+lab.Text = "กด SHOW → รอ FieldEggRaritiesShown → COPY"
 
 local log = Instance.new("TextBox", gui)
 log.Size = UDim2.new(0, 300, 0, 200)
@@ -99,7 +99,7 @@ Instance.new("UICorner", log).CornerRadius = UDim.new(0, 6)
 
 local function say(msg)
     lines[#lines + 1] = msg
-    if #lines > 120 then table.remove(lines, 1) end
+    if #lines > 700 then table.remove(lines, 1) end
     log.Text = table.concat(lines, "\n")
     lab.Text = msg
 end
@@ -179,6 +179,36 @@ local function shallowDump(t, prefix, depth)
     end
 end
 
+local function deepDump(value, prefix, depth, seen)
+    prefix, depth, seen = prefix or "", depth or 0, seen or {}
+    if depth > 5 then say(prefix .. "<max-depth>"); return end
+    if typeof(value) ~= "table" then
+        local s = tostring(value)
+        if #s > 180 then s = s:sub(1, 177) .. "..." end
+        say(prefix .. s)
+        return
+    end
+    if seen[value] then say(prefix .. "<cycle>"); return end
+    seen[value] = true
+    local keys = {}
+    for k in pairs(value) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    say(string.format("%s{table keys=%d}", prefix, #keys))
+    for i, k in ipairs(keys) do
+        if i > 180 then say(prefix .. "  ..."); break end
+        local v = value[k]
+        local head = prefix .. "  [" .. tostring(k) .. "]="
+        if typeof(v) == "table" then
+            say(head .. "{table}")
+            deepDump(v, prefix .. "    ", depth + 1, seen)
+        else
+            local s = tostring(v)
+            if #s > 180 then s = s:sub(1, 177) .. "..." end
+            say(head .. s .. " <" .. typeof(v) .. ">")
+        end
+    end
+end
+
 bScan.MouseButton1Click:Connect(function()
     local r = hrp()
     if not r then say("ไม่มีตัวละคร"); return end
@@ -241,58 +271,23 @@ bScan.MouseButton1Click:Connect(function()
     say(string.format("── จบ SCAN hits≈%d ──", hits))
 end)
 
--- อ่าน ClientRenderedAssets.*.Data.Odds (แหล่ง rarity ไข่ในฟิลด์)
+-- Trigger the server response while FieldEggRaritiesShown listener is active.
 bOdds.MouseButton1Click:Connect(function()
-    local r = hrp()
-    if not r then say("ไม่มีตัวละคร"); return end
-
     local rfShow = findNet("AskFieldEggRarityShows")
-    if rfShow and rfShow:IsA("RemoteFunction") then
-        local ok, res = pcall(function() return rfShow:InvokeServer() end)
-        say(string.format("AskFieldEggRarityShows → %s %s", tostring(ok), tostring(res)))
-        task.wait(0.6)
-    end
-
-    say("── ODDS จาก ClientRenderedAssets ──")
-    local folder = workspace:FindFirstChild("ClientRenderedAssets")
-    if not folder then
-        say("⚠ ไม่เจอ Workspace.ClientRenderedAssets")
+    if not rfShow or not rfShow:IsA("RemoteFunction") then
+        say("⚠ ไม่เจอ AskFieldEggRarityShows")
         return
     end
-    local n = 0
-    for _, asset in ipairs(folder:GetChildren()) do
-        local data = asset:FindFirstChild("Data")
-        local odds = data and (data:FindFirstChild("Odds") or data:FindFirstChild("Odds", true))
-        local rar
-        if odds then
-            if odds:IsA("TextLabel") or odds:IsA("TextButton") then
-                rar = odds.Text
-            else
-                local tl = odds:FindFirstChildWhichIsA("TextLabel", true)
-                rar = tl and tl.Text
-            end
-        end
-        -- หาตำแหน่ง
-        local part = asset:FindFirstChildWhichIsA("BasePart", true)
-        local pos = part and part.Position
-        local dist = pos and (pos - r.Position).Magnitude or 9999
-        if rar and rar ~= "" and dist <= 200 then
-            n = n + 1
-            local uidHint = asset.Name:match("_(%x+)$") or "?"
-            say(string.format("★ d=%.0f rar='%s' uidHint=%s",
-                dist, tostring(rar):sub(1, 24), uidHint:sub(1, 12)))
-            say(string.format("   asset=%s", asset.Name:sub(1, 50)))
-            -- siblings ใน Data
-            if data and n <= 12 then
-                for _, ch in ipairs(data:GetChildren()) do
-                    local t = ""
-                    if ch:IsA("TextLabel") or ch:IsA("TextButton") then t = "='" .. tostring(ch.Text):sub(1, 30) .. "'" end
-                    say(string.format("   Data.%s%s", ch.Name, t))
-                end
-            end
-        end
+    say("── Invoke AskFieldEggRarityShows ──")
+    local ok, res = pcall(function() return rfShow:InvokeServer() end)
+    say(string.format("return ok=%s type=%s", tostring(ok), ok and typeof(res) or "error"))
+    if ok and typeof(res) == "table" then
+        deepDump(res, "  RETURN ", 0, {})
+    else
+        say("  return=" .. tostring(res))
     end
-    say(string.format("── ODDS ใกล้ๆ %d ใบ ──", n))
+    say("รอ RE FieldEggRaritiesShown 2 วิ แล้วกด COPY")
+    task.wait(2)
 end)
 
 bRF.MouseButton1Click:Connect(function()
@@ -395,16 +390,7 @@ do
             for i, a in ipairs(args) do
                 if typeof(a) == "table" then
                     say(string.format("  arg%d = table", i))
-                    shallowDump(a, "    ", 0)
-                    if a[1] then
-                        for j, row in ipairs(a) do
-                            if j > 10 then break end
-                            if typeof(row) == "table" then
-                                say(string.format("    #%d %s", j, tostring(row.Rarity or row.AssetCategory or row.Uid or "?")))
-                                shallowDump(row, "      ", 0)
-                            end
-                        end
-                    end
+                    deepDump(a, "    ", 0, {})
                 else
                     say(string.format("  arg%d = %s", i, tostring(a):sub(1, 80)))
                 end
@@ -430,5 +416,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RAR = nil
 end)
 
-say("Rarity Spy v1.2 — Odds อยู่ที่ ClientRenderedAssets.*.Data.Odds")
-say("กด ODDS (เปิดโชว์ rarity แล้วอ่าน) → COPY")
+say("Field Rarity Link Spy v1.3 — ไม่เชื่อ ClientRenderedAssets")
+say("กด SHOW → รอ 2 วิ → COPY ส่งช่วง FieldEggRaritiesShown")
