@@ -553,6 +553,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.5 พร้อม (โซนแรก=ผลัก)")
+say("Egg01 Auto v2.5 พร้อม (ผลัก 1000)")
 say("ทิ้งทีละโซนสี | เขตปลอดภัย→วิ่งเข้า HOME เลย")
 say("HOME → START → ค่อยขโมยไข่")
