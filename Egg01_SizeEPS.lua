@@ -1,7 +1,7 @@
--- Egg01_SizeEPS.lua v1.11
+-- Egg01_SizeEPS.lua v1.12
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START
--- v1.11: fix callback scope, snapshot-first targets, and RenderStepped rescan storm
+-- v1.12: match Odds by UID and use eggDB position for Steal anchors
 
 if _G.EGG01_SIZE then
  pcall(function() _G.EGG01_SIZE.gui:Destroy() end)
@@ -83,7 +83,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.11"
+title.Text = "Egg01 Size EPS v1.12"
 
 local function mkBtn(text, x, y, w, color)
  local b = Instance.new("TextButton", panel)
@@ -370,7 +370,7 @@ local function stampEggRar(rar, pos, uidHint)
  local nu = normUid(uid)
  if nu == uidN or nu:find(uidN, 1, true) or uidN:find(nu, 1, true) then
  e.rar = rar
- return e
+ return e, "uid", 0
  end
  end
  oddsByUid[uidN] = rar
@@ -381,17 +381,17 @@ local function stampEggRar(rar, pos, uidHint)
  for _, e in pairs(eggDB) do
  if e.pos then
  local d = (e.pos - pos).Magnitude
- if d <= 120 and (not bestD or d < bestD) then
+ if d <= 24 and (not bestD or d < bestD) then
  best, bestD = e, d
  end
  end
  end
  if best then
  best.rar = rar
- return best
+ return best, "pos", bestD
  end
  end
- return nil
+ return nil, "none", nil
 end
 
 -- แหล่ง rarity จริง = ClientRenderedAssets.*.Data.Odds (หลัง AskFieldEggRarityShows)
@@ -459,6 +459,7 @@ rebuildRarTargets = function()
 
  local stealAnchors = collectStealAnchors()
  local rawN, withPos, kept, skipNoSteal, skipScale = 0, 0, 0, 0, 0
+ local uidMatch, posMatch, unmatched = 0, 0, 0
  local seen = {}
 
  local function readOddsText(odds)
@@ -491,16 +492,21 @@ rebuildRarTargets = function()
  oddsHist[rar] = (oddsHist[rar] or 0) + 1
  local pos = oddsWorldPos(asset, odds)
  local uidPart = asset.Name:match('_(%x+)$')
- local egg = stampEggRar(rar, pos, uidPart)
- if pos then
- withPos = withPos + 1
- local key = string.format('%s_%.0f_%.0f_%.0f', rar, pos.X, pos.Y, pos.Z)
+ local egg, matchKind = stampEggRar(rar, pos, uidPart)
+ if matchKind == "uid" then uidMatch = uidMatch + 1
+ elseif matchKind == "pos" then posMatch = posMatch + 1
+ else unmatched = unmatched + 1 end
+ if pos then withPos = withPos + 1 end
+ local targetPos = (egg and egg.pos) or pos
+ if targetPos then
+ local key = matchKind == "uid" and ("uid_" .. normUid(uidPart))
+ or string.format('%s_%.0f_%.0f_%.0f', rar, targetPos.X, targetPos.Y, targetPos.Z)
  if not seen[key] then
  seen[key] = true
  local scale = egg and egg.scale or nil
  local cat = egg and egg.cat or "?"
  local area = egg and egg.area or "?"
- local okSteal, stealD = nearSteal(pos, stealAnchors, 32)
+ local okSteal, stealD = nearSteal(targetPos, stealAnchors, 32)
  if not okSteal then
  skipNoSteal = skipNoSteal + 1
  else
@@ -512,10 +518,10 @@ rebuildRarTargets = function()
  if not scaleOk then
  skipScale = skipScale + 1
  else
- local usePos = pos
+ local usePos = targetPos
  local bestAp, bestAd
  for _, ap in ipairs(stealAnchors) do
- local dd = (ap - pos).Magnitude
+ local dd = (ap - targetPos).Magnitude
  if dd <= 32 and (not bestAd or dd < bestAd) then
  bestAp, bestAd = ap, dd
  end
@@ -548,6 +554,7 @@ rebuildRarTargets = function()
  end
  say(string.format("Odds read=%d pos=%d keep=%d (noSteal=%d noScale=%d) | %s",
  rawN, withPos, kept, skipNoSteal, skipScale, #parts > 0 and table.concat(parts, " ") or "-"))
+ say(string.format("match uid=%d pos=%d none=%d | target uses eggDB position", uidMatch, posMatch, unmatched))
  say(string.format("Steal prompts=%d | only near Steal + sc>=%.2f", #stealAnchors, CFG.minScale))
  return rawN, kept
 end
@@ -1235,7 +1242,7 @@ bClose.MouseButton1Click:Connect(function()
  _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.11 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
+say("Size EPS v1.12 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
 say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
 task.spawn(function()
  task.wait(0.8)
