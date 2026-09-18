@@ -13,6 +13,7 @@ end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 
@@ -35,6 +36,7 @@ local BOOST_SPEED = 32
 local HOP_STEP = 14
 local HOP_DELAY = 0.10
 local lines = {}
+local carrying = "?" -- ไม่เดาจาก GUI; รอ FieldEggCarry ยืนยัน
 
 local function charParts()
     local c = LP.Character
@@ -141,6 +143,35 @@ local function say(msg)
     status.Text = msg
 end
 
+local function findNet(namePart)
+    local packages = RS:FindFirstChild("Packages")
+    local networking = packages and packages:FindFirstChild("Networking")
+    if not networking then return nil end
+    for _, item in ipairs(networking:GetDescendants()) do
+        if item.Name:find(namePart, 1, true) then return item end
+    end
+    return nil
+end
+
+do
+    local carryEvent = findNet("FieldEggCarry")
+    if carryEvent and carryEvent:IsA("RemoteEvent") then
+        S.conns[#S.conns + 1] = carryEvent.OnClientEvent:Connect(function(data)
+            if typeof(data) ~= "table" then return end
+            if data.IsCarrying == true then
+                carrying = "Y"
+                say("CARRY Y uid=" .. tostring(data.Uid or "?") .. " area=" .. tostring(data.AreaId or "?"))
+            elseif data.IsCarrying == false then
+                carrying = "N"
+                say("CARRY N")
+            end
+        end)
+        say("ฟัง FieldEggCarry ✅ (carry เริ่มต้น=? จนกว่า server ส่ง event)")
+    else
+        say("ไม่พบ FieldEggCarry — carry=?")
+    end
+end
+
 local function playerSpeedInfo()
     local found = {}
     for k, v in pairs(LP:GetAttributes()) do
@@ -237,9 +268,9 @@ local function runTest(mode)
 
     say(string.format("=== TEST %d %s ===", myId, mode))
     say(string.format(
-        "START pos=(%.1f,%.1f,%.1f) home=(%.1f,%.1f,%.1f) d=%.1f WS=%.1f targetWS=%.1f",
+        "START pos=(%.1f,%.1f,%.1f) home=(%.1f,%.1f,%.1f) d=%.1f WS=%.1f targetWS=%.1f carry=%s",
         r.Position.X, r.Position.Y, r.Position.Z,
-        S.home.X, S.home.Y, S.home.Z, startD, oldSpeed, requestedSpeed
+        S.home.X, S.home.Y, S.home.Z, startD, oldSpeed, requestedSpeed, carrying
     ))
     say("PLAYER " .. playerSpeedInfo())
 
@@ -311,9 +342,9 @@ local function runTest(mode)
                     local velocity = r.AssemblyLinearVelocity
                     local horizontalVel = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
                     say(string.format(
-                        "SAMPLE t=%.2f d=%.1f ds=%.1f v=%.1f physV=%.1f WS=%.1f state=%s",
+                        "SAMPLE t=%.2f d=%.1f ds=%.1f v=%.1f physV=%.1f WS=%.1f state=%s carry=%s",
                         now - metrics.t0, newD, moved, sampledSpeed,
-                        horizontalVel, h.WalkSpeed, stateName
+                        horizontalVel, h.WalkSpeed, stateName, carrying
                     ))
                     lastLog = now - metrics.t0
                 end
@@ -388,4 +419,3 @@ end)
 
 say("Move Spy พร้อม — SET HOME → ออกไป → กด TEST 1/2/3")
 say("แต่ละ TEST คืน WalkSpeed เดิมเมื่อจบหรือ STOP")
-
