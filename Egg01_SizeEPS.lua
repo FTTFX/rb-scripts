@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v1.3
+-- Egg01_SizeEPS.lua v1.4
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START (ยิงเมื่อใกล้ ≤16)
 
@@ -29,6 +29,7 @@ local carryUid = nil
 local CFG = {
     minScale = 1.5, -- Gorilla~2.0 / ปกติ~0.9
     onlySlot = true, -- เป้าแค่ไข่ในรัง (Slot) ไม่เอา Dropped คนอื่น
+    guideMax = false, -- false=ใกล้สุดที่ผ่าน MinScale | true=ใหญ่สุดในแมพ
 }
 
 local gui = Instance.new("ScreenGui")
@@ -58,7 +59,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.3"
+title.Text = "Egg01 Size EPS v1.4"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -75,11 +76,12 @@ local function mkBtn(text, x, y, w, color)
 end
 
 local bClose  = mkBtn("X", 264, 4, 28, Color3.fromRGB(120, 45, 45))
-local bScan   = mkBtn("SCAN", 10, 32, 52, Color3.fromRGB(50, 100, 180))
-local bGuide  = mkBtn("GUIDE", 66, 32, 52, Color3.fromRGB(90, 90, 90))
-local bStart  = mkBtn("START", 122, 32, 52, Color3.fromRGB(40, 150, 70))
-local bStop   = mkBtn("STOP", 178, 32, 52, Color3.fromRGB(160, 50, 50))
-local bCopy   = mkBtn("COPY", 234, 32, 52, Color3.fromRGB(70, 70, 70))
+local bScan   = mkBtn("SCAN", 10, 32, 48, Color3.fromRGB(50, 100, 180))
+local bMode   = mkBtn("NEAR", 62, 32, 48, Color3.fromRGB(60, 90, 120))
+local bGuide  = mkBtn("GUIDE", 114, 32, 48, Color3.fromRGB(90, 90, 90))
+local bStart  = mkBtn("START", 166, 32, 48, Color3.fromRGB(40, 150, 70))
+local bStop   = mkBtn("STOP", 218, 32, 40, Color3.fromRGB(160, 50, 50))
+local bCopy   = mkBtn("COPY", 262, 32, 30, Color3.fromRGB(70, 70, 70))
 
 local lb = Instance.new("TextLabel", panel)
 lb.Size = UDim2.new(0, 70, 0, 16)
@@ -190,7 +192,7 @@ local function upsertEgg(t)
     eggDB[uid] = e
 end
 
--- ไข่ใหญ่ใน DB ใกล้ผู้เล่นที่สุด
+-- ไข่ใหญ่ใน DB: ใกล้สุด หรือ ใหญ่สุดทั้งแมพ
 local function nearestBig(maxScan)
     readCfg()
     local r = hrp()
@@ -205,6 +207,39 @@ local function nearestBig(maxScan)
         end
     end
     return best, bestD, bestUid
+end
+
+local function biggestEgg()
+    readCfg()
+    local r = hrp()
+    local best, bestD, bestUid
+    for uid, e in pairs(eggDB) do
+        if e.scale and e.pos and e.state ~= "Carried" then
+            if not best or e.scale > best.scale then
+                local d = r and (e.pos - r.Position).Magnitude or -1
+                best, bestD, bestUid = e, d, uid
+            end
+        end
+    end
+    return best, bestD, bestUid
+end
+
+-- เป้า GUIDE ตามโหมด
+local function guideTarget()
+    if CFG.guideMax then
+        return biggestEgg()
+    end
+    return nearestBig()
+end
+
+local function paintMode()
+    if CFG.guideMax then
+        bMode.Text = "MAX"
+        bMode.BackgroundColor3 = Color3.fromRGB(160, 90, 40)
+    else
+        bMode.Text = "NEAR"
+        bMode.BackgroundColor3 = Color3.fromRGB(60, 90, 120)
+    end
 end
 
 local function topBig(n)
@@ -300,20 +335,21 @@ local function updateGuide()
     if not GUIDE then return end
     ensureGuideParts()
     if not attachBeamToChar() then return end
-    local nb, nd = nearestBig()
+    local nb, nd = guideTarget()
     if not nb or not nb.pos then
-        if guideBill then guideBill.Text = "ไม่มี ★ ≥ MinScale" end
+        if guideBill then guideBill.Text = "ไม่มีเป้า" end
         if guideBeam then guideBeam.Enabled = false end
         return
     end
     if guideBeam then guideBeam.Enabled = true end
     guidePart.CFrame = CFrame.new(nb.pos + Vector3.new(0, 3, 0))
+    local mode = CFG.guideMax and "MAX" or "NEAR"
     if guideBill then
-        guideBill.Text = string.format("★ %s\nsc=%.2f  d=%.0f",
-            tostring(nb.cat or "?"), nb.scale or 0, nd or -1)
+        guideBill.Text = string.format("★%s %s\nsc=%.2f  d=%.0f",
+            mode, tostring(nb.cat or "?"), nb.scale or 0, nd or -1)
     end
-    lab.Text = string.format("GUIDE → %s sc=%.2f ห่าง %.0f",
-        tostring(nb.cat), nb.scale, nd)
+    lab.Text = string.format("GUIDE[%s] → %s sc=%.2f ห่าง %.0f",
+        mode, tostring(nb.cat), nb.scale, nd)
 end
 
 local function setGuide(on)
@@ -326,11 +362,13 @@ local function setGuide(on)
         table.insert(_G.EGG01_SIZE.conns, guideConn)
         bGuide.Text = "GUIDE ON"
         bGuide.BackgroundColor3 = Color3.fromRGB(180, 140, 30)
-        local nb, nd = nearestBig()
+        local nb, nd = guideTarget()
+        local mode = CFG.guideMax and "MAX" or "NEAR"
         if nb then
-            say(string.format("GUIDE ON → ★ %s sc=%.3f ห่าง %.0f", tostring(nb.cat), nb.scale, nd))
+            say(string.format("GUIDE ON [%s] → ★ %s sc=%.3f ห่าง %.0f",
+                mode, tostring(nb.cat), nb.scale, nd))
         else
-            say("GUIDE ON — ยังไม่มี ★ กด SCAN / รอ snapshot")
+            say("GUIDE ON — ยังไม่มีเป้า กด SCAN")
         end
     else
         clearGuide()
@@ -571,10 +609,10 @@ bScan.MouseButton1Click:Connect(function()
             mark, e.scale, tostring(e.cat or "?"), tostring(e.area or "?"),
             dMe, tostring(e.state or "?")))
     end
-    local nb, nd = nearestBig()
+    local nb, nd = guideTarget()
     if nb then
-        say(string.format("→ ★ ใกล้สุด: %s sc=%.3f อยู่ห่าง %.0f studs — เดินเข้าไป",
-            tostring(nb.cat), nb.scale, nd))
+        say(string.format("→ GUIDE[%s]: %s sc=%.3f อยู่ห่าง %.0f studs",
+            CFG.guideMax and "MAX" or "NEAR", tostring(nb.cat), nb.scale, nd))
     end
     local list = listStealNear(150)
     if #list == 0 then
@@ -676,6 +714,17 @@ bGuide.MouseButton1Click:Connect(function()
     setGuide(not GUIDE)
 end)
 
+bMode.MouseButton1Click:Connect(function()
+    CFG.guideMax = not CFG.guideMax
+    paintMode()
+    say(CFG.guideMax
+        and "โหมด MAX = ชี้ไข่ใหญ่สุดในแมพ (ไม่สนระยะ)"
+        or "โหมด NEAR = ชี้ ★ ใกล้สุดที่ ≥ MinScale")
+    if GUIDE then updateGuide() end
+end)
+
+paintMode()
+
 bStop.MouseButton1Click:Connect(function()
     RUN = false
     bStart.Text = "START"
@@ -699,5 +748,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.3 — GUIDE = เส้นเหลืองไป ★ | START = ยิงเมื่อใกล้")
-say("ตั้ง MinScale → SCAN → GUIDE / START")
+say("Size EPS v1.4 — NEAR=ใกล้สุด | MAX=ใหญ่สุดแมพ | GUIDE=เส้นเหลือง")
+say("กด NEAR/MAX สลับโหมด แล้ว GUIDE")
