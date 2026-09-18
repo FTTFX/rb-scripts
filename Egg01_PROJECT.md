@@ -14,9 +14,13 @@
 |---|---|---|
 | `Egg01_PickSpy.lua` | LIST remotes + hook FireServer/InvokeServer + ProximityPrompt | v1.0 |
 | `Egg01_HoldTest.lua` | ทดสอบข้าม Hold ตอน Steal (fp / firesignal / InputHold / RF) | v1.1 |
-| `Egg01_PlaceSpy.lua` | ดักตอนวาง/ทิ้งไข่ (Prompt + RF + GUI) | v1.2 |
-| `Egg01_ZoneSpy.lua` | ตัดสิน SAFE_DROP vs NEST_RECALL + สแกนโซน | v1.1 |
-| `Egg01_Auto.lua` | v2.4: ทิ้งนอกโซนสีที่ขโมย / เขตปลอดภัย→วิ่งเข้า HOME | v2.4 |
+| `Egg01_PlaceSpy.lua` | ดักตอนวาง/ทิ้งไข่ (Prompt + GUI) | v1.2 |
+| `Egg01_ZoneSpy.lua` | SAFE_DROP vs NEST_RECALL + สแกนโซน | v1.1 |
+| `Egg01_StealRangeSpy.lua` | วัดระยะ Steal + ดัมพ์ Carry/Shifted | — |
+| `Egg01_RaritySpy.lua` | ค้น config/getgc สำหรับ map `AssetCategory→rarity` โดยตรง | v1.5 |
+| `Egg01_Auto.lua` | เดินทิ้ง/เก็บ + GUI drop/pick + `STEAL_RANGE=16` | v3.3 |
+| `Egg01_MoveSpy.lua` | ทดสอบกลับ HOME 3 แบบ + log ความเร็ว/ระยะ/การดึงกลับ | v1.0 |
+| `Egg01_SizeEPS.lua` | SAFE: ปลายเส้น=ไข่จริง; สี/ตัวกรองจาก `Config.Rarity._id` | **v2.4** |
 | `Egg01_PROJECT.md` | เอกสารนี้ | — |
 
 ## เน็ตเวิร์ก
@@ -68,7 +72,11 @@ HasParasite, Mutations, NestId, State, DroppedAt, Version
 ```
 - **ขนาด** ≈ `AssetScale` (เช่น 0.91)
 - **ชนิด** = `AssetCategory` (Catfish / Irihorus / …)
-- **คุณภาพ** — ไม่มีในสอง remote นี้ (อาจอยู่ GUI / `AskEggRecord` / Codex)
+- **คุณภาพ** — ไม่มีใน Carry/Shifted/Snapshot และยังไม่มี mapping ที่ยืนยัน  
+  - `RF AskFieldEggRarityShows` คืนเพียง `true`; ไม่คืนตาราง  
+  - `WS.ClientRenderedAssets.<id>.Data.Odds` มีมอน/สัตว์ผู้เล่นปน จึงใช้จับคู่ไข่ด้วยระยะไม่ได้  
+  - RE `FieldEggRaritiesShown` มีชื่อแต่ยังไม่ส่ง event หลัง listener ในการทดสอบ  
+  - สัตว์ในคอก: ป้าย Billboard หลังฟัก (คนละระบบ)
 
 **ระยะ steal (fireproximityprompt):** สำเร็จได้ ~5–14 studs (MaxAct เกม = 8) → Auto ใช้ `STEAL_RANGE=16`
 
@@ -168,15 +176,125 @@ steal (Hold=0+fp)
   → place ลงคอก (ยังต้อง spy)
 ```
 
+## Size EPS / Rarity (ความรู้ยืนยัน 2026-09-18)
+
+### แหล่งข้อมูลแยกกัน — อย่าผสมผิด
+
+| ข้อมูล | แหล่ง | หมายเหตุ |
+|---|---|---|
+| ขนาด | `AssetScale` ใน Snapshot / `FieldEggShifted` | ใช้กรอง MinScale |
+| ชนิดสัตว์ | `AssetCategory` | Catfish / Dog / … |
+| พิกัดไข่ใน DB | `BottomCFrame` / `BoundsCFrame` | LiveSnapshot มักไม่มีพิกัด (pen) |
+| **คุณภาพ (rarity)** | **ไม่ได้อยู่ใน Carry/Shifted/Snapshot** | ยังขาด mapping ที่พิสูจน์ได้จาก `FieldEggRaritiesShown` |
+
+### ลำดับ rarity (ต่ำ→สูง)
+
+`Common → Uncommon → Rare → Epic → Legendary → Mythic → Cosmic → Secret → Eternal → Divine`
+
+### สมมติฐาน rarity เดิม — ถูกหักล้างโดยภาพทดสอบ v1.13
+
+`Workspace.ClientRenderedAssets.*.Data.Odds` มีป้ายสัตว์/มอนของผู้เล่นปน ไม่ใช่ field egg list ล้วน ๆ
+จึงห้ามใช้ตำแหน่งหรือชื่อ asset กลุ่มนี้เป็นเป้าไข่โดยตรงอีก
+
+สิ่งที่ต้องจับครั้งเดียว: payload เต็มของ `RE/EggWorld/FieldEggRaritiesShown`
+หลังเรียก `RF/EggWorld/AskFieldEggRarityShows` เพื่อหา UID/record key ที่เชื่อมกับ `AskFieldEggSnapshot`
+
+### บั๊กที่เจอแล้ว + วิธีแก้ใน SizeEPS
+
+| อาการ | สาเหตุ | แก้ (v1.9→v1.10) |
+|---|---|---|
+| Odds=91 แต่ `จับคู่=0` / rar=`?` | จับคู่ Odds→eggDB ด้วย uid/ระยะล้มเหลว | **เป้า GUIDE จากพิกัด Odds โดยตรง** ไม่พึ่ง uid |
+| GUIDE ไม่ขึ้นตอนติ๊ก Ete | ไม่มี Eternal ในแมพ / หรือ rar ยัง `?` | ดู hist `Leg=/Myt=/Ete=` แล้วติ๊กให้ตรง |
+| ติ๊ก rarity ปิดหมดแล้วยังชี้ | เคย fallback scale-only | ต้องติ๊กอย่างน้อย 1 |
+| เส้นชี้ Mythic `sc=0` ของเพื่อน/สัตว์โชว์ | Odds มีทั้งไข่รัง + ป้ายโชว์; sc ว่างยังผ่าน | **v1.10:** เก็บเป้าเฉพาะ **ใกล้ Prompt `Steal` ≤32** และ **บังคับ `scale ≥ MinScale`** (sc ว่าง/0 = ทิ้ง) |
+
+### กติกา SizeEPS v2.4 SAFE
+
+1. SCAN ใช้ `AskFieldEggSnapshot` เท่านั้นสำหรับไข่จริง  
+2. พิกัด = `BottomCFrame/BoundsCFrame`, ขนาด = `AssetScale`  
+3. จับคู่ไข่↔Prompt Steal แบบ one-to-one จากระยะใกล้สุด  
+4. GUIDE หลายเส้นชี้เฉพาะ record ไข่จริง; NEAR/MAX กรองด้วย MinScale  
+5. Snapshot ใหม่แทนที่ฐานเดิมทั้งก้อน ป้องกันรายการค้างสะสม 60→115  
+6. Rarity อ่านจาก runtime config โดยตรง: `AssetCategory → Config.Rarity._id`  
+7. เลือก rarity ได้หลายระดับด้วยปุ่มสี; สี Beam/ป้ายตรงกับระดับไข่  
+8. START กรอง `MinScale + rarity ที่เลือก` แล้วยิง Prompt ที่จับกับไข่จริง  
+9. อัปโหลด: `python gh_upload.py Egg01_SizeEPS.lua`
+
+### แก้บั๊ก v1.11
+
+- แก้ callback ปุ่ม rarity ที่อ้าง `say` / `updateGuide` ผิด scope จนกดแล้วเรียก global `nil`
+- GUIDE ไม่สแกน network จาก `RenderStepped` อีก ป้องกัน `InvokeServer` และ `task.wait` ซ้อนทุกเฟรม
+- SCAN / GUIDE / START โหลด Snapshot ก่อนจับคู่ Odds เพื่อให้ `AssetScale` พร้อมก่อนสร้างเป้า
+- START ไม่ยอมให้ไข่ที่ไม่มี `AssetScale` ผ่าน `MinScale > 0`
+- เก็บเป้าที่ผ่าน Steal+scale ทุก rarity แล้วกรองตอนใช้งาน ทำให้ติ๊กเปิด rarity ใหม่มีผลโดยไม่ต้องสแกนซ้ำ
+
+### แก้บั๊ก v1.12
+
+- Log v1.11 พบ `Odds=68`, `Steal=60`, `noScale=0` แต่ `noSteal=68`: ข้อมูลมีครบ แต่พิกัด `ClientRenderedAssets` ไม่ตรง Prompt
+- หลังจับ Odds ด้วย UID ใช้ `eggDB.BottomCFrame/BoundsCFrame` เป็นตำแหน่งเทียบ Steal แทนตำแหน่งโมเดล render
+- จำกัด fallback จับคู่ด้วยพิกัดจาก 120 เหลือ 24 studs ลดการเอา rarity ของไข่คนละใบ
+- เพิ่ม log `match uid= / pos= / none=` สำหรับตรวจคุณภาพการจับคู่ในแต่ละเซิร์ฟเวอร์
+
+### แก้บั๊ก v1.13
+
+- ถ้า UID/Prompt จับคู่ไม่ได้ GUIDE ยังใช้ตำแหน่ง Odds โดยตรงแบบ rarity-only (`sc=?`)
+- GUIDE วาดเส้นเพิ่มได้สูงสุด 18 เป้าที่ใกล้สุด ตาม rarity ที่ติ๊ก
+- เป้าที่จับคู่ไม่ได้มีไว้บินตามเส้นเท่านั้น; START ยิงเฉพาะเป้าที่ `autoReady` เพื่อกันขโมยผิดใบ
+- Log เปลี่ยน `keep` เป็น `guide`; `noSteal/noScale` เป็นสถานะของระบบ auto ไม่ได้ทำให้เส้น rarity-only หาย
+
+### Rebuild v2.0
+
+- ลบ pipeline Odds/ClientRenderedAssets ออกจาก SizeEPS ทั้งหมด เพราะชี้มอน/สัตว์ของผู้เล่น
+- สร้างใหม่จาก FieldEggSnapshot + FieldEggShifted ซึ่งยืนยันว่าเป็นไข่จริง
+- Rarity ปิดอย่างซื่อสัตย์จนกว่าจะได้ payload `FieldEggRaritiesShown` จาก RaritySpy v1.3
+
+### v2.1 — หลังผล RaritySpy v1.3 (ยกเลิก)
+
+- `AskFieldEggRarityShows()` คืนเพียง boolean `true`; ไม่มี `FieldEggRaritiesShown` หลัง listener เริ่มทำงาน
+- ใช้หลักฐานจำนวน Odds≈58 / field eggs≈60 และระยะเดิม ≤120 สร้าง global nearest one-to-one assignment
+- ทดสอบจริงพบ match เพียง 5/93 และห่างเฉลี่ย ~111 studs จึงหักล้างสมมติฐานนี้; ห้ามใช้ชื่อ rarity ที่ได้จากวิธีนี้
+
+### v2.2 — ตัด rarity เดาระยะ
+
+- คงพิกัด/ขนาดจาก FieldEggSnapshot และ Prompt ที่ match 0.0 studs ซึ่งยืนยันว่าเป็นไข่จริง
+- ลบ Odds→ไข่ spatial rarity assignment ออกจาก runtime
+- แก้ฐาน snapshot ค้าง: replace ฐานทุกครั้งแทน merge อย่างเดียว
+- `Egg01_RaritySpy.lua v1.4` สแกน `getgc`/loaded modules เพื่อหา `AssetCategory→rarity` จาก config โดยตรง
+
+### v2.3 — พบ rarity config โดยตรง
+
+- RaritySpy v1.4 พบ record ที่มี `AssetCategory` และ `Config.Rarity._id` ครบชนิดใน Snapshot เช่น `Burrowing Owl→Rare`, `Centapede→Epic`, `Mammoth→Mythic`
+- SizeEPS สแกน `getgc(true)` แล้วอ่านเฉพาะ `Config.Rarity._id`/`Rarity._id`; ไม่รับ `AreaId=Cosmic` และไม่ใช้ตำแหน่ง Odds
+- RaritySpy v1.5 จำกัด detector ให้รับเฉพาะคีย์ Rarity/Tier/Quality ป้องกัน `AreaId` เป็น false positive
+
+### v2.4 — สี rarity + multi-select
+
+- เปลี่ยนช่องพิมพ์ MinRarity เป็นปุ่มเลือก `Common…Divine` เปิดพร้อมกันหลายระดับได้; ค่าเริ่มต้น Epic ขึ้นไป
+- สีเส้นและป้ายใช้สีประจำ rarity; เป้าอันดับหนึ่งเด่นด้วยความหนาแทนการบังคับเป็นสีเหลือง
+- ปุ่ม `ALL` เปิด/ปิดทุกระดับ และ log แสดงรายการระดับที่เลือก
+- เพิ่มระยะแสดงป้ายจาก 1,200 เป็น 6,000 studs และแก้ status หลัง SCAN ให้กลับมาแสดงเป้าอันดับหนึ่ง
+
+```lua
+loadstring(game:HttpGet("https://fttinvesting.com/rb/Egg01_SizeEPS.lua?v="..tick()))()
+```
+
+### สิ่งที่ยังไม่นิ่ง
+
+- จับคู่ Odds hexUid ↔ FieldEgg `Uid` ไม่เสถียรทุกเซิร์ฟ — ใช้พิกัด+Steal เป็นหลัก  
+- ไข่เพื่อนที่มี Steal จริงยังเข้าเป้าได้ (เกมออกแบบให้ขโมยฐานคนอื่น) — ถ้าต้องการยกเว้นเพื่อน ต้องมีรายชื่อ/พิกัดฐานเพิ่ม  
+- วางไข่ลงคอกที่บ้าน: path ยังไม่ยืนยัน
+
 ## ขั้นถัดไป
 
-1. ~~spy + ZoneSpy~~ ✅  
-2. ~~`Egg01_Auto` MVP~~ ✅ ผู้เล่นขโมยเอง → hop/drop/wait/steal จน HOME (วางคอกเอง)  
-3. ปรับ `hopStuds` / `dropWait` ตามเทสต์จริง  
-4. (ทีหลัง) วัด SafeZone Part แม่นกว่านี้
+1. ~~spy + ZoneSpy + rarity Odds~~ ✅  
+2. ~~Auto walk-drop + SizeEPS GUIDE~~ ✅  
+3. เทสต์ v1.10: SCAN ต้องมี `keep>0` และเส้นไม่ชี้ sc=0  
+4. (ทีหลัง) กรองยกเว้นฐานเพื่อน / วัด SafeZone แม่นกว่านี้
 
 ## Log อ้างอิง
 
 - ZoneSpy 20:22 Desert: SAFE ~745 / ~645; `EggCarryBounds.SafeZone`  
-- Auto: รอเทสต์ผู้ใช้  
+- RaritySpy: Odds ที่ `ClientRenderedAssets.*.Data.Odds`  
+- SizeEPS v1.9: Odds อ่าน=91 พิกัด=91 | Unc/Epi/Leg/Myt/Cos/Sec/Ete  
+- SizeEPS v1.13: รองรับ rarity-only หลายเส้นเมื่อ UID/Prompt จับคู่ไม่ได้; START ยังล็อกความปลอดภัย  
 - BF04 บนเกมนี้: ใช้ไม่ได้
