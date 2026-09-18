@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v1.7
+-- Egg01_SizeEPS.lua v1.9
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START (ยิงเมื่อใกล้ ≤16)
 
@@ -79,7 +79,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.8"
+title.Text = "Egg01 Size EPS v1.9"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -315,150 +315,159 @@ local function upsertEgg(t)
     eggDB[uid] = e
 end
 
-local function syncOdds()
-    local rf = findNet("AskFieldEggRarityShows")
-    if rf and rf:IsA("RemoteFunction") then
-        pcall(function() rf:InvokeServer() end)
-        task.wait(0.7)
-    end
-    local folder = workspace:FindFirstChild("ClientRenderedAssets")
-    if not folder then return 0, 0 end
+local rarTargets = {} -- เป้าจากป้าย Odds โดยตรง {rar,pos,scale,cat,uid,asset}
+local oddsHist = {} -- rarity -> count (ทุกใบที่อ่านได้)
 
-    local function cleanRar(s)
-        if not s then return nil end
-        s = tostring(s):gsub("<.->", ""):gsub("%s+", "")
-        -- เหลือคำแรกที่เป็นตัวอักษร
-        local w = s:match("([A-Za-z]+)")
-        return w
+local function cleanRar(s)
+    if not s then return nil end
+    s = tostring(s):gsub('<.->', ''):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+    local w = s:match('([A-Za-z]+)')
+    if not w then return nil end
+    -- normalize casing to RARITY_ORDER key
+    for _, n in ipairs(RARITY_ORDER) do
+        if n:lower() == w:lower() then return n end
     end
+    -- also accept Common/Uncommon/Rare
+    local low = w:lower()
+    if RARITY_RANK[low] then
+        return w:sub(1,1):upper() .. w:sub(2):lower()
+    end
+    return w
+end
 
-    local function oddsWorldPos(oddsInst)
-        if not oddsInst then return nil end
-        local bb = oddsInst:FindFirstAncestorWhichIsA("BillboardGui")
-            or (oddsInst:IsA("BillboardGui") and oddsInst)
+local function oddsWorldPos(asset, oddsInst)
+    if oddsInst then
+        local bb = oddsInst:FindFirstAncestorWhichIsA('BillboardGui')
         if bb then
-            if bb.Adornee and bb.Adornee:IsA("BasePart") then
-                return bb.Adornee.Position
+            if bb.Adornee then
+                local ad = bb.Adornee
+                if ad:IsA('BasePart') then return ad.Position end
+                if ad:IsA('Model') then
+                    local pp = ad.PrimaryPart or ad:FindFirstChildWhichIsA('BasePart', true)
+                    if pp then return pp.Position end
+                end
             end
-            if bb.Parent and bb.Parent:IsA("BasePart") then
-                return bb.Parent.Position
-            end
+            if bb.Parent and bb.Parent:IsA('BasePart') then return bb.Parent.Position end
         end
-        local part = oddsInst:FindFirstAncestorWhichIsA("BasePart")
+    end
+    if asset then
+        local part = asset:FindFirstChildWhichIsA('BasePart', true)
         if part then return part.Position end
-        local model = oddsInst:FindFirstAncestorWhichIsA("Model")
-        if model then
-            local ok, cf = pcall(function() return model:GetBoundingBox() end)
-            if ok and cf then return cf.Position end
-            local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-            if pp then return pp.Position end
+    end
+    return nil
+end
+
+local function stampEggRar(rar, pos, uidHint)
+    if not rar then return end
+    local uidN = uidHint and normUid(uidHint) or nil
+    -- 1) uid match
+    if uidN and #uidN >= 8 then
+        for uid, e in pairs(eggDB) do
+            local nu = normUid(uid)
+            if nu == uidN or nu:find(uidN, 1, true) or uidN:find(nu, 1, true) then
+                e.rar = rar
+                return e
+            end
         end
-        return nil
+        oddsByUid[uidN] = rar
+    end
+    -- 2) nearest pos
+    if pos then
+        local best, bestD
+        for _, e in pairs(eggDB) do
+            if e.pos then
+                local d = (e.pos - pos).Magnitude
+                if d <= 120 and (not bestD or d < bestD) then
+                    best, bestD = e, d
+                end
+            end
+        end
+        if best then
+            best.rar = rar
+            return best
+        end
+    end
+    return nil
+end
+
+-- แหล่ง rarity จริง = ClientRenderedAssets.*.Data.Odds (หลัง AskFieldEggRarityShows)
+local function rebuildRarTargets()
+    readCfg()
+    rarTargets = {}
+    oddsHist = {}
+
+    local rf = findNet('AskFieldEggRarityShows')
+    if rf and rf:IsA('RemoteFunction') then
+        pcall(function() rf:InvokeServer() end)
+        task.wait(0.85)
     end
 
-    local n, matched, withPos = 0, 0, 0
-    oddsByUid = {}
-    local oddsPos = {}
+    local folder = workspace:FindFirstChild('ClientRenderedAssets')
+    if not folder then
+        say('⚠ ไม่เจอ ClientRenderedAssets')
+        return 0, 0
+    end
+
+    local rawN, withPos, kept = 0, 0, 0
+    local seen = {}
+
+    local function readOddsText(odds)
+        if not odds then return nil end
+        if odds:IsA('TextLabel') or odds:IsA('TextButton') or odds:IsA('TextBox') then
+            return odds.Text
+        end
+        local tl = odds:FindFirstChildWhichIsA('TextLabel', true)
+            or odds:FindFirstChildWhichIsA('TextButton', true)
+        return tl and tl.Text
+    end
+
     for _, asset in ipairs(folder:GetChildren()) do
-        local uidPart = asset.Name:match("_(%x+)$")
-        local data = asset:FindFirstChild("Data")
-        local odds = data and (data:FindFirstChild("Odds") or data:FindFirstChild("Odds", true))
-        if not odds then
-            odds = asset:FindFirstChild("Odds", true)
-        end
-        local raw
-        if odds then
-            if odds:IsA("TextLabel") or odds:IsA("TextButton") or odds:IsA("TextBox") then
-                raw = odds.Text
-            else
-                local tl = odds:FindFirstChildWhichIsA("TextLabel", true)
-                    or odds:FindFirstChildWhichIsA("TextButton", true)
-                raw = tl and tl.Text
-            end
-        end
-        local rar = cleanRar(raw)
-        if rar and rarRank(rar) > 0 then
-            n = n + 1
-            if uidPart then
-                oddsByUid[uidPart:lower()] = rar
-            end
-            local pos = oddsWorldPos(odds) or oddsWorldPos(data) or oddsWorldPos(asset)
-            if not pos then
-                local part = asset:FindFirstChildWhichIsA("BasePart", true)
-                pos = part and part.Position
-            end
-            if pos then
-                withPos = withPos + 1
-                oddsPos[#oddsPos + 1] = { rar = rar, pos = pos, uid = uidPart and uidPart:lower() }
-            end
-        end
-    end
-
-    -- uid ตรง / บางส่วน
-    for uid, e in pairs(eggDB) do
-        local nu = normUid(uid)
-        local o = oddsByUid[nu]
-        if not o and #nu >= 8 then
-            for ou, rar in pairs(oddsByUid) do
-                if ou:sub(1, 8) == nu:sub(1, 8) then
-                    o = rar
+        local data = asset:FindFirstChild('Data')
+        local odds = data and (data:FindFirstChild('Odds') or data:FindFirstChild('Odds', true))
+        local raw = readOddsText(odds)
+        if (not raw or raw == '') then
+            -- fallback: ลูกชื่อ Odds ใต้ asset
+            for _, d in ipairs(asset:GetDescendants()) do
+                if (d:IsA('TextLabel') or d:IsA('TextButton')) and d.Name:lower() == 'odds' then
+                    raw = d.Text
+                    odds = d
                     break
                 end
             end
         end
-        if o then
-            e.rar = o
-            matched = matched + 1
-        end
-    end
-
-    -- จับคู่ระยะ (กว้างขึ้น)
-    for uid, e in pairs(eggDB) do
-        if (not e.rar or e.rar == "") and e.pos then
-            local best, bestD
-            for _, op in ipairs(oddsPos) do
-                local d = (op.pos - e.pos).Magnitude
-                if d <= 90 and (not bestD or d < bestD) then
-                    best, bestD = op, d
-                end
-            end
-            if best then
-                e.rar = best.rar
-                matched = matched + 1
-            end
-        end
-    end
-
-    -- จับคู่กับ Steal prompt → ไข่ใกล้ prompt
-    for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("ProximityPrompt") and d.Enabled then
-            local a = tostring(d.ActionText):lower()
-            if a:find("steal") then
-                local part = d.Parent
-                if part and not part:IsA("BasePart") then
-                    part = part:FindFirstChildWhichIsA("BasePart", true)
-                end
-                if part then
-                    local bestOp, bestOd
-                    for _, op in ipairs(oddsPos) do
-                        local dd = (op.pos - part.Position).Magnitude
-                        if dd <= 25 and (not bestOd or dd < bestOd) then
-                            bestOp, bestOd = op, dd
+        local rar = cleanRar(raw)
+        if rar and rarRank(rar) > 0 then
+            rawN = rawN + 1
+            oddsHist[rar] = (oddsHist[rar] or 0) + 1
+            local pos = oddsWorldPos(asset, odds)
+            local uidPart = asset.Name:match('_(%x+)$')
+            local egg = stampEggRar(rar, pos, uidPart)
+            if pos then
+                withPos = withPos + 1
+                local key = string.format('%s_%.0f_%.0f_%.0f', rar, pos.X, pos.Y, pos.Z)
+                if not seen[key] then
+                    seen[key] = true
+                    local scale = egg and egg.scale or nil
+                    local cat = egg and egg.cat or '?'
+                    local area = egg and egg.area or '?'
+                    -- ถ้าติ๊ก rarity นี้ไว้ → เป็นเป้า GUIDE
+                    if rarAllowed(rar) then
+                        local scaleOk = true
+                        if CFG.minScale > 0 and scale then
+                            scaleOk = scale >= CFG.minScale
                         end
-                    end
-                    if bestOp then
-                        local bestEgg, bestEd
-                        for _, e in pairs(eggDB) do
-                            if e.pos then
-                                local ed = (e.pos - part.Position).Magnitude
-                                if ed <= 30 and (not bestEd or ed < bestEd) then
-                                    bestEgg, bestEd = e, ed
-                                end
-                            end
-                        end
-                        if bestEgg and (not bestEgg.rar or bestEgg.rar == "") then
-                            bestEgg.rar = bestOp.rar
-                            matched = matched + 1
+                        if scaleOk then
+                            rarTargets[#rarTargets + 1] = {
+                                rar = rar,
+                                pos = pos,
+                                scale = scale,
+                                cat = cat,
+                                area = area,
+                                uid = uidPart,
+                                state = 'Odds',
+                                asset = asset.Name,
+                            }
+                            kept = kept + 1
                         end
                     end
                 end
@@ -466,97 +475,101 @@ local function syncOdds()
         end
     end
 
-    say(string.format("Odds debug: total=%d มีพิกัด=%d จับคู่=%d", n, withPos, matched))
-    return n, matched
+    -- hist สั้นๆ
+    local parts = {}
+    for _, n in ipairs({'Common','Uncommon','Rare','Epic','Legendary','Mythic','Cosmic','Secret','Eternal','Divine'}) do
+        local c = oddsHist[n]
+        if c and c > 0 then parts[#parts+1] = string.format('%s=%d', n:sub(1,3), c) end
+    end
+    say(string.format('Odds อ่าน=%d พิกัด=%d เป้าติ๊ก=%d | %s',
+        rawN, withPos, kept, #parts > 0 and table.concat(parts, ' ') or '-'))
+    return rawN, kept
+end
+
+local function syncOdds()
+    return rebuildRarTargets()
 end
 
 local function ingestSnapshot(res)
-    if typeof(res) ~= "table" then return 0 end
+    if typeof(res) ~= 'table' then return 0 end
     local n = 0
     local rec = res.Records or res.records
-    if typeof(rec) == "table" then
+    if typeof(rec) == 'table' then
         for k, row in pairs(rec) do
-            if typeof(row) == "table" then
-                if not row.Uid and typeof(k) == "string" then
-                    row.Uid = k
-                end
-                if row.Uid then
-                    upsertEgg(row)
-                    n = n + 1
-                end
+            if typeof(row) == 'table' then
+                if not row.Uid and typeof(k) == 'string' then row.Uid = k end
+                if row.Uid then upsertEgg(row); n = n + 1 end
             end
         end
         return n
     end
     if res[1] then
         for _, row in ipairs(res) do
-            if typeof(row) == "table" and row.Uid then
-                upsertEgg(row)
-                n = n + 1
-            elseif typeof(row) == "table" and row.Records then
-                n = n + ingestSnapshot(row)
-            end
+            if typeof(row) == 'table' and row.Uid then upsertEgg(row); n = n + 1
+            elseif typeof(row) == 'table' and row.Records then n = n + ingestSnapshot(row) end
         end
         return n
     end
-    if res.Uid then
-        upsertEgg(res)
-        return 1
-    end
+    if res.Uid then upsertEgg(res); return 1 end
     for _, row in pairs(res) do
-        if typeof(row) == "table" and row.Uid then
-            upsertEgg(row)
-            n = n + 1
-        end
+        if typeof(row) == 'table' and row.Uid then upsertEgg(row); n = n + 1 end
     end
     return n
 end
 
 local function passesFilter(e)
-    if not e or e.state == "Carried" or not e.pos then return false end
-    if CFG.minScale > 0 and (not e.scale or e.scale < CFG.minScale) then return false end
+    if not e or e.state == 'Carried' or not e.pos then return false end
+    if CFG.minScale > 0 and e.scale and e.scale < CFG.minScale then return false end
     if not rarAllowed(e.rar) then return false end
     return true
 end
 
-local function nearestBig(maxScan)
+-- เป้า GUIDE = จากป้าย Odds ที่ติ๊กไว้ (ไม่พึ่งจับคู่ eggDB)
+local function guideTarget()
+    if not anyRarOn() then return nil end
     readCfg()
     local r = hrp()
     if not r then return nil end
-    local best, bestD, bestUid
-    for uid, e in pairs(eggDB) do
-        if passesFilter(e) then
-            local d = (e.pos - r.Position).Magnitude
-            if (not maxScan or d <= maxScan) and (not bestD or d < bestD) then
-                best, bestD, bestUid = e, d, uid
+    if #rarTargets == 0 then rebuildRarTargets() end
+    local best, bestD
+    for _, tg in ipairs(rarTargets) do
+        if rarAllowed(tg.rar) then
+            local scaleOk = true
+            if CFG.minScale > 0 and tg.scale then
+                scaleOk = tg.scale >= CFG.minScale
+            end
+            if scaleOk and tg.pos then
+                local d = (tg.pos - r.Position).Magnitude
+                if CFG.guideMax then
+                    if not best or (tg.scale or 0) > (best.scale or 0) then
+                        best, bestD = tg, d
+                    end
+                else
+                    if not bestD or d < bestD then
+                        best, bestD = tg, d
+                    end
+                end
             end
         end
     end
-    return best, bestD, bestUid
+    return best, bestD
+end
+
+local function nearestBig(maxScan)
+    local old = CFG.guideMax
+    CFG.guideMax = false
+    local e, d = guideTarget()
+    CFG.guideMax = old
+    if maxScan and d and d > maxScan then return nil end
+    return e, d
 end
 
 local function biggestEgg()
-    readCfg()
-    local r = hrp()
-    local best, bestD, bestUid
-    for uid, e in pairs(eggDB) do
-        if passesFilter(e) then
-            if not best or (e.scale or 0) > (best.scale or 0) then
-                local d = r and (e.pos - r.Position).Magnitude or -1
-                best, bestD, bestUid = e, d, uid
-            end
-        end
-    end
-    return best, bestD, bestUid
-end
-
--- เป้า GUIDE ตามโหมด — ไม่ fallback ข้าม rarity
-local function guideTarget()
-    if not anyRarOn() then return nil end
-    if CFG.guideMax then
-        return biggestEgg()
-    end
-    return nearestBig()
+    local old = CFG.guideMax
+    CFG.guideMax = true
+    local e, d = guideTarget()
+    CFG.guideMax = old
+    return e, d
 end
 
 local function paintMode()
@@ -789,14 +802,46 @@ local function matchEggAt(worldPos, maxD)
     return best, bestD, bestUid
 end
 
+local function nearestRarAt(worldPos, maxD)
+    maxD = maxD or 80
+    local best, bestD
+    for _, tg in ipairs(rarTargets) do
+        if tg.pos then
+            local d = (tg.pos - worldPos).Magnitude
+            if d <= maxD and (not bestD or d < bestD) then
+                best, bestD = tg, d
+            end
+        end
+    end
+    -- ถ้า rarTargets ว่าง/ไม่ใกล้ — สแกน hist ไม่ได้ ใช้ eggDB.rar
+    return best, bestD
+end
+
 local function resolveScale(part)
     local egg, md, uid = matchEggAt(part.Position, 55)
-    if egg and egg.scale then
-        return egg.scale, egg, uid, md, "db"
+    local rarTg = nearestRarAt(part.Position, 80)
+    if egg then
+        if rarTg then egg.rar = rarTg.rar end
+        if egg.scale then
+            return egg.scale, egg, uid, md, "db"
+        end
     end
     local vis, how = probeVisualScale(part)
     if vis then
-        return vis, { scale = vis, cat = "?", area = "?", state = "vis" }, nil, nil, how
+        local fake = {
+            scale = vis, cat = (egg and egg.cat) or "?", area = "?", state = "vis",
+            rar = (rarTg and rarTg.rar) or (egg and egg.rar), pos = part.Position,
+        }
+        return vis, fake, uid, md, how
+    end
+    if rarTg then
+        return rarTg.scale, {
+            scale = rarTg.scale, cat = rarTg.cat, area = rarTg.area,
+            rar = rarTg.rar, pos = rarTg.pos, state = "Odds",
+        }, rarTg.uid, nil, "odds"
+    end
+    if egg then
+        return egg.scale, egg, uid, md, "db-nos"
     end
     return nil, nil, nil, nil, "unk"
 end
@@ -913,7 +958,6 @@ end
 
 bScan.MouseButton1Click:Connect(function()
     readCfg()
-    -- snapshot ก่อน แล้วค่อย syncOdds จับคู่ rarity
     for _, name in ipairs({ "AskFieldEggSnapshot", "AskLiveSnapshot" }) do
         local rf = findNet(name)
         if rf and rf:IsA("RemoteFunction") then
@@ -929,28 +973,37 @@ bScan.MouseButton1Click:Connect(function()
     local on, matched = syncOdds()
     local tags = {}
     for _, n in ipairs(RARITY_ORDER) do if CFG.rarOn[n] then tags[#tags+1] = RAR_SHORT[n] end end
-    say(string.format("Odds=%d จับคู่ rarity ได้ %d | กรอง=%s",
-        on or 0, matched or 0, #tags > 0 and table.concat(tags, ",") or "any"))
-    local n, big = dbCount()
-    say(string.format("── SCAN db=%d (ผ่าน %d) sc≥%.2f ──", n, big, CFG.minScale))
-    say("── Top rarity/scale ──")
-    for _, row in ipairs(topBig(10)) do
-        local e = row.e
-        local mark = passesFilter(e) and "★" or " "
-        local r = hrp()
-        local dMe = (r and e.pos) and (e.pos - r.Position).Magnitude or -1
-        say(string.format("%s %s sc=%.2f %s [%s] d=%.0f",
-            mark, tostring(e.rar or "?"), e.scale or -1,
-            tostring(e.cat or "?"), tostring(e.area or "?"), dMe))
+    say(string.format("Odds=%d เป้าติ๊ก=%d | กรอง=%s",
+        on or 0, matched or 0, #tags > 0 and table.concat(tags, ",") or "(ยังไม่ติ๊ก)"))
+    local n = select(1, dbCount())
+    say(string.format("── SCAN db=%d เป้าGUIDE=%d sc≥%.2f ──", n, #rarTargets, CFG.minScale))
+    say("── Top เป้าจาก Odds ──")
+    local r = hrp()
+    table.sort(rarTargets, function(a, b)
+        local ra, rb = rarRank(a.rar), rarRank(b.rar)
+        if ra ~= rb then return ra > rb end
+        return (a.scale or 0) > (b.scale or 0)
+    end)
+    local shown = 0
+    for _, tg in ipairs(rarTargets) do
+        shown = shown + 1
+        if shown > 12 then break end
+        local dMe = (r and tg.pos) and (tg.pos - r.Position).Magnitude or -1
+        say(string.format("★ %s sc=%s %s d=%.0f",
+            tostring(tg.rar), tg.scale and string.format("%.2f", tg.scale) or "?",
+            tostring(tg.cat or "?"), dMe))
+    end
+    if #rarTargets == 0 then
+        say("⚠ ไม่มีเป้า — ติ๊ก rarity ให้ตรงกับที่ Odds มี (ดู Leg=/Myt= ด้านบน)")
     end
     if GUIDE then updateGuide() end
     local nb, nd = guideTarget()
     if nb then
-        say(string.format("→ GUIDE[%s]: %s %s sc=%.3f ห่าง %.0f",
+        say(string.format("→ GUIDE[%s]: %s %s sc=%s ห่าง %.0f",
             CFG.guideMax and "MAX" or "NEAR", tostring(nb.rar or "?"),
-            tostring(nb.cat), nb.scale or 0, nd))
+            tostring(nb.cat), nb.scale and string.format("%.3f", nb.scale) or "?", nd))
     else
-        say("→ ยังไม่มีเป้าที่ผ่านฟิลเตอร์ (rar ยัง ? หรือติ๊กไม่ตรง)")
+        say("→ ยังไม่มีเป้า GUIDE (ติ๊กไม่ตรง / ไม่มี Odds ชนิดนั้น)")
     end
     local list = listStealNear(150)
     if #list == 0 then
@@ -958,10 +1011,10 @@ bScan.MouseButton1Click:Connect(function()
         return
     end
     say("── Steal ใกล้ตัว ──")
-    local shown = 0
+    local s2 = 0
     for _, it in ipairs(list) do
-        if shown >= 10 then break end
-        shown = shown + 1
+        if s2 >= 10 then break end
+        s2 = s2 + 1
         local e = it.egg
         local mark = (e and passesFilter(e)) and "★" or " "
         say(string.format("%s d=%.0f %s sc≈%.2f %s",
@@ -972,60 +1025,74 @@ end)
 
 local function loop()
     readCfg()
-    say(string.format("START EPS — ขโมยเฉพาะ scale≥%.2f เมื่อใกล้ ≤%d", CFG.minScale, STEAL_RANGE))
+    say(string.format("START EPS — rarity ที่ติ๊ก + sc≥%.2f ยิงเมื่อ ≤%d", CFG.minScale, STEAL_RANGE))
     local nb0, nd0 = nearestBig()
     if nb0 then
-        say(string.format("★ เป้าใกล้สุด %s sc=%.3f ห่าง %.0f — เดินเข้าไปให้ ≤%d",
-            tostring(nb0.cat), nb0.scale, nd0, STEAL_RANGE))
+        say(string.format("★ เป้า %s %s sc=%s ห่าง %.0f — เดินเข้า ≤%d",
+            tostring(nb0.rar), tostring(nb0.cat),
+            nb0.scale and string.format("%.3f", nb0.scale) or "?", nd0, STEAL_RANGE))
     else
-        say("ยังไม่มีไข่ ≥ MinScale ใน DB")
+        say("ยังไม่มีเป้าจาก Odds ที่ติ๊กไว้ — กด SCAN")
     end
-    local tLog = 0
+    local tLog, tResync = 0, 0
     while RUN do
         if carrying then
             lab.Text = "ถือไข่แล้ว — ไป Auto กลับบ้าน"
             task.wait(0.4)
         else
+            if os.clock() - tResync > 8 then
+                tResync = os.clock()
+                pcall(rebuildRarTargets)
+            end
             local list = listStealNear(200)
+            local nb, nd = guideTarget()
             local target
+            -- ยิง Steal ที่ใกล้ตัว และตรงเป้า Odds (ระยะจากป้าย ≤35)
             for _, it in ipairs(list) do
-                if it.dist <= STEAL_RANGE and it.egg and passesFilter(it.egg) then
-                    target = it
-                    break
+                if it.dist <= STEAL_RANGE then
+                    local eggOk = it.egg and passesFilter(it.egg)
+                    local nearOdds = false
+                    if nb and nb.pos and it.part then
+                        nearOdds = (it.part.Position - nb.pos).Magnitude <= 35
+                            and rarAllowed(nb.rar)
+                    end
+                    if not nearOdds then
+                        local tg2 = nearestRarAt(it.part.Position, 35)
+                        if tg2 and rarAllowed(tg2.rar) then
+                            local scaleOk = true
+                            if CFG.minScale > 0 and (it.scale or tg2.scale) then
+                                scaleOk = (it.scale or tg2.scale) >= CFG.minScale
+                            end
+                            nearOdds = scaleOk
+                        end
+                    end
+                    if eggOk or nearOdds then
+                        target = it
+                        break
+                    end
                 end
             end
             if target then
                 say(string.format("ยิง ★ %s sc≈%.2f %s d=%.1f",
-                    tostring(target.egg.rar or "?"), target.scale or -1,
-                    tostring(target.egg.cat or "?"), target.dist))
+                    tostring(target.egg and target.egg.rar or (nb and nb.rar) or "?"),
+                    target.scale or -1,
+                    tostring(target.egg and target.egg.cat or "?"), target.dist))
                 tryFire(target.pp)
             else
-                local nb, nd = nearestBig()
-                local near
-                for _, it in ipairs(list) do
-                    if it.dist <= STEAL_RANGE then near = it break end
-                end
-                if near and near.scale then
-                    if nb then
-                        lab.Text = string.format("หน้าคุณ≈%.2f เล็ก | ★%s sc=%.2f ห่าง%.0f",
-                            near.scale, tostring(nb.cat), nb.scale, nd)
-                    else
-                        lab.Text = string.format("ข้ามเล็ก ≈%.2f < %.2f", near.scale, CFG.minScale)
-                    end
-                elseif nb then
-                    lab.Text = string.format("★ %s sc=%.2f ห่าง %.0f — เดินเข้า", tostring(nb.cat), nb.scale, nd)
+                if nb then
+                    lab.Text = string.format("★ %s %s ห่าง %.0f — เดินเข้า",
+                        tostring(nb.rar), tostring(nb.cat), nd)
                 else
-                    lab.Text = string.format("รอไข่ใหญ่… db big=%d", select(2, dbCount()))
+                    lab.Text = string.format("รอเป้า Odds… เป้า=%d", #rarTargets)
                 end
             end
             if os.clock() - tLog > 3 then
                 tLog = os.clock()
-                local nb, nd = nearestBig()
                 if nb then
-                    say(string.format("… ★ %s sc=%.3f ห่าง %.0f (ยิงเมื่อ ≤%d)",
-                        tostring(nb.cat), nb.scale, nd, STEAL_RANGE))
+                    say(string.format("… ★ %s %s ห่าง %.0f (ยิงเมื่อ ≤%d)",
+                        tostring(nb.rar), tostring(nb.cat), nd, STEAL_RANGE))
                 else
-                    say(string.format("… ยังไม่มี ★ (≥%.2f)", CFG.minScale))
+                    say(string.format("… ยังไม่มีเป้า (ติ๊ก/Odds) เป้า=%d", #rarTargets))
                 end
             end
         end
@@ -1092,7 +1159,7 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.8 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
+say("Size EPS v1.9 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
 say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
 task.spawn(function()
     task.wait(0.8)
