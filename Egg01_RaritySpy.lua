@@ -1,4 +1,4 @@
--- Egg01_RaritySpy.lua v1.4
+-- Egg01_RaritySpy.lua v1.5
 -- Focused config/GC search for the missing AssetCategory -> rarity relationship.
 -- ClientRenderedAssets Odds are NOT trusted because player pets/monsters are mixed in.
 
@@ -48,7 +48,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Category Rarity Spy v1.4"
+title.Text = "Egg01 Category Rarity Spy v1.5"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -220,21 +220,22 @@ local function exactRarity(value)
     return nil
 end
 
-local function findRarityInTable(value, depth, seen)
+local function findRarityInTable(value, depth, seen, underRarity)
     if typeof(value) ~= "table" or depth > 3 or seen[value] then return nil end
     seen[value] = true
     for k, v in pairs(value) do
         local key = tostring(k):lower()
-        if key:find("rar", 1, true) or key:find("tier", 1, true) or key:find("quality", 1, true) then
+        local relevant = key:find("rar", 1, true) or key:find("tier", 1, true) or key:find("quality", 1, true)
+        if relevant or (underRarity and (key == "_id" or key == "id" or key == "name")) then
             local rarity = exactRarity(v)
             if rarity then return tostring(k) .. "=" .. rarity end
         end
     end
     for k, v in pairs(value) do
-        local rarity = exactRarity(v)
-        if rarity then return tostring(k) .. "=" .. rarity end
         if typeof(v) == "table" then
-            local nested = findRarityInTable(v, depth + 1, seen)
+            local key = tostring(k):lower()
+            local nested = findRarityInTable(v, depth + 1, seen,
+                underRarity or key:find("rar", 1, true) ~= nil or key:find("tier", 1, true) ~= nil or key:find("quality", 1, true) ~= nil)
             if nested then return tostring(k) .. "." .. nested end
         end
     end
@@ -467,7 +468,7 @@ do
 end
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Category Rarity Spy v1.4 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Category Rarity Spy v1.5 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -480,5 +481,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RAR = nil
 end)
 
-say("Category Rarity Spy v1.4 — ไม่จับ rarity จากระยะ")
+say("Category Rarity Spy v1.5 — อ่านเฉพาะ Rarity/Tier/Quality")
 say("กด CONFIG → รอคำว่า CONFIG จบ → COPY ส่ง log")
