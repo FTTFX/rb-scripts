@@ -1,6 +1,5 @@
--- Egg01_Auto.lua v3.0
--- ทิ้งเมื่อออกจากโซนสีที่ขโมย | ใกล้เขตปลอดภัย/HOME = วิ่งเข้าบ้านเลยไม่ทิ้ง
--- เดินปกติทั้งเส้น (ไม่ CFrame / ไม่ผลัก)
+-- Egg01_Auto.lua v3.1
+-- เดินปกติทั้งเส้น | ทิ้ง/เก็บเมื่อพ้นโซนสี = ตั้งค่าใน GUI ได้
 
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
@@ -18,17 +17,19 @@ local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
 local HOME = nil
 local RUN = false
-local HOP = 140
-local WAIT_DROP = 2
 local HOME_R = 60
 local START_AWAY = 120
+local CFG = {
+    dropPick = true, -- พ้นโซนสี → ทิ้ง → รอ → เก็บ
+    waitDrop = 2,
+    hop = 140,
+}
 local lines = {}
 local carrying = false
 local carryUid = nil
 local eggArea = nil -- โซนสีที่ขโมยมา (Forest/Snow/Desert/…) ต้องออกก่อนทิ้ง
 
-
--- ===== GUI ง่ายๆ =====
+-- ===== GUI แผง =====
 local gui = Instance.new("ScreenGui")
 gui.Name = "Egg01_V2"
 gui.ResetOnSpawn = false
@@ -40,43 +41,96 @@ end)
 if not gui.Parent then gui.Parent = PG end
 _G.EGG01_V2.gui = gui
 
-local function btn(text, x, color)
-    local b = Instance.new("TextButton", gui)
-    b.Size = UDim2.new(0, 64, 0, 30)
-    b.Position = UDim2.new(0, x, 0, 10)
+local panel = Instance.new("Frame", gui)
+panel.Name = "Panel"
+panel.Size = UDim2.new(0, 280, 0, 168)
+panel.Position = UDim2.new(0, 12, 0, 12)
+panel.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
+panel.BackgroundTransparency = 0.12
+panel.BorderSizePixel = 0
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
+
+local title = Instance.new("TextLabel", panel)
+title.Size = UDim2.new(1, -40, 0, 22)
+title.Position = UDim2.new(0, 10, 0, 6)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.fromRGB(230, 230, 230)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Text = "Egg01 Auto v3.1"
+
+local function mkBtn(parent, text, x, y, w, color)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(0, w, 0, 28)
+    b.Position = UDim2.new(0, x, 0, y)
     b.BackgroundColor3 = color
     b.TextColor3 = Color3.new(1, 1, 1)
     b.Font = Enum.Font.GothamBold
-    b.TextSize = 14
+    b.TextSize = 12
     b.Text = text
     b.BorderSizePixel = 0
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
     return b
 end
 
-local bHome  = btn("HOME", 10, Color3.fromRGB(50, 100, 180))
-local bStart = btn("START", 80, Color3.fromRGB(40, 150, 70))
-local bStop  = btn("STOP", 150, Color3.fromRGB(160, 50, 50))
-local bCopy  = btn("COPY", 220, Color3.fromRGB(70, 70, 70))
-local bClose = btn("X", 290, Color3.fromRGB(100, 40, 40))
+local bClose = mkBtn(panel, "X", 244, 4, 28, Color3.fromRGB(120, 45, 45))
+local bHome  = mkBtn(panel, "HOME", 10, 34, 58, Color3.fromRGB(50, 100, 180))
+local bStart = mkBtn(panel, "START", 74, 34, 58, Color3.fromRGB(40, 150, 70))
+local bStop  = mkBtn(panel, "STOP", 138, 34, 58, Color3.fromRGB(160, 50, 50))
+local bCopy  = mkBtn(panel, "COPY", 202, 34, 58, Color3.fromRGB(70, 70, 70))
 
-local lab = Instance.new("TextLabel", gui)
-lab.Size = UDim2.new(0, 340, 0, 22)
-lab.Position = UDim2.new(0, 10, 0, 44)
+-- แถวตั้งค่า
+local rowY = 70
+local bDrop = mkBtn(panel, "ทิ้ง/เก็บ: ON", 10, rowY, 120, Color3.fromRGB(45, 120, 90))
+
+local function mkField(parent, label, x, y, w, def)
+    local lb = Instance.new("TextLabel", parent)
+    lb.Size = UDim2.new(0, 50, 0, 18)
+    lb.Position = UDim2.new(0, x, 0, y - 2)
+    lb.BackgroundTransparency = 1
+    lb.TextColor3 = Color3.fromRGB(170, 170, 170)
+    lb.Font = Enum.Font.Gotham
+    lb.TextSize = 11
+    lb.TextXAlignment = Enum.TextXAlignment.Left
+    lb.Text = label
+    local tb = Instance.new("TextBox", parent)
+    tb.Size = UDim2.new(0, w, 0, 24)
+    tb.Position = UDim2.new(0, x, 0, y + 14)
+    tb.BackgroundColor3 = Color3.fromRGB(40, 42, 48)
+    tb.TextColor3 = Color3.new(1, 1, 1)
+    tb.Font = Enum.Font.GothamBold
+    tb.TextSize = 12
+    tb.Text = tostring(def)
+    tb.ClearTextOnFocus = false
+    tb.BorderSizePixel = 0
+    Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 4)
+    return tb
+end
+
+local tWait = mkField(panel, "รอทิ้ง(วิ)", 140, rowY, 54, CFG.waitDrop)
+local tHop  = mkField(panel, "ก้าว(stud)", 204, rowY, 56, CFG.hop)
+
+local lab = Instance.new("TextLabel", panel)
+lab.Size = UDim2.new(1, -20, 0, 36)
+lab.Position = UDim2.new(0, 10, 0, 122)
 lab.BackgroundTransparency = 1
 lab.TextColor3 = Color3.fromRGB(255, 220, 100)
 lab.Font = Enum.Font.GothamBold
-lab.TextSize = 13
+lab.TextSize = 12
 lab.TextXAlignment = Enum.TextXAlignment.Left
+lab.TextYAlignment = Enum.TextYAlignment.Top
+lab.TextWrapped = true
 lab.Text = "พร้อม — กด HOME ที่จุดเกิด"
 
 local log = Instance.new("TextBox", gui)
-log.Size = UDim2.new(0, 400, 0, 150)
-log.Position = UDim2.new(0, 10, 1, -160)
+log.Size = UDim2.new(0, 280, 0, 120)
+log.Position = UDim2.new(0, 12, 0, 188)
 log.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-log.BackgroundTransparency = 0.25
-log.TextColor3 = Color3.fromRGB(200, 255, 200)
+log.BackgroundTransparency = 0.3
+log.TextColor3 = Color3.fromRGB(180, 240, 180)
 log.Font = Enum.Font.Code
-log.TextSize = 12
+log.TextSize = 11
 log.TextXAlignment = Enum.TextXAlignment.Left
 log.TextYAlignment = Enum.TextYAlignment.Top
 log.ClearTextOnFocus = false
@@ -84,6 +138,7 @@ log.TextEditable = false
 log.MultiLine = true
 log.TextWrapped = true
 log.Text = ""
+Instance.new("UICorner", log).CornerRadius = UDim.new(0, 6)
 
 local function say(msg)
     lines[#lines + 1] = msg
@@ -91,6 +146,29 @@ local function say(msg)
     log.Text = table.concat(lines, "\n")
     lab.Text = msg
 end
+
+local function paintDrop()
+    if CFG.dropPick then
+        bDrop.Text = "ทิ้ง/เก็บ: ON"
+        bDrop.BackgroundColor3 = Color3.fromRGB(45, 120, 90)
+    else
+        bDrop.Text = "ทิ้ง/เก็บ: OFF"
+        bDrop.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
+    end
+end
+
+local function readCfg()
+    local w = tonumber(tWait.Text)
+    if w and w >= 0 then CFG.waitDrop = w end
+    local h = tonumber(tHop.Text)
+    if h and h >= 40 then CFG.hop = h end
+end
+
+bDrop.MouseButton1Click:Connect(function()
+    CFG.dropPick = not CFG.dropPick
+    paintDrop()
+    say(CFG.dropPick and "ทิ้ง/เก็บ: ON (พ้นโซนสี→ทิ้ง→เก็บ)" or "ทิ้ง/เก็บ: OFF (วิ่งเข้าบ้านอย่างเดียว)")
+end)
 
 local function hrp()
     local c = LP.Character
@@ -168,7 +246,7 @@ local function hopHome()
     local d = dist2(r.Position, HOME)
     if d <= HOME_R then return true end
     local flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
-    local step = math.min(HOP, math.max(50, d - HOME_R * 0.5))
+    local step = math.min(CFG.hop, math.max(50, d - HOME_R * 0.5))
     local dest = r.Position + flat.Unit * step
     walkTo(dest, 14)
     return false
@@ -339,8 +417,8 @@ local function dropThenPick(why)
         say("ทิ้งไม่สำเร็จ")
         return false
     end
-    say(string.format("รอ %.0f วิ…", WAIT_DROP))
-    task.wait(WAIT_DROP)
+    say(string.format("รอ %.0f วิ…", CFG.waitDrop))
+    task.wait(CFG.waitDrop)
     if not RUN then return true end
     if not doSteal() then
         say("เก็บไข่จุดทิ้ง…")
@@ -408,7 +486,8 @@ local function loop()
                 end
             end
 
-            -- วิ่งปกติทั้งเส้น: hop → พ้นโซนสีค่อยทิ้ง/เก็บ
+            -- วิ่งปกติ: hop → (ถ้าเปิด) พ้นโซนสีค่อยทิ้ง/เก็บ
+            readCfg()
             if hopHome() then
                 if isCarry() then
                     say("ถึงบ้านแล้ว — จบ")
@@ -419,7 +498,7 @@ local function loop()
             r = hrp()
             d = r and HOME and dist2(r.Position, HOME) or 9999
             fin = isFinalStretch()
-            if isCarry() and d > HOME_R and not fin then
+            if CFG.dropPick and isCarry() and d > HOME_R and not fin then
                 local safe, why = isDropSafe()
                 if not safe then
                     say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
@@ -454,6 +533,7 @@ end)
 
 bStart.MouseButton1Click:Connect(function()
     if RUN then return end
+    readCfg()
     if not HOME then
         local r = hrp()
         if not r then say("กด HOME ก่อน"); return end
@@ -465,7 +545,8 @@ bStart.MouseButton1Click:Connect(function()
     eggArea = nil
     RUN = true
     bStart.Text = "..."
-    say("START — ไปขโมยไข่ใหม่หลังกด")
+    say(string.format("START — ทิ้ง/เก็บ=%s รอ=%.0f ก้าว=%.0f",
+        CFG.dropPick and "ON" or "OFF", CFG.waitDrop, CFG.hop))
     task.spawn(loop)
 end)
 
@@ -476,7 +557,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Auto v3.0 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Auto v3.1 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -490,6 +571,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v3.0 พร้อม (วิ่งปกติ)")
-say("ทิ้งทีละโซนสี | เขตปลอดภัย→วิ่งเข้า HOME เลย")
-say("HOME → START → ค่อยขโมยไข่")
+paintDrop()
+say("Egg01 Auto v3.1 พร้อม")
+say("ตั้งค่า: ทิ้ง/เก็บ | รอทิ้ง | ก้าว — แล้ว HOME → START")
