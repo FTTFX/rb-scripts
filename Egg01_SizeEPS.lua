@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v1.0
+-- Egg01_SizeEPS.lua v1.1
 -- EPS แยกขนาด: จำ AssetScale จาก FieldEggShifted แล้วขโมยเฉพาะไข่ที่ใหญ่พอ
 -- SCAN = ลิสต์ไข่ใกล้ตัว+สเกล | START = ยิง Steal เฉพาะ scale >= MinScale
 
@@ -55,7 +55,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.0"
+title.Text = "Egg01 Size EPS v1.1"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -192,16 +192,67 @@ local function promptPart(pp)
     return p:FindFirstChildWhichIsA("BasePart", true)
 end
 
+-- วัดขนาดจากโมเดลใกล้ prompt (ไข่ในรังเห็นสเกลชัดก่อน Shifted)
+local function probeVisualScale(anchor)
+    if not anchor then return nil, "no-part" end
+    local bestVol, bestMax, src = 0, 0, nil
+    local origin = anchor.Position
+    -- ไล่ parent ขึ้นหา Model แล้ววัดลูก
+    local roots = { anchor }
+    local p = anchor.Parent
+    for _ = 1, 6 do
+        if not p or p == workspace then break end
+        roots[#roots + 1] = p
+        if p:IsA("Model") then break end
+        p = p.Parent
+    end
+    -- + สแกน part ใกล้ๆ 12 studs
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("BasePart") and not d:IsA("Terrain") then
+            local nm = d.Name:lower()
+            local near = (d.Position - origin).Magnitude <= 14
+            local eggish = nm:find("egg") or nm:find("nest") or nm:find("slot") or nm:find("carry")
+            if near and (eggish or (d.Position - origin).Magnitude <= 6) then
+                local s = d.Size
+                local mx = math.max(s.X, s.Y, s.Z)
+                local vol = s.X * s.Y * s.Z
+                if mx > 1.2 and vol > bestVol then
+                    bestVol, bestMax, src = vol, mx, d
+                end
+            end
+        end
+    end
+    -- attribute / NumberValue บนสาย parent
+    for _, root in ipairs(roots) do
+        for _, key in ipairs({ "AssetScale", "NestScale", "Scale", "EggScale", "SizeScale" }) do
+            local ok, v = pcall(function() return root:GetAttribute(key) end)
+            if ok and tonumber(v) then
+                return tonumber(v), "attr:" .. key
+            end
+        end
+        for _, ch in ipairs(root:GetDescendants()) do
+            if ch:IsA("NumberValue") or ch:IsA("NumberConstraint") then
+                local nl = ch.Name:lower()
+                if nl:find("scale") and tonumber(ch.Value) then
+                    return tonumber(ch.Value), "nv:" .. ch.Name
+                end
+            end
+        end
+    end
+    if bestMax > 0 then
+        -- แปลง max stud → ประมาณ AssetScale (Walrus~4 / Bounds~7)
+        local approx = bestMax / 1.8
+        return approx, string.format("visMax=%.1f", bestMax)
+    end
+    return nil, "none"
+end
+
 local function matchEggAt(worldPos, maxD)
-    maxD = maxD or 18
+    maxD = maxD or 55
     local best, bestD, bestUid
     for uid, e in pairs(eggDB) do
         if e.pos and e.scale then
-            if CFG.onlySlot and e.state and e.state ~= "Slot" and e.state ~= "Dropped" then
-                -- ข้าม Carried ของคนอื่น
-            end
-            local skip = false
-            if CFG.onlySlot and e.state == "Carried" then skip = true end
+            local skip = CFG.onlySlot and e.state == "Carried"
             if not skip then
                 local d = (e.pos - worldPos).Magnitude
                 if d <= maxD and (not bestD or d < bestD) then
@@ -213,30 +264,52 @@ local function matchEggAt(worldPos, maxD)
     return best, bestD, bestUid
 end
 
+local function resolveScale(part)
+    local egg, md, uid = matchEggAt(part.Position, 55)
+    if egg and egg.scale then
+        return egg.scale, egg, uid, md, "db"
+    end
+    local vis, how = probeVisualScale(part)
+    if vis then
+        return vis, { scale = vis, cat = "?", area = "?", state = "vis" }, nil, nil, how
+    end
+    return nil, nil, nil, nil, "unk"
+end
+
 local function listStealNear(radius)
     radius = radius or 120
     local r = hrp()
     if not r then return {} end
     local out = {}
+    local seen = {}
     for _, d in ipairs(workspace:GetDescendants()) do
         if d:IsA("ProximityPrompt") and d.Enabled then
             local a = tostring(d.ActionText):lower()
             if a:find("steal") then
                 local part = promptPart(d)
                 if part then
-                    local dd = (part.Position - r.Position).Magnitude
-                    if dd <= radius then
-                        local egg, md, uid = matchEggAt(part.Position, 22)
-                        out[#out + 1] = {
-                            pp = d, part = part, dist = dd,
-                            egg = egg, matchD = md, uid = uid,
-                        }
+                    local key = string.format("%.0f_%.0f_%.0f", part.Position.X, part.Position.Y, part.Position.Z)
+                    if not seen[key] then
+                        seen[key] = true
+                        local dd = (part.Position - r.Position).Magnitude
+                        if dd <= radius then
+                            local scale, egg, uid, md, src = resolveScale(part)
+                            out[#out + 1] = {
+                                pp = d, part = part, dist = dd,
+                                egg = egg, matchD = md, uid = uid,
+                                scale = scale, src = src,
+                            }
+                        end
                     end
                 end
             end
         end
     end
-    table.sort(out, function(a, b) return a.dist < b.dist end)
+    table.sort(out, function(a, b)
+        local sa, sb = a.scale or -1, b.scale or -1
+        if sa ~= sb then return sa > sb end
+        return a.dist < b.dist
+    end)
     return out
 end
 
@@ -315,26 +388,55 @@ end
 
 bScan.MouseButton1Click:Connect(function()
     readCfg()
+    -- ขอ snapshot ถ้ามี
+    for _, name in ipairs({ "AskFieldEggSnapshot", "AskLiveSnapshot" }) do
+        local rf = findNet(name)
+        if rf and rf:IsA("RemoteFunction") then
+            local ok, res = pcall(function() return rf:InvokeServer() end)
+            say(string.format("RF %s → %s", name, ok and typeof(res) or tostring(res)))
+            if ok and typeof(res) == "table" then
+                if res[1] then
+                    for _, row in ipairs(res) do upsertEgg(row) end
+                else
+                    upsertEgg(res)
+                    for _, row in pairs(res) do
+                        if typeof(row) == "table" and row.Uid then upsertEgg(row) end
+                    end
+                end
+            end
+        end
+    end
     local n, big = dbCount()
     say(string.format("── SCAN db=%d (≥%.2f มี %d) ──", n, CFG.minScale, big))
+    local di = 0
+    for uid, e in pairs(eggDB) do
+        di = di + 1
+        if di <= 8 then
+            say(string.format("  DB %s sc=%.3f %s [%s] %s @%s",
+                tostring(uid):sub(1, 8), e.scale or -1,
+                tostring(e.cat or "?"), tostring(e.area or "?"),
+                tostring(e.state or "?"),
+                e.pos and string.format("%.0f,%.0f", e.pos.X, e.pos.Z) or "?"))
+        end
+    end
     local list = listStealNear(150)
     if #list == 0 then
-        say("ไม่เจอ Steal ใน 150 studs — เดินใกล้รัง / รอ Shifted สะสม")
+        say("ไม่เจอ Steal ใน 150 studs")
         return
     end
     local shown = 0
     for _, it in ipairs(list) do
         if shown >= 12 then break end
         shown = shown + 1
-        local e = it.egg
-        if e then
-            local mark = (e.scale and e.scale >= CFG.minScale) and "★" or " "
-            say(string.format("%s d=%.0f scale=%.3f %s [%s] %s",
-                mark, it.dist, e.scale or -1,
-                tostring(e.cat or "?"), tostring(e.area or "?"),
-                tostring(e.state or "?")))
+        local sc = it.scale
+        if sc then
+            local mark = sc >= CFG.minScale and "★" or " "
+            say(string.format("%s d=%.0f scale≈%.2f %s (%s)",
+                mark, it.dist, sc,
+                tostring(it.egg and it.egg.cat or "?"),
+                tostring(it.src)))
         else
-            say(string.format("  d=%.0f  (ยังไม่รู้สเกล — รอ Shifted)", it.dist))
+            say(string.format("  d=%.0f  ไม่รู้สเกล", it.dist))
         end
     end
 end)
@@ -351,22 +453,21 @@ local function loop()
             local list = listStealNear(80)
             local target
             for _, it in ipairs(list) do
-                if it.dist <= STEAL_RANGE and it.egg and it.egg.scale and it.egg.scale >= CFG.minScale then
+                if it.dist <= STEAL_RANGE and it.scale and it.scale >= CFG.minScale then
                     target = it
                     break
                 end
             end
             if target then
-                say(string.format("ยิง ★ scale=%.3f %s d=%.1f",
-                    target.egg.scale, tostring(target.egg.cat), target.dist))
+                say(string.format("ยิง ★ scale≈%.2f %s d=%.1f (%s)",
+                    target.scale, tostring(target.egg and target.egg.cat or "?"),
+                    target.dist, tostring(target.src)))
                 tryFire(target.pp)
             else
-                -- ใกล้แต่เล็ก = ไม่ยิง
                 local near = list[1]
                 if near and near.dist <= STEAL_RANGE then
-                    if near.egg and near.egg.scale then
-                        lab.Text = string.format("ข้ามเล็ก %.3f < %.2f | %s",
-                            near.egg.scale, CFG.minScale, tostring(near.egg.cat))
+                    if near.scale then
+                        lab.Text = string.format("ข้ามเล็ก ≈%.2f < %.2f", near.scale, CFG.minScale)
                     else
                         lab.Text = string.format("ใกล้ d=%.0f ยังไม่รู้สเกล", near.dist)
                     end
