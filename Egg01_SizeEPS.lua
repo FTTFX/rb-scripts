@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v2.3 SAFE
+-- Egg01_SizeEPS.lua v2.4 SAFE
 -- Rebuilt from verified field-egg data only.
 -- Source: AskFieldEggSnapshot / FieldEggShifted -> BottomCFrame/BoundsCFrame + AssetScale.
 -- Rarity: verified client config path AssetCategory -> Config.Rarity._id (found via getgc).
@@ -13,7 +13,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local CFG = { minScale = 1, minRarity = "Epic", maxLines = 18, maxMatch = 60, fireRange = 16, maxMode = false }
+local CFG = { minScale = 1, maxLines = 18, maxMatch = 60, fireRange = 16, maxMode = false }
 local RUN, GUIDE, carrying = false, false, false
 local eggDB, targets, conns, lines, rarityByCategory = {}, {}, {}, {}, {}
 local guideFolder, rootAttachment
@@ -22,15 +22,23 @@ local RARITY_RANK = {
  common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5,
  mythic = 6, cosmic = 7, secret = 8, eternal = 9, divine = 10,
 }
+local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
+local RARITY_SHORT = { Common="Com", Uncommon="Unc", Rare="Rare", Epic="Epic", Legendary="Leg", Mythic="Myt", Cosmic="Cos", Secret="Sec", Eternal="Ete", Divine="Div" }
+local RARITY_COLOR = {
+ Common = Color3.fromRGB(190, 195, 205), Uncommon = Color3.fromRGB(75, 205, 105),
+ Rare = Color3.fromRGB(65, 135, 255), Epic = Color3.fromRGB(178, 78, 235),
+ Legendary = Color3.fromRGB(255, 196, 35), Mythic = Color3.fromRGB(245, 70, 95),
+ Cosmic = Color3.fromRGB(55, 220, 235), Secret = Color3.fromRGB(230, 65, 205),
+ Eternal = Color3.fromRGB(45, 220, 175), Divine = Color3.fromRGB(245, 238, 255),
+}
+local selectedRarities = {}
+for _, rarity in ipairs(RARITY_ORDER) do selectedRarities[rarity] = false end
+for _, rarity in ipairs({ "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }) do selectedRarities[rarity] = true end
 
 local function cleanRarity(value)
  local word = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
  if not RARITY_RANK[word] then return nil end
  return word:sub(1, 1):upper() .. word:sub(2)
-end
-
-local function rarRank(value)
- return RARITY_RANK[tostring(value or ""):lower()] or 0
 end
 
 local function hrp()
@@ -122,7 +130,7 @@ pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui"
 if not gui.Parent then gui.Parent = PG end
 
 local panel = Instance.new("Frame", gui)
-panel.Size = UDim2.new(0, 330, 0, 164)
+panel.Size = UDim2.new(0, 440, 0, 210)
 panel.Position = UDim2.new(0, 12, 0, 12)
 panel.BackgroundColor3 = Color3.fromRGB(20, 23, 28)
 panel.BackgroundTransparency = 0.08
@@ -137,7 +145,7 @@ title.TextColor3 = Color3.fromRGB(235, 235, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Field Egg EPS v2.3 SAFE"
+title.Text = "Egg01 Field Egg EPS v2.4 SAFE"
 
 local function button(text, x, w, color)
  local b = Instance.new("TextButton", panel)
@@ -193,8 +201,8 @@ tMin.BorderSizePixel = 0
 Instance.new("UICorner", tMin).CornerRadius = UDim.new(0, 4)
 
 local warning = Instance.new("TextLabel", panel)
-warning.Size = UDim2.new(0, 154, 0, 38)
-warning.Position = UDim2.new(0, 166, 0, 69)
+warning.Size = UDim2.new(1, -20, 0, 28)
+warning.Position = UDim2.new(0, 10, 0, 137)
 warning.BackgroundTransparency = 1
 warning.TextColor3 = Color3.fromRGB(255, 190, 80)
 warning.Font = Enum.Font.GothamBold
@@ -202,22 +210,54 @@ warning.TextSize = 10
 warning.TextWrapped = true
 warning.TextXAlignment = Enum.TextXAlignment.Left
 warning.TextYAlignment = Enum.TextYAlignment.Top
-warning.Text = "ปลายเส้น=ไข่จริงเท่านั้น\nrarity จาก Config.Rarity._id"
+warning.Text = "สีเส้น = ระดับไข่ • เลือกหลายระดับได้ • ปลายเส้น = ไข่จริง"
 
 local rarLabel = minLabel:Clone()
 rarLabel.Position = UDim2.new(0, 76, 0, 68)
-rarLabel.Text = "Rarity"
+rarLabel.Text = "เลือก Rarity"
 rarLabel.Parent = panel
 
-local tRar = tMin:Clone()
-tRar.Size = UDim2.new(0, 80, 0, 22)
-tRar.Position = UDim2.new(0, 76, 0, 84)
-tRar.Text = "Epic"
-tRar.Parent = panel
+local rarityButtons = {}
+local selectorNames = { "Any", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
+for index, rarity in ipairs(selectorNames) do
+ local slot = index - 1
+ local row = slot >= 6 and 1 or 0
+ local col = row == 1 and slot - 6 or slot
+ local b = Instance.new("TextButton", panel)
+ b.Size = UDim2.new(0, 54, 0, 22)
+ b.Position = UDim2.new(0, 76 + col * 58, 0, 84 + row * 26)
+ b.BackgroundColor3 = Color3.fromRGB(42, 46, 54)
+ b.TextColor3 = Color3.fromRGB(180, 185, 195)
+ b.Font = Enum.Font.GothamBold
+ b.TextSize = 9
+ b.Text = rarity == "Any" and "ALL" or RARITY_SHORT[rarity]
+ b.BorderSizePixel = 0
+ Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+ rarityButtons[rarity] = b
+end
+
+local function allRaritiesSelected()
+ for _, rarity in ipairs(RARITY_ORDER) do
+ if not selectedRarities[rarity] then return false end
+ end
+ return true
+end
+
+local function refreshRarityButtons()
+ local allOn = allRaritiesSelected()
+ for rarity, b in pairs(rarityButtons) do
+ local active = rarity == "Any" and allOn or selectedRarities[rarity] == true
+ local color = rarity == "Any" and Color3.fromRGB(235, 235, 240) or RARITY_COLOR[rarity]
+ b.BackgroundColor3 = active and color or Color3.fromRGB(42, 46, 54)
+ b.TextColor3 = active and ((rarity == "Common" or rarity == "Legendary" or rarity == "Divine" or rarity == "Any") and Color3.fromRGB(20, 22, 26) or Color3.new(1, 1, 1)) or Color3.fromRGB(155, 160, 170)
+ b.Text = (active and "✓" or "") .. (rarity == "Any" and "ALL" or RARITY_SHORT[rarity])
+ end
+end
+refreshRarityButtons()
 
 local status = Instance.new("TextLabel", panel)
 status.Size = UDim2.new(1, -20, 0, 25)
-status.Position = UDim2.new(0, 10, 0, 134)
+status.Position = UDim2.new(0, 10, 0, 177)
 status.BackgroundTransparency = 1
 status.TextColor3 = Color3.fromRGB(130, 235, 150)
 status.Font = Enum.Font.GothamBold
@@ -227,8 +267,8 @@ status.TextXAlignment = Enum.TextXAlignment.Left
 status.Text = "กด SCAN"
 
 local log = Instance.new("TextBox", gui)
-log.Size = UDim2.new(0, 330, 0, 175)
-log.Position = UDim2.new(0, 12, 0, 186)
+log.Size = UDim2.new(0, 440, 0, 190)
+log.Position = UDim2.new(0, 12, 0, 234)
 log.BackgroundColor3 = Color3.new(0, 0, 0)
 log.BackgroundTransparency = 0.28
 log.TextColor3 = Color3.fromRGB(175, 240, 180)
@@ -252,8 +292,15 @@ end
 local function readCfg()
  local n = tonumber(tMin.Text)
  if n and n >= 0 then CFG.minScale = n end
- local rarity = tostring(tRar.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
- CFG.minRarity = rarity == "" and "Any" or rarity
+end
+
+local function selectedRarityText()
+ if allRaritiesSelected() then return "ALL" end
+ local out = {}
+ for _, rarity in ipairs(RARITY_ORDER) do
+ if selectedRarities[rarity] then out[#out + 1] = RARITY_SHORT[rarity] end
+ end
+ return #out > 0 and table.concat(out, ",") or "NONE"
 end
 
 local function requestFieldSnapshot()
@@ -388,10 +435,9 @@ local function rebuildTargets()
  end
  end
  targets = {}
- local needRank = rarRank(CFG.minRarity)
  for ei, row in ipairs(eggs) do
  local e, match = row.e, matches[ei]
- local rarityOk = needRank == 0 or rarRank(e.rar) >= needRank
+ local rarityOk = e.rar and selectedRarities[e.rar] == true
  if e.scale >= CFG.minScale and rarityOk then
  targets[#targets + 1] = {
  uid = row.uid, cat = e.cat or "?", scale = e.scale, rar = e.rar, area = e.area or "?",
@@ -406,8 +452,8 @@ local function rebuildTargets()
  if CFG.maxMode and a.scale ~= b.scale then return a.scale > b.scale end
  return a.dist < b.dist
  end)
- say(string.format("ไข่จริง=%d Prompt=%d จับคู่=%d ผ่าน sc>=%.2f rar>=%s: %d",
- #eggs, #prompts, countMap(matches), CFG.minScale, CFG.minRarity, #targets))
+ say(string.format("ไข่จริง=%d Prompt=%d จับคู่=%d ผ่าน sc>=%.2f rarity=%s: %d",
+ #eggs, #prompts, countMap(matches), CFG.minScale, selectedRarityText(), #targets))
  return targets
 end
 
@@ -427,6 +473,7 @@ local function drawGuides()
  local count = math.min(CFG.maxLines, #targets)
  for i = 1, count do
  local t = targets[i]
+ local rarityColor = RARITY_COLOR[t.rar] or Color3.fromRGB(220, 220, 220)
  local part = Instance.new("Part", guideFolder)
  part.Name = "Egg_" .. i
  part.Anchored = true
@@ -443,20 +490,20 @@ local function drawGuides()
  beam.FaceCamera = true
  beam.Width0 = i == 1 and 0.55 or 0.20
  beam.Width1 = i == 1 and 0.30 or 0.10
- beam.Color = ColorSequence.new(i == 1 and Color3.fromRGB(255, 220, 40) or Color3.fromRGB(90, 220, 255))
- beam.Transparency = NumberSequence.new(i == 1 and 0.08 or 0.35)
+ beam.Color = ColorSequence.new(rarityColor)
+ beam.Transparency = NumberSequence.new(i == 1 and 0.04 or 0.22)
  beam.LightEmission = 1
  beam.Segments = 12
  local bb = Instance.new("BillboardGui", part)
  bb.Size = UDim2.new(0, 145, 0, 34)
  bb.StudsOffset = Vector3.new(0, 2, 0)
  bb.AlwaysOnTop = true
- bb.MaxDistance = 1200
+ bb.MaxDistance = 6000
  local tl = Instance.new("TextLabel", bb)
  tl.Size = UDim2.new(1, 0, 1, 0)
  tl.BackgroundColor3 = Color3.new(0, 0, 0)
  tl.BackgroundTransparency = 0.3
- tl.TextColor3 = i == 1 and Color3.fromRGB(255, 230, 70) or Color3.fromRGB(130, 235, 255)
+ tl.TextColor3 = rarityColor
  tl.Font = Enum.Font.GothamBold
  tl.TextSize = 11
  tl.TextWrapped = true
@@ -467,7 +514,7 @@ local function drawGuides()
  local t = targets[1]
  status.Text = string.format("%s → ไข่ %s %s sc=%.2f ห่าง %.0f", CFG.maxMode and "MAX" or "NEAR", tostring(t.rar or "?"), t.cat, t.scale, t.dist)
  else
- status.Text = "ไม่มีไข่จริงที่ผ่าน MinScale"
+ status.Text = "ไม่มีไข่ที่ผ่าน MinScale + Rarity ที่เลือก"
  end
 end
 
@@ -475,13 +522,13 @@ local function scan()
  requestFieldSnapshot()
  mapVerifiedRarities()
  rebuildTargets()
- if GUIDE then drawGuides() end
  for i = 1, math.min(8, #targets) do
  local t = targets[i]
  say(string.format("#%d %s %s sc=%.2f d=%.0f prompt=%s eggMatch=%s",
  i, tostring(t.rar or "?"), t.cat, t.scale, t.dist, t.pp and "Y" or "N",
  t.matchD and string.format("%.1f", t.matchD) or "-"))
  end
+ if GUIDE then drawGuides() end
 end
 
 local function tryFire(pp)
@@ -493,7 +540,7 @@ local function tryFire(pp)
 end
 
 local function runLoop()
- say(string.format("START sc>=%.2f rar>=%s ยิงเมื่อ <=%d", CFG.minScale, CFG.minRarity, CFG.fireRange))
+ say(string.format("START sc>=%.2f rarity=%s ยิงเมื่อ <=%d", CFG.minScale, selectedRarityText(), CFG.fireRange))
  local lastRefresh = 0
  while RUN do
  if carrying then
@@ -542,6 +589,21 @@ connectRemote("FieldEggCarry", "RemoteEvent", function(row)
  if typeof(row) == "table" and row.IsCarrying ~= nil then carrying = row.IsCarrying == true end
 end)
 
+for rarity, b in pairs(rarityButtons) do
+ local key = rarity
+ b.MouseButton1Click:Connect(function()
+ if key == "Any" then
+ local turnOn = not allRaritiesSelected()
+ for _, name in ipairs(RARITY_ORDER) do selectedRarities[name] = turnOn end
+ else
+ selectedRarities[key] = not selectedRarities[key]
+ end
+ refreshRarityButtons()
+ rebuildTargets()
+ if GUIDE then drawGuides() end
+ end)
+end
+
 bScan.MouseButton1Click:Connect(function() task.spawn(scan) end)
 bMode.MouseButton1Click:Connect(function()
  CFG.maxMode = not CFG.maxMode
@@ -578,7 +640,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
  local clip = setclipboard or toclipboard
- if clip then pcall(clip, "=== Egg01 Field Egg EPS v2.3 ===\n" .. table.concat(lines, "\n")) end
+ if clip then pcall(clip, "=== Egg01 Field Egg EPS v2.4 ===\n" .. table.concat(lines, "\n")) end
  bCopy.Text = "OK"
  task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
@@ -593,6 +655,6 @@ end
 _G.EGG01_SIZE = { gui = gui, destroy = destroy }
 bClose.MouseButton1Click:Connect(destroy)
 
-say("v2.3 SAFE — ปลายเส้นชี้เฉพาะไข่จาก FieldEggSnapshot")
+say("v2.4 SAFE — สีเส้นตาม rarity + เลือกหลายระดับ")
 say("rarity จาก AssetCategory → Config.Rarity._id โดยตรง")
 task.spawn(scan)
