@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v1.1
+-- Egg01_SizeEPS.lua v1.2
 -- EPS แยกขนาด: จำ AssetScale จาก FieldEggShifted แล้วขโมยเฉพาะไข่ที่ใหญ่พอ
 -- SCAN = ลิสต์ไข่ใกล้ตัว+สเกล | START = ยิง Steal เฉพาะ scale >= MinScale
 
@@ -55,7 +55,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.1"
+title.Text = "Egg01 Size EPS v1.2"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -173,6 +173,7 @@ local function upsertEgg(t)
     local uid = t.Uid
     local e = eggDB[uid] or {}
     if t.AssetScale ~= nil then e.scale = tonumber(t.AssetScale) or e.scale end
+    if t.NestScale ~= nil then e.nestScale = tonumber(t.NestScale) or e.nestScale end
     if t.AssetCategory then e.cat = t.AssetCategory end
     if t.AreaId then e.area = t.AreaId end
     if t.State then e.state = t.State end
@@ -183,6 +184,37 @@ local function upsertEgg(t)
     if p then e.pos = p end
     e.t = os.clock()
     eggDB[uid] = e
+end
+
+-- ไข่ใหญ่ใน DB ใกล้ผู้เล่นที่สุด
+local function nearestBig(maxScan)
+    readCfg()
+    local r = hrp()
+    if not r then return nil end
+    local best, bestD, bestUid
+    for uid, e in pairs(eggDB) do
+        if e.scale and e.scale >= CFG.minScale and e.pos and e.state ~= "Carried" then
+            local d = (e.pos - r.Position).Magnitude
+            if (not maxScan or d <= maxScan) and (not bestD or d < bestD) then
+                best, bestD, bestUid = e, d, uid
+            end
+        end
+    end
+    return best, bestD, bestUid
+end
+
+local function topBig(n)
+    readCfg()
+    local arr = {}
+    for uid, e in pairs(eggDB) do
+        if e.scale then
+            arr[#arr + 1] = { uid = uid, e = e }
+        end
+    end
+    table.sort(arr, function(a, b) return (a.e.scale or 0) > (b.e.scale or 0) end)
+    local out = {}
+    for i = 1, math.min(n or 8, #arr) do out[i] = arr[i] end
+    return out
 end
 
 local function promptPart(pp)
@@ -408,25 +440,30 @@ bScan.MouseButton1Click:Connect(function()
     end
     local n, big = dbCount()
     say(string.format("── SCAN db=%d (≥%.2f มี %d) ──", n, CFG.minScale, big))
-    local di = 0
-    for uid, e in pairs(eggDB) do
-        di = di + 1
-        if di <= 8 then
-            say(string.format("  DB %s sc=%.3f %s [%s] %s @%s",
-                tostring(uid):sub(1, 8), e.scale or -1,
-                tostring(e.cat or "?"), tostring(e.area or "?"),
-                tostring(e.state or "?"),
-                e.pos and string.format("%.0f,%.0f", e.pos.X, e.pos.Z) or "?"))
-        end
+    say("── Top scale ในแมพ ──")
+    for _, row in ipairs(topBig(8)) do
+        local e = row.e
+        local mark = e.scale >= CFG.minScale and "★" or " "
+        local r = hrp()
+        local dMe = (r and e.pos) and (e.pos - r.Position).Magnitude or -1
+        say(string.format("%s sc=%.3f %s [%s] dMe=%.0f %s",
+            mark, e.scale, tostring(e.cat or "?"), tostring(e.area or "?"),
+            dMe, tostring(e.state or "?")))
+    end
+    local nb, nd = nearestBig()
+    if nb then
+        say(string.format("→ ★ ใกล้สุด: %s sc=%.3f อยู่ห่าง %.0f studs — เดินเข้าไป",
+            tostring(nb.cat), nb.scale, nd))
     end
     local list = listStealNear(150)
     if #list == 0 then
         say("ไม่เจอ Steal ใน 150 studs")
         return
     end
+    say("── Steal ใกล้ตัว (เรียงสเกล) ──")
     local shown = 0
     for _, it in ipairs(list) do
-        if shown >= 12 then break end
+        if shown >= 10 then break end
         shown = shown + 1
         local sc = it.scale
         if sc then
@@ -443,14 +480,21 @@ end)
 
 local function loop()
     readCfg()
-    say(string.format("START EPS — ขโมยเฉพาะ scale≥%.2f (ใกล้ ≤%d)", CFG.minScale, STEAL_RANGE))
+    say(string.format("START EPS — ขโมยเฉพาะ scale≥%.2f เมื่อใกล้ ≤%d", CFG.minScale, STEAL_RANGE))
+    local nb0, nd0 = nearestBig()
+    if nb0 then
+        say(string.format("★ เป้าใกล้สุด %s sc=%.3f ห่าง %.0f — เดินเข้าไปให้ ≤%d",
+            tostring(nb0.cat), nb0.scale, nd0, STEAL_RANGE))
+    else
+        say("ยังไม่มีไข่ ≥ MinScale ใน DB")
+    end
     local tLog = 0
     while RUN do
         if carrying then
-            lab.Text = "ถือไข่แล้ว — หยุด EPS (ไป Auto กลับบ้าน)"
+            lab.Text = "ถือไข่แล้ว — ไป Auto กลับบ้าน"
             task.wait(0.4)
         else
-            local list = listStealNear(80)
+            local list = listStealNear(200)
             local target
             for _, it in ipairs(list) do
                 if it.dist <= STEAL_RANGE and it.scale and it.scale >= CFG.minScale then
@@ -464,22 +508,33 @@ local function loop()
                     target.dist, tostring(target.src)))
                 tryFire(target.pp)
             else
-                local near = list[1]
-                if near and near.dist <= STEAL_RANGE then
-                    if near.scale then
-                        lab.Text = string.format("ข้ามเล็ก ≈%.2f < %.2f", near.scale, CFG.minScale)
+                local nb, nd = nearestBig()
+                local near
+                for _, it in ipairs(list) do
+                    if it.dist <= STEAL_RANGE then near = it break end
+                end
+                if near and near.scale then
+                    if nb then
+                        lab.Text = string.format("หน้าคุณ≈%.2f เล็ก | ★%s sc=%.2f ห่าง%.0f",
+                            near.scale, tostring(nb.cat), nb.scale, nd)
                     else
-                        lab.Text = string.format("ใกล้ d=%.0f ยังไม่รู้สเกล", near.dist)
+                        lab.Text = string.format("ข้ามเล็ก ≈%.2f < %.2f", near.scale, CFG.minScale)
                     end
+                elseif nb then
+                    lab.Text = string.format("★ %s sc=%.2f ห่าง %.0f — เดินเข้า", tostring(nb.cat), nb.scale, nd)
                 else
-                    local n, big = dbCount()
-                    lab.Text = string.format("รอไข่ใหญ่… db=%d big=%d", n, big)
+                    lab.Text = string.format("รอไข่ใหญ่… db big=%d", select(2, dbCount()))
                 end
             end
-            if os.clock() - tLog > 2.5 then
+            if os.clock() - tLog > 3 then
                 tLog = os.clock()
-                local n, big = dbCount()
-                say(string.format("… db=%d big=%d (≥%.2f)", n, big, CFG.minScale))
+                local nb, nd = nearestBig()
+                if nb then
+                    say(string.format("… ★ %s sc=%.3f ห่าง %.0f (ยิงเมื่อ ≤%d)",
+                        tostring(nb.cat), nb.scale, nd, STEAL_RANGE))
+                else
+                    say(string.format("… ยังไม่มี ★ (≥%.2f)", CFG.minScale))
+                end
             end
         end
         task.wait(0.3)
