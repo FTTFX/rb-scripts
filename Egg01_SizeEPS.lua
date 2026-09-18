@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v2.4 SAFE
+-- Egg01_SizeEPS.lua v2.5 GUIDE
 -- Rebuilt from verified field-egg data only.
 -- Source: AskFieldEggSnapshot / FieldEggShifted -> BottomCFrame/BoundsCFrame + AssetScale.
 -- Rarity: verified client config path AssetCategory -> Config.Rarity._id (found via getgc).
@@ -14,7 +14,7 @@ local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
 local CFG = { minScale = 1, maxLines = 18, maxMatch = 60, fireRange = 16, maxMode = false }
-local RUN, GUIDE, carrying = false, false, false
+local RUN, GUIDE, carrying = false, true, false
 local eggDB, targets, conns, lines, rarityByCategory = {}, {}, {}, {}, {}
 local guideFolder, rootAttachment
 
@@ -138,14 +138,14 @@ panel.BorderSizePixel = 0
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel", panel)
-title.Size = UDim2.new(1, -50, 0, 22)
+title.Size = UDim2.new(1, -82, 0, 22)
 title.Position = UDim2.new(0, 10, 0, 5)
 title.BackgroundTransparency = 1
 title.TextColor3 = Color3.fromRGB(235, 235, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Field Egg EPS v2.4 SAFE"
+title.Text = "Egg01 Field Egg EPS v2.5 GUIDE"
 
 local function button(text, x, w, color)
  local b = Instance.new("TextButton", panel)
@@ -177,6 +177,16 @@ bClose.Font = Enum.Font.GothamBold
 bClose.Text = "X"
 bClose.BorderSizePixel = 0
 Instance.new("UICorner", bClose).CornerRadius = UDim.new(0, 5)
+
+local bFold = Instance.new("TextButton", panel)
+bFold.Size = UDim2.new(0, 28, 0, 24)
+bFold.Position = UDim2.new(1, -70, 0, 3)
+bFold.BackgroundColor3 = Color3.fromRGB(65, 85, 110)
+bFold.TextColor3 = Color3.new(1, 1, 1)
+bFold.Font = Enum.Font.GothamBold
+bFold.Text = "−"
+bFold.BorderSizePixel = 0
+Instance.new("UICorner", bFold).CornerRadius = UDim.new(0, 5)
 
 local minLabel = Instance.new("TextLabel", panel)
 minLabel.Size = UDim2.new(0, 62, 0, 16)
@@ -266,27 +276,22 @@ status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.Text = "กด SCAN"
 
-local log = Instance.new("TextBox", gui)
-log.Size = UDim2.new(0, 440, 0, 190)
-log.Position = UDim2.new(0, 12, 0, 234)
-log.BackgroundColor3 = Color3.new(0, 0, 0)
-log.BackgroundTransparency = 0.28
-log.TextColor3 = Color3.fromRGB(175, 240, 180)
-log.Font = Enum.Font.Code
-log.TextSize = 11
-log.TextXAlignment = Enum.TextXAlignment.Left
-log.TextYAlignment = Enum.TextYAlignment.Top
-log.TextEditable = false
-log.ClearTextOnFocus = false
-log.MultiLine = true
-log.TextWrapped = true
-Instance.new("UICorner", log).CornerRadius = UDim.new(0, 6)
-
 local function say(msg)
  lines[#lines + 1] = tostring(msg)
  if #lines > 100 then table.remove(lines, 1) end
- log.Text = table.concat(lines, "\n")
  status.Text = tostring(msg)
+end
+
+local expanded = true
+local function setExpanded(value)
+ expanded = value
+ panel.Size = UDim2.new(0, 440, 0, expanded and 210 or 32)
+ bFold.Text = expanded and "−" or "+"
+ for _, child in ipairs(panel:GetChildren()) do
+  if child:IsA("GuiObject") and child ~= title and child ~= bFold and child ~= bClose then
+   child.Visible = expanded
+  end
+ end
 end
 
 local function readCfg()
@@ -412,7 +417,7 @@ local function countMap(t)
  return n
 end
 
-local function rebuildTargets()
+local function rebuildTargets(quiet)
  readCfg()
  local prompts = stealPrompts()
  local eggs = {}
@@ -452,8 +457,10 @@ local function rebuildTargets()
  if CFG.maxMode and a.scale ~= b.scale then return a.scale > b.scale end
  return a.dist < b.dist
  end)
- say(string.format("ไข่จริง=%d Prompt=%d จับคู่=%d ผ่าน sc>=%.2f rarity=%s: %d",
- #eggs, #prompts, countMap(matches), CFG.minScale, selectedRarityText(), #targets))
+ if not quiet then
+  say(string.format("ไข่จริง=%d Prompt=%d จับคู่=%d ผ่าน sc>=%.2f rarity=%s: %d",
+  #eggs, #prompts, countMap(matches), CFG.minScale, selectedRarityText(), #targets))
+ end
  return targets
 end
 
@@ -640,7 +647,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
  local clip = setclipboard or toclipboard
- if clip then pcall(clip, "=== Egg01 Field Egg EPS v2.4 ===\n" .. table.concat(lines, "\n")) end
+ if clip then pcall(clip, "=== Egg01 Field Egg EPS v2.5 ===\n" .. table.concat(lines, "\n")) end
  bCopy.Text = "OK"
  task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
@@ -654,7 +661,18 @@ local function destroy()
 end
 _G.EGG01_SIZE = { gui = gui, destroy = destroy }
 bClose.MouseButton1Click:Connect(destroy)
+bFold.MouseButton1Click:Connect(function() setExpanded(not expanded) end)
 
-say("v2.4 SAFE — สีเส้นตาม rarity + เลือกหลายระดับ")
+say("v2.5 — GUIDE เปิดและอัปเดตต่อเนื่อง • ปุ่ม − สำหรับพับ")
 say("rarity จาก AssetCategory → Config.Rarity._id โดยตรง")
 task.spawn(scan)
+
+task.spawn(function()
+ while gui.Parent do
+  if GUIDE then
+   rebuildTargets(true)
+   drawGuides()
+  end
+  task.wait(0.75)
+ end
+end)
