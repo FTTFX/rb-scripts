@@ -1,6 +1,6 @@
--- Egg01_Auto.lua v2.7
+-- Egg01_Auto.lua v2.8
 -- ทิ้งเมื่อออกจากโซนสีที่ขโมย | ใกล้เขตปลอดภัย/HOME = วิ่งเข้าบ้านเลยไม่ทิ้ง
--- โซนแรก: ผลักช้า + พ้นแล้วทิ้งทันที (กันดึงกลับ / กันข้ามโซนไม่ทิ้ง)
+-- โซนแรก: วาปสั้นทีละก้าวออกนอก GuardAreas แล้วทิ้งทันที (BV ทำให้หลุดไข่)
 
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
@@ -12,7 +12,6 @@ _G.EGG01_V2 = { conns = {} }
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
@@ -23,14 +22,13 @@ local HOP = 140
 local WAIT_DROP = 2
 local HOME_R = 60
 local START_AWAY = 120
-local PUSH_SPEED = 90 -- ช้าลง กันเซิร์ฟดึงกลับ (1000 เร็วเกิน)
-local PUSH_MAX_SEC = 12
-local PUSH_OUT_HOLD = 0.45 -- ต้องอยู่นอกโซนติดกันกี่วิ ก่อนนับว่าพ้นจริง
+local EXIT_HOP = 50 -- วาปทีละก้าวออกโซนแรก (สั้น กัน BAC+หลุดไข่)
+local EXIT_PAD = 40
 local lines = {}
 local carrying = false
 local carryUid = nil
 local eggArea = nil -- โซนสีที่ขโมยมา (Forest/Snow/Desert/…) ต้องออกก่อนทิ้ง
-local firstExitDone = false -- ผลักโซนแรกเสร็จแล้ว
+local firstExitDone = false -- ออกโซนแรกเสร็จแล้ว
 local firstDropPending = false -- พ้นโซนแล้วต้องทิ้งทันที 1 ครั้ง
 
 
@@ -259,105 +257,97 @@ local function isFinalStretch()
     return false
 end
 
--- โซนแรก: ผลักช้าๆ + ยืนนอกโซนติดกันก่อนนับพ้น (กันดึงกลับ)
-local function pushOutFirstZone()
+-- จุดนอก GuardAreas ทิศบ้าน (เผื่อขอบ)
+local function exitPosOutsideBiome()
+    local r = hrp()
+    if not r or not HOME or not eggArea then return nil end
+    local biome = findGuardBiome(eggArea)
+    if not biome then return nil end
+    local ok, cf, size = pcall(function()
+        return biome:GetBoundingBox()
+    end)
+    if not ok or not cf then return nil end
+    local flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
+    if flat.Magnitude < 1 then return nil end
+    local dir = flat.Unit
+    local pad = size + Vector3.new(EXIT_PAD, 60, EXIT_PAD)
+    local pos = r.Position
+    for _ = 1, 80 do
+        pos = pos + dir * 20
+        if not inBox(cf, pad, pos) then
+            return Vector3.new(pos.X, r.Position.Y + 3, pos.Z) + dir * 25
+        end
+    end
+    local half = math.max(size.X, size.Z) * 0.5 + EXIT_PAD + 40
+    local c = cf.Position
+    return Vector3.new(c.X, r.Position.Y + 3, c.Z) + dir * half
+end
+
+-- โซนแรก: วาปสั้นทีละก้าวออกนอกสีโซน (ไม่ใช้ BV — จาก log ทำให้หลุดไข่)
+local function exitFirstZone()
     local r, h = hrp(), hum()
     if not r or not h or not HOME or not eggArea then return false end
-    local safe0 = isDropSafe(36)
-    if safe0 then
+    if isDropSafe(EXIT_PAD) then
         firstExitDone = true
         firstDropPending = true
         return true
     end
-    local flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
+    local dest = exitPosOutsideBiome()
+    if not dest then
+        say("⚠ หาจุดออกโซน " .. tostring(eggArea) .. " ไม่ได้")
+        return false
+    end
+    local startPos = r.Position
+    local need = (Vector3.new(dest.X, 0, dest.Z) - Vector3.new(startPos.X, 0, startPos.Z)).Magnitude
+    say(string.format("โซนแรก — วาปสั้นออก %s ~%.0f studs แล้วทิ้ง", tostring(eggArea), need))
+
+    local flat = Vector3.new(dest.X - startPos.X, 0, dest.Z - startPos.Z)
     if flat.Magnitude < 1 then return false end
     local dir = flat.Unit
-    local startPos = r.Position
-    local oldWS = h.WalkSpeed
-    say(string.format("โซนแรก — ผลักช้า (%.0f) ทิศบ้าน", PUSH_SPEED))
+    local total = flat.Magnitude
+    local stepped = 0
+    local y = startPos.Y + 2
 
-    pcall(function()
-        h:MoveTo(r.Position)
-        h.PlatformStand = true
-        h.AutoRotate = false
-        h.WalkSpeed = 0
-        h:ChangeState(Enum.HumanoidStateType.Physics)
-    end)
-
-    pcall(function()
-        local old = r:FindFirstChild("Egg01Push")
-        if old then old:Destroy() end
-    end)
-
-    local bv
-    pcall(function()
-        bv = Instance.new("BodyVelocity")
-        bv.Name = "Egg01Push"
-        bv.MaxForce = Vector3.new(8e4, 0, 8e4) -- แรงอ่อนลง กันดีด/ดึงกลับ
-        bv.P = 1250
-        bv.Velocity = Vector3.new(dir.X * PUSH_SPEED, 0, dir.Z * PUSH_SPEED)
-        bv.Parent = r
-    end)
-
-    local pushDir = dir
-    local hb = RunService.Heartbeat:Connect(function()
-        local rr = hrp()
-        if not rr or not HOME then return end
-        local f = Vector3.new(HOME.X - rr.Position.X, 0, HOME.Z - rr.Position.Z)
-        if f.Magnitude > 1 then pushDir = f.Unit end
-        local vel = Vector3.new(pushDir.X * PUSH_SPEED, 0, pushDir.Z * PUSH_SPEED)
+    while RUN and isCarry() and stepped < total do
+        stepped = math.min(stepped + EXIT_HOP, total)
+        local p = Vector3.new(startPos.X, y, startPos.Z) + dir * stepped
+        r = hrp()
+        if not r then break end
         pcall(function()
-            rr.AssemblyLinearVelocity = Vector3.new(vel.X, math.clamp(rr.AssemblyLinearVelocity.Y, -10, 20), vel.Z)
-            if bv and bv.Parent then bv.Velocity = vel end
+            r.CFrame = CFrame.new(p)
+            r.AssemblyLinearVelocity = Vector3.zero
+            r.AssemblyAngularVelocity = Vector3.zero
         end)
-    end)
-    table.insert(_G.EGG01_V2.conns, hb)
-
-    local t0 = os.clock()
-    local outHold = 0
-    local ok = false
-    while RUN and os.clock() - t0 < PUSH_MAX_SEC do
-        if not isCarry() then break end
-        -- pad ใหญ่ = ต้องพ้นขอบจริงๆ
-        if isDropSafe(36) then
-            outHold = outHold + 0.1
-            if outHold >= PUSH_OUT_HOLD then
-                ok = true
-                break
-            end
-        else
-            outHold = 0
+        task.wait(0.12)
+        if isDropSafe(EXIT_PAD) then
+            -- ก้าวสุดท้ายนอกโซนแล้ว
+            stepped = total
+            break
         end
-        task.wait(0.1)
     end
-    if not ok then ok = isDropSafe(36) end
 
-    pcall(function() hb:Disconnect() end)
-    pcall(function() if bv then bv:Destroy() end end)
-    pcall(function()
-        local rr = hrp()
-        local hh = hum()
-        if rr then
-            local old = rr:FindFirstChild("Egg01Push")
-            if old then old:Destroy() end
-            rr.AssemblyLinearVelocity = Vector3.new(0, rr.AssemblyLinearVelocity.Y, 0)
-        end
-        if hh then
-            hh.PlatformStand = false
-            hh.AutoRotate = true
-            hh.WalkSpeed = oldWS
-            hh:ChangeState(Enum.HumanoidStateType.Running)
-        end
-    end)
-
-    -- หยุดนิ่งให้เซิร์ฟซิงค์ ก่อนทิ้ง
-    task.wait(0.35)
-    ok = isDropSafe(20)
+    -- หยุดนิ่งซิงค์
+    r = hrp()
+    if r then
+        pcall(function()
+            r.AssemblyLinearVelocity = Vector3.zero
+        end)
+    end
+    task.wait(0.4)
 
     local moved = 0
     r = hrp()
-    if r then moved = (Vector3.new(r.Position.X, 0, r.Position.Z) - Vector3.new(startPos.X, 0, startPos.Z)).Magnitude end
-    say(string.format("ผลักจบ: %.0f studs ใน %.1fs%s", moved, os.clock() - t0, ok and " ✓พ้นโซน→ทิ้ง" or " ✗ยังในโซน/ถูกดึง"))
+    if r then
+        moved = (Vector3.new(r.Position.X, 0, r.Position.Z) - Vector3.new(startPos.X, 0, startPos.Z)).Magnitude
+    end
+
+    if not isCarry() then
+        say(string.format("วาป %.0f studs แล้วหลุดไข่ — รอเก็บแล้วลองใหม่", moved))
+        return false
+    end
+
+    local ok = isDropSafe(20)
+    say(string.format("วาปจบ: %.0f studs%s", moved, ok and " ✓พ้นโซน→ทิ้ง" or " ✗ยังในโซน"))
 
     if ok then
         firstExitDone = true
@@ -527,7 +517,7 @@ local function loop()
             if isCarry() and not firstExitDone and not fin then
                 local safe = isDropSafe(20)
                 if not safe then
-                    pushOutFirstZone()
+                    exitFirstZone()
                 else
                     firstExitDone = true
                     firstDropPending = true
@@ -544,7 +534,7 @@ local function loop()
                         break
                     end
                 else
-                    say("พ้นโซนแล้วถูกดึงกลับ — ผลักใหม่")
+                    say("พ้นโซนแล้วถูกดึงกลับ — ออกใหม่")
                     firstExitDone = false
                     firstDropPending = false
                 end
@@ -619,7 +609,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Auto v2.5 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Auto v2.8 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -633,6 +623,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.7 พร้อม (ผลักช้า+ทิ้งทันที)")
+say("Egg01 Auto v2.8 พร้อม (วาปสั้นออกโซน+ทิ้ง)")
 say("ทิ้งทีละโซนสี | เขตปลอดภัย→วิ่งเข้า HOME เลย")
 say("HOME → START → ค่อยขโมยไข่")
