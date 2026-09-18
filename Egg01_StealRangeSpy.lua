@@ -1,4 +1,4 @@
--- Egg01_StealRangeSpy.lua v1.1
+-- Egg01_StealRangeSpy.lua v1.2
 -- วัดระยะที่ steal (fireproximityprompt) สำเร็จ
 -- START → เดินเข้าใกล้เอง → สคริปต์ยิง prompt ถี่ๆ → ได้ไข่แล้วล็อกระยะ
 
@@ -25,6 +25,7 @@ local lastPrompt = nil
 local lastDist = nil
 local lastMax = nil
 local gotOnce = false
+local dumpedShift = false
 local fireCount = 0
 
 local gui = Instance.new("ScreenGui")
@@ -242,7 +243,6 @@ do
     end
 
     local sh = findNet("FieldEggShifted")
-    local dumpedShift = false
     if sh and sh:IsA("RemoteEvent") then
         table.insert(_G.EGG01_RANGE.conns, sh.OnClientEvent:Connect(function(t)
             if typeof(t) ~= "table" then return end
@@ -267,6 +267,7 @@ end
 local function loop()
     fireCount = 0
     gotOnce = false
+    dumpedShift = false
     lastPrompt, lastDist, lastMax = nil, nil, nil
     say("START — เดินเข้าใกล้ไข่ (ยิง remote ถี่ๆ)")
     local tLog = 0
@@ -328,5 +329,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RANGE = nil
 end)
 
-say("Egg01 StealRange Spy v1.1")
+say("Egg01 StealRange Spy v1.2")
 say("START → เดินเข้าใกล้ไข่เอง → ได้ไข่แล้วล็อกระยะ")
