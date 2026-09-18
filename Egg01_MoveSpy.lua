@@ -1,4 +1,4 @@
--- Egg01_MoveSpy.lua v1.3
+-- Egg01_MoveSpy.lua v1.4
 -- ทดสอบกลับ HOME 3 แบบ พร้อมวัดการเคลื่อนที่จริง
 
 if _G.EGG01_MOVE_SPY then
@@ -33,7 +33,7 @@ local TIMEOUT = 45
 local SAMPLE_DT = 0.10
 local LOG_DT = 0.50
 local HOP_SAFE_STEP = 14
-local HOP_EDGE_STEP = 18
+local HOP_EDGE_STEP = 16
 local HOP_DELAY = 0.10
 local lines = {}
 local carrying = "?" -- ไม่เดาจาก GUI; รอ FieldEggCarry ยืนยัน
@@ -79,7 +79,7 @@ title.TextColor3 = Color3.fromRGB(235, 235, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Move Spy v1.3 SAFE"
+title.Text = "Egg01 Move Spy v1.4 SAFE"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -100,7 +100,7 @@ local bHome = mkBtn("SET HOME", 10, 36, 82, Color3.fromRGB(45, 100, 180))
 local bStop = mkBtn("STOP", 298, 36, 82, Color3.fromRGB(165, 50, 50))
 local bNormal = mkBtn("1 NORMAL", 10, 74, 116, Color3.fromRGB(55, 115, 180))
 local bSpeed = mkBtn("2 HOP 14", 137, 74, 116, Color3.fromRGB(45, 145, 75))
-local bHop = mkBtn("3 HOP 18 EDGE", 264, 74, 116, Color3.fromRGB(180, 125, 35))
+local bHop = mkBtn("3 HOP 16 EDGE", 264, 74, 116, Color3.fromRGB(180, 125, 35))
 local bCopy = mkBtn("COPY LOG", 103, 36, 82, Color3.fromRGB(75, 75, 82))
 local bClear = mkBtn("CLEAR", 196, 36, 91, Color3.fromRGB(75, 75, 82))
 
@@ -221,12 +221,15 @@ end
 local function finishRun(h, oldSpeed, mode, why, metrics)
     restore(h, oldSpeed)
     S.running = false
+    if why == "arrived" and metrics.back > 0 then
+        why = "arrived-rollback"
+    end
     local elapsed = math.max(os.clock() - metrics.t0, 0.001)
     local straightDone = math.max(metrics.startD - metrics.lastD, 0)
     say(string.format(
-        "END %s result=%s time=%.2fs remain=%.1f path=%.1f avg=%.1f peak=%.1f back=%d wsChanges=%d",
+        "END %s result=%s time=%.2fs remain=%.1f path=%.1f avg=%.1f peak=%.1f back=%d maxRollback=%.1f wsChanges=%d",
         mode, why, elapsed, metrics.lastD, metrics.path,
-        metrics.path / elapsed, metrics.peak, metrics.back, metrics.wsChanges
+        metrics.path / elapsed, metrics.peak, metrics.back, metrics.maxRollback, metrics.wsChanges
     ))
     say(string.format(
         "SUMMARY start=%.1f progress=%.1f directAvg=%.1f finalWS=%.1f restored=%.1f",
@@ -269,6 +272,7 @@ local function runTest(mode)
         path = 0,
         peak = 0,
         back = 0,
+        maxRollback = 0,
         wsChanges = 0,
         lastWS = h.WalkSpeed,
     }
@@ -288,7 +292,7 @@ local function runTest(mode)
     say("PLAYER " .. playerSpeedInfo())
     if mode == "HOP14" then
         say(string.format("CONFIG hopStep=%d delay=%.2f — ระดับที่ผ่านก่อนหน้า", HOP_SAFE_STEP, HOP_DELAY))
-    elseif mode == "HOP18_EDGE" then
+    elseif mode == "HOP16_EDGE" then
         say(string.format("CONFIG hopStep=%d delay=%.2f — EDGE ทดสอบขอบเขต", HOP_EDGE_STEP, HOP_DELAY))
     end
 
@@ -320,7 +324,7 @@ local function runTest(mode)
                     h:MoveTo(Vector3.new(S.home.X, pos.Y, S.home.Z))
                     lastMove = now
                 end
-            elseif (mode == "HOP14" or mode == "HOP18_EDGE") and now - lastHop >= HOP_DELAY then
+            elseif (mode == "HOP14" or mode == "HOP16_EDGE") and now - lastHop >= HOP_DELAY then
                 local flat = Vector3.new(S.home.X - pos.X, 0, S.home.Z - pos.Z)
                 if flat.Magnitude > 0.01 then
                     local hopSize = mode == "HOP14" and HOP_SAFE_STEP or HOP_EDGE_STEP
@@ -344,8 +348,11 @@ local function runTest(mode)
                 local newD = flatDist(newPos, S.home)
                 metrics.path = metrics.path + moved
                 metrics.peak = math.max(metrics.peak, sampledSpeed)
-                if newD - metrics.lastD > 2 then
+                local rollback = newD - metrics.lastD
+                if rollback > 2 then
                     metrics.back = metrics.back + 1
+                    metrics.maxRollback = math.max(metrics.maxRollback, rollback)
+                    say(string.format("ROLLBACK t=%.2f +%.1f studs", now - metrics.t0, rollback))
                 end
                 if math.abs(h.WalkSpeed - metrics.lastWS) > 0.01 then
                     metrics.wsChanges = metrics.wsChanges + 1
@@ -396,7 +403,7 @@ end)
 
 bNormal.MouseButton1Click:Connect(function() runTest("NORMAL") end)
 bSpeed.MouseButton1Click:Connect(function() runTest("HOP14") end)
-bHop.MouseButton1Click:Connect(function() runTest("HOP18_EDGE") end)
+bHop.MouseButton1Click:Connect(function() runTest("HOP16_EDGE") end)
 
 bStop.MouseButton1Click:Connect(function()
     if S.running then
@@ -408,7 +415,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local text = "=== Egg01 Move Spy v1.3 SAFE ===\n" .. table.concat(lines, "\n")
+    local text = "=== Egg01 Move Spy v1.4 SAFE ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then
         pcall(clip, text)
