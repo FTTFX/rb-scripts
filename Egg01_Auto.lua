@@ -1,6 +1,6 @@
--- Egg01_Auto.lua v2.9
+-- Egg01_Auto.lua v3.0
 -- ทิ้งเมื่อออกจากโซนสีที่ขโมย | ใกล้เขตปลอดภัย/HOME = วิ่งเข้าบ้านเลยไม่ทิ้ง
--- โซนแรก: CFrame ทีละ ~22 studs (WarpSpy Lake OK; Volcano 340 ทีเดียว = ดึง+หลุดไข่)
+-- เดินปกติทั้งเส้น (ไม่ CFrame / ไม่ผลัก)
 
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
@@ -22,16 +22,10 @@ local HOP = 140
 local WAIT_DROP = 2
 local HOME_R = 60
 local START_AWAY = 120
-local EXIT_HOP = 22 -- WarpSpy: Lake สำเร็จ ~20–50; ไกลทีเดียวโดนดึง+หลุดไข่
-local EXIT_PAD = 40
-local EXIT_WAIT = 0.18
-local EXIT_MAX_HOPS = 40
 local lines = {}
 local carrying = false
 local carryUid = nil
 local eggArea = nil -- โซนสีที่ขโมยมา (Forest/Snow/Desert/…) ต้องออกก่อนทิ้ง
-local firstExitDone = false -- ออกโซนแรกเสร็จแล้ว
-local firstDropPending = false -- พ้นโซนแล้วต้องทิ้งทันที 1 ครั้ง
 
 
 -- ===== GUI ง่ายๆ =====
@@ -259,103 +253,6 @@ local function isFinalStretch()
     return false
 end
 
--- จุดนอก GuardAreas ทิศบ้าน (เผื่อขอบ)
-local function exitPosOutsideBiome()
-    local r = hrp()
-    if not r or not HOME or not eggArea then return nil end
-    local biome = findGuardBiome(eggArea)
-    if not biome then return nil end
-    local ok, cf, size = pcall(function()
-        return biome:GetBoundingBox()
-    end)
-    if not ok or not cf then return nil end
-    local flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
-    if flat.Magnitude < 1 then return nil end
-    local dir = flat.Unit
-    local pad = size + Vector3.new(EXIT_PAD, 60, EXIT_PAD)
-    local pos = r.Position
-    for _ = 1, 80 do
-        pos = pos + dir * 20
-        if not inBox(cf, pad, pos) then
-            return Vector3.new(pos.X, r.Position.Y + 3, pos.Z) + dir * 25
-        end
-    end
-    local half = math.max(size.X, size.Z) * 0.5 + EXIT_PAD + 40
-    local c = cf.Position
-    return Vector3.new(c.X, r.Position.Y + 3, c.Z) + dir * half
-end
-
--- โซนแรก: CFrame ทีละ ~22 studs (WarpSpy: ไกลทีเดียว move=0+หลุดไข่; สั้นยังถือไข่ได้)
-local function exitFirstZone()
-    local r, h = hrp(), hum()
-    if not r or not h or not HOME or not eggArea then return false end
-    if isDropSafe(EXIT_PAD) then
-        firstExitDone = true
-        firstDropPending = true
-        return true
-    end
-    local dest = exitPosOutsideBiome()
-    if not dest then
-        say("⚠ หาจุดออกโซน " .. tostring(eggArea) .. " ไม่ได้")
-        return false
-    end
-    local startPos = r.Position
-    local need = (Vector3.new(dest.X, 0, dest.Z) - Vector3.new(startPos.X, 0, startPos.Z)).Magnitude
-    say(string.format("โซนแรก — micro CFrame %s ~%.0f studs (ก้าว%.0f)", tostring(eggArea), need, EXIT_HOP))
-
-    local flat = Vector3.new(dest.X - startPos.X, 0, dest.Z - startPos.Z)
-    if flat.Magnitude < 1 then return false end
-    local dir = flat.Unit
-    local y = startPos.Y + 2
-    local hops, movedAcc = 0, 0
-    local ok = false
-
-    while RUN and isCarry() and hops < EXIT_MAX_HOPS do
-        if isDropSafe(EXIT_PAD) then
-            ok = true
-            break
-        end
-        r = hrp()
-        if not r then break end
-        local before = r.Position
-        -- ทิศบ้านอัปเดตทุกก้าว
-        flat = Vector3.new(HOME.X - before.X, 0, HOME.Z - before.Z)
-        if flat.Magnitude > 1 then dir = flat.Unit end
-        local p = before + dir * EXIT_HOP
-        p = Vector3.new(p.X, y, p.Z)
-        pcall(function()
-            r.CFrame = CFrame.new(p)
-            r.AssemblyLinearVelocity = Vector3.zero
-            r.AssemblyAngularVelocity = Vector3.zero
-        end)
-        task.wait(EXIT_WAIT)
-        r = hrp()
-        if not r then break end
-        local dHop = (Vector3.new(r.Position.X, 0, r.Position.Z) - Vector3.new(before.X, 0, before.Z)).Magnitude
-        hops = hops + 1
-        movedAcc = movedAcc + dHop
-        if dHop < EXIT_HOP * 0.25 then
-            say(string.format("ก้าว#%d ถูกดึง (%.0f/%.0f) — หยุด", hops, dHop, EXIT_HOP))
-            break
-        end
-        if not isCarry() then
-            say(string.format("ก้าว#%d หลุดไข่ หลังเลื่อนรวม %.0f", hops, movedAcc))
-            return false
-        end
-    end
-
-    task.wait(0.35)
-    ok = isDropSafe(20) and isCarry()
-    say(string.format("micro จบ: %d ก้าว รวม~%.0f studs%s", hops, movedAcc, ok and " ✓พ้น→ทิ้ง" or " ✗ยังไม่พ้น/หลุด"))
-
-    if ok then
-        firstExitDone = true
-        firstDropPending = true
-        return true
-    end
-    return false
-end
-
 local function doDrop()
     if not isCarry() then return true end
     local g = PG:FindFirstChild("DropHeldEgg")
@@ -511,52 +408,25 @@ local function loop()
                 end
             end
 
-            -- โซนแรก: ผลักช้า → พ้นแล้วทิ้งทันที (ไม่ hop ก่อน)
-            fin = isFinalStretch()
-            if isCarry() and not firstExitDone and not fin then
-                local safe = isDropSafe(20)
-                if not safe then
-                    exitFirstZone()
-                else
-                    firstExitDone = true
-                    firstDropPending = true
+            -- วิ่งปกติทั้งเส้น: hop → พ้นโซนสีค่อยทิ้ง/เก็บ
+            if hopHome() then
+                if isCarry() then
+                    say("ถึงบ้านแล้ว — จบ")
+                    break
                 end
             end
 
-            if firstDropPending and isCarry() then
-                task.wait(0.2)
-                local safe, why = isDropSafe(16)
-                if safe then
-                    firstDropPending = false
-                    if not dropThenPick(why) then
-                        say("ทิ้งรอบแรกไม่สำเร็จ — หยุด")
-                        break
-                    end
+            r = hrp()
+            d = r and HOME and dist2(r.Position, HOME) or 9999
+            fin = isFinalStretch()
+            if isCarry() and d > HOME_R and not fin then
+                local safe, why = isDropSafe()
+                if not safe then
+                    say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
                 else
-                    say("พ้นโซนแล้วถูกดึงกลับ — ออกใหม่")
-                    firstExitDone = false
-                    firstDropPending = false
-                end
-            elseif firstExitDone then
-                if hopHome() then
-                    if isCarry() then
-                        say("ถึงบ้านแล้ว — จบ")
+                    if not dropThenPick(why) then
+                        say("ทิ้งไม่สำเร็จ — หยุด")
                         break
-                    end
-                end
-
-                r = hrp()
-                d = r and HOME and dist2(r.Position, HOME) or 9999
-                fin = isFinalStretch()
-                if isCarry() and d > HOME_R and not fin then
-                    local safe, why = isDropSafe()
-                    if not safe then
-                        say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
-                    else
-                        if not dropThenPick(why) then
-                            say("ทิ้งไม่สำเร็จ — หยุด")
-                            break
-                        end
                     end
                 end
             end
@@ -593,8 +463,6 @@ bStart.MouseButton1Click:Connect(function()
     carrying = false
     carryUid = nil
     eggArea = nil
-    firstExitDone = false
-    firstDropPending = false
     RUN = true
     bStart.Text = "..."
     say("START — ไปขโมยไข่ใหม่หลังกด")
@@ -608,7 +476,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Auto v2.9 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Auto v3.0 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -622,6 +490,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.9 พร้อม (micro CFrame 22)")
+say("Egg01 Auto v3.0 พร้อม (วิ่งปกติ)")
 say("ทิ้งทีละโซนสี | เขตปลอดภัย→วิ่งเข้า HOME เลย")
 say("HOME → START → ค่อยขโมยไข่")
