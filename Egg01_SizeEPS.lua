@@ -79,7 +79,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.7"
+title.Text = "Egg01 Size EPS v1.8"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -183,7 +183,12 @@ do
             for _, n in ipairs(RARITY_ORDER) do
                 if CFG.rarOn[n] then on[#on + 1] = RAR_SHORT[n] end
             end
-            say("Rarity: " .. (#on > 0 and table.concat(on, ",") or "any"))
+            if #on == 0 then
+                say("Rarity: ปิดหมด — ไม่ชี้เป้า (ติ๊กอย่างน้อย 1)")
+            else
+                say("Rarity: " .. table.concat(on, ","))
+            end
+            if GUIDE then updateGuide() end
         end)
         x = x + 36
         if i == 4 then
@@ -246,7 +251,8 @@ local function anyRarOn()
 end
 
 local function rarAllowed(rar)
-    if not anyRarOn() then return true end
+    -- ปิดติ๊กหมด = ไม่รับอะไรเลย (ต้องติ๊กอย่างน้อย 1)
+    if not anyRarOn() then return false end
     if not rar or rar == "" then return false end
     local key
     for _, n in ipairs(RARITY_ORDER) do
@@ -313,56 +319,88 @@ local function syncOdds()
     local rf = findNet("AskFieldEggRarityShows")
     if rf and rf:IsA("RemoteFunction") then
         pcall(function() rf:InvokeServer() end)
-        task.wait(0.55)
+        task.wait(0.7)
     end
     local folder = workspace:FindFirstChild("ClientRenderedAssets")
-    if not folder then return 0 end
-    local n = 0
-    local matched = 0
+    if not folder then return 0, 0 end
+
+    local function cleanRar(s)
+        if not s then return nil end
+        s = tostring(s):gsub("<.->", ""):gsub("%s+", "")
+        -- เหลือคำแรกที่เป็นตัวอักษร
+        local w = s:match("([A-Za-z]+)")
+        return w
+    end
+
+    local function oddsWorldPos(oddsInst)
+        if not oddsInst then return nil end
+        local bb = oddsInst:FindFirstAncestorWhichIsA("BillboardGui")
+            or (oddsInst:IsA("BillboardGui") and oddsInst)
+        if bb then
+            if bb.Adornee and bb.Adornee:IsA("BasePart") then
+                return bb.Adornee.Position
+            end
+            if bb.Parent and bb.Parent:IsA("BasePart") then
+                return bb.Parent.Position
+            end
+        end
+        local part = oddsInst:FindFirstAncestorWhichIsA("BasePart")
+        if part then return part.Position end
+        local model = oddsInst:FindFirstAncestorWhichIsA("Model")
+        if model then
+            local ok, cf = pcall(function() return model:GetBoundingBox() end)
+            if ok and cf then return cf.Position end
+            local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+            if pp then return pp.Position end
+        end
+        return nil
+    end
+
+    local n, matched, withPos = 0, 0, 0
     oddsByUid = {}
-    local oddsPos = {} -- { rar, pos, uid }
+    local oddsPos = {}
     for _, asset in ipairs(folder:GetChildren()) do
         local uidPart = asset.Name:match("_(%x+)$")
         local data = asset:FindFirstChild("Data")
-        local odds = data and data:FindFirstChild("Odds")
-        local rar
+        local odds = data and (data:FindFirstChild("Odds") or data:FindFirstChild("Odds", true))
+        if not odds then
+            odds = asset:FindFirstChild("Odds", true)
+        end
+        local raw
         if odds then
-            if odds:IsA("TextLabel") or odds:IsA("TextButton") then
-                rar = odds.Text
+            if odds:IsA("TextLabel") or odds:IsA("TextButton") or odds:IsA("TextBox") then
+                raw = odds.Text
             else
                 local tl = odds:FindFirstChildWhichIsA("TextLabel", true)
-                rar = tl and tl.Text
+                    or odds:FindFirstChildWhichIsA("TextButton", true)
+                raw = tl and tl.Text
             end
         end
-        if rar and rar ~= "" and rarRank(rar) > 0 then
+        local rar = cleanRar(raw)
+        if rar and rarRank(rar) > 0 then
             n = n + 1
             if uidPart then
                 oddsByUid[uidPart:lower()] = rar
             end
-            local part = asset:FindFirstChildWhichIsA("BasePart", true)
-            -- BillboardGui Adornee
-            if not part then
-                local bb = asset:FindFirstChildWhichIsA("BillboardGui", true)
-                if bb and bb.Adornee and bb.Adornee:IsA("BasePart") then
-                    part = bb.Adornee
-                end
+            local pos = oddsWorldPos(odds) or oddsWorldPos(data) or oddsWorldPos(asset)
+            if not pos then
+                local part = asset:FindFirstChildWhichIsA("BasePart", true)
+                pos = part and part.Position
             end
-            if part then
-                oddsPos[#oddsPos + 1] = {
-                    rar = rar,
-                    pos = part.Position,
-                    uid = uidPart and uidPart:lower() or nil,
-                }
+            if pos then
+                withPos = withPos + 1
+                oddsPos[#oddsPos + 1] = { rar = rar, pos = pos, uid = uidPart and uidPart:lower() }
             end
         end
     end
-    -- จับคู่ uid ตรงๆ + prefix (12+ ตัว)
+
+    -- uid ตรง / บางส่วน
     for uid, e in pairs(eggDB) do
         local nu = normUid(uid)
         local o = oddsByUid[nu]
-        if not o then
+        if not o and #nu >= 8 then
             for ou, rar in pairs(oddsByUid) do
-                if #ou >= 12 and (#nu >= 12) and (ou:sub(1, 12) == nu:sub(1, 12) or nu:find(ou, 1, true) or ou:find(nu, 1, true)) then
+                if ou:sub(1, 8) == nu:sub(1, 8) then
                     o = rar
                     break
                 end
@@ -373,13 +411,14 @@ local function syncOdds()
             matched = matched + 1
         end
     end
-    -- จับคู่ด้วยระยะ (สำคัญ: uid คนละระบบบ่อย)
+
+    -- จับคู่ระยะ (กว้างขึ้น)
     for uid, e in pairs(eggDB) do
         if (not e.rar or e.rar == "") and e.pos then
             local best, bestD
             for _, op in ipairs(oddsPos) do
                 local d = (op.pos - e.pos).Magnitude
-                if d <= 28 and (not bestD or d < bestD) then
+                if d <= 90 and (not bestD or d < bestD) then
                     best, bestD = op, d
                 end
             end
@@ -389,6 +428,45 @@ local function syncOdds()
             end
         end
     end
+
+    -- จับคู่กับ Steal prompt → ไข่ใกล้ prompt
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("ProximityPrompt") and d.Enabled then
+            local a = tostring(d.ActionText):lower()
+            if a:find("steal") then
+                local part = d.Parent
+                if part and not part:IsA("BasePart") then
+                    part = part:FindFirstChildWhichIsA("BasePart", true)
+                end
+                if part then
+                    local bestOp, bestOd
+                    for _, op in ipairs(oddsPos) do
+                        local dd = (op.pos - part.Position).Magnitude
+                        if dd <= 25 and (not bestOd or dd < bestOd) then
+                            bestOp, bestOd = op, dd
+                        end
+                    end
+                    if bestOp then
+                        local bestEgg, bestEd
+                        for _, e in pairs(eggDB) do
+                            if e.pos then
+                                local ed = (e.pos - part.Position).Magnitude
+                                if ed <= 30 and (not bestEd or ed < bestEd) then
+                                    bestEgg, bestEd = e, ed
+                                end
+                            end
+                        end
+                        if bestEgg and (not bestEgg.rar or bestEgg.rar == "") then
+                            bestEgg.rar = bestOp.rar
+                            matched = matched + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    say(string.format("Odds debug: total=%d มีพิกัด=%d จับคู่=%d", n, withPos, matched))
     return n, matched
 end
 
@@ -472,8 +550,9 @@ local function biggestEgg()
     return best, bestD, bestUid
 end
 
--- เป้า GUIDE ตามโหมด
+-- เป้า GUIDE ตามโหมด — ไม่ fallback ข้าม rarity
 local function guideTarget()
+    if not anyRarOn() then return nil end
     if CFG.guideMax then
         return biggestEgg()
     end
@@ -589,8 +668,11 @@ local function updateGuide()
     if not attachBeamToChar() then return end
     local nb, nd = guideTarget()
     if not nb or not nb.pos then
-        if guideBill then guideBill.Text = "ไม่มีเป้า" end
+        if guideBill then
+            guideBill.Text = (not anyRarOn()) and "ติ๊ก rarity ก่อน" or "ไม่มีเป้า"
+        end
         if guideBeam then guideBeam.Enabled = false end
+        lab.Text = (not anyRarOn()) and "GUIDE — ติ๊ก rarity อย่างน้อย 1" or "GUIDE — ยังไม่มีเป้า"
         return
     end
     if guideBeam then guideBeam.Enabled = true end
@@ -1010,7 +1092,7 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.7 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
+say("Size EPS v1.8 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
 say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
 task.spawn(function()
     task.wait(0.8)
