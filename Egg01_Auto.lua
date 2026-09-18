@@ -1,6 +1,6 @@
--- Egg01_Auto.lua v2.4
+-- Egg01_Auto.lua v2.5
 -- ทิ้งเมื่อออกจากโซนสีที่ขโมย | ใกล้เขตปลอดภัย/HOME = วิ่งเข้าบ้านเลยไม่ทิ้ง
--- HOME → START → ค่อยขโมยไข่ | ไม่วาป
+-- โซนแรก: ผลักความเร็วออกจากสีโซน (ไม่วาป — กัน BAC) แล้วกลับเดินปกติ
 
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
@@ -22,10 +22,13 @@ local HOP = 140
 local WAIT_DROP = 2
 local HOME_R = 60
 local START_AWAY = 120
+local PUSH_SPEED = 200 -- studs/s ผลักออกโซนแรก
+local PUSH_MAX_SEC = 7
 local lines = {}
 local carrying = false
 local carryUid = nil
 local eggArea = nil -- โซนสีที่ขโมยมา (Forest/Snow/Desert/…) ต้องออกก่อนทิ้ง
+local firstExitDone = false -- ผลักโซนแรกเสร็จแล้ว
 
 
 -- ===== GUI ง่ายๆ =====
@@ -251,6 +254,67 @@ local function isFinalStretch()
     return false
 end
 
+-- โซนแรกเท่านั้น: ผลักความเร็วออกจาก GuardAreas (ไม่วาป CFrame — เคยโดน BAC)
+local function pushOutFirstZone()
+    local r, h = hrp(), hum()
+    if not r or not h or not HOME or not eggArea then return false end
+    local safe0 = isDropSafe()
+    if safe0 then
+        firstExitDone = true
+        return true
+    end
+    local flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
+    if flat.Magnitude < 1 then return false end
+    local dir = flat.Unit
+    local oldWS = h.WalkSpeed
+    say(string.format("โซนแรก — ผลักออกเร็ว (%.0f) ทิศบ้าน", PUSH_SPEED))
+    pcall(function() h.WalkSpeed = math.max(oldWS, 28) end)
+    local t0 = os.clock()
+    while RUN and os.clock() - t0 < PUSH_MAX_SEC do
+        if not isCarry() then break end
+        local ok = isDropSafe()
+        if ok then
+            firstExitDone = true
+            pcall(function()
+                local rr = hrp()
+                if rr then
+                    rr.AssemblyLinearVelocity = Vector3.new(0, rr.AssemblyLinearVelocity.Y, 0)
+                end
+                local hh = hum()
+                if hh then hh.WalkSpeed = oldWS end
+            end)
+            say("ออกโซนแรกแล้ว — กลับโหมดเดิน")
+            return true
+        end
+        r = hrp()
+        h = hum()
+        if not r or not h then break end
+        flat = Vector3.new(HOME.X - r.Position.X, 0, HOME.Z - r.Position.Z)
+        if flat.Magnitude > 1 then dir = flat.Unit end
+        pcall(function()
+            r.AssemblyLinearVelocity = Vector3.new(
+                dir.X * PUSH_SPEED,
+                math.clamp(r.AssemblyLinearVelocity.Y, -20, 40),
+                dir.Z * PUSH_SPEED
+            )
+            h:MoveTo(r.Position + dir * 120)
+        end)
+        task.wait(0.05)
+    end
+    pcall(function()
+        local rr = hrp()
+        if rr then
+            rr.AssemblyLinearVelocity = Vector3.new(0, rr.AssemblyLinearVelocity.Y, 0)
+        end
+        local hh = hum()
+        if hh then hh.WalkSpeed = oldWS end
+    end)
+    local ok = isDropSafe()
+    if ok then firstExitDone = true end
+    say(ok and "ออกโซนแรกแล้ว" or "ผลักยังไม่พ้นโซน — เดินต่อ")
+    return ok
+end
+
 local function doDrop()
     if not isCarry() then return true end
     local g = PG:FindFirstChild("DropHeldEgg")
@@ -395,8 +459,16 @@ local function loop()
             if isCarry() and d > HOME_R and not fin then
                 local safe, why = isDropSafe()
                 if not safe then
-                    say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
-                else
+                    if not firstExitDone then
+                        -- มอนโซนแรกเร็ว → ผลักออกครั้งเดียว แล้วค่อยทิ้ง
+                        pushOutFirstZone()
+                        safe, why = isDropSafe()
+                    end
+                    if not safe then
+                        say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
+                    end
+                end
+                if safe then
                     say(tostring(why) .. " — ทิ้งได้")
                     local h = hum()
                     if h and r then h:MoveTo(r.Position) end
@@ -406,7 +478,7 @@ local function loop()
                         task.wait(WAIT_DROP)
                         if RUN then
                             if not doSteal() then
-                                say("เก็บไม่ทัน — รอคุณเก็บจุดทิ้ง")
+                                say("เก็บไข่จุดทิ้ง…")
                                 local t1 = os.clock()
                                 while RUN and os.clock() - t1 < 25 and not isCarry() do
                                     lab.Text = "เก็บไข่จุดทิ้ง…"
@@ -453,6 +525,7 @@ bStart.MouseButton1Click:Connect(function()
     carrying = false
     carryUid = nil
     eggArea = nil
+    firstExitDone = false
     RUN = true
     bStart.Text = "..."
     say("START — ไปขโมยไข่ใหม่หลังกด")
@@ -466,7 +539,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Auto v2 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Auto v2.5 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -480,6 +553,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.4 พร้อม")
+say("Egg01 Auto v2.5 พร้อม (โซนแรก=ผลัก)")
 say("ทิ้งทีละโซนสี | เขตปลอดภัย→วิ่งเข้า HOME เลย")
 say("HOME → START → ค่อยขโมยไข่")
