@@ -1,9 +1,7 @@
--- Egg01_Auto.lua v1.5 — ถือไข่ → เดิน hop → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
--- v1.5: ถือไข่ = ปุ่ม DropHeldEgg ต้อง Visible จริง (กัน GUI ค้างแล้วคิดว่าถือ)
--- v1.4: DROP + รอมือ
--- v1.3: รอห่างบ้าน
--- v1.2: ไม่วาป
--- วิธีใช้: HOME → START → ไปขโมย | สถานะถือ=YES ต้องเห็นปุ่มทิ้งกลางจอจริง
+-- Egg01_Auto.lua v1.6 — ถือไข่ → เดิน hop → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
+-- v1.6: ปุ่มคลิกสำรองด้วย UserInputService พิกัด (กัน GUI เกมกินคลิก)
+-- v1.5: ถือไข่ = ปุ่มทิ้ง Visible
+-- วิธีใช้: HOME → START → ไปขโมยห่างบ้าน
 if _G.EGG01AUTO_GUI then pcall(function() _G.EGG01AUTO_GUI:Destroy() end) end
 if _G.EGG01AUTO_CONNS then
     for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
@@ -27,30 +25,83 @@ local dropWait = 2.0
 local homeRadius = 55
 local OUT, T0 = {}, os.clock()
 
+local UIS = game:GetService("UserInputService")
+
 local gui = Instance.new("ScreenGui")
-gui.Name = "Egg01Auto"; gui.ResetOnSpawn = false
-gui.DisplayOrder = 200
+gui.Name = "Egg01Auto"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 2147483647
 gui.IgnoreGuiInset = true
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+pcall(function()
+    if gethui then gui.Parent = gethui()
+    else gui.Parent = game:GetService("CoreGui") end
+end)
 if not gui.Parent then gui.Parent = PG end
 _G.EGG01AUTO_GUI = gui
 
-local bar = Instance.new("Frame", gui)
-bar.Name = "Bar"
-bar.Size = UDim2.new(0, 300, 0, 36)
-bar.Position = UDim2.new(0, 8, 0, 8) -- มุมบนซ้าย กันโดน HUD ขวา
-bar.BackgroundColor3 = Color3.fromRGB(20, 35, 25)
-bar.BackgroundTransparency = 0.1
-bar.BorderSizePixel = 0
-bar.ZIndex = 10
+local homeHoldUntil = 0
 
-local box = Instance.new("TextBox", gui)
-box.Size = UDim2.new(0, 440, 0, 180)
-box.Position = UDim2.new(0, 8, 1, -188)
-box.BackgroundColor3 = Color3.new(0, 0, 0)
-box.BackgroundTransparency = 0.15
-box.TextColor3 = Color3.fromRGB(200, 255, 200)
+local function redraw()
+    if box then box.Text = table.concat(OUT, "\n") end
+end
+local box, status, startB, stopB, homeB, copyB, closeB
+
+local function L(s)
+    OUT[#OUT + 1] = ("[%5.1f] %s"):format(os.clock() - T0, s)
+    if #OUT > 100 then table.remove(OUT, 1) end
+    redraw()
+end
+local function setStatus(s)
+    if status then status.Text = s end
+end
+
+local function mkBtn(txt, x, w, col)
+    local b = Instance.new("TextButton")
+    b.Name = "Btn_" .. txt
+    b.Parent = gui -- ติด ScreenGui ตรงๆ ไม่ใส่ Frame (กันคลิกทะลุไม่ได้)
+    b.Size = UDim2.new(0, w, 0, 32)
+    b.Position = UDim2.new(0, x, 0, 8)
+    b.Text = txt
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 13
+    b.BackgroundColor3 = col
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = true
+    b.Active = true
+    b.Selectable = true
+    b.ZIndex = 100
+    pcall(function() b.Interactable = true end)
+    return b
+end
+
+startB = mkBtn("START", 8, 72, Color3.fromRGB(40, 140, 70))
+stopB  = mkBtn("STOP", 84, 58, Color3.fromRGB(140, 50, 50))
+homeB  = mkBtn("HOME", 146, 58, Color3.fromRGB(60, 90, 140))
+copyB  = mkBtn("COPY", 208, 58, Color3.fromRGB(40, 100, 150))
+closeB = mkBtn("X", 270, 32, Color3.fromRGB(120, 40, 40))
+
+status = Instance.new("TextLabel")
+status.Parent = gui
+status.Size = UDim2.new(0, 300, 0, 20)
+status.Position = UDim2.new(0, 8, 0, 44)
+status.BackgroundTransparency = 1
+status.TextColor3 = Color3.fromRGB(255, 230, 120)
+status.Font = Enum.Font.GothamBold
+status.TextSize = 13
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Text = "IDLE"
+status.ZIndex = 100
+
+box = Instance.new("TextBox")
+box.Name = "Egg01Log"
+box.Parent = gui
+box.Size = UDim2.new(0, 420, 0, 160)
+box.Position = UDim2.new(0, 8, 1, -170)
+box.BackgroundColor3 = Color3.fromRGB(10, 20, 10)
+box.BackgroundTransparency = 0.2
+box.TextColor3 = Color3.fromRGB(180, 255, 180)
 box.TextSize = 12
 box.Font = Enum.Font.Code
 box.TextXAlignment = Enum.TextXAlignment.Left
@@ -59,53 +110,56 @@ box.TextWrapped = true
 box.MultiLine = true
 box.ClearTextOnFocus = false
 box.TextEditable = false
+box.Text = ""
+box.ZIndex = 50
 box.Active = false
-box.ZIndex = 5
 
-local status = Instance.new("TextLabel", gui)
-status.Size = UDim2.new(0, 300, 0, 22)
-status.Position = UDim2.new(0, 8, 0, 46)
-status.BackgroundTransparency = 1
-status.TextColor3 = Color3.fromRGB(255, 230, 120)
-status.Font = Enum.Font.GothamBold
-status.TextSize = 13
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.Text = "IDLE"
-status.ZIndex = 10
-
-local homeHoldUntil = 0 -- กัน status ทับข้อความ HOME
-
-local function redraw() box.Text = table.concat(OUT, "\n") end
-local function L(s)
-    OUT[#OUT + 1] = ("[%5.1f] %s"):format(os.clock() - T0, s)
-    if #OUT > 100 then table.remove(OUT, 1) end
-    redraw()
-end
-local function setStatus(s)
-    status.Text = s
+-- คลิกปุ่มแบบหลายทาง + สำรองพิกัดเมาส์ (กัน GUI เกมกินคลิก)
+local function hitBtn(btn, pos)
+    local p, s = btn.AbsolutePosition, btn.AbsoluteSize
+    return pos.X >= p.X and pos.X <= p.X + s.X and pos.Y >= p.Y and pos.Y <= p.Y + s.Y
 end
 
-local function hbtn(txt, x, w, col)
-    local b = Instance.new("TextButton", bar)
-    b.Size = UDim2.new(0, w, 0, 30)
-    b.Position = UDim2.new(0, x, 0, 3)
-    b.Text = txt
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
-    b.BackgroundColor3 = col or Color3.fromRGB(40, 100, 60)
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.BorderSizePixel = 0
-    b.AutoButtonColor = true
-    b.Active = true
-    b.ZIndex = 11
-    return b
+local clickHandlers = {}
+local function onBtn(btn, fn)
+    clickHandlers[btn] = fn
+    local function wrap()
+        local ok, err = pcall(fn)
+        if not ok then
+            L("ปุ่ม error: " .. tostring(err))
+            warn("[Egg01Auto]", err)
+        end
+    end
+    btn.MouseButton1Click:Connect(wrap)
+    btn.MouseButton1Down:Connect(wrap)
+    btn.Activated:Connect(wrap)
 end
-local startB = hbtn("START", 4, 70, Color3.fromRGB(40, 140, 70))
-local stopB  = hbtn("STOP", 76, 56, Color3.fromRGB(140, 50, 50))
-local homeB  = hbtn("HOME", 134, 56, Color3.fromRGB(60, 90, 140))
-local copyB  = hbtn("COPY", 192, 56)
-local closeB = hbtn("✕", 250, 28, Color3.fromRGB(120, 40, 40))
-bar.Size = UDim2.new(0, 286, 0, 36)
+
+table.insert(_G.EGG01AUTO_CONNS, UIS.InputBegan:Connect(function(input, _gp)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    local pos = input.Position
+    for btn, fn in pairs(clickHandlers) do
+        if btn.Parent and hitBtn(btn, pos) then
+            task.defer(function()
+                local ok, err = pcall(fn)
+                if not ok then L("click error: " .. tostring(err)) end
+            end)
+            break
+        end
+    end
+end))
+
+local lastBtnT = 0
+local function debounce(fn)
+    return function()
+        local now = os.clock()
+        if now - lastBtnT < 0.35 then return end
+        lastBtnT = now
+        fn()
+    end
+end
+
 
 local function hrp()
     return LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
@@ -496,6 +550,7 @@ local function mainLoop()
 end
 
 local function markHome()
+    L("…กด HOME")
     local r = hrp()
     if not r then
         L("❌ HOME ไม่ได้ — ไม่มี Character/HRP รอเกิดก่อน")
@@ -503,7 +558,7 @@ local function markHome()
         return false
     end
     HOME = Vector3.new(r.Position.X, r.Position.Y, r.Position.Z)
-    homeHoldUntil = os.clock() + 3
+    homeHoldUntil = os.clock() + 4
     L("🏠 HOME = " .. posStr(HOME))
     setStatus("HOME OK @" .. posStr(HOME))
     homeB.Text = "OK!"
@@ -517,51 +572,43 @@ local function markHome()
     return true
 end
 
-homeB.MouseButton1Click:Connect(markHome)
-homeB.Activated:Connect(markHome)
-
-startB.MouseButton1Click:Connect(function()
+onBtn(homeB, debounce(markHome))
+onBtn(startB, debounce(function()
     if running then return end
     if not HOME then
-        L("ยังไม่มี HOME — ตั้งจากจุดยืนตอนนี้ให้")
-        if not markHome() then
-            setStatus("ต้องมีตัวละครก่อน")
-            return
-        end
+        L("ยังไม่มี HOME — ตั้งจากจุดยืน")
+        if not markHome() then return end
     end
     syncCarry()
     running = true
     startB.Text = "…"
     T0 = os.clock()
-    L("START v1.5b — HOME @" .. posStr(HOME))
+    L("START v1.6 — HOME @" .. posStr(HOME))
     task.spawn(mainLoop)
-end)
-
-stopB.MouseButton1Click:Connect(function()
+end))
+onBtn(stopB, debounce(function()
     running = false
     startB.Text = "START"
     setStatus("หยุด")
     local h = hum()
     if h and hrp() then pcall(function() h:MoveTo(hrp().Position) end) end
     L("STOP")
-end)
-
-copyB.MouseButton1Click:Connect(function()
+end))
+onBtn(copyB, debounce(function()
     local text = ("=== Egg01 Auto ===\nTime: %s\nHome: %s\n\n%s")
         :format(os.date("%Y-%m-%d %H:%M:%S"), posStr(HOME), table.concat(OUT, "\n"))
     local clip = setclipboard or toclipboard
     local ok = clip and pcall(clip, text)
     copyB.Text = ok and "OK!" or "?"
     task.delay(1, function() if copyB.Parent then copyB.Text = "COPY" end end)
-end)
-
-closeB.MouseButton1Click:Connect(function()
+end))
+onBtn(closeB, debounce(function()
     running = false
     if _G.EGG01AUTO_CONNS then
         for _, c in pairs(_G.EGG01AUTO_CONNS) do pcall(function() c:Disconnect() end) end
     end
     gui:Destroy(); _G.EGG01AUTO_GUI = nil
-end)
+end))
 
 task.spawn(function()
     while gui.Parent do
@@ -573,6 +620,6 @@ task.spawn(function()
     end
 end)
 
-L("Egg01 Auto v1.5b | ปุ่มมุมบนซ้าย")
-L("กด HOME (หรือ START จะจำจุดยืนเป็นบ้าน)")
+L("Egg01 Auto v1.6 | คลิกสำรองพิกัดเมาส์")
+L("กด HOME ต้องขึ้น OK! ในปุ่ม + log ด้านล่าง")
 setStatus("กด HOME ที่จุดเกิด")
