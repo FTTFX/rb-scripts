@@ -1,8 +1,9 @@
--- Egg01_Auto.lua v2.0 — เขียนใหม่ทั้งหมด
--- ลูป: คุณขโมยไข่เอง → เดินเข้าหา HOME ทีละช่วง → ทิ้ง → รอ 2วิ → เก็บ → ซ้ำจนถึงบ้าน
--- ไม่วาป (กัน BAC)
+-- Egg01_Auto.lua v2.1 — เขียนใหม่
+-- ถือไข่ใช้ RE FieldEggCarry เท่านั้น (ไม่เชื่อ GUI DropHeldEgg ที่ค้าง)
+-- ลูป: ขโมยหลัง START → เดินเข้า HOME → ทิ้ง → รอ → เก็บ → จนถึงบ้าน
+-- ไม่วาป
 --
--- ใช้: ยืนจุดเกิด → กด HOME → START → ไปขโมยไข่ให้ห่างบ้าน
+-- ใช้: HOME ที่จุดเกิด → START → ค่อยไปขโมยไข่ (ต้องขึ้น log server: ถือไข่แล้ว)
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
     if _G.EGG01_V2.conns then
@@ -22,7 +23,10 @@ local RUN = false
 local HOP = 140
 local WAIT_DROP = 2
 local HOME_R = 60
+local START_AWAY = 120 -- ต้องห่างบ้านอย่างน้อยก่อนเริ่มกลับ
 local lines = {}
+local carrying = false -- จาก RE เท่านั้น
+local carryUid = nil
 
 -- ===== GUI ง่ายๆ =====
 local gui = Instance.new("ScreenGui")
@@ -102,15 +106,9 @@ local function dist2(a, b)
     return math.sqrt(dx * dx + dz * dz)
 end
 
--- ถือไข่ไหม = มีปุ่มทิ้งโชว์
+-- ถือไข่ = FieldEggCarry จาก server เท่านั้น (GUI DropHeldEgg ค้างได้ ไม่ใช้)
 local function isCarry()
-    local g = PG:FindFirstChild("DropHeldEgg")
-    if not g then return false end
-    local b = g:FindFirstChildWhichIsA("GuiButton", true)
-    if not b then return false end
-    if not b.Visible then return false end
-    if b.AbsoluteSize.X < 5 then return false end
-    return true
+    return carrying == true
 end
 
 local function findNet(namePart)
@@ -123,15 +121,24 @@ local function findNet(namePart)
     return nil
 end
 
--- ฟัง carry จาก server (เสริม)
 do
     local re = findNet("FieldEggCarry")
     if re and re:IsA("RemoteEvent") then
         table.insert(_G.EGG01_V2.conns, re.OnClientEvent:Connect(function(t)
-            if typeof(t) == "table" and t.IsCarrying == false then
-                -- ไม่บังคับ false จาก RE อย่างเดียว ใช้ GUI เป็นหลัก
+            if typeof(t) ~= "table" then return end
+            if t.IsCarrying == true then
+                carrying = true
+                carryUid = t.Uid
+                say("server: ถือไข่แล้ว")
+            elseif t.IsCarrying == false then
+                carrying = false
+                carryUid = nil
+                say("server: ไม่ถือไข่")
             end
         end))
+        say("ฟัง FieldEggCarry ✅")
+    else
+        say("⚠ ไม่เจอ FieldEggCarry — ขโมยไข่หลังกด START เท่านั้น")
     end
 end
 
@@ -244,23 +251,32 @@ local function doSteal()
 end
 
 local function loop()
-    say("รอถือไข่…")
-    while RUN and not isCarry() do task.wait(0.25) end
+    carrying = false
+    carryUid = nil
+    say("รอขโมยไข่ (ต้องเห็น 'server: ถือไข่แล้ว')…")
+    while RUN and not isCarry() do
+        lab.Text = "รอขโมยไข่…"
+        task.wait(0.25)
+    end
     if not RUN then return end
 
-    -- ต้องห่างบ้านก่อน
     while RUN do
         local r = hrp()
         if not r or not HOME then break end
         local d = dist2(r.Position, HOME)
-        if isCarry() and d > HOME_R + 40 then
+        if isCarry() and d > START_AWAY then
             say(string.format("ห่างบ้าน %.0f — เริ่มกลับ", d))
             break
         end
-        lab.Text = string.format("ไปขโมยไข่… ถือ=%s d=%.0f", isCarry() and "Y" or "N", d)
+        lab.Text = string.format("ไปให้ห่างบ้าน… ถือ=%s d=%.0f (ต้องการ >%.0f)",
+            isCarry() and "Y" or "N", d, START_AWAY)
         task.wait(0.3)
     end
     if not RUN then return end
+    if not isCarry() then
+        say("หลุดไข่ก่อนเริ่ม — หยุด")
+        return
+    end
 
     while RUN do
         local r = hrp()
@@ -330,8 +346,11 @@ bStart.MouseButton1Click:Connect(function()
         HOME = r.Position
         say(string.format("HOME อัตโนมัติ = %.0f, %.0f, %.0f", HOME.X, HOME.Y, HOME.Z))
     end
+    carrying = false
+    carryUid = nil
     RUN = true
     bStart.Text = "..."
+    say("START — ไปขโมยไข่ใหม่หลังกด (ไม่ใช้สถานะเก่า)")
     task.spawn(loop)
 end)
 
@@ -356,5 +375,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.0 พร้อม")
-say("1) HOME ที่จุดเกิด  2) START  3) ไปขโมยไข่")
+say("Egg01 Auto v2.1 พร้อม")
+say("HOME → START → ค่อยขโมยไข่ (รอคำว่า server: ถือไข่แล้ว)")
