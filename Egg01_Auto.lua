@@ -1,9 +1,8 @@
--- Egg01_Auto.lua v2.2 — เขียนใหม่
--- ถือไข่ = RE FieldEggCarry | ทิ้งได้เมื่อนอก GuardAreas / ใน SafeZone เท่านั้น
--- ลูป: ขโมย → เดินกลับ → (ถ้ายังในโซนมอน=เดินต่อ) → ทิ้ง → รอ → เก็บ → ถึงบ้านจบ
--- ไม่วาป
---
--- ใช้: HOME → START → ค่อยขโมยไข่
+-- Egg01_Auto.lua v2.3
+-- ทิ้งได้เมื่อออกจากโซนสีที่ขโมย (AreaId → GuardAreas.*) แล้วเท่านั้น
+-- แล้วเก็บ → เดินต่อทีละช่วงจนบ้าน | ไม่วาป
+-- HOME → START → ค่อยขโมยไข่
+
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
     if _G.EGG01_V2.conns then
@@ -23,10 +22,12 @@ local RUN = false
 local HOP = 140
 local WAIT_DROP = 2
 local HOME_R = 60
-local START_AWAY = 120 -- ต้องห่างบ้านอย่างน้อยก่อนเริ่มกลับ
+local START_AWAY = 120
 local lines = {}
-local carrying = false -- จาก RE เท่านั้น
+local carrying = false
 local carryUid = nil
+local eggArea = nil -- โซนสีที่ขโมยมา (Forest/Snow/Desert/…) ต้องออกก่อนทิ้ง
+
 
 -- ===== GUI ง่ายๆ =====
 local gui = Instance.new("ScreenGui")
@@ -129,7 +130,8 @@ do
             if t.IsCarrying == true then
                 carrying = true
                 carryUid = t.Uid
-                say("server: ถือไข่แล้ว")
+                if t.AreaId then eggArea = t.AreaId end
+                say("server: ถือไข่แล้ว โซน=" .. tostring(eggArea or "?"))
             elseif t.IsCarrying == false then
                 carrying = false
                 carryUid = nil
@@ -174,46 +176,53 @@ local function hopHome()
 end
 
 local function inBox(cf, size, pos, yPad)
-    yPad = yPad or 30
+    yPad = yPad or 40
     local lp = cf:PointToObjectSpace(pos)
     return math.abs(lp.X) <= size.X * 0.5
         and math.abs(lp.Y) <= size.Y * 0.5 + yPad
         and math.abs(lp.Z) <= size.Z * 0.5
 end
 
--- ทิ้งได้เมื่ออยู่นอก GuardAreas หรือใน SafeZone (ในโซนมอนทิ้งแล้วไข่กลับ nest)
+local function findGuardBiome(areaName)
+    if not areaName then return nil end
+    local areas = workspace:FindFirstChild("__OBJECTS")
+    areas = areas and areas:FindFirstChild("Areas")
+    local guards = areas and areas:FindFirstChild("GuardAreas")
+    if not guards then return nil end
+    local want = tostring(areaName):lower()
+    local hit = guards:FindFirstChild(areaName)
+    if hit then return hit end
+    for _, c in ipairs(guards:GetChildren()) do
+        local n = c.Name:lower()
+        if n == want or n:find(want, 1, true) or want:find(n, 1, true) then
+            return c
+        end
+    end
+    return nil
+end
+
+-- ทิ้งได้เมื่อออกจากโซนสีที่ขโมยไข่มาแล้วเท่านั้น
 local function isDropSafe()
     local r = hrp()
     if not r then return false, "no-hrp" end
-    local pos = r.Position
-    local areas = workspace:FindFirstChild("__OBJECTS")
-    areas = areas and areas:FindFirstChild("Areas")
-    if not areas then
-        if HOME and dist2(pos, HOME) < 220 then return true, "nearHome" end
-        return false, "no-Areas"
+    if not eggArea then
+        return true, "no-AreaId"
     end
-
-    local eggBounds = areas:FindFirstChild("EggCarryBounds")
-    local safe = eggBounds and eggBounds:FindFirstChild("SafeZone")
-    if safe and safe:IsA("BasePart") and inBox(safe.CFrame, safe.Size, pos) then
-        return true, "SafeZone"
+    local biome = findGuardBiome(eggArea)
+    if not biome then
+        say("⚠ ไม่เจอ GuardAreas." .. tostring(eggArea) .. " — ใช้ระยะบ้านสำรอง")
+        if HOME and dist2(r.Position, HOME) < 250 then return true, "nearHome" end
+        return false, "no-biome-model"
     end
-
-    local guards = areas:FindFirstChild("GuardAreas")
-    if guards then
-        for _, biome in ipairs(guards:GetChildren()) do
-            local ok, cf, size = pcall(function()
-                return biome:GetBoundingBox()
-            end)
-            if ok and cf and size then
-                local big = size + Vector3.new(24, 50, 24)
-                if inBox(cf, big, pos) then
-                    return false, "Guard:" .. biome.Name
-                end
-            end
-        end
+    local ok, cf, size = pcall(function()
+        return biome:GetBoundingBox()
+    end)
+    if not ok or not cf then return false, "bbox-fail" end
+    local big = size + Vector3.new(16, 60, 16)
+    if inBox(cf, big, r.Position) then
+        return false, "ยังในโซนสี " .. biome.Name
     end
-    return true, "outside-Guard"
+    return true, "ออกจากโซน " .. biome.Name
 end
 
 local function doDrop()
@@ -348,10 +357,9 @@ local function loop()
             if isCarry() and d > HOME_R then
                 local safe, why = isDropSafe()
                 if not safe then
-                    say("ยังในโซนมอน (" .. tostring(why) .. ") — เดินออกก่อนค่อยทิ้ง")
-                    -- เดินต่อรอบหน้า ไม่ทิ้ง
+                    say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
                 else
-                    say("พ้นโซนมอน (" .. tostring(why) .. ") — ทิ้งได้")
+                    say(tostring(why) .. " — ทิ้งได้")
                     local h = hum()
                     if h and r then h:MoveTo(r.Position) end
                     task.wait(0.2)
@@ -360,7 +368,7 @@ local function loop()
                         task.wait(WAIT_DROP)
                         if RUN then
                             if not doSteal() then
-                                say("เก็บไม่ทัน — รอคุณเก็บใกล้ๆ")
+                                say("เก็บไม่ทัน — รอคุณเก็บจุดทิ้ง")
                                 local t1 = os.clock()
                                 while RUN and os.clock() - t1 < 25 and not isCarry() do
                                     lab.Text = "เก็บไข่จุดทิ้ง…"
@@ -406,9 +414,10 @@ bStart.MouseButton1Click:Connect(function()
     end
     carrying = false
     carryUid = nil
+    eggArea = nil
     RUN = true
     bStart.Text = "..."
-    say("START — ไปขโมยไข่ใหม่หลังกด (ไม่ใช้สถานะเก่า)")
+    say("START — ไปขโมยไข่ใหม่หลังกด")
     task.spawn(loop)
 end)
 
@@ -433,6 +442,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.2 พร้อม")
-say("ทิ้งเฉพาะนอกโซนมอน / ใน SafeZone")
+say("Egg01 Auto v2.3 พร้อม")
+say("ทิ้งเมื่อออกจากโซนสีที่ขโมย (หญ้า/หิมะ/ลาวา/…)")
 say("HOME → START → ค่อยขโมยไข่")
