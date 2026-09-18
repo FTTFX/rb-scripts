@@ -1,7 +1,7 @@
--- Egg01_SizeEPS.lua v2.2 SAFE
+-- Egg01_SizeEPS.lua v2.3 SAFE
 -- Rebuilt from verified field-egg data only.
 -- Source: AskFieldEggSnapshot / FieldEggShifted -> BottomCFrame/BoundsCFrame + AssetScale.
--- Rarity is intentionally UNKNOWN until a direct AssetCategory -> rarity source is verified.
+-- Rarity: verified client config path AssetCategory -> Config.Rarity._id (found via getgc).
 
 if _G.EGG01_SIZE then
  pcall(function() _G.EGG01_SIZE.destroy() end)
@@ -13,10 +13,25 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local CFG = { minScale = 1, maxLines = 18, maxMatch = 60, fireRange = 16, maxMode = false }
+local CFG = { minScale = 1, minRarity = "Epic", maxLines = 18, maxMatch = 60, fireRange = 16, maxMode = false }
 local RUN, GUIDE, carrying = false, false, false
-local eggDB, targets, conns, lines = {}, {}, {}, {}
+local eggDB, targets, conns, lines, rarityByCategory = {}, {}, {}, {}, {}
 local guideFolder, rootAttachment
+
+local RARITY_RANK = {
+ common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5,
+ mythic = 6, cosmic = 7, secret = 8, eternal = 9, divine = 10,
+}
+
+local function cleanRarity(value)
+ local word = tostring(value or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+ if not RARITY_RANK[word] then return nil end
+ return word:sub(1, 1):upper() .. word:sub(2)
+end
+
+local function rarRank(value)
+ return RARITY_RANK[tostring(value or ""):lower()] or 0
+end
 
 local function hrp()
  local c = LP.Character
@@ -57,7 +72,10 @@ local function upsert(row, uidHint)
  if not uid then return false end
  local e = eggDB[uid] or { uid = uid }
  if row.AssetScale ~= nil then e.scale = tonumber(row.AssetScale) or e.scale end
- if row.AssetCategory then e.cat = row.AssetCategory end
+ if row.AssetCategory then
+ e.cat = row.AssetCategory
+ e.rar = rarityByCategory[tostring(row.AssetCategory)]
+ end
  if row.AreaId then e.area = row.AreaId end
  if row.State then e.state = row.State end
  if row.NestId then e.nest = row.NestId end
@@ -119,7 +137,7 @@ title.TextColor3 = Color3.fromRGB(235, 235, 235)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Field Egg EPS v2.2 SAFE"
+title.Text = "Egg01 Field Egg EPS v2.3 SAFE"
 
 local function button(text, x, w, color)
  local b = Instance.new("TextButton", panel)
@@ -184,7 +202,7 @@ warning.TextSize = 10
 warning.TextWrapped = true
 warning.TextXAlignment = Enum.TextXAlignment.Left
 warning.TextYAlignment = Enum.TextYAlignment.Top
-warning.Text = "ปลายเส้น=ไข่จริงเท่านั้น\nrarity ยังไม่ยืนยัน"
+warning.Text = "ปลายเส้น=ไข่จริงเท่านั้น\nrarity จาก Config.Rarity._id"
 
 local rarLabel = minLabel:Clone()
 rarLabel.Position = UDim2.new(0, 76, 0, 68)
@@ -194,8 +212,7 @@ rarLabel.Parent = panel
 local tRar = tMin:Clone()
 tRar.Size = UDim2.new(0, 80, 0, 22)
 tRar.Position = UDim2.new(0, 76, 0, 84)
-tRar.Text = "UNKNOWN"
-tRar.TextEditable = false
+tRar.Text = "Epic"
 tRar.Parent = panel
 
 local status = Instance.new("TextLabel", panel)
@@ -235,6 +252,8 @@ end
 local function readCfg()
  local n = tonumber(tMin.Text)
  if n and n >= 0 then CFG.minScale = n end
+ local rarity = tostring(tRar.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+ CFG.minRarity = rarity == "" and "Any" or rarity
 end
 
 local function requestFieldSnapshot()
@@ -256,6 +275,71 @@ local function requestFieldSnapshot()
  for _ in pairs(eggDB) do dbCount = dbCount + 1 end
  say(string.format("Field snapshot replace=%d records db=%d", n, dbCount))
  return n
+end
+
+local function rarityFromConfig(row)
+ if typeof(row) ~= "table" then return cleanRarity(row) end
+ local config = rawget(row, "Config")
+ local rarity = typeof(config) == "table" and rawget(config, "Rarity") or rawget(row, "Rarity")
+ if typeof(rarity) == "table" then
+ return cleanRarity(rawget(rarity, "_id") or rawget(rarity, "Id") or rawget(rarity, "Name"))
+ end
+ return cleanRarity(rarity)
+end
+
+local function mapVerifiedRarities()
+ local categories = {}
+ for _, egg in pairs(eggDB) do
+ if egg.cat then categories[tostring(egg.cat)] = true end
+ end
+ local gc = getgc
+ if type(gc) ~= "function" then
+ say("rarity config: executor ไม่มี getgc")
+ return 0
+ end
+ local ok, objects = pcall(gc, true)
+ if not ok or typeof(objects) ~= "table" then
+ say("rarity config error: " .. tostring(objects))
+ return 0
+ end
+ local found = {}
+ for _, obj in ipairs(objects) do
+ if typeof(obj) == "table" then
+ local okRecord, cat, rarity = pcall(function()
+ local recordCat = rawget(obj, "AssetCategory") or rawget(obj, "Category")
+ return recordCat, recordCat and categories[tostring(recordCat)] and rarityFromConfig(obj) or nil
+ end)
+ if okRecord and cat and rarity then found[tostring(cat)] = rarity end
+ for category in pairs(categories) do
+ if not found[category] then
+ local okDirect, row = pcall(rawget, obj, category)
+ if okDirect and row ~= nil then
+ local okRarity, directRarity = pcall(rarityFromConfig, row)
+ if okRarity and directRarity then found[category] = directRarity end
+ end
+ end
+ end
+ end
+ end
+ rarityByCategory = found
+ local mapped, total = 0, 0
+ local hist = {}
+ for _, egg in pairs(eggDB) do
+ total = total + 1
+ egg.rar = egg.cat and found[tostring(egg.cat)] or nil
+ if egg.rar then
+ mapped = mapped + 1
+ hist[egg.rar] = (hist[egg.rar] or 0) + 1
+ end
+ end
+ local parts = {}
+ local categoryCount = 0
+ for _ in pairs(found) do categoryCount = categoryCount + 1 end
+ for _, rarity in ipairs({ "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }) do
+ if hist[rarity] then parts[#parts + 1] = rarity:sub(1, 3) .. "=" .. hist[rarity] end
+ end
+ say(string.format("rarity config mapped=%d/%d categories=%d | %s", mapped, total, categoryCount, table.concat(parts, " ")))
+ return mapped
 end
 
 local function stealPrompts()
@@ -304,11 +388,13 @@ local function rebuildTargets()
  end
  end
  targets = {}
+ local needRank = rarRank(CFG.minRarity)
  for ei, row in ipairs(eggs) do
  local e, match = row.e, matches[ei]
- if e.scale >= CFG.minScale then
+ local rarityOk = needRank == 0 or rarRank(e.rar) >= needRank
+ if e.scale >= CFG.minScale and rarityOk then
  targets[#targets + 1] = {
- uid = row.uid, cat = e.cat or "?", scale = e.scale, area = e.area or "?",
+ uid = row.uid, cat = e.cat or "?", scale = e.scale, rar = e.rar, area = e.area or "?",
  pos = match and match.prompt.pos or e.pos, eggPos = e.pos,
  pp = match and match.prompt.pp or nil, matchD = match and match.matchD or nil,
  }
@@ -320,8 +406,8 @@ local function rebuildTargets()
  if CFG.maxMode and a.scale ~= b.scale then return a.scale > b.scale end
  return a.dist < b.dist
  end)
- say(string.format("ไข่จริง=%d Prompt=%d จับคู่=%d ผ่าน sc>=%.2f: %d | rarity=UNKNOWN",
- #eggs, #prompts, countMap(matches), CFG.minScale, #targets))
+ say(string.format("ไข่จริง=%d Prompt=%d จับคู่=%d ผ่าน sc>=%.2f rar>=%s: %d",
+ #eggs, #prompts, countMap(matches), CFG.minScale, CFG.minRarity, #targets))
  return targets
 end
 
@@ -374,12 +460,12 @@ local function drawGuides()
  tl.Font = Enum.Font.GothamBold
  tl.TextSize = 11
  tl.TextWrapped = true
- tl.Text = string.format("ไข่ %s sc=%.2f\nd=%.0f %s", t.cat, t.scale, t.dist, t.pp and "Steal" or "snapshot")
+ tl.Text = string.format("ไข่ %s %s sc=%.2f\nd=%.0f %s", tostring(t.rar or "?"), t.cat, t.scale, t.dist, t.pp and "Steal" or "snapshot")
  end
  bGuide.Text = GUIDE and ("GUIDE " .. count) or "GUIDE"
  if count > 0 then
  local t = targets[1]
- status.Text = string.format("%s → ไข่ %s sc=%.2f ห่าง %.0f", CFG.maxMode and "MAX" or "NEAR", t.cat, t.scale, t.dist)
+ status.Text = string.format("%s → ไข่ %s %s sc=%.2f ห่าง %.0f", CFG.maxMode and "MAX" or "NEAR", tostring(t.rar or "?"), t.cat, t.scale, t.dist)
  else
  status.Text = "ไม่มีไข่จริงที่ผ่าน MinScale"
  end
@@ -387,12 +473,13 @@ end
 
 local function scan()
  requestFieldSnapshot()
+ mapVerifiedRarities()
  rebuildTargets()
  if GUIDE then drawGuides() end
  for i = 1, math.min(8, #targets) do
  local t = targets[i]
- say(string.format("#%d %s sc=%.2f d=%.0f prompt=%s eggMatch=%s",
- i, t.cat, t.scale, t.dist, t.pp and "Y" or "N",
+ say(string.format("#%d %s %s sc=%.2f d=%.0f prompt=%s eggMatch=%s",
+ i, tostring(t.rar or "?"), t.cat, t.scale, t.dist, t.pp and "Y" or "N",
  t.matchD and string.format("%.1f", t.matchD) or "-"))
  end
 end
@@ -406,7 +493,7 @@ local function tryFire(pp)
 end
 
 local function runLoop()
- say(string.format("START sc>=%.2f ยิงเมื่อ <=%d | rarity ยังไม่ใช้", CFG.minScale, CFG.fireRange))
+ say(string.format("START sc>=%.2f rar>=%s ยิงเมื่อ <=%d", CFG.minScale, CFG.minRarity, CFG.fireRange))
  local lastRefresh = 0
  while RUN do
  if carrying then
@@ -478,6 +565,7 @@ bStart.MouseButton1Click:Connect(function()
  if not fp then say("executor ไม่มี fireproximityprompt"); return end
  readCfg()
  requestFieldSnapshot()
+ mapVerifiedRarities()
  rebuildTargets()
  RUN = true
  bStart.Text = "..."
@@ -490,7 +578,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
  local clip = setclipboard or toclipboard
- if clip then pcall(clip, "=== Egg01 Field Egg EPS v2.2 ===\n" .. table.concat(lines, "\n")) end
+ if clip then pcall(clip, "=== Egg01 Field Egg EPS v2.3 ===\n" .. table.concat(lines, "\n")) end
  bCopy.Text = "OK"
  task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
@@ -505,6 +593,6 @@ end
 _G.EGG01_SIZE = { gui = gui, destroy = destroy }
 bClose.MouseButton1Click:Connect(destroy)
 
-say("v2.2 SAFE — ปลายเส้นชี้เฉพาะไข่จาก FieldEggSnapshot")
-say("ปิด rarity เดาระยะแล้ว: ชื่อ UNKNOWN จนพบ mapping ตรง")
+say("v2.3 SAFE — ปลายเส้นชี้เฉพาะไข่จาก FieldEggSnapshot")
+say("rarity จาก AssetCategory → Config.Rarity._id โดยตรง")
 task.spawn(scan)
