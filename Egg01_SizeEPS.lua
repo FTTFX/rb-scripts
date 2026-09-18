@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v1.4
+-- Egg01_SizeEPS.lua v1.6
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START (ยิงเมื่อใกล้ ≤16)
 
@@ -33,11 +33,23 @@ local RARITY_RANK = {
     eternal = 9, divine = 10,
 }
 
+local RARITY_ORDER = {
+    "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine",
+}
+
 local CFG = {
     minScale = 1.0,
-    minRarity = "Legendary",
     onlySlot = true,
     guideMax = false,
+    rarOn = {
+        Epic = false,
+        Legendary = true,
+        Mythic = true,
+        Cosmic = true,
+        Secret = true,
+        Eternal = true,
+        Divine = true,
+    },
 }
 
 local gui = Instance.new("ScreenGui")
@@ -52,7 +64,7 @@ if not gui.Parent then gui.Parent = PG end
 _G.EGG01_SIZE.gui = gui
 
 local panel = Instance.new("Frame", gui)
-panel.Size = UDim2.new(0, 300, 0, 148)
+panel.Size = UDim2.new(0, 320, 0, 178)
 panel.Position = UDim2.new(0, 12, 0, 12)
 panel.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
 panel.BackgroundTransparency = 0.1
@@ -67,7 +79,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.5"
+title.Text = "Egg01 Size EPS v1.6"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -115,12 +127,75 @@ local function mkField(label, x, y, w, def)
     return tb
 end
 
-local tMin = mkField("MinScale", 10, 62, 54, CFG.minScale)
-local tRar = mkField("MinRarity", 70, 62, 100, CFG.minRarity)
+local tMin = mkField("MinScale", 10, 62, 50, CFG.minScale)
+
+local rarLb = Instance.new("TextLabel", panel)
+rarLb.Size = UDim2.new(0, 60, 0, 14)
+rarLb.Position = UDim2.new(0, 70, 0, 62)
+rarLb.BackgroundTransparency = 1
+rarLb.TextColor3 = Color3.fromRGB(170, 170, 170)
+rarLb.Font = Enum.Font.Gotham
+rarLb.TextSize = 10
+rarLb.TextXAlignment = Enum.TextXAlignment.Left
+rarLb.Text = "Rarity"
+
+local rarBtns = {}
+local RAR_COLORS = {
+    Epic = Color3.fromRGB(140, 60, 180),
+    Legendary = Color3.fromRGB(180, 140, 40),
+    Mythic = Color3.fromRGB(180, 50, 50),
+    Cosmic = Color3.fromRGB(40, 100, 180),
+    Secret = Color3.fromRGB(120, 40, 140),
+    Eternal = Color3.fromRGB(40, 140, 140),
+    Divine = Color3.fromRGB(200, 200, 220),
+}
+local RAR_SHORT = {
+    Epic = "Epc", Legendary = "Leg", Mythic = "Myt",
+    Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div",
+}
+
+local function paintRar()
+    for name, b in pairs(rarBtns) do
+        local on = CFG.rarOn[name]
+        b.BackgroundColor3 = on and (RAR_COLORS[name] or Color3.fromRGB(60, 140, 80))
+            or Color3.fromRGB(50, 52, 58)
+        b.TextTransparency = on and 0 or 0.35
+        b.Text = (on and "✓" or "·") .. RAR_SHORT[name]
+    end
+end
+
+do
+    local x, y = 70, 76
+    for i, name in ipairs(RARITY_ORDER) do
+        local b = Instance.new("TextButton", panel)
+        b.Size = UDim2.new(0, 34, 0, 22)
+        b.Position = UDim2.new(0, x, 0, y)
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 10
+        b.BorderSizePixel = 0
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+        rarBtns[name] = b
+        b.MouseButton1Click:Connect(function()
+            CFG.rarOn[name] = not CFG.rarOn[name]
+            paintRar()
+            local on = {}
+            for _, n in ipairs(RARITY_ORDER) do
+                if CFG.rarOn[n] then on[#on + 1] = RAR_SHORT[n] end
+            end
+            say("Rarity: " .. (#on > 0 and table.concat(on, ",") or "any"))
+        end)
+        x = x + 36
+        if i == 4 then
+            x, y = 70, 100
+        end
+    end
+    paintRar()
+end
 
 local lab = Instance.new("TextLabel", panel)
-lab.Size = UDim2.new(1, -20, 0, 34)
-lab.Position = UDim2.new(0, 10, 0, 108)
+lab.Size = UDim2.new(1, -20, 0, 28)
+lab.Position = UDim2.new(0, 10, 0, 128)
 lab.BackgroundTransparency = 1
 lab.TextColor3 = Color3.fromRGB(255, 220, 100)
 lab.Font = Enum.Font.GothamBold
@@ -131,8 +206,8 @@ lab.TextWrapped = true
 lab.Text = "ฟัง Shifted → SCAN / START (ขโมยเฉพาะไข่ใหญ่)"
 
 local log = Instance.new("TextBox", gui)
-log.Size = UDim2.new(0, 300, 0, 170)
-log.Position = UDim2.new(0, 12, 0, 168)
+log.Size = UDim2.new(0, 320, 0, 170)
+log.Position = UDim2.new(0, 12, 0, 198)
 log.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 log.BackgroundTransparency = 0.3
 log.TextColor3 = Color3.fromRGB(180, 240, 180)
@@ -163,15 +238,27 @@ local function normUid(u)
     return tostring(u or ""):lower():gsub("%-", "")
 end
 
+local function anyRarOn()
+    for _, n in ipairs(RARITY_ORDER) do
+        if CFG.rarOn[n] then return true end
+    end
+    return false
+end
+
+local function rarAllowed(rar)
+    if not anyRarOn() then return true end
+    if not rar or rar == "" then return false end
+    local key
+    for _, n in ipairs(RARITY_ORDER) do
+        if n:lower() == tostring(rar):lower() then key = n break end
+    end
+    if key then return CFG.rarOn[key] == true end
+    return false
+end
+
 local function readCfg()
     local n = tonumber(tMin.Text)
     if n and n >= 0 then CFG.minScale = n end
-    local rr = tostring(tRar.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
-    if rr == "" or rr == "-" or rr:lower() == "any" then
-        CFG.minRarity = ""
-    else
-        CFG.minRarity = rr
-    end
 end
 
 local function hrp()
@@ -262,10 +349,7 @@ end
 local function passesFilter(e)
     if not e or e.state == "Carried" or not e.pos then return false end
     if CFG.minScale > 0 and (not e.scale or e.scale < CFG.minScale) then return false end
-    if CFG.minRarity ~= "" then
-        local need = rarRank(CFG.minRarity)
-        if need > 0 and (not e.rar or rarRank(e.rar) < need) then return false end
-    end
+    if not rarAllowed(e.rar) then return false end
     return true
 end
 
@@ -660,7 +744,9 @@ end
 bScan.MouseButton1Click:Connect(function()
     readCfg()
     local on = syncOdds()
-    say(string.format("syncOdds=%d (MinRarity=%s)", on, CFG.minRarity == "" and "any" or CFG.minRarity))
+    local tags = {}
+    for _, n in ipairs(RARITY_ORDER) do if CFG.rarOn[n] then tags[#tags+1] = RAR_SHORT[n] end end
+    say(string.format("syncOdds=%d rar=%s", on, #tags > 0 and table.concat(tags, ",") or "any"))
     -- ขอ snapshot ถ้ามี
     for _, name in ipairs({ "AskFieldEggSnapshot", "AskLiveSnapshot" }) do
         local rf = findNet(name)
@@ -680,8 +766,10 @@ bScan.MouseButton1Click:Connect(function()
         end
     end
     local n, big = dbCount()
-    say(string.format("── SCAN db=%d (ผ่าน %d) sc≥%.2f rar≥%s ──",
-        n, big, CFG.minScale, CFG.minRarity == "" and "any" or CFG.minRarity))
+    local tags2 = {}
+    for _, nm in ipairs(RARITY_ORDER) do if CFG.rarOn[nm] then tags2[#tags2+1] = RAR_SHORT[nm] end end
+    say(string.format("── SCAN db=%d (ผ่าน %d) sc≥%.2f rar=%s ──",
+        n, big, CFG.minScale, #tags2 > 0 and table.concat(tags2, ",") or "any"))
     say("── Top rarity/scale ──")
     for _, row in ipairs(topBig(10)) do
         local e = row.e
@@ -843,5 +931,10 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.5 — กรอง MinScale + MinRarity (Odds)")
-say("MinRarity=Legendary | MinScale=1 | NEAR/MAX + GUIDE")
+say("Size EPS v1.6 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
+say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
+task.spawn(function()
+    task.wait(0.8)
+    pcall(syncOdds)
+    if not GUIDE then setGuide(true) end
+end)
