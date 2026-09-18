@@ -1,4 +1,4 @@
--- Egg01_Auto.lua v3.2
+-- Egg01_Auto.lua v3.3
 -- เดินปกติทั้งเส้น | ทิ้ง/เก็บเมื่อพ้นโซนสี = ตั้งค่าใน GUI ได้
 
 if _G.EGG01_V2 then
@@ -19,6 +19,7 @@ local HOME = nil
 local RUN = false
 local HOME_R = 60
 local START_AWAY = 120
+local STEAL_RANGE = 16 -- StealRangeSpy: สำเร็จ ~14.2 (MaxAct=8)
 local CFG = {
     dropPick = true, -- พ้นโซนสี → ทิ้ง → รอ → เก็บ
     waitDrop = 2,
@@ -58,7 +59,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Auto v3.2"
+title.Text = "Egg01 Auto v3.3"
 
 local function mkBtn(parent, text, x, y, w, color)
     local b = Instance.new("TextButton", parent)
@@ -405,7 +406,7 @@ local function doSteal()
                         local part = p and (p:IsA("BasePart") and p or p:FindFirstChildWhichIsA("BasePart", true))
                         if part then
                             local dd = (part.Position - r.Position).Magnitude
-                            if dd < 35 and (not bestD or dd < bestD) then
+                            if dd < STEAL_RANGE and (not bestD or dd < bestD) then
                                 best, bestD = d, dd
                             end
                         end
@@ -573,7 +574,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Auto v3.2 ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Auto v3.3 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -588,5 +589,5 @@ bClose.MouseButton1Click:Connect(function()
 end)
 
 paintDrop()
-say("Egg01 Auto v3.2 พร้อม")
+say("Egg01 Auto v3.3 พร้อม")
 say("ตั้งค่า: ทิ้ง/เก็บ | รอทิ้ง | ก้าว — แล้ว HOME → START")
