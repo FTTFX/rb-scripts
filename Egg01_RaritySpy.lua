@@ -1,4 +1,4 @@
--- Egg01_RaritySpy.lua v1.1
+-- Egg01_RaritySpy.lua v1.2
 -- หาแหล่ง "Legendary" / rarity ของไข่หรือสัตว์
 -- วิธี: ยืนใกล้ไข่หรือสัตว์ที่มีป้าย Legendary → SCAN / DUMP → COPY
 
@@ -48,7 +48,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Rarity Spy v1.1"
+title.Text = "Egg01 Rarity Spy v1.2"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -65,9 +65,10 @@ local function mkBtn(text, x, y, w, color)
 end
 
 local bClose = mkBtn("X", 264, 4, 28, Color3.fromRGB(120, 45, 45))
-local bScan  = mkBtn("SCAN", 10, 36, 70, Color3.fromRGB(50, 100, 180))
-local bRF    = mkBtn("RF", 86, 36, 70, Color3.fromRGB(100, 70, 140))
-local bCopy  = mkBtn("COPY", 162, 36, 70, Color3.fromRGB(70, 70, 70))
+local bScan  = mkBtn("SCAN", 10, 36, 54, Color3.fromRGB(50, 100, 180))
+local bOdds  = mkBtn("ODDS", 70, 36, 54, Color3.fromRGB(160, 100, 40))
+local bRF    = mkBtn("RF", 130, 36, 54, Color3.fromRGB(100, 70, 140))
+local bCopy  = mkBtn("COPY", 190, 36, 54, Color3.fromRGB(70, 70, 70))
 
 local lab = Instance.new("TextLabel", panel)
 lab.Size = UDim2.new(1, -20, 0, 24)
@@ -240,6 +241,60 @@ bScan.MouseButton1Click:Connect(function()
     say(string.format("── จบ SCAN hits≈%d ──", hits))
 end)
 
+-- อ่าน ClientRenderedAssets.*.Data.Odds (แหล่ง rarity ไข่ในฟิลด์)
+bOdds.MouseButton1Click:Connect(function()
+    local r = hrp()
+    if not r then say("ไม่มีตัวละคร"); return end
+
+    local rfShow = findNet("AskFieldEggRarityShows")
+    if rfShow and rfShow:IsA("RemoteFunction") then
+        local ok, res = pcall(function() return rfShow:InvokeServer() end)
+        say(string.format("AskFieldEggRarityShows → %s %s", tostring(ok), tostring(res)))
+        task.wait(0.6)
+    end
+
+    say("── ODDS จาก ClientRenderedAssets ──")
+    local folder = workspace:FindFirstChild("ClientRenderedAssets")
+    if not folder then
+        say("⚠ ไม่เจอ Workspace.ClientRenderedAssets")
+        return
+    end
+    local n = 0
+    for _, asset in ipairs(folder:GetChildren()) do
+        local data = asset:FindFirstChild("Data")
+        local odds = data and (data:FindFirstChild("Odds") or data:FindFirstChild("Odds", true))
+        local rar
+        if odds then
+            if odds:IsA("TextLabel") or odds:IsA("TextButton") then
+                rar = odds.Text
+            else
+                local tl = odds:FindFirstChildWhichIsA("TextLabel", true)
+                rar = tl and tl.Text
+            end
+        end
+        -- หาตำแหน่ง
+        local part = asset:FindFirstChildWhichIsA("BasePart", true)
+        local pos = part and part.Position
+        local dist = pos and (pos - r.Position).Magnitude or 9999
+        if rar and rar ~= "" and dist <= 200 then
+            n = n + 1
+            local uidHint = asset.Name:match("_(%x+)$") or "?"
+            say(string.format("★ d=%.0f rar='%s' uidHint=%s",
+                dist, tostring(rar):sub(1, 24), uidHint:sub(1, 12)))
+            say(string.format("   asset=%s", asset.Name:sub(1, 50)))
+            -- siblings ใน Data
+            if data and n <= 12 then
+                for _, ch in ipairs(data:GetChildren()) do
+                    local t = ""
+                    if ch:IsA("TextLabel") or ch:IsA("TextButton") then t = "='" .. tostring(ch.Text):sub(1, 30) .. "'" end
+                    say(string.format("   Data.%s%s", ch.Name, t))
+                end
+            end
+        end
+    end
+    say(string.format("── ODDS ใกล้ๆ %d ใบ ──", n))
+end)
+
 bRF.MouseButton1Click:Connect(function()
     say("── ลอง RF rarity / snapshot ──")
 
@@ -375,5 +430,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RAR = nil
 end)
 
-say("Rarity Spy v1.1 — เจอ AskFieldEggRarityShows / FieldEggRaritiesShown")
-say("กด RF ดัมพ์ rarity | เดินใกล้ไข่ดู RE")
+say("Rarity Spy v1.2 — Odds อยู่ที่ ClientRenderedAssets.*.Data.Odds")
+say("กด ODDS (เปิดโชว์ rarity แล้วอ่าน) → COPY")
