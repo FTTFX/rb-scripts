@@ -20,7 +20,8 @@
 | `Egg01_RaritySpy.lua` | ค้น config/getgc สำหรับ map `AssetCategory→rarity` โดยตรง | v1.5 |
 | `Egg01_Auto.lua` | เดินทิ้ง/เก็บ + GUI drop/pick + `STEAL_RANGE=16` | v3.3 |
 | `Egg01_MoveSpy.lua` | ทดสอบกลับ HOME; HOP14 stable / HOP16 edge + ตรวจ rollback | v1.4 SAFE |
-| `Egg01_SizeEPS.lua` | SAFE: ปลายเส้น=ไข่จริง; สี/ตัวกรองจาก `Config.Rarity._id` | **v2.4** |
+| `Egg01_UidStealTest.lua` | ทดสอบขโมยด้วย UID table / Snapshot row / EggCmds wrapper ทีละคำขอ | v1.0 |
+| `Egg01_SizeEPS.lua` | GUIDE auto-refresh; พับแผงได้; ไม่มี log บนจอ | **v2.5** |
 | `Egg01_PROJECT.md` | เอกสารนี้ | — |
 
 ## เน็ตเวิร์ก
@@ -79,6 +80,12 @@ HasParasite, Mutations, NestId, State, DroppedAt, Version
   - สัตว์ในคอก: ป้าย Billboard หลังฟัก (คนละระบบ)
 
 **ระยะ steal (fireproximityprompt):** สำเร็จได้ ~5–14 studs (MaxAct เกม = 8) → Auto ใช้ `STEAL_RANGE=16`
+
+**Uid ของไข่ (UidStealTest 2026-09-18):** มี 2 รูปแบบ
+- ทั่วไป: hex 32 ตัว ไม่มีขีด เช่น `7a090fae2dfb47b694d8de1ed7a5bd4f`
+- โซนแรก/FirstArea: `FirstAreaEgg_<asset>_<userId>_<Biome>:Slot_00N`  
+  ตัวอย่าง: `FirstAreaEgg_9763090423_5965716_Forest:Slot_002`  
+  → จับคู่ Odds hexUid กับไข่ FirstArea **ไม่ได้** ตรงๆ ต้องใช้ NestId+พิกัด
 
 **วางไข่:** ปุ่ม GUI กลางจอตอนถือไข่ (ไอคอนวาง + ถังขยะ)
 
