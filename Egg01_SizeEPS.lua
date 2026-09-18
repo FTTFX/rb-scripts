@@ -1,9 +1,10 @@
--- Egg01_SizeEPS.lua v1.2
--- EPS แยกขนาด: จำ AssetScale จาก FieldEggShifted แล้วขโมยเฉพาะไข่ที่ใหญ่พอ
--- SCAN = ลิสต์ไข่ใกล้ตัว+สเกล | START = ยิง Steal เฉพาะ scale >= MinScale
+-- Egg01_SizeEPS.lua v1.3
+-- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
+-- SCAN | GUIDE | START (ยิงเมื่อใกล้ ≤16)
 
 if _G.EGG01_SIZE then
     pcall(function() _G.EGG01_SIZE.gui:Destroy() end)
+    if _G.EGG01_SIZE.clearGuide then pcall(_G.EGG01_SIZE.clearGuide) end
     if _G.EGG01_SIZE.conns then
         for _, c in ipairs(_G.EGG01_SIZE.conns) do pcall(function() c:Disconnect() end) end
     end
@@ -12,12 +13,14 @@ _G.EGG01_SIZE = { conns = {} }
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
 local STEAL_RANGE = 16
 local RUN = false
+local GUIDE = false
 local lines = {}
 local eggDB = {} -- [uid] = { scale, cat, area, pos, state, nest, mutN, ver }
 local carrying = false
@@ -55,7 +58,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.2"
+title.Text = "Egg01 Size EPS v1.3"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -71,11 +74,12 @@ local function mkBtn(text, x, y, w, color)
     return b
 end
 
-local bClose = mkBtn("X", 264, 4, 28, Color3.fromRGB(120, 45, 45))
-local bScan  = mkBtn("SCAN", 10, 32, 58, Color3.fromRGB(50, 100, 180))
-local bStart = mkBtn("START", 74, 32, 58, Color3.fromRGB(40, 150, 70))
-local bStop  = mkBtn("STOP", 138, 32, 58, Color3.fromRGB(160, 50, 50))
-local bCopy  = mkBtn("COPY", 202, 32, 58, Color3.fromRGB(70, 70, 70))
+local bClose  = mkBtn("X", 264, 4, 28, Color3.fromRGB(120, 45, 45))
+local bScan   = mkBtn("SCAN", 10, 32, 52, Color3.fromRGB(50, 100, 180))
+local bGuide  = mkBtn("GUIDE", 66, 32, 52, Color3.fromRGB(90, 90, 90))
+local bStart  = mkBtn("START", 122, 32, 52, Color3.fromRGB(40, 150, 70))
+local bStop   = mkBtn("STOP", 178, 32, 52, Color3.fromRGB(160, 50, 50))
+local bCopy   = mkBtn("COPY", 234, 32, 52, Color3.fromRGB(70, 70, 70))
 
 local lb = Instance.new("TextLabel", panel)
 lb.Size = UDim2.new(0, 70, 0, 16)
@@ -215,6 +219,123 @@ local function topBig(n)
     local out = {}
     for i = 1, math.min(n or 8, #arr) do out[i] = arr[i] end
     return out
+end
+
+-- ===== เส้นนำสายตา (Beam + ป้ายที่เป้า) =====
+local guideFolder = Instance.new("Folder")
+guideFolder.Name = "Egg01_SizeGuide"
+guideFolder.Parent = workspace
+local guideA0, guideA1, guideBeam, guidePart, guideBill, guideConn
+
+local function clearGuide()
+    GUIDE = false
+    if guideConn then pcall(function() guideConn:Disconnect() end) guideConn = nil end
+    if guideBeam then pcall(function() guideBeam:Destroy() end) guideBeam = nil end
+    if guideA0 then pcall(function() guideA0:Destroy() end) guideA0 = nil end
+    if guideA1 then pcall(function() guideA1:Destroy() end) guideA1 = nil end
+    if guidePart then pcall(function() guidePart:Destroy() end) guidePart = nil end
+    guideBill = nil
+    if bGuide and bGuide.Parent then
+        bGuide.Text = "GUIDE"
+        bGuide.BackgroundColor3 = Color3.fromRGB(90, 90, 90)
+    end
+end
+_G.EGG01_SIZE.clearGuide = clearGuide
+
+local function ensureGuideParts()
+    if guidePart and guidePart.Parent then return end
+    guidePart = Instance.new("Part")
+    guidePart.Name = "Egg01_GuideTarget"
+    guidePart.Anchored = true
+    guidePart.CanCollide = false
+    guidePart.CanQuery = false
+    guidePart.CanTouch = false
+    guidePart.Transparency = 1
+    guidePart.Size = Vector3.new(1, 1, 1)
+    guidePart.Parent = guideFolder
+
+    guideA1 = Instance.new("Attachment", guidePart)
+
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "Tag"
+    bb.Size = UDim2.new(0, 160, 0, 44)
+    bb.StudsOffset = Vector3.new(0, 4, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = guidePart
+    local tl = Instance.new("TextLabel", bb)
+    tl.Size = UDim2.new(1, 0, 1, 0)
+    tl.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    tl.BackgroundTransparency = 0.35
+    tl.TextColor3 = Color3.fromRGB(255, 230, 80)
+    tl.Font = Enum.Font.GothamBold
+    tl.TextSize = 14
+    tl.TextWrapped = true
+    tl.Text = "★"
+    Instance.new("UICorner", tl).CornerRadius = UDim.new(0, 6)
+    guideBill = tl
+end
+
+local function attachBeamToChar()
+    local r = hrp()
+    if not r then return false end
+    if guideA0 and guideA0.Parent == r then return true end
+    if guideA0 then pcall(function() guideA0:Destroy() end) end
+    guideA0 = Instance.new("Attachment", r)
+    if guideBeam then pcall(function() guideBeam:Destroy() end) end
+    guideBeam = Instance.new("Beam")
+    guideBeam.Attachment0 = guideA0
+    guideBeam.Attachment1 = guideA1
+    guideBeam.FaceCamera = true
+    guideBeam.Width0 = 0.6
+    guideBeam.Width1 = 0.35
+    guideBeam.Color = ColorSequence.new(Color3.fromRGB(255, 220, 60))
+    guideBeam.Transparency = NumberSequence.new(0.15)
+    guideBeam.LightEmission = 1
+    guideBeam.Segments = 20
+    guideBeam.Parent = guidePart
+    return true
+end
+
+local function updateGuide()
+    if not GUIDE then return end
+    ensureGuideParts()
+    if not attachBeamToChar() then return end
+    local nb, nd = nearestBig()
+    if not nb or not nb.pos then
+        if guideBill then guideBill.Text = "ไม่มี ★ ≥ MinScale" end
+        if guideBeam then guideBeam.Enabled = false end
+        return
+    end
+    if guideBeam then guideBeam.Enabled = true end
+    guidePart.CFrame = CFrame.new(nb.pos + Vector3.new(0, 3, 0))
+    if guideBill then
+        guideBill.Text = string.format("★ %s\nsc=%.2f  d=%.0f",
+            tostring(nb.cat or "?"), nb.scale or 0, nd or -1)
+    end
+    lab.Text = string.format("GUIDE → %s sc=%.2f ห่าง %.0f",
+        tostring(nb.cat), nb.scale, nd)
+end
+
+local function setGuide(on)
+    if on then
+        GUIDE = true
+        ensureGuideParts()
+        attachBeamToChar()
+        if guideConn then pcall(function() guideConn:Disconnect() end) end
+        guideConn = RunService.RenderStepped:Connect(updateGuide)
+        table.insert(_G.EGG01_SIZE.conns, guideConn)
+        bGuide.Text = "GUIDE ON"
+        bGuide.BackgroundColor3 = Color3.fromRGB(180, 140, 30)
+        local nb, nd = nearestBig()
+        if nb then
+            say(string.format("GUIDE ON → ★ %s sc=%.3f ห่าง %.0f", tostring(nb.cat), nb.scale, nd))
+        else
+            say("GUIDE ON — ยังไม่มี ★ กด SCAN / รอ snapshot")
+        end
+    else
+        clearGuide()
+        say("GUIDE OFF")
+    end
 end
 
 local function promptPart(pp)
@@ -544,15 +665,21 @@ end
 bStart.MouseButton1Click:Connect(function()
     if RUN then return end
     if not fp then say("⚠ ไม่มี fireproximityprompt"); return end
+    if not GUIDE then setGuide(true) end -- เปิดเส้นนำอัตโนมัติตอน START
     RUN = true
     bStart.Text = "..."
     task.spawn(loop)
 end)
 
+bGuide.MouseButton1Click:Connect(function()
+    readCfg()
+    setGuide(not GUIDE)
+end)
+
 bStop.MouseButton1Click:Connect(function()
     RUN = false
     bStart.Text = "START"
-    say("หยุด")
+    say("หยุดยิง (GUIDE ยังเปิดอยู่ถ้าเปิดไว้)")
 end)
 
 bCopy.MouseButton1Click:Connect(function()
@@ -565,10 +692,12 @@ end)
 
 bClose.MouseButton1Click:Connect(function()
     RUN = false
+    clearGuide()
+    pcall(function() guideFolder:Destroy() end)
     for _, c in ipairs(_G.EGG01_SIZE.conns) do pcall(function() c:Disconnect() end) end
     gui:Destroy()
     _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS — MinScale กรองไข่ใหญ่ (เช่น 1.5 / 2.0)")
-say("เดินใกล้รัง → SCAN ดูสเกล → START ยิงเฉพาะ ★")
+say("Size EPS v1.3 — GUIDE = เส้นเหลืองไป ★ | START = ยิงเมื่อใกล้")
+say("ตั้ง MinScale → SCAN → GUIDE / START")
