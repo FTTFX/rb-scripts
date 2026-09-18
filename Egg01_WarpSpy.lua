@@ -1,5 +1,6 @@
--- Egg01_WarpSpy.lua v1.0
+-- Egg01_WarpSpy.lua v1.1
 -- เทสวาปหลายแบบเพื่อออกนอกโซนสี (GuardAreas) — log วิธี / เวลา / ระยะ / ถือไข่ / ในโซน?
+-- v1.1: หยุด TEST_ALL ตอน SUCCESS แรก | MicroHop_20 ขึ้นก่อน | ตัด PivotTo (ทำให้หลุดไข่)
 -- ใช้: กด HOME(ทิศบ้าน) → ขโมยไข่ → TEST_ALL หรือ NEXT → COPY ส่งมา
 if _G.EGG01WS_GUI then pcall(function() _G.EGG01WS_GUI:Destroy() end) end
 if _G.EGG01WS_CONNS then
@@ -222,8 +223,72 @@ local function reportMethod(name, tStart, before, samples, note)
     return ok, moved0, bounced
 end
 
--- ===== warp methods =====
+-- ===== warp methods (เรียงจากที่น่าใช้ก่อน — WarpSpy Lake: CFrame สั้น OK) =====
 local METHODS = {}
+
+METHODS[#METHODS + 1] = {
+    name = "MicroHop_20",
+    run = function(dest)
+        local r = hrp()
+        if not r then return "no-hrp" end
+        local start = r.Position
+        local flatV = Vector3.new(dest.X - start.X, 0, dest.Z - start.Z)
+        local dist = flatV.Magnitude
+        if dist < 1 then return "dest-near" end
+        local dir = flatV.Unit
+        local step, gone = 20, 0
+        while gone < dist do
+            gone = math.min(gone + step, dist)
+            r = hrp()
+            if not r then break end
+            local before = r.Position
+            local p = start + dir * gone + Vector3.new(0, 2, 0)
+            r.CFrame = CFrame.new(p)
+            r.AssemblyLinearVelocity = Vector3.zero
+            task.wait(0.18)
+            r = hrp()
+            if not r then break end
+            if flat(before, r.Position) < step * 0.25 then
+                return "rubberband-stop"
+            end
+            if not carrying then return "lost-egg" end
+            if not insideZone(r.Position, 40) then break end
+        end
+        return nil
+    end,
+}
+
+METHODS[#METHODS + 1] = {
+    name = "MicroHop_12",
+    run = function(dest)
+        local r = hrp()
+        if not r then return "no-hrp" end
+        local start = r.Position
+        local flatV = Vector3.new(dest.X - start.X, 0, dest.Z - start.Z)
+        local dist = flatV.Magnitude
+        if dist < 1 then return "dest-near" end
+        local dir = flatV.Unit
+        local step, gone = 12, 0
+        while gone < dist do
+            gone = math.min(gone + step, dist)
+            r = hrp()
+            if not r then break end
+            local before = r.Position
+            local p = start + dir * gone + Vector3.new(0, 2, 0)
+            r.CFrame = CFrame.new(p)
+            r.AssemblyLinearVelocity = Vector3.zero
+            task.wait(0.12)
+            r = hrp()
+            if not r then break end
+            if flat(before, r.Position) < step * 0.25 then
+                return "rubberband-stop"
+            end
+            if not carrying then return "lost-egg" end
+            if not insideZone(r.Position, 40) then break end
+        end
+        return nil
+    end,
+}
 
 METHODS[#METHODS + 1] = {
     name = "CFrame_once",
@@ -232,26 +297,6 @@ METHODS[#METHODS + 1] = {
         if not r then return "no-hrp" end
         r.CFrame = CFrame.new(dest)
         r.AssemblyLinearVelocity = Vector3.zero
-        return nil
-    end,
-}
-
-METHODS[#METHODS + 1] = {
-    name = "PivotTo_char",
-    run = function(dest)
-        local c = char()
-        if not c then return "no-char" end
-        c:PivotTo(CFrame.new(dest))
-        return nil
-    end,
-}
-
-METHODS[#METHODS + 1] = {
-    name = "SetPrimaryPartCFrame",
-    run = function(dest)
-        local c = char()
-        if not c or not c.PrimaryPart then return "no-pp" end
-        c:SetPrimaryPartCFrame(CFrame.new(dest))
         return nil
     end,
 }
@@ -282,56 +327,6 @@ METHODS[#METHODS + 1] = {
             r.CFrame = CFrame.new(dest)
             r.AssemblyLinearVelocity = Vector3.zero
             RunService.Heartbeat:Wait()
-        end
-        return nil
-    end,
-}
-
-METHODS[#METHODS + 1] = {
-    name = "MicroHop_25",
-    run = function(dest)
-        local r = hrp()
-        if not r then return "no-hrp" end
-        local start = r.Position
-        local flatV = Vector3.new(dest.X - start.X, 0, dest.Z - start.Z)
-        local dist = flatV.Magnitude
-        if dist < 1 then return "dest-near" end
-        local dir = flatV.Unit
-        local step, gone = 25, 0
-        while gone < dist do
-            gone = math.min(gone + step, dist)
-            r = hrp()
-            if not r then break end
-            local p = start + dir * gone + Vector3.new(0, 2, 0)
-            r.CFrame = CFrame.new(p)
-            r.AssemblyLinearVelocity = Vector3.zero
-            task.wait(0.08)
-            if not insideZone(r.Position, 40) then break end
-        end
-        return nil
-    end,
-}
-
-METHODS[#METHODS + 1] = {
-    name = "MicroHop_12",
-    run = function(dest)
-        local r = hrp()
-        if not r then return "no-hrp" end
-        local start = r.Position
-        local flatV = Vector3.new(dest.X - start.X, 0, dest.Z - start.Z)
-        local dist = flatV.Magnitude
-        if dist < 1 then return "dest-near" end
-        local dir = flatV.Unit
-        local step, gone = 12, 0
-        while gone < dist do
-            gone = math.min(gone + step, dist)
-            r = hrp()
-            if not r then break end
-            local p = start + dir * gone + Vector3.new(0, 2, 0)
-            r.CFrame = CFrame.new(p)
-            r.AssemblyLinearVelocity = Vector3.zero
-            task.wait(0.05)
-            if not insideZone(r.Position, 40) then break end
         end
         return nil
     end,
@@ -465,7 +460,11 @@ local function testAll()
         end
         methodIdx = i
         local ok = runOne(m)
-        if ok then winners[#winners + 1] = m.name end
+        if ok then
+            winners[#winners + 1] = m.name
+            L("หยุด TEST_ALL — ได้วิธีแรกแล้ว: " .. m.name)
+            break
+        end
         task.wait(0.6)
     end
     if #winners > 0 then
@@ -534,7 +533,7 @@ bNext.MouseButton1Click:Connect(function()
 end)
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 WarpSpy v1.0 ===\n" .. table.concat(OUT, "\n")
+    local t = "=== Egg01 WarpSpy v1.1 ===\n" .. table.concat(OUT, "\n")
     if setclipboard then
         setclipboard(t)
         L("COPY ✅")
@@ -555,6 +554,6 @@ bPause.MouseButton1Click:Connect(function()
     bPause.Text = PAUSED and "RESUME" or "PAUSE"
 end)
 
-L("Egg01 WarpSpy v1.0 — " .. #METHODS .. " วิธี")
+L("Egg01 WarpSpy v1.1 — " .. #METHODS .. " วิธี (หยุดเมื่อ SUCCESS)")
 L("HOME → ขโมยไข่ → TEST_ALL (หรือ NEXT ทีละอัน) → COPY")
 L("เป้า: ออกนอก GuardAreas แล้วยังถือไข่")
