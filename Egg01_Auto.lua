@@ -1,7 +1,6 @@
--- Egg01_Auto.lua v2.3
--- ทิ้งได้เมื่อออกจากโซนสีที่ขโมย (AreaId → GuardAreas.*) แล้วเท่านั้น
--- แล้วเก็บ → เดินต่อทีละช่วงจนบ้าน | ไม่วาป
--- HOME → START → ค่อยขโมยไข่
+-- Egg01_Auto.lua v2.4
+-- ทิ้งเมื่อออกจากโซนสีที่ขโมย | ใกล้เขตปลอดภัย/HOME = วิ่งเข้าบ้านเลยไม่ทิ้ง
+-- HOME → START → ค่อยขโมยไข่ | ไม่วาป
 
 if _G.EGG01_V2 then
     pcall(function() _G.EGG01_V2.gui:Destroy() end)
@@ -201,6 +200,22 @@ local function findGuardBiome(areaName)
     return nil
 end
 
+local function getSafeZone()
+    local areas = workspace:FindFirstChild("__OBJECTS")
+    areas = areas and areas:FindFirstChild("Areas")
+    local eggBounds = areas and areas:FindFirstChild("EggCarryBounds")
+    local safe = eggBounds and eggBounds:FindFirstChild("SafeZone")
+    if safe and safe:IsA("BasePart") then return safe end
+    return nil
+end
+
+local function inSafeZone()
+    local r = hrp()
+    local safe = getSafeZone()
+    if not r or not safe then return false end
+    return inBox(safe.CFrame, safe.Size + Vector3.new(10, 40, 10), r.Position)
+end
+
 -- ทิ้งได้เมื่อออกจากโซนสีที่ขโมยไข่มาแล้วเท่านั้น
 local function isDropSafe()
     local r = hrp()
@@ -223,6 +238,17 @@ local function isDropSafe()
         return false, "ยังในโซนสี " .. biome.Name
     end
     return true, "ออกจากโซน " .. biome.Name
+end
+
+-- ใกล้บ้าน/อยู่ในเขตปลอดภัย = รอบสุดท้าย วิ่งเข้า HOME เลย ไม่ทิ้ง
+local function isFinalStretch()
+    local r = hrp()
+    if not r or not HOME then return false end
+    if inSafeZone() then return true, "เขตปลอดภัย" end
+    if dist2(r.Position, HOME) <= math.max(HOME_R * 2.5, 150) then
+        return true, "ใกล้ HOME"
+    end
+    return false
 end
 
 local function doDrop()
@@ -345,6 +371,17 @@ local function loop()
                 if not RUN then break end
             end
 
+            -- รอบสุดท้าย: เขตปลอดภัย / ใกล้ HOME → วิ่งเข้าจุดที่บันทึกเลย ไม่ทิ้ง
+            local fin, finWhy = isFinalStretch()
+            if isCarry() and fin then
+                say(tostring(finWhy) .. " — วิ่งเข้าบ้านเลย")
+                walkTo(HOME, 20)
+                if isCarry() then
+                    say("ถึงบ้านแล้ว — จบ (วางคอกเอง)")
+                    break
+                end
+            end
+
             if hopHome() then
                 if isCarry() then
                     say("ถึงบ้านแล้ว — จบ")
@@ -354,7 +391,8 @@ local function loop()
 
             r = hrp()
             d = r and HOME and dist2(r.Position, HOME) or 9999
-            if isCarry() and d > HOME_R then
+            fin = isFinalStretch()
+            if isCarry() and d > HOME_R and not fin then
                 local safe, why = isDropSafe()
                 if not safe then
                     say(tostring(why) .. " — เดินออกจากสีโซนก่อนค่อยทิ้ง")
@@ -442,6 +480,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_V2 = nil
 end)
 
-say("Egg01 Auto v2.3 พร้อม")
-say("ทิ้งเมื่อออกจากโซนสีที่ขโมย (หญ้า/หิมะ/ลาวา/…)")
+say("Egg01 Auto v2.4 พร้อม")
+say("ทิ้งทีละโซนสี | เขตปลอดภัย→วิ่งเข้า HOME เลย")
 say("HOME → START → ค่อยขโมยไข่")
