@@ -1,7 +1,7 @@
 -- Egg01_SizeEPS.lua v1.11
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START
--- v1.10: only Steal-near + strict MinScale (ยิงเมื่อใกล้ ≤16)
+-- v1.11: fix callback scope, snapshot-first targets, and RenderStepped rescan storm
 
 if _G.EGG01_SIZE then
  pcall(function() _G.EGG01_SIZE.gui:Destroy() end)
@@ -27,6 +27,9 @@ local eggDB = {} -- [uid] = { scale, cat, area, pos, state, nest, mutN, ver, rar
 local carrying = false
 local carryUid = nil
 local oddsByUid = {}
+local say
+local updateGuide
+local rebuildRarTargets
 
 local RARITY_RANK = {
  common = 1, uncommon = 2, rare = 3, epic = 4,
@@ -228,7 +231,7 @@ log.TextWrapped = true
 log.Text = ""
 Instance.new("UICorner", log).CornerRadius = UDim.new(0, 6)
 
-local function say(msg)
+say = function(msg)
  lines[#lines + 1] = msg
  if #lines > 90 then table.remove(lines, 1) end
  log.Text = table.concat(lines, "\n")
@@ -437,7 +440,7 @@ local function rebuildThrottled()
  return true
 end
 
-local function rebuildRarTargets()
+rebuildRarTargets = function()
  readCfg()
  rarTargets = {}
  oddsHist = {}
@@ -495,16 +498,8 @@ local function rebuildRarTargets()
  if not seen[key] then
  seen[key] = true
  local scale = egg and egg.scale or nil
- -- DB ไม่มีสเกล → วัดจากโมเดลไข่จริง (ไม่ตัดทิ้งเพราะ scale=nil)
- if not scale then
- local pp = asset:FindFirstChildWhichIsA("BasePart", true)
- if pp and pp.Size then
- scale = math.max(pp.Size.X, pp.Size.Y, pp.Size.Z)
- end
- end
  local cat = egg and egg.cat or "?"
  local area = egg and egg.area or "?"
- if rarAllowed(rar) then
  local okSteal, stealD = nearSteal(pos, stealAnchors, 32)
  if not okSteal then
  skipNoSteal = skipNoSteal + 1
@@ -523,7 +518,6 @@ local function rebuildRarTargets()
  local dd = (ap - pos).Magnitude
  if dd <= 32 and (not bestAd or dd < bestAd) then
  bestAp, bestAd = ap, dd
- end
  end
  if bestAp then usePos = bestAp end
  rarTargets[#rarTargets + 1] = {
@@ -589,9 +583,27 @@ local function ingestSnapshot(res)
  return n
 end
 
+local function requestSnapshots()
+ local total = 0
+ for _, name in ipairs({ "AskFieldEggSnapshot", "AskLiveSnapshot" }) do
+ local rf = findNet(name)
+ if rf and rf:IsA("RemoteFunction") then
+ local ok, res = pcall(function() return rf:InvokeServer() end)
+ if ok and typeof(res) == "table" then
+ local got = ingestSnapshot(res)
+ total = total + got
+ say(string.format("RF %s → +%d eggs", name, got))
+ else
+ say(string.format("RF %s → %s", name, tostring(res)))
+ end
+ end
+ end
+ return total
+end
+
 local function passesFilter(e)
  if not e or e.state == 'Carried' or not e.pos then return false end
- if CFG.minScale > 0 and e.scale and e.scale < CFG.minScale then return false end
+ if CFG.minScale > 0 and (not e.scale or e.scale < CFG.minScale) then return false end
  if not rarAllowed(e.rar) then return false end
  return true
 end
@@ -747,7 +759,7 @@ local function attachBeamToChar()
  return true
 end
 
-local function updateGuide()
+updateGuide = function()
  if not GUIDE then return end
  ensureGuideParts()
  if not attachBeamToChar() then return end
@@ -1030,22 +1042,11 @@ end
 
 bScan.MouseButton1Click:Connect(function()
  readCfg()
- for _, name in ipairs({ "AskFieldEggSnapshot", "AskLiveSnapshot" }) do
- local rf = findNet(name)
- if rf and rf:IsA("RemoteFunction") then
- local ok, res = pcall(function() return rf:InvokeServer() end)
- if ok and typeof(res) == "table" then
- local got = ingestSnapshot(res)
- say(string.format("RF %s → +%d eggs", name, got))
- else
- say(string.format("RF %s → %s", name, tostring(res)))
- end
- end
- end
+ requestSnapshots()
  local on, matched = syncOdds()
  local tags = {}
  for _, n in ipairs(RARITY_ORDER) do if CFG.rarOn[n] then tags[#tags+1] = RAR_SHORT[n] end end
- say(string.format("Odds=%d เป้าติ๊ก=%d | กรอง=%s",
+ say(string.format("Odds=%d เป้าพร้อม=%d | กรอง=%s",
  on or 0, matched or 0, #tags > 0 and table.concat(tags, ",") or "(ยังไม่ติ๊ก)"))
  local n = select(1, dbCount())
  say(string.format("── SCAN db=%d เป้าGUIDE=%d sc≥%.2f ──", n, #rarTargets, CFG.minScale))
@@ -1066,8 +1067,8 @@ bScan.MouseButton1Click:Connect(function()
  tostring(tg.cat or "?"), dMe))
  end
  if #rarTargets == 0 then
- say(string.format("⚠ ไม่มีเป้า — read=%d pos=%d ไร้Steal=%d scตก=%d (ลด MinScale / ติ๊กให้ตรง)",
- rawN or 0, withPos or 0, skipNoSteal or 0, skipScale or 0))
+ say(string.format("⚠ ไม่มีเป้า — Odds=%d keep=%d (ดู noSteal/noScale ด้านบน)",
+ on or 0, matched or 0))
  end
  if GUIDE then updateGuide() end
  local nb, nd = guideTarget()
@@ -1178,6 +1179,7 @@ bStart.MouseButton1Click:Connect(function()
  if not fp then say("⚠ ไม่มี fireproximityprompt"); return end
  readCfg()
  task.spawn(function()
+ requestSnapshots()
  syncOdds()
  if not GUIDE then setGuide(true) end
  RUN = true
@@ -1190,6 +1192,7 @@ bGuide.MouseButton1Click:Connect(function()
  readCfg()
  if not GUIDE then
  task.spawn(function()
+ requestSnapshots()
  syncOdds()
  setGuide(true)
  end)
@@ -1236,6 +1239,7 @@ say("Size EPS v1.11 — ติ๊ก rarity + MinScale | GUIDE เปิดเ�
 say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
 task.spawn(function()
  task.wait(0.8)
+ requestSnapshots()
  pcall(syncOdds)
  if not GUIDE then setGuide(true) end
 end)
