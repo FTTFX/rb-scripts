@@ -1,7 +1,7 @@
--- Egg01_SizeEPS.lua v1.12
+-- Egg01_SizeEPS.lua v1.13
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START
--- v1.12: match Odds by UID and use eggDB position for Steal anchors
+-- v1.13: rarity-only fallback + multi-line GUIDE when UID/Prompt matching is unavailable
 
 if _G.EGG01_SIZE then
  pcall(function() _G.EGG01_SIZE.gui:Destroy() end)
@@ -30,6 +30,7 @@ local oddsByUid = {}
 local say
 local updateGuide
 local rebuildRarTargets
+local refreshMultiGuide
 
 local RARITY_RANK = {
  common = 1, uncommon = 2, rare = 3, epic = 4,
@@ -83,7 +84,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.12"
+title.Text = "Egg01 Size EPS v1.13"
 
 local function mkBtn(text, x, y, w, color)
  local b = Instance.new("TextButton", panel)
@@ -192,7 +193,10 @@ do
  else
  say("Rarity: " .. table.concat(on, ","))
  end
- if GUIDE then updateGuide() end
+ if GUIDE then
+ updateGuide()
+ if refreshMultiGuide then refreshMultiGuide() end
+ end
  end)
  x = x + 36
  if i == 4 then
@@ -507,25 +511,22 @@ rebuildRarTargets = function()
  local cat = egg and egg.cat or "?"
  local area = egg and egg.area or "?"
  local okSteal, stealD = nearSteal(targetPos, stealAnchors, 32)
- if not okSteal then
- skipNoSteal = skipNoSteal + 1
- else
- -- require real scale >= MinScale (skip sc=0 friend/display)
  local scaleOk = scale ~= nil and scale > 0
  if CFG.minScale > 0 then
  scaleOk = scaleOk and scale >= CFG.minScale
  end
- if not scaleOk then
- skipScale = skipScale + 1
- else
  local usePos = targetPos
  local bestAp, bestAd
+ if okSteal then
  for _, ap in ipairs(stealAnchors) do
  local dd = (ap - targetPos).Magnitude
  if dd <= 32 and (not bestAd or dd < bestAd) then
  bestAp, bestAd = ap, dd
  end
+ end
+ end
  if bestAp then usePos = bestAp end
+ local autoReady = okSteal and scaleOk and egg ~= nil
  rarTargets[#rarTargets + 1] = {
  rar = rar,
  pos = usePos,
@@ -533,14 +534,15 @@ rebuildRarTargets = function()
  cat = cat,
  area = area,
  uid = uidPart,
- state = egg and egg.state or "Slot",
+ state = egg and egg.state or "Odds",
  asset = asset.Name,
  stealD = stealD,
+ matchKind = matchKind,
+ autoReady = autoReady,
  }
  kept = kept + 1
- end
- end
- end
+ if not okSteal then skipNoSteal = skipNoSteal + 1 end
+ if not scaleOk then skipScale = skipScale + 1 end
  end
  end
  end
@@ -552,10 +554,11 @@ rebuildRarTargets = function()
  local c = oddsHist[n]
  if c and c > 0 then parts[#parts+1] = string.format('%s=%d', n:sub(1,3), c) end
  end
- say(string.format("Odds read=%d pos=%d keep=%d (noSteal=%d noScale=%d) | %s",
+ say(string.format("Odds read=%d pos=%d guide=%d (noSteal=%d noScale=%d) | %s",
  rawN, withPos, kept, skipNoSteal, skipScale, #parts > 0 and table.concat(parts, " ") or "-"))
  say(string.format("match uid=%d pos=%d none=%d | target uses eggDB position", uidMatch, posMatch, unmatched))
  say(string.format("Steal prompts=%d | only near Steal + sc>=%.2f", #stealAnchors, CFG.minScale))
+ if GUIDE and refreshMultiGuide then task.defer(refreshMultiGuide) end
  return rawN, kept
 end
 
@@ -625,10 +628,8 @@ local function guideTarget()
  local best, bestD
  for _, tg in ipairs(rarTargets) do
  if rarAllowed(tg.rar) then
- local scaleOk = tg.scale ~= nil and tg.scale > 0
- if CFG.minScale > 0 then
- scaleOk = scaleOk and tg.scale >= CFG.minScale
- end
+ -- จับ UID ไม่ได้ก็ยังชี้ rarity-only; ถ้ามี scale จริงจึงค่อยกรอง MinScale
+ local scaleOk = tg.scale == nil or tg.scale <= 0 or CFG.minScale <= 0 or tg.scale >= CFG.minScale
  if scaleOk and tg.pos then
  local d = (tg.pos - r.Position).Magnitude
  if CFG.guideMax then
@@ -695,7 +696,7 @@ end
 local guideFolder = Instance.new("Folder")
 guideFolder.Name = "Egg01_SizeGuide"
 guideFolder.Parent = workspace
-local guideA0, guideA1, guideBeam, guidePart, guideBill, guideConn
+local guideA0, guideA1, guideBeam, guidePart, guideBill, guideConn, multiFolder
 
 local function clearGuide()
  GUIDE = false
@@ -704,6 +705,7 @@ local function clearGuide()
  if guideA0 then pcall(function() guideA0:Destroy() end) guideA0 = nil end
  if guideA1 then pcall(function() guideA1:Destroy() end) guideA1 = nil end
  if guidePart then pcall(function() guidePart:Destroy() end) guidePart = nil end
+ if multiFolder then pcall(function() multiFolder:Destroy() end) multiFolder = nil end
  guideBill = nil
  if bGuide and bGuide.Parent then
  bGuide.Text = "GUIDE"
@@ -763,7 +765,69 @@ local function attachBeamToChar()
  guideBeam.LightEmission = 1
  guideBeam.Segments = 20
  guideBeam.Parent = guidePart
+ if refreshMultiGuide and GUIDE then task.defer(refreshMultiGuide) end
  return true
+end
+
+refreshMultiGuide = function()
+ if multiFolder then pcall(function() multiFolder:Destroy() end) end
+ multiFolder = Instance.new("Folder")
+ multiFolder.Name = "MultiTargets"
+ multiFolder.Parent = guideFolder
+ if not GUIDE or not guideA0 or not guideA0.Parent then return end
+ local r = hrp()
+ if not r then return end
+ local primary = guideTarget()
+ local choices = {}
+ for _, tg in ipairs(rarTargets) do
+ if tg.pos and rarAllowed(tg.rar) then
+ local scaleOk = tg.scale == nil or tg.scale <= 0 or CFG.minScale <= 0 or tg.scale >= CFG.minScale
+ if scaleOk and (not primary or (tg.pos - primary.pos).Magnitude > 1) then
+ choices[#choices + 1] = { tg = tg, d = (tg.pos - r.Position).Magnitude }
+ end
+ end
+ end
+ table.sort(choices, function(a, b) return a.d < b.d end)
+ local count = math.min(#choices, 18)
+ for i = 1, count do
+ local row = choices[i]
+ local tg = row.tg
+ local part = Instance.new("Part")
+ part.Name = "Target_" .. i
+ part.Anchored = true
+ part.CanCollide = false
+ part.CanQuery = false
+ part.CanTouch = false
+ part.Transparency = 1
+ part.Size = Vector3.new(1, 1, 1)
+ part.CFrame = CFrame.new(tg.pos + Vector3.new(0, 3, 0))
+ part.Parent = multiFolder
+ local a1 = Instance.new("Attachment", part)
+ local beam = Instance.new("Beam", part)
+ beam.Attachment0 = guideA0
+ beam.Attachment1 = a1
+ beam.FaceCamera = true
+ beam.Width0 = 0.18
+ beam.Width1 = 0.10
+ beam.Color = ColorSequence.new(RAR_COLORS[tg.rar] or Color3.fromRGB(255, 220, 60))
+ beam.Transparency = NumberSequence.new(0.35)
+ beam.LightEmission = 0.8
+ beam.Segments = 12
+ local bb = Instance.new("BillboardGui", part)
+ bb.Size = UDim2.new(0, 110, 0, 28)
+ bb.StudsOffset = Vector3.new(0, 2, 0)
+ bb.AlwaysOnTop = true
+ bb.MaxDistance = 800
+ local tl = Instance.new("TextLabel", bb)
+ tl.Size = UDim2.new(1, 0, 1, 0)
+ tl.BackgroundTransparency = 0.35
+ tl.BackgroundColor3 = Color3.new(0, 0, 0)
+ tl.TextColor3 = RAR_COLORS[tg.rar] or Color3.fromRGB(255, 230, 80)
+ tl.Font = Enum.Font.GothamBold
+ tl.TextSize = 11
+ tl.Text = string.format("%s sc=%s d=%.0f", tostring(tg.rar), tg.scale and string.format("%.2f", tg.scale) or "?", row.d)
+ end
+ if bGuide and bGuide.Parent then bGuide.Text = string.format("GUIDE %d", count + (primary and 1 or 0)) end
 end
 
 updateGuide = function()
@@ -783,11 +847,13 @@ updateGuide = function()
  guidePart.CFrame = CFrame.new(nb.pos + Vector3.new(0, 3, 0))
  local mode = CFG.guideMax and "MAX" or "NEAR"
  if guideBill then
- guideBill.Text = string.format("★%s %s\n%s sc=%.2f d=%.0f",
- mode, tostring(nb.cat or "?"), tostring(nb.rar or "?"), nb.scale or 0, nd or -1)
+ local scText = nb.scale and string.format("%.2f", nb.scale) or "?"
+ guideBill.Text = string.format("★%s %s\n%s sc=%s d=%.0f",
+ mode, tostring(nb.cat or "?"), tostring(nb.rar or "?"), scText, nd or -1)
  end
- lab.Text = string.format("GUIDE[%s] → %s %s sc=%.2f ห่าง %.0f",
- mode, tostring(nb.rar or "?"), tostring(nb.cat), nb.scale or 0, nd)
+ local scText = nb.scale and string.format("%.2f", nb.scale) or "?"
+ lab.Text = string.format("GUIDE[%s] → %s %s sc=%s ห่าง %.0f",
+ mode, tostring(nb.rar or "?"), tostring(nb.cat), scText, nd)
 end
 
 local function setGuide(on)
@@ -795,6 +861,7 @@ local function setGuide(on)
  GUIDE = true
  ensureGuideParts()
  attachBeamToChar()
+ refreshMultiGuide()
  if guideConn then pcall(function() guideConn:Disconnect() end) end
  guideConn = RunService.RenderStepped:Connect(updateGuide)
  table.insert(_G.EGG01_SIZE.conns, guideConn)
@@ -803,8 +870,9 @@ local function setGuide(on)
  local nb, nd = guideTarget()
  local mode = CFG.guideMax and "MAX" or "NEAR"
  if nb then
- say(string.format("GUIDE ON [%s] → ★ %s sc=%.3f ห่าง %.0f",
- mode, tostring(nb.cat), nb.scale, nd))
+ local scText = nb.scale and string.format("%.3f", nb.scale) or "?"
+ say(string.format("GUIDE ON [%s] → ★ %s %s sc=%s ห่าง %.0f",
+ mode, tostring(nb.rar or "?"), tostring(nb.cat), scText, nd))
  else
  say("GUIDE ON — ยังไม่มีเป้า กด SCAN")
  end
@@ -1133,13 +1201,13 @@ local function loop()
  if it.dist <= STEAL_RANGE then
  local eggOk = it.egg and passesFilter(it.egg)
  local nearOdds = false
- if nb and nb.pos and it.part then
+ if nb and nb.autoReady and nb.pos and it.part then
  nearOdds = (it.part.Position - nb.pos).Magnitude <= 35
  and rarAllowed(nb.rar)
  end
  if not nearOdds then
  local tg2 = nearestRarAt(it.part.Position, 35)
- if tg2 and rarAllowed(tg2.rar) then
+ if tg2 and tg2.autoReady and rarAllowed(tg2.rar) then
  local scaleOk = true
  if CFG.minScale > 0 and (it.scale or tg2.scale) then
  scaleOk = (it.scale or tg2.scale) >= CFG.minScale
@@ -1242,7 +1310,7 @@ bClose.MouseButton1Click:Connect(function()
  _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.12 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
+say("Size EPS v1.13 — rarity fallback + multi GUIDE | START เฉพาะเป้าจับคู่ได้")
 say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
 task.spawn(function()
  task.wait(0.8)
