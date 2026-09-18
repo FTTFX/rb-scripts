@@ -1,4 +1,4 @@
--- Egg01_StealRangeSpy.lua v1.0
+-- Egg01_StealRangeSpy.lua v1.1
 -- วัดระยะที่ steal (fireproximityprompt) สำเร็จ
 -- START → เดินเข้าใกล้เอง → สคริปต์ยิง prompt ถี่ๆ → ได้ไข่แล้วล็อกระยะ
 
@@ -168,7 +168,33 @@ local function tryFire(pp)
     return ok
 end
 
--- FieldEggCarry
+local function dumpTbl(prefix, t)
+    if typeof(t) ~= "table" then
+        say(prefix .. " " .. tostring(t))
+        return
+    end
+    local keys = {}
+    for k in pairs(t) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    say(prefix .. " keys=" .. #keys)
+    for _, k in ipairs(keys) do
+        local v = t[k]
+        local tv = typeof(v)
+        if tv == "table" then
+            local n = 0
+            for _ in pairs(v) do n = n + 1 end
+            say(string.format("  %s = {%d}", tostring(k), n))
+        elseif tv == "Vector3" or tv == "CFrame" then
+            say(string.format("  %s = <%s>", tostring(k), tv))
+        else
+            local s = tostring(v)
+            if #s > 80 then s = s:sub(1, 77) .. "..." end
+            say(string.format("  %s = %s", tostring(k), s))
+        end
+    end
+end
+
+-- FieldEggCarry + FieldEggShifted (ดูขนาด/คุณภาพ)
 do
     local re = findNet("FieldEggCarry")
     if re and re:IsA("RemoteEvent") then
@@ -180,11 +206,13 @@ do
                 if RUN and not gotOnce then
                     gotOnce = true
                     local pp, d, part = nearestSteal(250)
-                    -- ใช้ระยะล่าสุดตอนยิง ถ้ายังใกล้
                     local dist = lastDist or d
                     local maxA = lastMax or (pp and pp.MaxActivationDistance)
-                    say(string.format("✅ ได้ไข่! dist=%.1f studs | MaxAct=%.1f | โซน=%s | fire#%d",
+                    say(string.format("✅ ได้ไข่! dist=%.1f | MaxAct=%.1f | โซน=%s | fire#%d",
                         dist or -1, maxA or -1, tostring(eggArea or t.AreaId or "?"), fireCount))
+                    say(string.format("   ชนิด=%s scale=? (ดู Shifted)",
+                        tostring(t.AssetCategory or "?")))
+                    dumpTbl("📦 FieldEggCarry", t)
                     if part then
                         local r = hrp()
                         if r then
@@ -199,7 +227,7 @@ do
                     end
                     RUN = false
                     bStart.Text = "START"
-                    lab.Text = string.format("✅ ระยะเก็บสำเร็จ ≈ %.1f studs", dist or -1)
+                    lab.Text = string.format("✅ ระยะ ≈ %.1f | %s", dist or -1, tostring(t.AssetCategory or "?"))
                 else
                     say("server: ถือไข่แล้ว โซน=" .. tostring(eggArea or "?"))
                 end
@@ -211,6 +239,24 @@ do
         say("ฟัง FieldEggCarry ✅")
     else
         say("⚠ ไม่เจอ FieldEggCarry")
+    end
+
+    local sh = findNet("FieldEggShifted")
+    local dumpedShift = false
+    if sh and sh:IsA("RemoteEvent") then
+        table.insert(_G.EGG01_RANGE.conns, sh.OnClientEvent:Connect(function(t)
+            if typeof(t) ~= "table" then return end
+            if not gotOnce or dumpedShift then return end
+            local st = tostring(t.State or "")
+            if st ~= "Carried" and st ~= "Dropped" then return end
+            dumpedShift = true
+            say(string.format("📥 Shifted State=%s Scale=%s Mut=%s",
+                st,
+                tostring(t.AssetScale or t.Scale or "?"),
+                typeof(t.Mutations) == "table" and "table" or tostring(t.Mutations)))
+            dumpTbl("📦 FieldEggShifted", t)
+        end))
+        say("ฟัง FieldEggShifted ✅")
     end
 end
 
@@ -282,5 +328,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RANGE = nil
 end)
 
-say("Egg01 StealRange Spy v1.0")
+say("Egg01 StealRange Spy v1.1")
 say("START → เดินเข้าใกล้ไข่เอง → ได้ไข่แล้วล็อกระยะ")
