@@ -1,4 +1,4 @@
--- Egg01_SizeEPS.lua v1.10
+-- Egg01_SizeEPS.lua v1.11
 -- EPS แยกขนาด + เส้นนำสายตาไป ★ ใกล้สุด
 -- SCAN | GUIDE | START
 -- v1.10: only Steal-near + strict MinScale (ยิงเมื่อใกล้ ≤16)
@@ -80,7 +80,7 @@ title.TextColor3 = Color3.fromRGB(230, 230, 230)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Size EPS v1.10"
+title.Text = "Egg01 Size EPS v1.11"
 
 local function mkBtn(text, x, y, w, color)
  local b = Instance.new("TextButton", panel)
@@ -423,6 +423,20 @@ local function nearSteal(pos, anchors, maxD)
  return best ~= nil, best
 end
 
+local rebuilding = false
+local lastRebuild = 0
+
+local function rebuildThrottled()
+ if rebuilding then return false end
+ if os.clock() - lastRebuild < 3 then return false end
+ lastRebuild = os.clock()
+ rebuilding = true
+ local ok, err = pcall(rebuildRarTargets)
+ rebuilding = false
+ if not ok then say("rebuild err: " .. tostring(err)) end
+ return true
+end
+
 local function rebuildRarTargets()
  readCfg()
  rarTargets = {}
@@ -481,6 +495,13 @@ local function rebuildRarTargets()
  if not seen[key] then
  seen[key] = true
  local scale = egg and egg.scale or nil
+ -- DB ไม่มีสเกล → วัดจากโมเดลไข่จริง (ไม่ตัดทิ้งเพราะ scale=nil)
+ if not scale then
+ local pp = asset:FindFirstChildWhichIsA("BasePart", true)
+ if pp and pp.Size then
+ scale = math.max(pp.Size.X, pp.Size.Y, pp.Size.Z)
+ end
+ end
  local cat = egg and egg.cat or "?"
  local area = egg and egg.area or "?"
  if rarAllowed(rar) then
@@ -581,7 +602,7 @@ local function guideTarget()
  readCfg()
  local r = hrp()
  if not r then return nil end
- if #rarTargets == 0 then rebuildRarTargets() end
+ -- ห้าม rebuild ตอน RenderStepped — ใช้เป้าเดิมไปก่อน
  local best, bestD
  for _, tg in ipairs(rarTargets) do
  if rarAllowed(tg.rar) then
@@ -1045,7 +1066,8 @@ bScan.MouseButton1Click:Connect(function()
  tostring(tg.cat or "?"), dMe))
  end
  if #rarTargets == 0 then
- say("⚠ ไม่มีเป้า — ติ๊ก rarity ให้ตรงกับที่ Odds มี (ดู Leg=/Myt= ด้านบน)")
+ say(string.format("⚠ ไม่มีเป้า — read=%d pos=%d ไร้Steal=%d scตก=%d (ลด MinScale / ติ๊กให้ตรง)",
+ rawN or 0, withPos or 0, skipNoSteal or 0, skipScale or 0))
  end
  if GUIDE then updateGuide() end
  local nb, nd = guideTarget()
@@ -1093,7 +1115,7 @@ local function loop()
  else
  if os.clock() - tResync > 8 then
  tResync = os.clock()
- pcall(rebuildRarTargets)
+ rebuildThrottled()
  end
  local list = listStealNear(200)
  local nb, nd = guideTarget()
@@ -1210,7 +1232,7 @@ bClose.MouseButton1Click:Connect(function()
  _G.EGG01_SIZE = nil
 end)
 
-say("Size EPS v1.10 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
+say("Size EPS v1.11 — ติ๊ก rarity + MinScale | GUIDE เปิดเอง")
 say("ติ๊ก Leg/Myt/... → ตามเส้นเหลือง")
 task.spawn(function()
  task.wait(0.8)
