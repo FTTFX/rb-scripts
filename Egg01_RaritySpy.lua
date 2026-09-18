@@ -1,5 +1,5 @@
--- Egg01_RaritySpy.lua v1.3
--- Focused capture for the missing FieldEgg UID -> rarity relationship.
+-- Egg01_RaritySpy.lua v1.4
+-- Focused config/GC search for the missing AssetCategory -> rarity relationship.
 -- ClientRenderedAssets Odds are NOT trusted because player pets/monsters are mixed in.
 
 if _G.EGG01_RAR then
@@ -48,7 +48,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Field Rarity Link Spy v1.3"
+title.Text = "Egg01 Category Rarity Spy v1.4"
 
 local function mkBtn(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -65,7 +65,7 @@ local function mkBtn(text, x, y, w, color)
 end
 
 local bClose = mkBtn("X", 264, 4, 28, Color3.fromRGB(120, 45, 45))
-local bScan  = mkBtn("SCAN", 10, 36, 54, Color3.fromRGB(50, 100, 180))
+local bScan  = mkBtn("CONFIG", 10, 36, 54, Color3.fromRGB(50, 100, 180))
 local bOdds  = mkBtn("SHOW", 70, 36, 54, Color3.fromRGB(160, 100, 40))
 local bRF    = mkBtn("RF", 130, 36, 54, Color3.fromRGB(100, 70, 140))
 local bCopy  = mkBtn("COPY", 190, 36, 54, Color3.fromRGB(70, 70, 70))
@@ -78,7 +78,7 @@ lab.TextColor3 = Color3.fromRGB(255, 220, 100)
 lab.Font = Enum.Font.GothamBold
 lab.TextSize = 11
 lab.TextXAlignment = Enum.TextXAlignment.Left
-lab.Text = "กด SHOW → รอ FieldEggRaritiesShown → COPY"
+lab.Text = "กด CONFIG → รอจบ → COPY"
 
 local log = Instance.new("TextBox", gui)
 log.Size = UDim2.new(0, 300, 0, 200)
@@ -209,66 +209,130 @@ local function deepDump(value, prefix, depth, seen)
     end
 end
 
+local function exactRarity(value)
+    if typeof(value) ~= "string" then return nil end
+    local low = value:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    for _, word in ipairs(RARITY_WORDS) do
+        if low == word and word ~= "leg" then
+            return word:sub(1, 1):upper() .. word:sub(2)
+        end
+    end
+    return nil
+end
+
+local function findRarityInTable(value, depth, seen)
+    if typeof(value) ~= "table" or depth > 3 or seen[value] then return nil end
+    seen[value] = true
+    for k, v in pairs(value) do
+        local key = tostring(k):lower()
+        if key:find("rar", 1, true) or key:find("tier", 1, true) or key:find("quality", 1, true) then
+            local rarity = exactRarity(v)
+            if rarity then return tostring(k) .. "=" .. rarity end
+        end
+    end
+    for k, v in pairs(value) do
+        local rarity = exactRarity(v)
+        if rarity then return tostring(k) .. "=" .. rarity end
+        if typeof(v) == "table" then
+            local nested = findRarityInTable(v, depth + 1, seen)
+            if nested then return tostring(k) .. "." .. nested end
+        end
+    end
+    return nil
+end
+
+local function collectFieldCategories()
+    local out, names = {}, {}
+    local snap = findNet("AskFieldEggSnapshot")
+    if not snap or not snap:IsA("RemoteFunction") then return out, names, "ไม่เจอ AskFieldEggSnapshot" end
+    local ok, res = pcall(function() return snap:InvokeServer() end)
+    if not ok or typeof(res) ~= "table" then return out, names, tostring(res) end
+    local records = res.Records or res.records or res
+    if typeof(records) ~= "table" then return out, names, "snapshot ไม่มี Records" end
+    for _, row in pairs(records) do
+        if typeof(row) == "table" and row.AssetCategory then
+            local cat = tostring(row.AssetCategory)
+            if not out[cat] then out[cat] = true; names[#names + 1] = cat end
+        end
+    end
+    table.sort(names)
+    return out, names
+end
+
+local function scanConfigTables()
+    say("── CONFIG: หา AssetCategory → rarity โดยตรง ──")
+    local categories, names, err = collectFieldCategories()
+    if err then say("snapshot error: " .. err); return end
+    say(string.format("field categories=%d เช่น %s", #names, table.concat(names, ", ", 1, math.min(8, #names))))
+
+    local hits, scanned, emitted = 0, 0, {}
+    local gc = getgc
+    if type(gc) == "function" then
+        local ok, objects = pcall(gc, true)
+        if ok and typeof(objects) == "table" then
+            for _, obj in ipairs(objects) do
+                if typeof(obj) == "table" then
+                    scanned = scanned + 1
+                    for _, cat in ipairs(names) do
+                        local okGet, row = pcall(rawget, obj, cat)
+                        if okGet and row ~= nil then
+                            local rarity = exactRarity(row)
+                            if not rarity and typeof(row) == "table" then
+                                rarity = findRarityInTable(row, 0, {})
+                            end
+                            local key = cat .. "|" .. tostring(rarity)
+                            if rarity and not emitted[key] then
+                                emitted[key], hits = true, hits + 1
+                                say(string.format("GC HIT cat=%s %s", cat, rarity))
+                            end
+                        end
+                    end
+                    local okCat, cat = pcall(function()
+                        return rawget(obj, "AssetCategory") or rawget(obj, "Category")
+                    end)
+                    if okCat and cat and categories[tostring(cat)] then
+                        local rarity = findRarityInTable(obj, 0, {})
+                        local key = tostring(cat) .. "|record|" .. tostring(rarity)
+                        if rarity and not emitted[key] then
+                            emitted[key], hits = true, hits + 1
+                            say(string.format("GC RECORD cat=%s %s", tostring(cat), rarity))
+                        end
+                    end
+                end
+                if hits >= 60 then break end
+            end
+            say(string.format("getgc tables=%d direct hits=%d", scanned, hits))
+        else
+            say("getgc error: " .. tostring(objects))
+        end
+    else
+        say("executor ไม่มี getgc")
+    end
+
+    local glm = getloadedmodules
+    if type(glm) == "function" then
+        local ok, modules = pcall(glm)
+        local moduleHits = 0
+        if ok and typeof(modules) == "table" then
+            for _, module in ipairs(modules) do
+                local low = module.Name:lower()
+                if low:find("egg", 1, true) or low:find("asset", 1, true)
+                    or low:find("rar", 1, true) or low:find("animal", 1, true)
+                    or low:find("pet", 1, true) or low:find("config", 1, true) then
+                    moduleHits = moduleHits + 1
+                    if moduleHits <= 35 then say("MODULE " .. short(module)) end
+                end
+            end
+        end
+        say("candidate loaded modules=" .. moduleHits)
+    else
+        say("executor ไม่มี getloadedmodules")
+    end
+    say("── CONFIG จบ: กด COPY แล้วส่ง log นี้ ──")
+end
+
 bScan.MouseButton1Click:Connect(function()
-    local r = hrp()
-    if not r then say("ไม่มีตัวละคร"); return end
-    say("── SCAN rarity รอบตัว 80 studs ──")
-    local hits = 0
-
-    -- Billboard / TextLabel ใน workspace
-    for _, d in ipairs(workspace:GetDescendants()) do
-        local txt
-        if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
-            txt = d.Text
-        elseif d:IsA("StringValue") then
-            txt = d.Value
-        end
-        if txt and isRarityText(txt) then
-            local part = d:FindFirstAncestorWhichIsA("BasePart")
-                or d:FindFirstAncestorWhichIsA("Model")
-            local pos
-            if part and part:IsA("BasePart") then pos = part.Position
-            elseif part and part:IsA("Model") then
-                local pp = part.PrimaryPart or part:FindFirstChildWhichIsA("BasePart", true)
-                pos = pp and pp.Position
-            end
-            local dist = pos and (pos - r.Position).Magnitude or 9999
-            if dist <= 80 then
-                hits = hits + 1
-                if hits <= 25 then
-                    say(string.format("UI d=%.0f '%s' @ %s", dist, tostring(txt):sub(1, 40), short(d)))
-                end
-            end
-        end
-        if d:IsA("BillboardGui") or d:IsA("Model") or d:IsA("BasePart") then
-            local pos
-            if d:IsA("BasePart") then pos = d.Position
-            elseif d:IsA("Model") then
-                local pp = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart", true)
-                pos = pp and pp.Position
-            elseif d:IsA("BillboardGui") then
-                local ad = d.Adornee or d.Parent
-                if ad and ad:IsA("BasePart") then pos = ad.Position end
-            end
-            if pos and (pos - r.Position).Magnitude <= 40 then
-                dumpAttrs(d, "  ")
-            end
-        end
-    end
-
-    -- PlayerGui
-    for _, d in ipairs(PG:GetDescendants()) do
-        if (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Visible then
-            if isRarityText(d.Text) then
-                hits = hits + 1
-                if hits <= 35 then
-                    say(string.format("PG '%s' @ %s", tostring(d.Text):sub(1, 40), short(d)))
-                end
-            end
-        end
-    end
-
-    say(string.format("── จบ SCAN hits≈%d ──", hits))
+    task.spawn(scanConfigTables)
 end)
 
 -- Trigger the server response while FieldEggRaritiesShown listener is active.
@@ -403,7 +467,7 @@ do
 end
 
 bCopy.MouseButton1Click:Connect(function()
-    local t = "=== Egg01 Rarity Spy ===\n" .. table.concat(lines, "\n")
+    local t = "=== Egg01 Category Rarity Spy v1.4 ===\n" .. table.concat(lines, "\n")
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, t) end
     bCopy.Text = "OK"
@@ -416,5 +480,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_RAR = nil
 end)
 
-say("Field Rarity Link Spy v1.3 — ไม่เชื่อ ClientRenderedAssets")
-say("กด SHOW → รอ 2 วิ → COPY ส่งช่วง FieldEggRaritiesShown")
+say("Category Rarity Spy v1.4 — ไม่จับ rarity จากระยะ")
+say("กด CONFIG → รอคำว่า CONFIG จบ → COPY ส่ง log")
