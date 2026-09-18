@@ -19,7 +19,7 @@
 | `Egg01_StealRangeSpy.lua` | วัดระยะ Steal + ดัมพ์ Carry/Shifted | — |
 | `Egg01_RaritySpy.lua` | ค้น config/getgc สำหรับ map `AssetCategory→rarity` โดยตรง | v1.5 |
 | `Egg01_Auto.lua` | เดินทิ้ง/เก็บ + GUI drop/pick + `STEAL_RANGE=16` | v3.3 |
-| `Egg01_MoveSpy.lua` | ทดสอบกลับ HOME 3 แบบ; v1.3 ถอด force/x1.5 ที่ทำให้ rollback+ตาย | v1.3 SAFE |
+| `Egg01_MoveSpy.lua` | ทดสอบกลับ HOME; HOP14 stable / HOP16 edge + ตรวจ rollback | v1.4 SAFE |
 | `Egg01_SizeEPS.lua` | SAFE: ปลายเส้น=ไข่จริง; สี/ตัวกรองจาก `Config.Rarity._id` | **v2.4** |
 | `Egg01_PROJECT.md` | เอกสารนี้ | — |
 
