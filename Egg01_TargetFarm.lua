@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.15
--- ถือไข่: FieldEggCarry + fallback DropHeldEgg → วิ่งกลับทันที | หลุดมือ HOP | ไล่โซน
+-- Egg01 Target Farm v1.16
+-- โหมดไวแบบ v1.13: Steal แล้ววิ่งกลับเร็ว | DropHeldEgg สำรอง | หลุดมือ HOP | ไล่โซน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -119,7 +119,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.15"
+title.Text = "Egg01 Target Farm v1.16"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -781,16 +781,28 @@ local function runOne()
                         elseif S.run and not S.skipUids[tostring(target.uid)] then
                             say(string.format("ยิง Steal (match=%.1f)", readyMatch or matchD))
                             fireSteal(target.pp)
-                            -- รอถือไข่สั้นๆ — เจอ Carry/DropHeldEgg แล้ววิ่งกลับทันที
-                            local deadline, lastFire = os.clock() + 4, os.clock()
-                            while S.run and not isHolding() and os.clock() < deadline do
-                                if guiShowsCarry() then markHolding("GUI DropHeldEgg — ถือไข่แล้ว") break end
-                                if os.clock() - lastFire >= 0.4 then
+                            -- ไวแบบ v1.13: รอถือสั้นมาก แล้ววิ่ง — ไม่ค้าง 4 วิ
+                            local t0 = os.clock()
+                            while S.run and not isHolding() and os.clock() - t0 < 0.85 do
+                                if guiShowsCarry() then
+                                    markHolding("ถือไข่แล้ว — วิ่ง")
+                                    break
+                                end
+                                task.wait(0.05)
+                            end
+                            if not isHolding() then
+                                -- Prompt เป้าหาย / มี Drop = น่าจะเก็บได้แล้ว
+                                if guiShowsCarry() or not select(1, promptAtTarget(target)) then
+                                    markHolding("Steal แล้ว — วิ่งกลับ")
+                                else
+                                    -- ยิงซ้ำรอบสั้น
                                     local pp2 = select(1, promptAtTarget(target))
                                     if pp2 then fireSteal(pp2) end
-                                    lastFire = os.clock()
+                                    task.wait(0.25)
+                                    if guiShowsCarry() or not select(1, promptAtTarget(target)) then
+                                        markHolding("Steal แล้ว — วิ่งกลับ")
+                                    end
                                 end
-                                task.wait(0.08)
                             end
                             if not isHolding() then
                                 skipTarget("Steal ไม่สำเร็จ/เป้าย้าย")
@@ -799,13 +811,13 @@ local function runOne()
                                 S.heldCat = tostring(target.cat)
                                 local _, rHold = humRoot()
                                 if rHold then S.lastCarryPos = rHold.Position end
-                                say("ได้ไข่แล้ว — วิ่งกลับทันที")
+                                say("ได้ไข่แล้ว — วิ่งกลับ")
                                 if returnHome() then
                                     say("ถึง HOME — วางเข้าคอกเอง")
                                 else
                                     say("กลับบ้านไม่สำเร็จ")
                                 end
-                                task.wait(0.4)
+                                task.wait(0.3)
                             end
                         end
                     end
@@ -960,32 +972,28 @@ local function bindCarryRemote(carry)
     return true
 end
 
--- หา FieldEggCarry ทันที + ลองใหม่ถ้า Networking ยังไม่โหลด
+-- FieldEggCarry: หาครั้งเดียว + พยายามอีกไม่กี่ครั้งแบบเงียบ (ไม่สแปม)
 local carry = findNet("FieldEggCarry")
 if bindCarryRemote(carry) then
     lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
 else
-    lines[#lines + 1] = "รอ FieldEggCarry… (ใช้ DropHeldEgg สำรอง)"
+    lines[#lines + 1] = "ใช้ DropHeldEgg สำรอง (ยังไม่เจอ FieldEggCarry)"
     task.spawn(function()
-        for _ = 1, 30 do
-            task.wait(0.5)
-            local c = findNet("FieldEggCarry")
-            if bindCarryRemote(c) then
-                say("ฟัง FieldEggCarry ✅ (สาย)")
+        for _ = 1, 8 do
+            task.wait(1)
+            if bindCarryRemote(findNet("FieldEggCarry")) then
+                say("ฟัง FieldEggCarry ✅")
                 return
             end
         end
-        say("ไม่พบ FieldEggCarry — ใช้ GUI DropHeldEgg แทน")
     end)
 end
 
--- ปุ่ม Drop โผล่ = ถือไข่แล้ว → ตั้ง carrying ทันที
 S.conns[#S.conns + 1] = PG.ChildAdded:Connect(function(ch)
-    if ch.Name:find("DropHeld", 1, true) or ch.Name == "DropHeldEgg" then
-        if S.run then markHolding("GUI DropHeldEgg — วิ่งกลับทันที") end
+    if S.run and (ch.Name:find("DropHeld", 1, true) or ch.Name == "DropHeldEgg") then
+        markHolding("ถือไข่แล้ว — วิ่ง")
     end
 end)
-if guiShowsCarry() and S.run then markHolding("GUI DropHeldEgg") end
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = humRoot()
@@ -1001,7 +1009,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.15 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.16 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
