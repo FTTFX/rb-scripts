@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.17
--- Steal แล้วยิง+วิ่งกลับทันที (ไม่อยู่รอ) | DropHeldEgg สำรอง | หลุดมือ HOP | ไล่โซน
+-- Egg01 Target Farm v1.18
+-- ทางไกล = HOP เดินทาง | หลุดมือ = กันกระแทก+HOP เก็บ | Steal แล้วพุ่งกลับทันที
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -119,7 +119,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.17"
+title.Text = "Egg01 Target Farm v1.18"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -417,9 +417,38 @@ local function walkTo(pos, radius, limit)
         local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
         if (goal - r.Position).Magnitude <= radius then return true end
         h:MoveTo(goal)
-        task.wait(0.3)
+        task.wait(0.12)
     end
     return false
+end
+
+-- HOP เดินทางไกล — ไม่ตัด velocity แบบกันกระแทก (คนละอย่างกับตอนหลุดมือ)
+local function travelHop(pos, radius, limit)
+    local untilAt = os.clock() + limit
+    while S.run and os.clock() < untilAt do
+        local h, r = humRoot()
+        if not h or not r then return false end
+        local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
+        if flat.Magnitude <= radius then
+            if h then h:MoveTo(r.Position) end
+            return true
+        end
+        local step = math.min(14, flat.Magnitude)
+        local dest = r.Position + flat.Unit * step
+        r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+        task.wait(0.05)
+    end
+    return false
+end
+
+local function goTo(pos, radius, limit)
+    local _, r = humRoot()
+    if not r then return false end
+    local d = dist2(r.Position, pos)
+    if d > 90 then
+        return travelHop(pos, radius, limit or math.max(25, d / 12))
+    end
+    return walkTo(pos, radius, limit or 20)
 end
 
 local function stopMove()
@@ -439,7 +468,6 @@ local function fireSteal(prompt)
         prompt.HoldDuration = 0
         if oldMax < 20 then prompt.MaxActivationDistance = 20 end
     end)
-    -- ยิงเร็ว 1–2 ครั้ง แล้วไปต่อ — ไม่ค้างลูปยาว
     if fp then ok = pcall(fp, prompt) end
     pcall(function()
         prompt:InputHoldBegin()
@@ -457,7 +485,28 @@ end
 local function dashHomeNow()
     local h, r = humRoot()
     if not h or not r or not S.home then return end
+    local d = dist2(r.Position, S.home)
+    if d > 90 then
+        -- พุ่งก้าวแรกทันที
+        local flat = Vector3.new(S.home.X - r.Position.X, 0, S.home.Z - r.Position.Z)
+        if flat.Magnitude > 1 then
+            local dest = r.Position + flat.Unit * math.min(14, flat.Magnitude)
+            r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+        end
+    end
     h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+end
+
+local function setFarmSpeed(on)
+    local h = select(1, humRoot())
+    if not h then return end
+    if on then
+        if not S.baseSpeed then S.baseSpeed = h.WalkSpeed end
+        h.WalkSpeed = math.max(S.baseSpeed or 16, 28)
+    elseif S.baseSpeed then
+        h.WalkSpeed = S.baseSpeed
+        S.baseSpeed = nil
+    end
 end
 
 -- จับ Prompt ที่ใกล้พิกัดไข่เป้าที่สุดเท่านั้น (ไม่สนว่าใกล้ผู้เล่น) — กันยิงไข่ผิดกอง
@@ -703,12 +752,21 @@ local function returnHome()
         else
             local d = dist2(r.Position, S.home)
             if d <= HOME_R then stopMove(); return true end
-            h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+            -- ไกล = HOP เดินทาง (ไว) / ใกล้ = MoveTo
+            if d > 90 then
+                local flat = Vector3.new(S.home.X - r.Position.X, 0, S.home.Z - r.Position.Z)
+                local step = math.min(14, flat.Magnitude)
+                local dest = r.Position + flat.Unit * step
+                r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+                task.wait(0.05)
+            else
+                h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+                task.wait(0.12)
+            end
             if os.clock() - lastReport >= 1 then
-                say(string.format("วิ่งกลับ HOME d=%.0f", d))
+                say(string.format("%s HOME d=%.0f", d > 90 and "HOP" or "วิ่ง", d))
                 lastReport = os.clock()
             end
-            task.wait(0.15)
         end
     end
     return false
@@ -725,6 +783,7 @@ local function runOne()
     end
     S.run, S.carrying, S.eggArea, S.skipUids = true, false, nil, {}
     S.focusZone, S.zoneIdx = nil, 1
+    setFarmSpeed(true)
     bStart.Text = "..."
     task.spawn(function()
         local attempts = 0
@@ -745,11 +804,11 @@ local function runOne()
                 say(reason .. " — ข้าม รีสแกน")
             end
 
-            say("ไปหา " .. target.cat .. " @" .. tostring(target.area))
-            if not walkTo(target.pos, math.max(STEAL_R, MATCH_R), 80) then
+            local td = target.dist or 0
+            say(string.format("ไปหา %s @%s%s", target.cat, tostring(target.area), td > 90 and " (HOP ทางไกล)" or ""))
+            if not goTo(target.pos, math.max(STEAL_R, MATCH_R), math.max(40, (td / 10) + 20)) then
                 skipTarget("ไปถึงไข่ไม่สำเร็จ")
             else
-                stopMove()
                 local prompt, matchD, promptPos = promptAtTarget(target)
                 if not prompt or not matchD then
                     skipTarget("ถึงตำแหน่งไข่ แต่ยังไม่เจอ Prompt Steal — เป้าอาจย้าย")
@@ -760,8 +819,7 @@ local function runOne()
                     local goal = promptPos or target.pos
                     local ppPart = prompt.Parent and (prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart", true))
                     if ppPart then goal = ppPart.Position end
-                    walkTo(goal, APPROACH_R, 8)
-                    stopMove()
+                    goTo(goal, APPROACH_R, 10)
                     prompt, matchD, promptPos = promptAtTarget(target)
                     if not prompt or not matchD or matchD > MATCH_R then
                         skipTarget("Prompt หาย/ไม่ตรงเป้าหลังเข้าใกล้")
@@ -769,8 +827,7 @@ local function runOne()
                         target.pp = prompt
                         local ready, readyMatch = promptReadyToFire(target, prompt)
                         if not ready and promptPos then
-                            walkTo(promptPos, APPROACH_R, 5)
-                            stopMove()
+                            goTo(promptPos, APPROACH_R, 6)
                             prompt, matchD, promptPos = promptAtTarget(target)
                             target.pp = prompt
                             ready, readyMatch = promptReadyToFire(target, prompt)
@@ -782,16 +839,15 @@ local function runOne()
                             S.heldUid = tostring(target.uid)
                             S.heldCat = tostring(target.cat)
                             fireSteal(target.pp)
-                            -- ออกตัวทันที — ไม่ยืนรอ confirm
-                            markHolding("Steal — วิ่งทันที")
+                            markHolding("Steal — พุ่งกลับทันที")
                             dashHomeNow()
-                            say("ได้ไข่แล้ว — วิ่งกลับ")
-                            -- ยืนยันระหว่างวิ่ง (ไม่บล็อกออกตัว)
+                            say("ได้ไข่แล้ว — HOP/วิ่งกลับ")
                             task.spawn(function()
-                                task.wait(0.2)
-                                if S.run and not guiShowsCarry() and not S.carrying then
+                                task.wait(0.15)
+                                if S.run then
                                     local pp2 = select(1, promptAtTarget(target))
-                                    if pp2 then fireSteal(pp2); dashHomeNow() end
+                                    if pp2 and not guiShowsCarry() then fireSteal(pp2) end
+                                    dashHomeNow()
                                 end
                             end)
                             if returnHome() then
@@ -804,8 +860,9 @@ local function runOne()
                     end
                 end
             end
-            task.wait(0.25)
+            task.wait(0.15)
         end
+        setFarmSpeed(false)
         S.run = false
         bStart.Text = "START"
     end)
@@ -985,12 +1042,13 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function()
     S.run = false
     S.recovering = false
+    setFarmSpeed(false)
     bStart.Text = "START"
     say("STOP")
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.17 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.18 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
