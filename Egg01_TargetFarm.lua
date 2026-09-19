@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.8
+-- Egg01 Target Farm v1.9
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, lastCarryScan = 0, hopUsed = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, lastCarryScan = 0, hopUsed = false, skipped = {} }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -84,7 +84,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.8"
+title.Text = "Egg01 Target Farm v1.9"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -251,19 +251,24 @@ local function chooseTarget()
     local _, root = humRoot()
     if typeof(records) ~= "table" or not root then return nil end
     local rarityMap, categoryCount = mapRarities(records)
-    local best, eligible, positioned = nil, 0, 0
+    local best, eligible, positioned, skipped = nil, 0, 0, 0
     local foundZones = { ALL = true }
     for key, row in pairs(records) do
         if typeof(row) == "table" then
             local pos, scale, area = posOf(row), tonumber(row.AssetScale), row.AreaId
             if area then foundZones[tostring(area)] = true end
             local rarity = rarityMap[tostring(row.AssetCategory or "")]
-            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] then
+            local targetKey = tostring(row.Uid or key)
+            local blockedUntil = S.skipped[targetKey]
+            if blockedUntil and blockedUntil <= os.clock() then S.skipped[targetKey] = nil; blockedUntil = nil end
+            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not blockedUntil then
                 eligible = eligible + 1
                 local dist = (pos - root.Position).Magnitude
                 if not best or dist < best.dist then
-                    best = { uid = row.Uid or key, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist }
+                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist }
                 end
+            elseif pos and scale and blockedUntil then
+                skipped = skipped + 1
             end
             if pos then positioned = positioned + 1 end
         end
@@ -274,7 +279,7 @@ local function chooseTarget()
     if best then
         say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", best.rar, best.cat, best.scale, best.area, best.dist))
     else
-        say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, MIN_SCALE, ZONE))
+        say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE))
     end
     return best
 end
@@ -349,6 +354,11 @@ local function hopOnceToward(pos, radius)
     task.wait(0.10)
     stopMove()
     return true
+end
+
+local function skipTarget(target, seconds, reason)
+    S.skipped[target.key] = os.clock() + seconds
+    say(string.format("พัก %s %ds — %s", target.cat, seconds, reason))
 end
 
 -- Networking บางรอบยังไม่ถูกสร้างตอน inject; เรียกซ้ำขณะวิ่งกลับได้
@@ -440,8 +450,10 @@ local function farmTarget(target)
         local other, otherD = promptAtTarget(target, 120, false)
         if other then
             say(string.format("เจอ Prompt อื่น match=%.1f แต่ไม่ใช่ %s — ข้าม", otherD, target.cat))
+            skipTarget(target, 15, "Prompt ไม่ตรง")
         else
             say("ถึงจุด Snapshot แล้ว แต่ไม่พบ Prompt — ข้าม")
+            skipTarget(target, 8, "ไม่พบ Prompt")
         end
         return
     end
@@ -459,6 +471,7 @@ local function farmTarget(target)
         prompt = select(1, promptAtTarget(target, PROMPT_EXACT_R, true))
         if not prompt then
             say("Prompt หายระหว่างเข้าใกล้")
+            skipTarget(target, 10, "Prompt หาย")
             return
         end
         target.pp = prompt
@@ -609,7 +622,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.8 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.9 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
