@@ -1,5 +1,6 @@
 -- Egg01 Target Farm v1.3
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
+-- Re-upload: same v1.3 behavior
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
