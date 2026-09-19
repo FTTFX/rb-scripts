@@ -569,14 +569,15 @@ local function runOne()
         say("HOME อัตโนมัติแล้ว")
     end
     S.run, S.carrying, S.eggArea, S.skipUids = true, false, nil, {}
+    S.focusZone, S.zoneIdx = nil, 1
     bStart.Text = "..."
     task.spawn(function()
         local attempts = 0
-        while S.run and attempts < 25 do
+        while S.run and attempts < 40 do
             attempts = attempts + 1
             local target = chooseTarget()
             if not target then
-                say("ไม่มีเป้าเหลือ — หยุด")
+                say("ไม่มีเป้าเหลือ / จบคิวโซน — หยุด")
                 break
             end
             S.eggArea = target.area
@@ -587,8 +588,7 @@ local function runOne()
                 say(reason .. " — ข้าม รีสแกน")
             end
 
-            say("ไปหา " .. target.cat)
-            -- เดินใกล้พิกัดไข่ snapshot ก่อน แล้วค่อยจับ Prompt ที่ใกล้พิกัดนั้นสุด
+            say("ไปหา " .. target.cat .. " @" .. tostring(target.area))
             if not walkTo(target.pos, math.max(STEAL_R, MATCH_R), 80) then
                 skipTarget("ไปถึงไข่ไม่สำเร็จ")
             else
@@ -641,7 +641,8 @@ local function runOne()
                                 else
                                     say("กลับบ้านไม่สำเร็จ")
                                 end
-                                break
+                                -- ไข่ต่อในโซนเดียวกัน ถ้าหมดค่อยไล่โซนถัดไป
+                                task.wait(0.4)
                             end
                         end
                     end
