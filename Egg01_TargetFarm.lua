@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.2
+-- Egg01 Target Farm v1.3
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 
 if _G.EGG01_TARGET_FARM then
@@ -25,7 +25,7 @@ local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythi
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
 local selectedRarities = {}
 for _, rarity in ipairs(RARITY_ORDER) do selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare" end
-local HOME_R, STEAL_R, APPROACH_R, STEP = 60, 16, 7, 140
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R = 60, 16, 7, 100
 local lines = {}
 
 local function humRoot()
@@ -83,7 +83,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.2"
+title.Text = "Egg01 Target Farm v1.3"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -322,72 +322,72 @@ local function promptAtTarget(target)
     return best, bestD
 end
 
-local function guardArea(area)
-    local objects = workspace:FindFirstChild("__OBJECTS")
-    local areas = objects and objects:FindFirstChild("Areas")
-    local guards = areas and areas:FindFirstChild("GuardAreas")
-    if not guards then return nil end
-    local want = tostring(area or ""):lower()
-    for _, item in ipairs(guards:GetChildren()) do
-        if item.Name:lower() == want then return item end
-    end
-end
-
-local function outsideGuard()
-    local _, r = humRoot()
-    local guard = r and guardArea(S.eggArea)
-    if not guard then return true end
-    local ok, cf, size = pcall(function() return guard:GetBoundingBox() end)
-    if not ok then return false end
-    local p = cf:PointToObjectSpace(r.Position)
-    return math.abs(p.X) > size.X * 0.5 + 16 or math.abs(p.Z) > size.Z * 0.5 + 16
-end
-
-local function dropHeld()
-    local holder = PG:FindFirstChild("DropHeldEgg")
-    local b = holder and holder:FindFirstChildWhichIsA("GuiButton", true)
-    if not b or not getconnections then return false end
-    for _, sig in ipairs({ b.Activated, b.MouseButton1Click }) do
-        for _, con in ipairs(getconnections(sig)) do pcall(function() con:Fire() end) end
-    end
-    return true
-end
-
-local function pickNearby()
-    local _, r = humRoot()
-    if not r then return false end
+local function nearestSteal(maxDist)
+    local _, root = humRoot()
+    if not root then return nil end
     local best, bestD
     for _, p in ipairs(getPrompts()) do
-        local d = (p.pos - r.Position).Magnitude
-        if d <= STEAL_R and (not bestD or d < bestD) then best, bestD = p.pp, d end
+        local d = (p.pos - root.Position).Magnitude
+        if d <= maxDist and (not bestD or d < bestD) then best, bestD = p, d end
     end
-    if best then fireSteal(best) return true end
+    return best, bestD
+end
+
+-- HOP 14: ระยะที่ผ่าน MoveSpy แล้ว ใช้เฉพาะตอนตามเก็บไข่ที่หลุดมือ
+local function hopTo(pos, radius, limit)
+    local untilAt = os.clock() + limit
+    while S.run and os.clock() < untilAt do
+        local h, r = humRoot()
+        if not h or not r then return false end
+        local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
+        if flat.Magnitude <= radius then stopMove(); return true end
+        local step = math.min(14, flat.Magnitude - radius)
+        local dest = r.Position + flat.Unit * step
+        h:Move(flat.Unit, false)
+        r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+        task.wait(0.10)
+    end
+    return false
+end
+
+local function recoverDroppedEgg()
+    local egg, d = nearestSteal(RECOVER_R)
+    if not egg then
+        say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
+        return false
+    end
+    say(string.format("ไข่หลุดมือ — HOP กลับไป d=%.0f", d))
+    if not hopTo(egg.pos, APPROACH_R, 12) then return false end
+    egg = select(1, nearestSteal(STEAL_R))
+    if not egg then say("Prompt ไข่หายระหว่าง HOP") return false end
+    fireSteal(egg.pp)
+    local deadline = os.clock() + 4
+    while S.run and not S.carrying and os.clock() < deadline do task.wait(0.15) end
+    if S.carrying then
+        say("เก็บไข่คืนแล้ว — วิ่งต่อ")
+        return true
+    end
+    say("เก็บไข่คืนไม่สำเร็จ")
     return false
 end
 
 local function returnHome()
-    while S.run and S.carrying do
-        local _, r = humRoot()
-        if not r or not S.home then return false end
-        if dist2(r.Position, S.home) <= HOME_R then
-            walkTo(S.home, HOME_R, 20)
-            return true
+    local deadline, lastReport = os.clock() + 120, 0
+    while S.run and os.clock() < deadline do
+        local h, r = humRoot()
+        if not h or not r or not S.home then return false end
+        if not S.carrying and not recoverDroppedEgg() then return false end
+        h, r = humRoot()
+        if not h or not r then return false end
+        local d = dist2(r.Position, S.home)
+        if d <= HOME_R then stopMove(); return true end
+        -- เดินตรงยาวถึง HOME; ยิง MoveTo ซ้ำเฉพาะเพื่อกันชน/สะดุด
+        h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+        if os.clock() - lastReport >= 1 then
+            say(string.format("วิ่งกลับ HOME d=%.0f", d))
+            lastReport = os.clock()
         end
-        local flat = Vector3.new(S.home.X - r.Position.X, 0, S.home.Z - r.Position.Z)
-        if flat.Magnitude < 1 then return true end
-        local nextPos = r.Position + flat.Unit * math.min(STEP, flat.Magnitude)
-        say(string.format("กลับบ้าน d=%.0f", dist2(r.Position, S.home)))
-        walkTo(nextPos, 8, 22)
-        if S.carrying and outsideGuard() and dist2(r.Position, S.home) > HOME_R * 4 then
-            say("พ้นโซนมอน — ทิ้ง/เก็บ")
-            if dropHeld() then
-                S.carrying = false
-                task.wait(2)
-                local untilAt = os.clock() + 8
-                while S.run and not S.carrying and os.clock() < untilAt do pickNearby() task.wait(0.4) end
-            end
-        end
-        task.wait(0.1)
+        task.wait(0.15)
     end
     return false
 end
@@ -553,7 +553,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.2 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.3 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
