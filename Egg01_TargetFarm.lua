@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.4
+-- Egg01 Target Farm v1.5
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -84,7 +84,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.4"
+title.Text = "Egg01 Target Farm v1.5"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -309,14 +309,14 @@ local function fireSteal(prompt)
     return ok
 end
 
-local function promptAtTarget(target)
+local function promptAtTarget(target, matchRadius, requireNearby)
     local _, root = humRoot()
     if not root then return nil end
     local best, bestD
     for _, p in ipairs(getPrompts()) do
         local eggMatch = (p.pos - target.pos).Magnitude
         local playerDist = (p.pos - root.Position).Magnitude
-        if eggMatch <= 60 and playerDist <= STEAL_R and (not bestD or eggMatch < bestD) then
+        if eggMatch <= (matchRadius or 60) and (not requireNearby or playerDist <= STEAL_R) and (not bestD or eggMatch < bestD) then
             best, bestD = p.pp, eggMatch
         end
     end
@@ -408,12 +408,18 @@ local function runOne()
     bStart.Text = "..."
     task.spawn(function()
         say("ไปหา " .. target.cat)
-        if not walkTo(target.pos, STEAL_R, 80) then say("ไปถึงไข่ไม่สำเร็จ") S.run = false end
+        -- เข้ากลางพิกัด Snapshot ก่อน เพื่อให้ Prompt รอบไข่สตรีมเข้ามา
+        if not walkTo(target.pos, 3, 80) then say("ไปถึงไข่ไม่สำเร็จ") S.run = false end
         stopMove() -- ยกเลิก MoveTo เดิมก่อนกด ไม่ให้ตัวละครไหลเลยไข่
         if S.run then
-            local prompt, matchD = promptAtTarget(target)
+            local prompt, matchD
+            for _ = 1, 4 do
+                prompt, matchD = promptAtTarget(target, 120, false)
+                if prompt then break end
+                task.wait(0.35)
+            end
             if not prompt then
-                say("ถึงตำแหน่งไข่ แต่ยังไม่เจอ Prompt Steal — เป้าอาจย้าย")
+                say("ถึงจุด Snapshot แล้ว แต่ไม่พบ Prompt ใน 120 studs — เป้าอาจย้าย")
                 S.run = false
             else
                 target.pp = prompt
@@ -422,7 +428,7 @@ local function runOne()
                     say(string.format("เจอ Prompt match=%.1f — เข้าใกล้", matchD))
                     walkTo(ppPart.Position, APPROACH_R, 8)
                     stopMove()
-                    prompt = select(1, promptAtTarget(target))
+                    prompt = select(1, promptAtTarget(target, 120, true))
                     if not prompt then
                         say("Prompt หายระหว่างเข้าใกล้")
                         S.run = false
@@ -556,7 +562,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.4 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.5 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
