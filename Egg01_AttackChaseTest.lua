@@ -1,40 +1,51 @@
--- Egg01 Attack Chase Test v1.3
--- AUTO ไล่ตีคนที่ไม่ใช่เพื่อน; SKIP FRIEND ✓ คือไม่ตี Roblox Friends
+-- Egg01 Attack Chase Test v1.4
+-- ติ๊กชื่อเป้าหมายหลายคน แล้ว AUTO ไล่ตีทีละคน/ครั้งและวนรายการต่อเนื่อง
 if _G.EGG01_ATTACK_CHASE then
     _G.EGG01_ATTACK_CHASE.run = false
     pcall(function() _G.EGG01_ATTACK_CHASE.gui:Destroy() end)
 end
+
 local Players = game:GetService("Players")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
-local S = { gui = nil, run = false, selected = nil, lastHit = 0, lines = {}, skipFriends = true, friendCache = {} }
+local S = { gui = nil, run = false, selected = nil, lastHit = 0, lines = {}, picked = {}, menu = nil }
 _G.EGG01_ATTACK_CHASE = S
+
 local RANGE, COOLDOWN = 9, .85
+
 local function mine()
     local c = LP.Character
     return c and c:FindFirstChildOfClass("Humanoid"), c and c:FindFirstChild("HumanoidRootPart")
 end
+
 local function targetParts(p)
     local c = p and p.Character
     return c and c:FindFirstChildOfClass("Humanoid"), c and c:FindFirstChild("HumanoidRootPart")
 end
+
 local function bat()
     local c = LP.Character
     if not c then return nil end
-    for _, v in ipairs(c:GetChildren()) do if v:IsA("Tool") and v.Name:lower():find("bat", 1, true) then return v end end
+    for _, v in ipairs(c:GetChildren()) do
+        if v:IsA("Tool") and v.Name:lower():find("bat", 1, true) then return v end
+    end
 end
+
 local gui = Instance.new("ScreenGui")
 gui.Name, gui.ResetOnSpawn, gui.DisplayOrder = "Egg01_AttackChaseTest", false, 1021
 pcall(function() gui.Parent = (gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent = PG end
 S.gui = gui
+
 local panel = Instance.new("Frame", gui)
 panel.Size, panel.Position = UDim2.new(0, 410, 0, 145), UDim2.new(0, 12, 0, 12)
 panel.BackgroundColor3, panel.BackgroundTransparency, panel.BorderSizePixel = Color3.fromRGB(20, 23, 28), .08, 0
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
+
 local title = Instance.new("TextLabel", panel)
 title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -45, 0, 27), UDim2.new(0, 10, 0, 4), 1
-title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment = "Egg01 Attack Chase Test v1.3", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
+title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment = "Egg01 Attack Chase Test v1.4", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
+
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
     b.Size, b.Position, b.BackgroundColor3, b.BorderSizePixel = UDim2.new(0, w, 0, 29), UDim2.new(0, x, 0, y), color, 0
@@ -42,107 +53,147 @@ local function button(text, x, y, w, color)
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
     return b
 end
-local bNext = button("NEXT", 10, 37, 65, Color3.fromRGB(55, 105, 165))
+
+local bList = button("LIST", 10, 37, 65, Color3.fromRGB(55, 105, 165))
 local bStart = button("START", 82, 37, 70, Color3.fromRGB(35, 145, 75))
 local bStop = button("STOP", 159, 37, 62, Color3.fromRGB(165, 50, 50))
 local bCopy = button("COPY", 228, 37, 62, Color3.fromRGB(75, 75, 80))
-local bFriends = button("SKIP FRIEND ✓", 297, 37, 100, Color3.fromRGB(105, 75, 165))
+local bClear = button("CLEAR", 297, 37, 62, Color3.fromRGB(105, 75, 165))
 local bClose = button("X", 365, 4, 32, Color3.fromRGB(125, 45, 45))
+
 local targetLabel = Instance.new("TextLabel", panel)
 targetLabel.Size, targetLabel.Position, targetLabel.BackgroundTransparency = UDim2.new(1, -20, 0, 22), UDim2.new(0, 10, 0, 74), 1
 targetLabel.TextColor3, targetLabel.Font, targetLabel.TextSize, targetLabel.TextXAlignment = Color3.fromRGB(255, 220, 105), Enum.Font.GothamBold, 12, Enum.TextXAlignment.Left
-local status = targetLabel:Clone(); status.Position = UDim2.new(0, 10, 0, 100); status.Size = UDim2.new(1, -20, 0, 35); status.TextColor3 = Color3.fromRGB(150, 235, 165); status.TextWrapped = true; status.TextYAlignment = Enum.TextYAlignment.Top; status.Parent = panel
+targetLabel.Text = "ติ๊กชื่อจาก LIST ก่อน START"
+local status = targetLabel:Clone()
+status.Position, status.Size, status.TextColor3, status.TextWrapped, status.TextYAlignment = UDim2.new(0, 10, 0, 100), UDim2.new(1, -20, 0, 35), Color3.fromRGB(150, 235, 165), true, Enum.TextYAlignment.Top
+status.Parent = panel
+
+local menu = Instance.new("ScrollingFrame", gui)
+menu.Name, menu.Position, menu.Size, menu.Visible = "TargetList", UDim2.new(0, 12, 0, 162), UDim2.new(0, 280, 0, 250), false
+menu.BackgroundColor3, menu.BorderSizePixel, menu.ScrollBarThickness = Color3.fromRGB(35, 39, 48), 0, 5
+menu.CanvasSize, menu.AutomaticCanvasSize = UDim2.new(), Enum.AutomaticSize.Y
+Instance.new("UICorner", menu).CornerRadius = UDim.new(0, 6)
+S.menu = menu
+
+local listLayout = Instance.new("UIListLayout", menu)
+listLayout.Padding = UDim.new(0, 2)
+local listPad = Instance.new("UIPadding", menu)
+listPad.PaddingTop, listPad.PaddingBottom = UDim.new(0, 3), UDim.new(0, 3)
+
 local function say(t)
-    S.lines[#S.lines + 1] = tostring(t); if #S.lines > 80 then table.remove(S.lines, 1) end; status.Text = tostring(t)
+    S.lines[#S.lines + 1] = tostring(t)
+    if #S.lines > 80 then table.remove(S.lines, 1) end
+    status.Text = tostring(t)
 end
-local function isFriend(p)
-    local cached = S.friendCache[p.UserId]
-    if cached ~= nil then return cached end
-    local ok, result = pcall(function() return LP:IsFriendsWith(p.UserId) end)
-    local value = ok and result == true
-    S.friendCache[p.UserId] = value
-    return value
-end
-local function candidates()
+
+local function playerList()
     local out = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LP and (not S.skipFriends or not isFriend(p)) then out[#out + 1] = p end
-    end
-    table.sort(out, function(a, b) return a.Name < b.Name end)
+    for _, p in ipairs(Players:GetPlayers()) do if p ~= LP then out[#out + 1] = p end end
+    table.sort(out, function(a, b) return a.Name:lower() < b.Name:lower() end)
     return out
 end
-local function nearestCandidate(from)
-    local best, bestD
-    for _, p in ipairs(candidates()) do
-        local h, r = targetParts(p)
-        if h and r and h.Health > 0 then
-            local d = (r.Position - from).Magnitude
-            if not bestD or d < bestD then best, bestD = p, d end
-        end
+
+local function chosenList()
+    local out = {}
+    for _, p in ipairs(playerList()) do if S.picked[p.UserId] then out[#out + 1] = p end end
+    return out
+end
+
+local function chosenCount()
+    local n = 0
+    for _ in pairs(S.picked) do n = n + 1 end
+    return n
+end
+
+local function setTarget(p, why)
+    S.selected = p
+    targetLabel.Text = "TARGET: " .. p.Name .. " (" .. tostring(p.UserId) .. ")"
+    if why then say(why .. p.Name) end
+end
+
+local function advanceTarget()
+    local list = chosenList()
+    if #list == 0 then S.selected = nil; return nil end
+    local current = 0
+    for i, p in ipairs(list) do if p == S.selected then current = i break end end
+    local nextPlayer = list[current % #list + 1]
+    setTarget(nextPlayer, "เป้าถัดไป: ")
+    return nextPlayer
+end
+
+local function renderList()
+    for _, ch in ipairs(menu:GetChildren()) do if ch:IsA("TextButton") or ch:IsA("TextLabel") then ch:Destroy() end end
+    local list = playerList()
+    if #list == 0 then
+        local empty = Instance.new("TextLabel", menu)
+        empty.Size, empty.BackgroundTransparency, empty.Text = UDim2.new(1, -8, 0, 26), 1, "ไม่มีผู้เล่นอื่น"
+        empty.TextColor3, empty.Font, empty.TextSize = Color3.new(1, 1, 1), Enum.Font.Gotham, 12
+        return
     end
-    return best, bestD
+    for _, p in ipairs(list) do
+        local b = Instance.new("TextButton", menu)
+        b.Size, b.BackgroundColor3, b.BorderSizePixel = UDim2.new(1, -8, 0, 25), Color3.fromRGB(52, 56, 67), 0
+        b.TextColor3, b.Font, b.TextSize, b.TextXAlignment = Color3.new(1, 1, 1), Enum.Font.GothamBold, 12, Enum.TextXAlignment.Left
+        local mark = S.picked[p.UserId] and "✓" or "□"
+        b.Text = "  " .. mark .. "  " .. p.Name .. "  (" .. tostring(p.UserId) .. ")"
+        b.MouseButton1Click:Connect(function()
+            S.picked[p.UserId] = not S.picked[p.UserId] or nil
+            if S.selected == p and not S.picked[p.UserId] then S.selected = nil end
+            renderList()
+            say(string.format("เลือกเป้า %d คน", chosenCount()))
+        end)
+    end
 end
-local function chooseNext()
-    local list = candidates()
-    if #list == 0 then S.selected = nil; targetLabel.Text = "ไม่มีผู้เล่นอื่นในเซิร์ฟเวอร์"; return end
-    local i = 0
-    for n, p in ipairs(list) do if p == S.selected then i = n break end end
-    S.selected = list[i % #list + 1]
-    targetLabel.Text = "TARGET: " .. S.selected.Name .. " (UserId " .. S.selected.UserId .. ")"
-    say("เลือก " .. S.selected.Name)
-end
+
 local function run()
     if S.run then return end
+    if #chosenList() == 0 then say("ติ๊กชื่ออย่างน้อย 1 คนจาก LIST") return end
     local h, r = mine()
-    local tool = bat()
     if not h or not r then say("ไม่พบตัวละครเรา") return end
-    if not tool then say("ถือ Bat ก่อน แล้วค่อย START") return end
-    local first = nearestCandidate(r.Position)
-    if not first then say(S.skipFriends and "ไม่มีคนที่ไม่ใช่เพื่อนในเซิร์ฟเวอร์" or "ไม่มีผู้เล่นอื่นในเซิร์ฟเวอร์") return end
+    if not bat() then say("ถือ Bat ก่อน แล้วค่อย START") return end
     S.run, S.lastHit = true, 0
     bStart.Text = "AUTO"
     task.spawn(function()
-        say("AUTO ON | " .. (S.skipFriends and "ไม่ตีเพื่อน" or "ตีทุกคน") .. " | ระยะตี " .. RANGE)
+        say("AUTO ON — วนตี " .. tostring(#chosenList()) .. " คน")
         while S.run do
-            local mh, mr = mine(); tool = bat()
+            local mh, mr = mine()
+            local tool = bat()
             if not mh or not mr then say("ไม่พบตัวละครเรา") break end
             if not tool then say("Bat หลุดมือ") break end
-            local nextTarget = nearestCandidate(mr.Position)
-            if not nextTarget then
-                S.selected = nil
-                targetLabel.Text = S.skipFriends and "ไม่มีคนที่ไม่ใช่เพื่อนที่มีตัวละคร" or "ไม่มีผู้เล่นอื่นที่มีตัวละคร"
-                task.wait(.5)
-                continue
+            local target = S.selected
+            local th, tr = targetParts(target)
+            if not target or not S.picked[target.UserId] or not th or not tr or th.Health <= 0 then
+                target = advanceTarget()
+                th, tr = targetParts(target)
+                if not target or not th or not tr or th.Health <= 0 then task.wait(.25); continue end
             end
-            if nextTarget ~= S.selected then
-                S.selected = nextTarget
-                targetLabel.Text = "TARGET: " .. nextTarget.Name .. " (UserId " .. nextTarget.UserId .. ")"
-                say("เป้าใหม่: " .. nextTarget.Name)
-            end
-            local eh, er = targetParts(S.selected)
-            if not eh or not er or eh.Health <= 0 then task.wait(.12); continue end
-            local d = (er.Position - mr.Position).Magnitude
-            -- อัปเดตจุดวิ่งทุก loop แม้อยู่ในระยะตี: ไม่ยืนหยุดก่อนฟาด
-            mh:MoveTo(Vector3.new(er.Position.X, mr.Position.Y, er.Position.Z))
+            local d = (tr.Position - mr.Position).Magnitude
+            mh:MoveTo(Vector3.new(tr.Position.X, mr.Position.Y, tr.Position.Z))
             if d <= RANGE and os.clock() - S.lastHit >= COOLDOWN then
                 local ok, err = pcall(function() tool:Activate() end)
                 S.lastHit = os.clock()
-                say(ok and string.format("Bat:Activate → %s d=%.1f", S.selected.Name, d) or "Activate error: " .. tostring(err))
+                say(ok and string.format("ตี %s d=%.1f → เป้าถัดไป", target.Name, d) or "Activate error: " .. tostring(err))
+                advanceTarget() -- ฟาดหนึ่งครั้งแล้วหมุนรายชื่อทันที
             end
             task.wait(.12)
         end
-        S.run = false; bStart.Text = "START"
+        S.run, bStart.Text = false, "START"
     end)
 end
-bNext.MouseButton1Click:Connect(chooseNext)
+
+bList.MouseButton1Click:Connect(function() renderList(); menu.Visible = not menu.Visible end)
 bStart.MouseButton1Click:Connect(run)
 bStop.MouseButton1Click:Connect(function() S.run = false; say("STOP") end)
-bFriends.MouseButton1Click:Connect(function()
-    S.skipFriends = not S.skipFriends
-    bFriends.Text = S.skipFriends and "SKIP FRIEND ✓" or "SKIP FRIEND ✗"
-    bFriends.BackgroundColor3 = S.skipFriends and Color3.fromRGB(105, 75, 165) or Color3.fromRGB(105, 65, 65)
-    say(S.skipFriends and "โหมด: ไม่ตีเพื่อน" or "โหมด: ตีทุกคน")
+bClear.MouseButton1Click:Connect(function() S.picked, S.selected = {}, nil; renderList(); targetLabel.Text = "ติ๊กชื่อจาก LIST ก่อน START"; say("ล้างรายชื่อเป้า") end)
+bCopy.MouseButton1Click:Connect(function()
+    local c = setclipboard or toclipboard
+    if c then pcall(c, "=== Egg01 Attack Chase Test v1.4 ===\n" .. table.concat(S.lines, "\n")) end
+    bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
-bCopy.MouseButton1Click:Connect(function() local c = setclipboard or toclipboard; if c then pcall(c, "=== Egg01 Attack Chase Test v1.3 ===\n" .. table.concat(S.lines, "\n")) end; bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end) end)
 bClose.MouseButton1Click:Connect(function() S.run = false; gui:Destroy(); _G.EGG01_ATTACK_CHASE = nil end)
-chooseNext()
+Players.PlayerAdded:Connect(function() if menu.Visible then renderList() end end)
+Players.PlayerRemoving:Connect(function(p) S.picked[p.UserId] = nil; if S.selected == p then S.selected = nil end; if menu.Visible then renderList() end end)
+
+renderList()
+say("LIST → ติ๊กชื่อ → START | ตีทีละครั้งแล้ววนชื่อถัดไป")
