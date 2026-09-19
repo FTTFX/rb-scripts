@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.3
--- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
+-- Egg01 Target Farm v1.8
+-- Zone ติ๊กหลายโซนได้เหมือน Rarity | Prompt Steal/ขโมย | ยิงซ้ำ | HOME_R=110
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -15,17 +15,19 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, lastCarryPos = nil, skipUids = {} }
 _G.EGG01_TARGET_FARM = S
 
-local MIN_SCALE, ZONE = 1, "ALL"
-local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
+local MIN_SCALE = 1
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
 local selectedRarities = {}
 for _, rarity in ipairs(RARITY_ORDER) do selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare" end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R = 60, 16, 7, 100
+local selectedZones = {}
+for _, z in ipairs(ZONE_CHOICES) do if z ~= "ALL" then selectedZones[z] = true end end
+local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, MATCH_R = 110, 16, 7, 180, 18
 local lines = {}
 
 local function humRoot()
@@ -83,7 +85,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.3"
+title.Text = "Egg01 Target Farm v1.8"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -171,17 +173,34 @@ local function say(message)
     status.Text = tostring(message)
 end
 
-local function readConfig()
-    ZONE = tostring(ZONE or "ALL"):upper()
+local function zoneList()
+    local out = {}
+    for _, z in ipairs(ZONE_CHOICES) do
+        if z ~= "ALL" then out[#out + 1] = z end
+    end
+    return out
+end
+
+local function zoneText()
+    local names = zoneList()
+    local on = {}
+    for _, z in ipairs(names) do
+        if selectedZones[z] then on[#on + 1] = z end
+    end
+    if #names == 0 or #on == #names then return "ALL" end
+    if #on == 0 then return "NONE" end
+    if #on <= 2 then return table.concat(on, ",") end
+    return tostring(#on) .. "Z"
 end
 
 local function zoneAllowed(area)
-    if ZONE == "ALL" then return true end
-    local want = tostring(area or ""):upper()
-    for token in ZONE:gmatch("[^,]+") do
-        if want == token then return true end
-    end
-    return false
+    local a = tostring(area or "")
+    if zoneText() == "ALL" then return true end
+    return selectedZones[a] == true
+end
+
+local function readConfig()
+    -- no-op (Zone ใช้ selectedZones)
 end
 
 local function cleanRarity(value)
@@ -228,10 +247,23 @@ local function mapRarities(records)
     return found, n
 end
 
+local function isStealPrompt(pp)
+    if not pp or not pp:IsA("ProximityPrompt") or not pp.Enabled then return false end
+    local act = tostring(pp.ActionText):lower()
+    local obj = tostring(pp.ObjectText):lower()
+    if act:find("steal", 1, true) or act:find("ขโมย", 1, true) then return true end
+    if obj:find("steal", 1, true) or obj:find("ขโมย", 1, true) then return true end
+    local par = pp.Parent
+    if par and (par.Name:find("CarryAreaEgg", 1, true) or par.Name:find("SmartPrompt", 1, true)) then
+        return true
+    end
+    return false
+end
+
 local function getPrompts()
     local out = {}
     for _, item in ipairs(workspace:GetDescendants()) do
-        if item:IsA("ProximityPrompt") and item.Enabled and tostring(item.ActionText):lower():find("steal", 1, true) then
+        if item:IsA("ProximityPrompt") and isStealPrompt(item) then
             local p = item.Parent
             local part = p and (p:IsA("BasePart") and p or p:FindFirstChildWhichIsA("BasePart", true))
             if part then out[#out + 1] = { pp = item, pos = part.Position } end
@@ -257,23 +289,31 @@ local function chooseTarget()
             local pos, scale, area = posOf(row), tonumber(row.AssetScale), row.AreaId
             if area then foundZones[tostring(area)] = true end
             local rarity = rarityMap[tostring(row.AssetCategory or "")]
-            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] then
+            local uid = tostring(row.Uid or key)
+            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not S.skipUids[uid] then
                 eligible = eligible + 1
                 local dist = (pos - root.Position).Magnitude
                 if not best or dist < best.dist then
-                    best = { uid = row.Uid or key, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist }
+                    best = { uid = uid, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist }
                 end
             end
             if pos then positioned = positioned + 1 end
         end
     end
     ZONE_CHOICES = { "ALL" }
-    for area in pairs(foundZones) do if area ~= "ALL" then ZONE_CHOICES[#ZONE_CHOICES + 1] = area end end
+    for area in pairs(foundZones) do
+        if area ~= "ALL" then
+            ZONE_CHOICES[#ZONE_CHOICES + 1] = area
+            if selectedZones[area] == nil then
+                selectedZones[area] = true
+            end
+        end
+    end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
     if best then
         say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", best.rar, best.cat, best.scale, best.area, best.dist))
     else
-        say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, MIN_SCALE, ZONE))
+        say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, MIN_SCALE, zoneText()))
     end
     return best
 end
@@ -300,26 +340,47 @@ local function stopMove()
 end
 
 local function fireSteal(prompt)
-    if not fp or not prompt then return false end
-    local old = prompt.HoldDuration
-    local ok, err = pcall(function() prompt.HoldDuration = 0 fp(prompt) end)
-    pcall(function() prompt.HoldDuration = old end)
-    if not ok then say("Steal error: " .. tostring(err)) end
-    return ok
+    if not prompt then return false end
+    local oldHold = prompt.HoldDuration
+    local oldMax = prompt.MaxActivationDistance
+    local ok = false
+    pcall(function()
+        prompt.HoldDuration = 0
+        if oldMax < 20 then prompt.MaxActivationDistance = 20 end
+    end)
+    -- ยิงซ้ำหลายแบบ — บางรอบ fp ครั้งเดียวไม่ติด
+    for _ = 1, 4 do
+        if fp then
+            local fired = pcall(fp, prompt)
+            ok = ok or fired
+        end
+        pcall(function()
+            prompt:InputHoldBegin()
+            task.wait(0.05)
+            prompt:InputHoldEnd()
+        end)
+        task.wait(0.12)
+        if S.carrying then break end
+    end
+    pcall(function()
+        prompt.HoldDuration = oldHold
+        prompt.MaxActivationDistance = oldMax
+    end)
+    if not ok and not fp then say("Steal error: ไม่มี fireproximityprompt") end
+    return ok or S.carrying
 end
 
+-- จับ Prompt ที่ใกล้พิกัดไข่เป้าที่สุดเท่านั้น (ไม่สนว่าใกล้ผู้เล่น) — กันยิงไข่ผิดกอง
 local function promptAtTarget(target)
-    local _, root = humRoot()
-    if not root then return nil end
-    local best, bestD
+    if not target or not target.pos then return nil end
+    local bestPp, bestPos, bestD
     for _, p in ipairs(getPrompts()) do
         local eggMatch = (p.pos - target.pos).Magnitude
-        local playerDist = (p.pos - root.Position).Magnitude
-        if eggMatch <= 60 and playerDist <= STEAL_R and (not bestD or eggMatch < bestD) then
-            best, bestD = p.pp, eggMatch
+        if eggMatch <= MATCH_R and (not bestD or eggMatch < bestD) then
+            bestPp, bestPos, bestD = p.pp, p.pos, eggMatch
         end
     end
-    return best, bestD
+    return bestPp, bestD, bestPos
 end
 
 local function nearestSteal(maxDist)
@@ -331,6 +392,23 @@ local function nearestSteal(maxDist)
         if d <= maxDist and (not bestD or d < bestD) then best, bestD = p, d end
     end
     return best, bestD
+end
+
+-- ยืนยันก่อนยิง: Prompt นี้ยังใกล้เป้าสุด และผู้เล่นอยู่ในระยะ Steal
+local function promptReadyToFire(target, prompt)
+    local _, root = humRoot()
+    if not root or not prompt or not prompt.Parent then return false, nil end
+    local bestPp, matchD, bestPos = promptAtTarget(target)
+    if not bestPp or bestPp ~= prompt then return false, matchD end
+    if not matchD or matchD > MATCH_R then return false, matchD end
+    local pos = bestPos
+    if not pos then
+        local part = prompt.Parent
+        local bp = part:IsA("BasePart") and part or part:FindFirstChildWhichIsA("BasePart", true)
+        if not bp then return false, matchD end
+        pos = bp.Position
+    end
+    return (pos - root.Position).Magnitude <= STEAL_R, matchD
 end
 
 -- HOP 14: ระยะที่ผ่าน MoveSpy แล้ว ใช้เฉพาะตอนตามเก็บไข่ที่หลุดมือ
@@ -351,15 +429,39 @@ local function hopTo(pos, radius, limit)
 end
 
 local function recoverDroppedEgg()
+    local _, root = humRoot()
+    if not root then return false end
+
+    -- จุดเป้า: Prompt ที่เจอ / ตำแหน่งถือไข่ล่าสุด / ยืนอยู่ตอนนี้
     local egg, d = nearestSteal(RECOVER_R)
+    local goal = (egg and egg.pos) or S.lastCarryPos or root.Position
+    local goalD = (Vector3.new(goal.X, 0, goal.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude
+    say(string.format("ไข่หลุดมือ — HOP หาไข่ทันที d=%.0f%s", goalD, egg and "" or " (ใช้ตำแหน่งล่าสุด)"))
+
+    if not hopTo(goal, APPROACH_R, 14) then
+        say("HOP หาไข่ไม่ถึง")
+        return false
+    end
+
+    -- โดนตีแล้ว Prompt ยังไม่ขึ้นทันที — รอ 1 วิ แล้วค่อยยิง
+    say("รอ Prompt 1 วินาที…")
+    task.wait(1)
+    if not S.run then return false end
+
+    egg = nil
+    local retryUntil = os.clock() + 3
+    while S.run and os.clock() < retryUntil do
+        egg = select(1, nearestSteal(math.max(STEAL_R, 28)))
+        if egg then break end
+        -- ยังไม่เจอ — HOP ใกล้จุดเดิมอีกนิด
+        if S.lastCarryPos then hopTo(S.lastCarryPos, APPROACH_R, 3) end
+        task.wait(0.25)
+    end
     if not egg then
         say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
         return false
     end
-    say(string.format("ไข่หลุดมือ — HOP กลับไป d=%.0f", d))
-    if not hopTo(egg.pos, APPROACH_R, 12) then return false end
-    egg = select(1, nearestSteal(STEAL_R))
-    if not egg then say("Prompt ไข่หายระหว่าง HOP") return false end
+
     fireSteal(egg.pp)
     local deadline = os.clock() + 4
     while S.run and not S.carrying and os.clock() < deadline do task.wait(0.15) end
@@ -376,18 +478,26 @@ local function returnHome()
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
-        if not S.carrying and not recoverDroppedEgg() then return false end
+        if S.carrying then
+            S.lastCarryPos = r.Position
+        elseif not recoverDroppedEgg() then
+            return false
+        end
         h, r = humRoot()
         if not h or not r then return false end
-        local d = dist2(r.Position, S.home)
-        if d <= HOME_R then stopMove(); return true end
-        -- เดินตรงยาวถึง HOME; ยิง MoveTo ซ้ำเฉพาะเพื่อกันชน/สะดุด
-        h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
-        if os.clock() - lastReport >= 1 then
-            say(string.format("วิ่งกลับ HOME d=%.0f", d))
-            lastReport = os.clock()
+        if not S.carrying then
+            -- เพิ่งเก็บคืน — ลูปต่อเพื่ออัปเดตตำแหน่งแล้ววิ่งต่อ
+            task.wait(0.05)
+        else
+            local d = dist2(r.Position, S.home)
+            if d <= HOME_R then stopMove(); return true end
+            h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+            if os.clock() - lastReport >= 1 then
+                say(string.format("วิ่งกลับ HOME d=%.0f", d))
+                lastReport = os.clock()
+            end
+            task.wait(0.15)
         end
-        task.wait(0.15)
     end
     return false
 end
@@ -401,46 +511,86 @@ local function runOne()
         S.home = r.Position
         say("HOME อัตโนมัติแล้ว")
     end
-    local target = chooseTarget()
-    if not target then return end
-    S.run, S.carrying, S.eggArea = true, false, target.area
+    S.run, S.carrying, S.eggArea, S.skipUids = true, false, nil, {}
     bStart.Text = "..."
     task.spawn(function()
-        say("ไปหา " .. target.cat)
-        if not walkTo(target.pos, STEAL_R, 80) then say("ไปถึงไข่ไม่สำเร็จ") S.run = false end
-        stopMove() -- ยกเลิก MoveTo เดิมก่อนกด ไม่ให้ตัวละครไหลเลยไข่
-        if S.run then
-            local prompt, matchD = promptAtTarget(target)
-            if not prompt then
-                say("ถึงตำแหน่งไข่ แต่ยังไม่เจอ Prompt Steal — เป้าอาจย้าย")
-                S.run = false
+        local attempts = 0
+        while S.run and attempts < 25 do
+            attempts = attempts + 1
+            local target = chooseTarget()
+            if not target then
+                say("ไม่มีเป้าเหลือ — หยุด")
+                break
+            end
+            S.eggArea = target.area
+            S.carrying = false
+
+            local function skipTarget(reason)
+                S.skipUids[tostring(target.uid)] = true
+                say(reason .. " — ข้าม รีสแกน")
+            end
+
+            say("ไปหา " .. target.cat)
+            -- เดินใกล้พิกัดไข่ snapshot ก่อน แล้วค่อยจับ Prompt ที่ใกล้พิกัดนั้นสุด
+            if not walkTo(target.pos, math.max(STEAL_R, MATCH_R), 80) then
+                skipTarget("ไปถึงไข่ไม่สำเร็จ")
             else
-                target.pp = prompt
-                local ppPart = prompt.Parent and (prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart", true))
-                if ppPart then
-                    say(string.format("เจอ Prompt match=%.1f — เข้าใกล้", matchD))
-                    walkTo(ppPart.Position, APPROACH_R, 8)
+                stopMove()
+                local prompt, matchD, promptPos = promptAtTarget(target)
+                if not prompt or not matchD then
+                    skipTarget("ถึงตำแหน่งไข่ แต่ยังไม่เจอ Prompt Steal — เป้าอาจย้าย")
+                elseif matchD > MATCH_R then
+                    skipTarget(string.format("Prompt ไกลเป้าเกิน (match=%.1f)", matchD))
+                else
+                    say(string.format("เจอ Prompt ไข่เป้า match=%.1f — เข้าใกล้", matchD))
+                    local goal = promptPos or target.pos
+                    local ppPart = prompt.Parent and (prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart", true))
+                    if ppPart then goal = ppPart.Position end
+                    walkTo(goal, APPROACH_R, 8)
                     stopMove()
-                    prompt = select(1, promptAtTarget(target))
-                    if not prompt then
-                        say("Prompt หายระหว่างเข้าใกล้")
-                        S.run = false
+                    prompt, matchD, promptPos = promptAtTarget(target)
+                    if not prompt or not matchD or matchD > MATCH_R then
+                        skipTarget("Prompt หาย/ไม่ตรงเป้าหลังเข้าใกล้")
                     else
                         target.pp = prompt
+                        local ready, readyMatch = promptReadyToFire(target, prompt)
+                        if not ready and promptPos then
+                            walkTo(promptPos, APPROACH_R, 5)
+                            stopMove()
+                            prompt, matchD, promptPos = promptAtTarget(target)
+                            target.pp = prompt
+                            ready, readyMatch = promptReadyToFire(target, prompt)
+                        end
+                        if not prompt or not ready then
+                            skipTarget("Prompt ไม่ตรงไข่เป้า / ยังไม่ถึงระยะ Steal")
+                        elseif S.run and not S.skipUids[tostring(target.uid)] then
+                            say(string.format("ยิง Steal (match=%.1f)", readyMatch or matchD))
+                            fireSteal(target.pp)
+                            local deadline, lastFire = os.clock() + 6, os.clock()
+                            while S.run and not S.carrying and os.clock() < deadline do
+                                if os.clock() - lastFire >= 0.55 then
+                                    local pp2 = select(1, promptAtTarget(target))
+                                    if pp2 then fireSteal(pp2) end
+                                    lastFire = os.clock()
+                                end
+                                task.wait(0.12)
+                            end
+                            if not S.carrying then
+                                skipTarget("Steal ไม่สำเร็จ/เป้าย้าย")
+                            else
+                                say("ได้ไข่แล้ว — กลับบ้าน")
+                                if returnHome() then
+                                    say("ถึง HOME — วางเข้าคอกเอง")
+                                else
+                                    say("กลับบ้านไม่สำเร็จ")
+                                end
+                                break
+                            end
+                        end
                     end
                 end
             end
-        end
-        if S.run then
-            say("ยิง Steal")
-            fireSteal(target.pp)
-            local deadline = os.clock() + 5
-            while S.run and not S.carrying and os.clock() < deadline do task.wait(0.2) end
-            if not S.carrying then say("Steal ไม่สำเร็จ/เป้าย้าย") S.run = false end
-        end
-        if S.run and S.carrying then
-            say("ได้ไข่แล้ว — กลับบ้าน")
-            if returnHome() then say("ถึง HOME — วางเข้าคอกเอง") else say("กลับบ้านไม่สำเร็จ") end
+            task.wait(0.25)
         end
         S.run = false
         bStart.Text = "START"
@@ -503,8 +653,43 @@ local function rebuildRarityMenu()
     end
 end
 
+local function rebuildZoneMenu()
+    zoneMenu:ClearAllChildren()
+    local names = zoneList()
+    local h = (#names + 1) * 23
+    zoneMenu.Size = UDim2.new(0, 160, 0, math.min(h, 280))
+    local choices = { "ALL" }
+    for _, z in ipairs(names) do choices[#choices + 1] = z end
+    for i, zone in ipairs(choices) do
+        local b = Instance.new("TextButton", zoneMenu)
+        b.Size = UDim2.new(1, 0, 0, 21)
+        b.Position = UDim2.new(0, 0, 0, (i - 1) * 23 + 1)
+        b.BackgroundColor3 = Color3.fromRGB(45, 49, 58)
+        b.BorderSizePixel = 0
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 11
+        local active = zone == "ALL" and zoneText() == "ALL" or selectedZones[zone]
+        b.Text = (active and "✓ " or "") .. zone
+        b.ZIndex = 21
+        b.TextXAlignment = Enum.TextXAlignment.Left
+        b.MouseButton1Click:Connect(function()
+            if zone == "ALL" then
+                local turnOn = zoneText() ~= "ALL"
+                for _, name in ipairs(names) do selectedZones[name] = turnOn end
+            else
+                selectedZones[zone] = not selectedZones[zone]
+            end
+            bZone.Text = zoneText() .. " ▼"
+            rebuildZoneMenu()
+            say("Zone = " .. zoneText())
+        end)
+    end
+end
+
 bScale.MouseButton1Click:Connect(function()
     zoneMenu.Visible = false
+    rarityMenu.Visible = false
     rebuildMenu(scaleMenu, SCALE_CHOICES, function(value)
         MIN_SCALE = value
         bScale.Text = string.format("%.1f ▼", value)
@@ -515,11 +700,8 @@ end)
 
 bZone.MouseButton1Click:Connect(function()
     scaleMenu.Visible = false
-    rebuildMenu(zoneMenu, ZONE_CHOICES, function(value)
-        ZONE = value
-        bZone.Text = tostring(value) .. " ▼"
-        say("Zone = " .. tostring(value))
-    end)
+    rarityMenu.Visible = false
+    rebuildZoneMenu()
     zoneMenu.Visible = not zoneMenu.Visible
 end)
 
@@ -536,7 +718,12 @@ if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) th
         if typeof(row) == "table" and row.IsCarrying ~= nil then
             S.carrying = row.IsCarrying == true
             if row.AreaId then S.eggArea = row.AreaId end
-            if S.carrying then say("server: ถือไข่แล้ว") end
+            if S.carrying then
+                local _, r = humRoot()
+                if r then S.lastCarryPos = r.Position end
+                say("server: ถือไข่แล้ว")
+            end
+            -- หลุดมือ: คง lastCarryPos ตอนยังถือ (ไข่ตกแถวนั้น) อย่าทับด้วยจุดหลังโดนดีด
         end
     end)
     lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
@@ -553,7 +740,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.3 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.8 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
