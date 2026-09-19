@@ -1,5 +1,5 @@
--- Egg01 Attack Chase Test v1.0
--- เลือกผู้เล่น -> วิ่งเข้าระยะ -> เรียก Bat:Activate() ตามทางอาวุธปกติ (ไม่ FireServer ตรง)
+-- Egg01 Attack Chase Test v1.1
+-- ไล่ตำแหน่งต่อเนื่อง และตีเมื่อเข้า range โดยไม่หยุดเดิน (ไม่ FireServer ตรง)
 if _G.EGG01_ATTACK_CHASE then
     _G.EGG01_ATTACK_CHASE.run = false
     pcall(function() _G.EGG01_ATTACK_CHASE.gui:Destroy() end)
@@ -34,7 +34,7 @@ panel.BackgroundColor3, panel.BackgroundTransparency, panel.BorderSizePixel = Co
 Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 local title = Instance.new("TextLabel", panel)
 title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -45, 0, 27), UDim2.new(0, 10, 0, 4), 1
-title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment = "Egg01 Attack Chase Test v1.0", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
+title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment = "Egg01 Attack Chase Test v1.1", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
     b.Size, b.Position, b.BackgroundColor3, b.BorderSizePixel = UDim2.new(0, w, 0, 29), UDim2.new(0, x, 0, y), color, 0
@@ -87,10 +87,9 @@ local function run()
             if not mh or not mr or not eh or not er or eh.Health <= 0 then say("เป้าหาย/ตาย") break end
             if not tool then say("Bat หลุดมือ") break end
             local d = (er.Position - mr.Position).Magnitude
-            if d > RANGE then
-                mh:MoveTo(Vector3.new(er.Position.X, mr.Position.Y, er.Position.Z))
-            elseif os.clock() - S.lastHit >= COOLDOWN then
-                mh:Move(Vector3.zero)
+            -- อัปเดตจุดวิ่งทุก loop แม้อยู่ในระยะตี: ไม่ยืนหยุดก่อนฟาด
+            mh:MoveTo(Vector3.new(er.Position.X, mr.Position.Y, er.Position.Z))
+            if d <= RANGE and os.clock() - S.lastHit >= COOLDOWN then
                 local ok, err = pcall(function() tool:Activate() end)
                 S.lastHit = os.clock()
                 say(ok and string.format("Bat:Activate → %s d=%.1f", S.selected.Name, d) or "Activate error: " .. tostring(err))
@@ -103,6 +102,6 @@ end
 bNext.MouseButton1Click:Connect(chooseNext)
 bStart.MouseButton1Click:Connect(run)
 bStop.MouseButton1Click:Connect(function() S.run = false; say("STOP") end)
-bCopy.MouseButton1Click:Connect(function() local c = setclipboard or toclipboard; if c then pcall(c, "=== Egg01 Attack Chase Test v1.0 ===\n" .. table.concat(S.lines, "\n")) end; bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end) end)
+bCopy.MouseButton1Click:Connect(function() local c = setclipboard or toclipboard; if c then pcall(c, "=== Egg01 Attack Chase Test v1.1 ===\n" .. table.concat(S.lines, "\n")) end; bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end) end)
 bClose.MouseButton1Click:Connect(function() S.run = false; gui:Destroy(); _G.EGG01_ATTACK_CHASE = nil end)
 chooseNext()
