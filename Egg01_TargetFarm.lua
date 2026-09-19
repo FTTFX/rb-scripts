@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.10
--- โดนตีหลุดมือ: ตัดกระเด็น+HOP ทันที | ไล่โซนตามคิว | Prompt/ยิงซ้ำ | HOME_R=110
+-- Egg01 Target Farm v1.11
+-- วิ่งกลับ = MoveTo อย่างเดียว | HOP+ตัดกระเด็นเฉพาะตอนไข่หลุดมือ | ไล่โซน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -85,7 +85,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.10"
+title.Text = "Egg01 Target Farm v1.11"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -578,9 +578,6 @@ local function returnHome()
         if not h or not r or not S.home then return false end
         if S.carrying then
             S.lastCarryPos = r.Position
-            -- ระหว่างวิ่งกลับ ถ้าเริ่มลอย/กระเด็นหนัก ตัด velocity เบาๆ
-            local v = r.AssemblyLinearVelocity
-            if v and v.Magnitude > 80 then killKnockback() end
         elseif not recoverDroppedEgg() then
             return false
         end
@@ -591,6 +588,7 @@ local function returnHome()
         else
             local d = dist2(r.Position, S.home)
             if d <= HOME_R then stopMove(); return true end
+            -- วิ่งปกติด้วย MoveTo เท่านั้น — ไม่ HOP / ไม่ตัด velocity
             h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
             if os.clock() - lastReport >= 1 then
                 say(string.format("วิ่งกลับ HOME d=%.0f", d))
@@ -855,7 +853,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.10 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.11 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
