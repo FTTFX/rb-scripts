@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.0
+-- Egg01 Target Farm v2.1
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, lastCarryScan = 0, hopUsed = false, skipped = {} }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, skipped = {}, carriedUid = nil, droppedPos = nil, returning = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -88,7 +88,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.0"
+title.Text = "Egg01 Target Farm v2.1"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -361,6 +361,21 @@ local function hopOnceToward(pos, radius)
     return true
 end
 
+-- ใช้พิกัดจาก FieldEggShifted เพื่อไม่เก็บ Prompt ของไข่ฟองข้าง ๆ ผิดใบ
+local function stealAtPosition(pos, maxDist, requireNearby)
+    local _, root = humRoot()
+    if not root or not pos then return nil end
+    local best, bestD
+    for _, p in ipairs(getPrompts()) do
+        local matchD = (p.pos - pos).Magnitude
+        local playerD = (p.pos - root.Position).Magnitude
+        if matchD <= maxDist and (not requireNearby or playerD <= STEAL_R) and (not bestD or matchD < bestD) then
+            best, bestD = p, matchD
+        end
+    end
+    return best, bestD
+end
+
 local function skipTarget(target, seconds, reason)
     S.skipped[target.key] = os.clock() + seconds
     say(string.format("พัก %s %ds — %s", target.cat, seconds, reason))
@@ -384,28 +399,46 @@ local function attachCarryListener()
     return true
 end
 
-local function recoverDroppedEgg()
+-- FieldEggCarry บอกสถานะของเรา; FieldEggShifted ระบุตำแหน่งของไข่ใบเดิมเมื่อมันตก
+local function attachShiftListener()
+    if S.shiftConn then return true end
+    local shifted = findNet("FieldEggShifted")
+    if not shifted or not (shifted:IsA("RemoteEvent") or shifted:IsA("UnreliableRemoteEvent")) then return false end
+    S.shiftConn = shifted.OnClientEvent:Connect(function(row)
+        if typeof(row) ~= "table" or not S.returning or S.carriedUid == nil then return end
+        local state = tostring(row.State or "")
+        if state ~= "Dropped" or tostring(row.Uid) ~= tostring(S.carriedUid) then return end
+        local pos = posOf(row)
+        if pos then
+            S.droppedPos = pos
+            S.carrying = false
+            say(string.format("UID %s หลุดมือ @%.0f,%.0f — กลับไปเก็บ", tostring(S.carriedUid), pos.X, pos.Z))
+        end
+    end)
+    S.conns[#S.conns + 1] = S.shiftConn
+    lines[#lines + 1] = "ฟัง FieldEggShifted (Return Guard) ✅"
+    return true
+end
+
+local function recoverDroppedEgg(dropPos)
     stopMove() -- event แจ้งหลุด: หยุดวิ่งก่อน แล้วค่อยหาจุดไข่
-    local egg, d = nearestSteal(RECOVER_R)
+    local egg, d = dropPos and stealAtPosition(dropPos, 30, false) or nearestSteal(RECOVER_R)
     if not egg then
-        say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
+        say("ไข่หลุดมือ แต่ไม่เจอ Prompt ของ UID เดิม")
         return false
     end
-    say(string.format("ไข่หลุดมือ — กลับไป d=%.0f", d))
+    local _, root = humRoot()
+    local backD = root and (egg.pos - root.Position).Magnitude or d
+    say(string.format("ไข่หลุดมือ — กลับไปเก็บ UID เดิม d=%.0f", backD or 0))
     hopOnceToward(egg.pos, APPROACH_R)
     if not walkTo(egg.pos, APPROACH_R, 10) then return false end
     stopMove()
-    egg = select(1, nearestSteal(STEAL_R))
-    if not egg then say("Prompt ไข่หายระหว่าง HOP") return false end
-    fireSteal(egg.pp)
-    local deadline = os.clock() + 4
-    while S.run and not S.carrying and os.clock() < deadline do task.wait(0.15) end
-    if S.carrying then
-        say("เก็บไข่คืนแล้ว — วิ่งต่อ")
-        return true
-    end
-    say("เก็บไข่คืนไม่สำเร็จ")
-    return false
+    egg = dropPos and stealAtPosition(dropPos, 30, true) or nearestSteal(STEAL_R)
+    if not egg then say("Prompt UID เดิมหายระหว่างกลับไป") return false end
+    if not fireSteal(egg.pp) then say("เก็บไข่คืนไม่สำเร็จ") return false end
+    S.droppedPos, S.carrying = nil, true -- เดินต่อทันที แม้ Carry event ยังไม่ถูกส่ง
+    say("เก็บไข่ UID เดิมแล้ว — วิ่งต่อ")
+    return true
 end
 
 local function returnHome()
@@ -417,7 +450,12 @@ local function returnHome()
             S.lastCarryScan = os.clock()
             attachCarryListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
         end
-        if not S.carrying and not recoverDroppedEgg() then return false end
+        if not S.shiftConn and os.clock() - S.lastShiftScan >= 1 then
+            S.lastShiftScan = os.clock()
+            attachShiftListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
+        end
+        local dropPos = S.droppedPos
+        if (dropPos or not S.carrying) and not recoverDroppedEgg(dropPos) then return false end
         h, r = humRoot()
         if not h or not r then return false end
         local d = dist2(r.Position, S.home)
@@ -490,12 +528,13 @@ local function farmTarget(target)
     end
     -- บางเซิร์ฟเวอร์ไม่มี FieldEggCarry ฝั่ง client: ออกจากจุดเสี่ยงก่อน
     -- ถ้า event มีและไข่หลุด มันจะเปลี่ยน carrying=false เพื่อเข้า recovery เอง
-    S.carrying = true
+    S.carrying, S.carriedUid, S.droppedPos, S.returning = true, target.uid, nil, true
     if returnHome() then
         say("ถึง HOME — รอรอบถัดไป")
     elseif S.run then
         say("กลับบ้านไม่สำเร็จ — scan ใหม่")
     end
+    S.returning, S.carriedUid, S.droppedPos = false, nil, nil
 end
 
 local function runOne()
@@ -612,6 +651,9 @@ end)
 if not attachCarryListener() then
     lines[#lines + 1] = "ไม่พบ FieldEggCarry — จะตรวจผล Steal ไม่ได้"
 end
+if not attachShiftListener() then
+    lines[#lines + 1] = "ไม่พบ FieldEggShifted — Return Guard รอระหว่างวิ่งกลับ"
+end
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = humRoot()
@@ -627,7 +669,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.0 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.1 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -636,4 +678,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("BALANCED: rarity 1 ขั้น = ระยะ 400 studs | เลือก Scale/Zone/Rarity → START")
+say("BALANCED: rarity 1 ขั้น = ระยะ 400 studs | Return Guard คุ้มกัน UID ตอนกลับบ้าน")
