@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.16
--- โหมดไวแบบ v1.13: Steal แล้ววิ่งกลับเร็ว | DropHeldEgg สำรอง | หลุดมือ HOP | ไล่โซน
+-- Egg01 Target Farm v1.17
+-- Steal แล้วยิง+วิ่งกลับทันที (ไม่อยู่รอ) | DropHeldEgg สำรอง | หลุดมือ HOP | ไล่โซน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -119,7 +119,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.16"
+title.Text = "Egg01 Target Farm v1.17"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -439,26 +439,25 @@ local function fireSteal(prompt)
         prompt.HoldDuration = 0
         if oldMax < 20 then prompt.MaxActivationDistance = 20 end
     end)
-    -- ยิงซ้ำหลายแบบ — บางรอบ fp ครั้งเดียวไม่ติด
-    for _ = 1, 4 do
-        if fp then
-            local fired = pcall(fp, prompt)
-            ok = ok or fired
-        end
-        pcall(function()
-            prompt:InputHoldBegin()
-            task.wait(0.05)
-            prompt:InputHoldEnd()
-        end)
-        task.wait(0.12)
-        if S.carrying then break end
-    end
+    -- ยิงเร็ว 1–2 ครั้ง แล้วไปต่อ — ไม่ค้างลูปยาว
+    if fp then ok = pcall(fp, prompt) end
+    pcall(function()
+        prompt:InputHoldBegin()
+        task.wait(0.02)
+        prompt:InputHoldEnd()
+    end)
+    if fp then pcall(fp, prompt) end
     pcall(function()
         prompt.HoldDuration = oldHold
         prompt.MaxActivationDistance = oldMax
     end)
-    if not ok and not fp then say("Steal error: ไม่มี fireproximityprompt") end
-    return ok or S.carrying
+    return ok
+end
+
+local function dashHomeNow()
+    local h, r = humRoot()
+    if not h or not r or not S.home then return end
+    h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
 end
 
 -- จับ Prompt ที่ใกล้พิกัดไข่เป้าที่สุดเท่านั้น (ไม่สนว่าใกล้ผู้เล่น) — กันยิงไข่ผิดกอง
@@ -780,45 +779,27 @@ local function runOne()
                             skipTarget("Prompt ไม่ตรงไข่เป้า / ยังไม่ถึงระยะ Steal")
                         elseif S.run and not S.skipUids[tostring(target.uid)] then
                             say(string.format("ยิง Steal (match=%.1f)", readyMatch or matchD))
+                            S.heldUid = tostring(target.uid)
+                            S.heldCat = tostring(target.cat)
                             fireSteal(target.pp)
-                            -- ไวแบบ v1.13: รอถือสั้นมาก แล้ววิ่ง — ไม่ค้าง 4 วิ
-                            local t0 = os.clock()
-                            while S.run and not isHolding() and os.clock() - t0 < 0.85 do
-                                if guiShowsCarry() then
-                                    markHolding("ถือไข่แล้ว — วิ่ง")
-                                    break
-                                end
-                                task.wait(0.05)
-                            end
-                            if not isHolding() then
-                                -- Prompt เป้าหาย / มี Drop = น่าจะเก็บได้แล้ว
-                                if guiShowsCarry() or not select(1, promptAtTarget(target)) then
-                                    markHolding("Steal แล้ว — วิ่งกลับ")
-                                else
-                                    -- ยิงซ้ำรอบสั้น
+                            -- ออกตัวทันที — ไม่ยืนรอ confirm
+                            markHolding("Steal — วิ่งทันที")
+                            dashHomeNow()
+                            say("ได้ไข่แล้ว — วิ่งกลับ")
+                            -- ยืนยันระหว่างวิ่ง (ไม่บล็อกออกตัว)
+                            task.spawn(function()
+                                task.wait(0.2)
+                                if S.run and not guiShowsCarry() and not S.carrying then
                                     local pp2 = select(1, promptAtTarget(target))
-                                    if pp2 then fireSteal(pp2) end
-                                    task.wait(0.25)
-                                    if guiShowsCarry() or not select(1, promptAtTarget(target)) then
-                                        markHolding("Steal แล้ว — วิ่งกลับ")
-                                    end
+                                    if pp2 then fireSteal(pp2); dashHomeNow() end
                                 end
-                            end
-                            if not isHolding() then
-                                skipTarget("Steal ไม่สำเร็จ/เป้าย้าย")
+                            end)
+                            if returnHome() then
+                                say("ถึง HOME — วางเข้าคอกเอง")
                             else
-                                S.heldUid = tostring(target.uid)
-                                S.heldCat = tostring(target.cat)
-                                local _, rHold = humRoot()
-                                if rHold then S.lastCarryPos = rHold.Position end
-                                say("ได้ไข่แล้ว — วิ่งกลับ")
-                                if returnHome() then
-                                    say("ถึง HOME — วางเข้าคอกเอง")
-                                else
-                                    say("กลับบ้านไม่สำเร็จ")
-                                end
-                                task.wait(0.3)
+                                say("กลับบ้านไม่สำเร็จ")
                             end
+                            task.wait(0.2)
                         end
                     end
                 end
@@ -1009,7 +990,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.16 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.17 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
