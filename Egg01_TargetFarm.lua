@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.8
--- Zone ติ๊กหลายโซนได้เหมือน Rarity | Prompt Steal/ขโมย | ยิงซ้ำ | HOME_R=110
+-- Egg01 Target Farm v1.9
+-- ไล่โซนตามลำดับที่ติ๊ก | Zone multi-tick | Prompt Steal/ขโมย | ยิงซ้ำ | HOME_R=110
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -15,7 +15,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, lastCarryPos = nil, skipUids = {} }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, lastCarryPos = nil, skipUids = {}, focusZone = nil, zoneIdx = 1 }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE = 1
@@ -85,7 +85,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.8"
+title.Text = "Egg01 Target Farm v1.9"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -193,6 +193,15 @@ local function zoneText()
     return tostring(#on) .. "Z"
 end
 
+-- โซนที่ติ๊ก ตามลำดับในเมนู (A→Z ตาม ZONE_CHOICES)
+local function zonesOn()
+    local out = {}
+    for _, z in ipairs(zoneList()) do
+        if selectedZones[z] then out[#out + 1] = z end
+    end
+    return out
+end
+
 local function zoneAllowed(area)
     local a = tostring(area or "")
     if zoneText() == "ALL" then return true end
@@ -200,7 +209,40 @@ local function zoneAllowed(area)
 end
 
 local function readConfig()
-    -- no-op (Zone ใช้ selectedZones)
+end
+
+local function advanceZone(order, why)
+    order = order or zonesOn()
+    if #order == 0 then
+        S.focusZone, S.zoneIdx = nil, 1
+        return nil
+    end
+    S.zoneIdx = (S.zoneIdx or 1) + 1
+    if S.zoneIdx > #order then
+        S.focusZone = nil
+        say((why or "หมดโซน") .. " — จบคิวไล่โซน")
+        return nil
+    end
+    S.focusZone = order[S.zoneIdx]
+    say(string.format("ไล่โซนถัดไป (%d/%d): %s", S.zoneIdx, #order, S.focusZone))
+    return S.focusZone
+end
+
+local function ensureFocusZone()
+    local order = zonesOn()
+    if #order == 0 then return nil, order end
+    if S.focusZone then
+        for i, z in ipairs(order) do
+            if z == S.focusZone then
+                S.zoneIdx = i
+                return S.focusZone, order
+            end
+        end
+    end
+    S.zoneIdx = 1
+    S.focusZone = order[1]
+    say(string.format("เริ่มไล่โซน (1/%d): %s", #order, S.focusZone))
+    return S.focusZone, order
 end
 
 local function cleanRarity(value)
@@ -282,40 +324,55 @@ local function chooseTarget()
     local _, root = humRoot()
     if typeof(records) ~= "table" or not root then return nil end
     local rarityMap, categoryCount = mapRarities(records)
-    local best, eligible, positioned = nil, 0, 0
     local foundZones = { ALL = true }
-    for key, row in pairs(records) do
-        if typeof(row) == "table" then
-            local pos, scale, area = posOf(row), tonumber(row.AssetScale), row.AreaId
-            if area then foundZones[tostring(area)] = true end
-            local rarity = rarityMap[tostring(row.AssetCategory or "")]
-            local uid = tostring(row.Uid or key)
-            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not S.skipUids[uid] then
-                eligible = eligible + 1
-                local dist = (pos - root.Position).Magnitude
-                if not best or dist < best.dist then
-                    best = { uid = uid, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist }
-                end
-            end
-            if pos then positioned = positioned + 1 end
-        end
+    for _, row in pairs(records) do
+        if typeof(row) == "table" and row.AreaId then foundZones[tostring(row.AreaId)] = true end
     end
     ZONE_CHOICES = { "ALL" }
     for area in pairs(foundZones) do
         if area ~= "ALL" then
             ZONE_CHOICES[#ZONE_CHOICES + 1] = area
-            if selectedZones[area] == nil then
-                selectedZones[area] = true
-            end
+            if selectedZones[area] == nil then selectedZones[area] = true end
         end
     end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
-    if best then
-        say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", best.rar, best.cat, best.scale, best.area, best.dist))
-    else
-        say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, MIN_SCALE, zoneText()))
+
+    local focus, order = ensureFocusZone()
+    if not focus then
+        say("ไม่ได้ติ๊กโซนไว้")
+        return nil
     end
-    return best
+
+    -- ไล่โซนปัจจุบันก่อน — ไม่มีเป้าค่อยขยับโซนถัดไป
+    for _ = 1, math.max(1, #order) do
+        local best, eligible, positioned = nil, 0, 0
+        for key, row in pairs(records) do
+            if typeof(row) == "table" then
+                local pos, scale, area = posOf(row), tonumber(row.AssetScale), row.AreaId
+                local areaStr = tostring(area or "")
+                local rarity = rarityMap[tostring(row.AssetCategory or "")]
+                local uid = tostring(row.Uid or key)
+                if pos then positioned = positioned + 1 end
+                if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried"
+                    and areaStr == focus
+                    and rarity and selectedRarities[rarity] and not S.skipUids[uid] then
+                    eligible = eligible + 1
+                    local dist = (pos - root.Position).Magnitude
+                    if not best or dist < best.dist then
+                        best = { uid = uid, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = areaStr, pos = pos, dist = dist }
+                    end
+                end
+            end
+        end
+        if best then
+            say(string.format("TARGET %s %s sc=%.2f zone=%s [%d/%d] d=%.0f", best.rar, best.cat, best.scale, best.area, S.zoneIdx, #order, best.dist))
+            return best
+        end
+        say(string.format("โซน %s ไม่มีเป้า (rarMap=%d) — ข้าม", focus, categoryCount))
+        focus = advanceZone(order, "โซนว่าง")
+        if not focus then return nil end
+    end
+    return nil
 end
 
 local function walkTo(pos, radius, limit)
@@ -740,7 +797,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.8 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.9 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
