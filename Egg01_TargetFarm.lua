@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.13
--- หลุดมือ: กันกระแทก+HOP ไปไข่ที่ถือ (ไม่เก็บไข่ผิด) | วิ่งกลับ MoveTo | ไล่โซน
+-- Egg01 Target Farm v1.14
+-- หลุดมือ: HOP ทันทีไม่รอ snapshot/1วิ | กันกระแทกสั้น | วิ่ง MoveTo | ไล่โซน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -85,7 +85,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.13"
+title.Text = "Egg01 Target Farm v1.14"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -499,7 +499,7 @@ local function promptReadyToFire(target, prompt)
     return (pos - root.Position).Magnitude <= STEAL_R, matchD
 end
 
--- กันกระแทก: ตัดแรงกระเด็นอย่างเดียว (ไม่ MoveTo ตัวเอง — จะทำให้วิ่งช้า)
+-- กันกระแทกสั้นๆ ระหว่าง HOP (ไม่บล็อครอนาน)
 local function killKnockback()
     local h, r = humRoot()
     if not r then return end
@@ -510,25 +510,17 @@ local function killKnockback()
     if h then
         pcall(function()
             h.PlatformStand = false
-            if h:GetState() == Enum.HumanoidStateType.Flying
-                or h:GetState() == Enum.HumanoidStateType.Freefall
-                or h:GetState() == Enum.HumanoidStateType.Physics then
+            local st = h:GetState()
+            if st == Enum.HumanoidStateType.Flying
+                or st == Enum.HumanoidStateType.Freefall
+                or st == Enum.HumanoidStateType.Physics then
                 h:ChangeState(Enum.HumanoidStateType.Running)
             end
         end)
     end
 end
 
--- กันกระแทกช่วงสั้นๆ ตอนเพิ่งหลุดมือ (ยังไม่แตะตอนวิ่งปกติ)
-local function antiKnockBurst(sec)
-    local untilAt = os.clock() + (sec or 0.45)
-    while S.run and os.clock() < untilAt do
-        killKnockback()
-        task.wait(0.03)
-    end
-end
-
--- HOP หาไข่ — ใช้เฉพาะตอนหลุดมือ (คู่กับกันกระแทก)
+-- HOP หาไข่เร็ว — ใช้เฉพาะตอนหลุดมือ
 local function hopTo(pos, radius, limit)
     local untilAt = os.clock() + limit
     while S.run and os.clock() < untilAt do
@@ -549,17 +541,17 @@ local function hopTo(pos, radius, limit)
             y = r.Position.Y + math.clamp(pos.Y - r.Position.Y, -6, 6)
         end
         r.CFrame = CFrame.new(dest.X, y, dest.Z) * (r.CFrame - r.CFrame.Position)
-        task.wait(0.08)
+        task.wait(0.05)
     end
     return false
 end
 
 local function recoverDroppedEgg()
     if S.recovering then
-        local waitUntil = os.clock() + 20
+        local waitUntil = os.clock() + 16
         while S.recovering and not S.carrying and os.clock() < waitUntil do
             if not S.run then return false end
-            task.wait(0.1)
+            task.wait(0.08)
         end
         return S.carrying == true
     end
@@ -568,50 +560,93 @@ local function recoverDroppedEgg()
     local _, root = humRoot()
     if root then
         local label = S.heldCat and tostring(S.heldCat) or "ไข่ที่ถือ"
-        say("ไข่หลุดมือ — กันกระแทก + HOP ไป " .. label)
-        antiKnockBurst(0.4)
-
-        -- จุดไข่ที่ถูก: snapshot Uid → จุดถือล่าสุด → Prompt ใกล้จุดนั้น (ห้าม nearest ใกล้ตัว)
-        local snapPos = posOfHeldUid()
-        local goal = snapPos or S.lastCarryPos or root.Position
+        -- HOP ทันทีไปจุดถือล่าสุด — ไม่รอ antiBurst / snapshot (ช้า)
+        killKnockback()
+        local goal = S.lastCarryPos or root.Position
         local egg, matchD = promptNearPos(goal, 90)
         if egg then goal = egg.pos end
-        local goalD = (Vector3.new(goal.X, 0, goal.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude
-        say(string.format("HOP หา%s d=%.0f match=%.1f uid=%s", label, goalD, matchD or -1, tostring(S.heldUid or "?")))
+        say(string.format("หลุดมือ — HOP %s ทันที d=%.0f", label, (Vector3.new(goal.X, 0, goal.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude))
 
-        if hopTo(goal, APPROACH_R, 22) then
-            say("รอ Prompt 1 วินาที…")
-            task.wait(1)
-            if S.run then
-                egg = nil
-                local retryUntil = os.clock() + 4
-                while S.run and os.clock() < retryUntil do
-                    killKnockback()
-                    local g2 = posOfHeldUid() or S.lastCarryPos or goal
-                    egg, matchD = promptNearPos(g2, 90)
-                    if egg and matchD and matchD <= 40 then break end
-                    hopTo(g2, APPROACH_R, 4)
-                    task.wait(0.2)
-                end
-                if egg then
-                    say(string.format("ยิง Steal ไข่ที่ถูก match=%.1f", matchD or -1))
-                    fireSteal(egg.pp)
-                    local deadline = os.clock() + 5
-                    while S.run and not S.carrying and os.clock() < deadline do
-                        task.wait(0.12)
-                    end
-                    if S.carrying then
-                        say("เก็บไข่ที่ถูกคืนแล้ว — วิ่งต่อ")
-                        ok = true
-                    else
-                        say("เก็บไข่คืนไม่สำเร็จ")
-                    end
-                else
-                    say("ไม่เจอ Prompt ของไข่ที่ถือ")
-                end
+        -- ระหว่าง HOP อัปเดตเป้าเป็นครั้งคราว — ห้าม Invoke snapshot ทุกเฟรม (ช้ามาก)
+        local hopUntil, lastSnap = os.clock() + 18, 0
+        local arrived = false
+        while S.run and os.clock() < hopUntil do
+            killKnockback()
+            if os.clock() - lastSnap >= 0.55 then
+                local snap = posOfHeldUid()
+                if snap then goal = snap end
+                lastSnap = os.clock()
             end
-        else
-            say("HOP หาไข่ที่ถูกไม่ถึง")
+            egg, matchD = promptNearPos(goal, 90)
+            if egg then goal = egg.pos end
+
+            local h, r = humRoot()
+            if not h or not r then break end
+            local flat = Vector3.new(goal.X - r.Position.X, 0, goal.Z - r.Position.Z)
+            if egg and matchD and matchD <= 35 and flat.Magnitude <= STEAL_R + 4 then
+                say(string.format("ยิง Steal ไข่ที่ถูกทันที match=%.1f", matchD))
+                fireSteal(egg.pp)
+                local deadline, lastFire = os.clock() + 3.5, 0
+                while S.run and not S.carrying and os.clock() < deadline do
+                    if os.clock() - lastFire >= 0.45 then
+                        fireSteal(egg.pp)
+                        lastFire = os.clock()
+                    end
+                    task.wait(0.08)
+                end
+                if S.carrying then
+                    say("เก็บไข่ที่ถูกคืนแล้ว — วิ่งต่อ")
+                    ok = true
+                end
+                break
+            end
+            if flat.Magnitude <= APPROACH_R then
+                arrived = true
+                stopMove()
+                break
+            end
+            local step = math.min(14, flat.Magnitude)
+            local dest = r.Position + flat.Unit * step
+            r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+            task.wait(0.05)
+        end
+
+        if not ok and S.run then
+            local pollUntil, lastSnap2 = os.clock() + 2.0, 0
+            while S.run and not S.carrying and os.clock() < pollUntil do
+                killKnockback()
+                local g2 = S.lastCarryPos or goal
+                if os.clock() - lastSnap2 >= 0.5 then
+                    g2 = posOfHeldUid() or g2
+                    lastSnap2 = os.clock()
+                end
+                egg, matchD = promptNearPos(g2, 90)
+                if egg and matchD and matchD <= 40 then
+                    local _, r2 = humRoot()
+                    if r2 and (egg.pos - r2.Position).Magnitude > STEAL_R then
+                        hopTo(egg.pos, APPROACH_R, 2.5)
+                    end
+                    say(string.format("ยิง Steal ไข่ที่ถูก match=%.1f", matchD))
+                    fireSteal(egg.pp)
+                    local deadline, lastFire = os.clock() + 3, 0
+                    while S.run and not S.carrying and os.clock() < deadline do
+                        if os.clock() - lastFire >= 0.4 then
+                            fireSteal(egg.pp)
+                            lastFire = os.clock()
+                        end
+                        task.wait(0.08)
+                    end
+                    break
+                end
+                hopTo(g2, APPROACH_R, 1.5)
+                task.wait(0.1)
+            end
+            if S.carrying then
+                say("เก็บไข่ที่ถูกคืนแล้ว — วิ่งต่อ")
+                ok = true
+            elseif not S.carrying then
+                say(arrived and "เก็บไข่คืนไม่สำเร็จ" or "HOP/Prompt ไข่ที่ถูกไม่ทัน")
+            end
         end
     end
     S.recovering = false
@@ -905,7 +940,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.13 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.14 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
