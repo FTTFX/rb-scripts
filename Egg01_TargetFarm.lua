@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.5
+-- Egg01 Target Farm v1.6
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, hopUsed = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -26,7 +26,7 @@ local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythi
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
 local selectedRarities = {}
 for _, rarity in ipairs(RARITY_ORDER) do selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare" end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R = 60, 16, 7, 100
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R = 60, 16, 7, 100, 30
 local lines = {}
 
 local function humRoot()
@@ -84,7 +84,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.5"
+title.Text = "Egg01 Target Farm v1.6"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -334,21 +334,21 @@ local function nearestSteal(maxDist)
     return best, bestD
 end
 
--- HOP 14: ระยะที่ผ่าน MoveSpy แล้ว ใช้เฉพาะตอนตามเก็บไข่ที่หลุดมือ
-local function hopTo(pos, radius, limit)
-    local untilAt = os.clock() + limit
-    while S.run and os.clock() < untilAt do
-        local h, r = humRoot()
-        if not h or not r then return false end
-        local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
-        if flat.Magnitude <= radius then stopMove(); return true end
-        local step = math.min(14, flat.Magnitude - radius)
-        local dest = r.Position + flat.Unit * step
-        h:Move(flat.Unit, false)
-        r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
-        task.wait(0.10)
-    end
-    return false
+-- HOP14 ได้เพียงครั้งเดียวต่อรอบ จากนั้นกลับไปใช้เดินปกติทั้งหมด
+local function hopOnceToward(pos, radius)
+    if S.hopUsed then return false end
+    local h, r = humRoot()
+    if not h or not r then return false end
+    local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
+    if flat.Magnitude <= radius then return false end
+    local step = math.min(14, flat.Magnitude - radius)
+    local dest = r.Position + flat.Unit * step
+    S.hopUsed = true
+    h:Move(flat.Unit, false)
+    r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+    task.wait(0.10)
+    stopMove()
+    return true
 end
 
 local function recoverDroppedEgg()
@@ -357,8 +357,10 @@ local function recoverDroppedEgg()
         say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
         return false
     end
-    say(string.format("ไข่หลุดมือ — HOP กลับไป d=%.0f", d))
-    if not hopTo(egg.pos, APPROACH_R, 12) then return false end
+    say(string.format("ไข่หลุดมือ — กลับไป d=%.0f", d))
+    hopOnceToward(egg.pos, APPROACH_R)
+    if not walkTo(egg.pos, APPROACH_R, 10) then return false end
+    stopMove()
     egg = select(1, nearestSteal(STEAL_R))
     if not egg then say("Prompt ไข่หายระหว่าง HOP") return false end
     fireSteal(egg.pp)
@@ -404,7 +406,7 @@ local function runOne()
     end
     local target = chooseTarget()
     if not target then return end
-    S.run, S.carrying, S.eggArea = true, false, target.area
+    S.run, S.carrying, S.eggArea, S.hopUsed = true, false, target.area, false
     bStart.Text = "..."
     task.spawn(function()
         say("ไปหา " .. target.cat)
@@ -414,21 +416,27 @@ local function runOne()
         if S.run then
             local prompt, matchD
             for _ = 1, 4 do
-                prompt, matchD = promptAtTarget(target, 120, false)
+                prompt, matchD = promptAtTarget(target, PROMPT_EXACT_R, false)
                 if prompt then break end
                 task.wait(0.35)
             end
             if not prompt then
-                say("ถึงจุด Snapshot แล้ว แต่ไม่พบ Prompt ใน 120 studs — เป้าอาจย้าย")
+                local other, otherD = promptAtTarget(target, 120, false)
+                if other then
+                    say(string.format("เจอ Prompt อื่น match=%.1f แต่ไม่ใช่ %s — ไม่กด", otherD, target.cat))
+                else
+                    say("ถึงจุด Snapshot แล้ว แต่ไม่พบ Prompt — เป้าอาจย้าย")
+                end
                 S.run = false
             else
                 target.pp = prompt
                 local ppPart = prompt.Parent and (prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart", true))
                 if ppPart then
-                    say(string.format("เจอ Prompt match=%.1f — เข้าใกล้", matchD))
+                    say(string.format("Prompt ของ %s match=%.1f — เข้าใกล้", target.cat, matchD))
+                    if hopOnceToward(ppPart.Position, APPROACH_R) then say("HOP เข้า Prompt ครั้งเดียวแล้ว") end
                     walkTo(ppPart.Position, APPROACH_R, 8)
                     stopMove()
-                    prompt = select(1, promptAtTarget(target, 120, true))
+                    prompt = select(1, promptAtTarget(target, PROMPT_EXACT_R, true))
                     if not prompt then
                         say("Prompt หายระหว่างเข้าใกล้")
                         S.run = false
@@ -562,7 +570,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.5 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.6 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
