@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.11
--- วิ่งกลับ = MoveTo อย่างเดียว | HOP+ตัดกระเด็นเฉพาะตอนไข่หลุดมือ | ไล่โซน
+-- Egg01 Target Farm v1.12
+-- วิ่งกลับ = MoveTo อย่างเดียว | ไข่หลุดมือเท่านั้น: กันกระแทก + HOP เก็บ | ไล่โซน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -85,7 +85,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.11"
+title.Text = "Egg01 Target Farm v1.12"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -468,7 +468,7 @@ local function promptReadyToFire(target, prompt)
     return (pos - root.Position).Magnitude <= STEAL_R, matchD
 end
 
--- ตัดแรงกระเด็น/ลอยตอนโดนตี — แล้ว HOP หาไข่ทันที
+-- กันกระแทก: ตัดแรงกระเด็นอย่างเดียว (ไม่ MoveTo ตัวเอง — จะทำให้วิ่งช้า)
 local function killKnockback()
     local h, r = humRoot()
     if not r then return end
@@ -479,14 +479,25 @@ local function killKnockback()
     if h then
         pcall(function()
             h.PlatformStand = false
-            h:ChangeState(Enum.HumanoidStateType.Running)
+            if h:GetState() == Enum.HumanoidStateType.Flying
+                or h:GetState() == Enum.HumanoidStateType.Freefall
+                or h:GetState() == Enum.HumanoidStateType.Physics then
+                h:ChangeState(Enum.HumanoidStateType.Running)
+            end
         end)
-        h:Move(Vector3.zero)
-        h:MoveTo(r.Position)
     end
 end
 
--- HOP 14: ตัด velocity ทุกก้าว — ใช้ตอนเก็บไข่หลุดมือ / กันลอยไกล
+-- กันกระแทกช่วงสั้นๆ ตอนเพิ่งหลุดมือ (ยังไม่แตะตอนวิ่งปกติ)
+local function antiKnockBurst(sec)
+    local untilAt = os.clock() + (sec or 0.45)
+    while S.run and os.clock() < untilAt do
+        killKnockback()
+        task.wait(0.03)
+    end
+end
+
+-- HOP หาไข่ — ใช้เฉพาะตอนหลุดมือ (คู่กับกันกระแทก)
 local function hopTo(pos, radius, limit)
     local untilAt = os.clock() + limit
     while S.run and os.clock() < untilAt do
@@ -506,7 +517,6 @@ local function hopTo(pos, radius, limit)
         if typeof(pos) == "Vector3" and math.abs(r.Position.Y - pos.Y) > 10 then
             y = r.Position.Y + math.clamp(pos.Y - r.Position.Y, -6, 6)
         end
-        h:Move(flat.Unit, false)
         r.CFrame = CFrame.new(dest.X, y, dest.Z) * (r.CFrame - r.CFrame.Position)
         task.wait(0.08)
     end
@@ -526,13 +536,13 @@ local function recoverDroppedEgg()
     local ok = false
     local _, root = humRoot()
     if root then
-        killKnockback() -- ตัดกระเด็นก่อนก้าวแรก
+        say("ไข่หลุดมือ — กันกระแทก + HOP")
+        antiKnockBurst(0.4)
         local egg = select(1, nearestSteal(RECOVER_R))
         local goal = (egg and egg.pos) or S.lastCarryPos or root.Position
         local goalD = (Vector3.new(goal.X, 0, goal.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude
-        say(string.format("ไข่หลุดมือ — ตัดกระเด็น+HOP ทันที d=%.0f%s", goalD, egg and "" or " (จุดถือล่าสุด)"))
+        say(string.format("HOP หาไข่ d=%.0f%s", goalD, egg and "" or " (จุดถือล่าสุด)"))
 
-        -- กระโดดเข้าหาไข่ทันที (timeout ยาวขึ้น — โดนดีดไกลได้)
         if hopTo(goal, APPROACH_R, 22) then
             say("รอ Prompt 1 วินาที…")
             task.wait(1)
@@ -550,7 +560,6 @@ local function recoverDroppedEgg()
                     fireSteal(egg.pp)
                     local deadline = os.clock() + 5
                     while S.run and not S.carrying and os.clock() < deadline do
-                        killKnockback()
                         task.wait(0.12)
                     end
                     if S.carrying then
@@ -823,9 +832,7 @@ if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) th
                 if r then S.lastCarryPos = r.Position end
                 say("server: ถือไข่แล้ว")
             elseif was and S.run then
-                -- โดนตีหลุดมือ: ตัดกระเด็น + HOP ทันที ไม่รอ returnHome รอบถัดไป
-                say("โดนหลุดมือ — HOP ตัดกระเด็นทันที")
-                killKnockback()
+                say("โดนหลุดมือ — กันกระแทก + HOP")
                 if not S.recovering then
                     task.spawn(function()
                         recoverDroppedEgg()
@@ -853,7 +860,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.11 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.12 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
