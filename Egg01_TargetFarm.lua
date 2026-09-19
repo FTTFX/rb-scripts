@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.1
+-- Egg01 Target Farm v1.2
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 
 if _G.EGG01_TARGET_FARM then
@@ -25,7 +25,7 @@ local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythi
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
 local selectedRarities = {}
 for _, rarity in ipairs(RARITY_ORDER) do selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare" end
-local HOME_R, STEAL_R, STEP = 60, 16, 140
+local HOME_R, STEAL_R, APPROACH_R, STEP = 60, 16, 7, 140
 local lines = {}
 
 local function humRoot()
@@ -83,7 +83,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.1"
+title.Text = "Egg01 Target Farm v1.2"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -291,11 +291,20 @@ local function walkTo(pos, radius, limit)
     return false
 end
 
+local function stopMove()
+    local h, r = humRoot()
+    if h and r then
+        h:MoveTo(r.Position)
+        h:Move(Vector3.zero)
+    end
+end
+
 local function fireSteal(prompt)
     if not fp or not prompt then return false end
     local old = prompt.HoldDuration
-    local ok = pcall(function() prompt.HoldDuration = 0 fp(prompt) end)
+    local ok, err = pcall(function() prompt.HoldDuration = 0 fp(prompt) end)
     pcall(function() prompt.HoldDuration = old end)
+    if not ok then say("Steal error: " .. tostring(err)) end
     return ok
 end
 
@@ -399,6 +408,7 @@ local function runOne()
     task.spawn(function()
         say("ไปหา " .. target.cat)
         if not walkTo(target.pos, STEAL_R, 80) then say("ไปถึงไข่ไม่สำเร็จ") S.run = false end
+        stopMove() -- ยกเลิก MoveTo เดิมก่อนกด ไม่ให้ตัวละครไหลเลยไข่
         if S.run then
             local prompt, matchD = promptAtTarget(target)
             if not prompt then
@@ -406,7 +416,19 @@ local function runOne()
                 S.run = false
             else
                 target.pp = prompt
-                say(string.format("เจอ Prompt match=%.1f", matchD))
+                local ppPart = prompt.Parent and (prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart", true))
+                if ppPart then
+                    say(string.format("เจอ Prompt match=%.1f — เข้าใกล้", matchD))
+                    walkTo(ppPart.Position, APPROACH_R, 8)
+                    stopMove()
+                    prompt = select(1, promptAtTarget(target))
+                    if not prompt then
+                        say("Prompt หายระหว่างเข้าใกล้")
+                        S.run = false
+                    else
+                        target.pp = prompt
+                    end
+                end
             end
         end
         if S.run then
@@ -514,8 +536,12 @@ if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) th
         if typeof(row) == "table" and row.IsCarrying ~= nil then
             S.carrying = row.IsCarrying == true
             if row.AreaId then S.eggArea = row.AreaId end
+            if S.carrying then say("server: ถือไข่แล้ว") end
         end
     end)
+    lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
+else
+    lines[#lines + 1] = "ไม่พบ FieldEggCarry — จะตรวจผล Steal ไม่ได้"
 end
 
 bHome.MouseButton1Click:Connect(function()
@@ -527,7 +553,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.1 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.2 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
