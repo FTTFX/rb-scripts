@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.9
+-- Egg01 Target Farm v2.0
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -24,8 +24,12 @@ local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
+local RARITY_VALUE, BALANCED_RARITY_STUDS = {}, 400 -- หนึ่งขั้น rarity มีค่าน้ำหนักเท่าระยะ 400 studs
 local selectedRarities = {}
-for _, rarity in ipairs(RARITY_ORDER) do selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare" end
+for i, rarity in ipairs(RARITY_ORDER) do
+    RARITY_VALUE[rarity] = i
+    selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
+end
 local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R = 60, 16, 7, 100, 30
 local lines = {}
 
@@ -84,7 +88,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.9"
+title.Text = "Egg01 Target Farm v2.0"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -164,7 +168,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "HOME ที่ฐาน → ตั้ง MinScale/Zone → START"
+status.Text = "BALANCED: rarity สำคัญ + ระยะ → START"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -264,8 +268,9 @@ local function chooseTarget()
             if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not blockedUntil then
                 eligible = eligible + 1
                 local dist = (pos - root.Position).Magnitude
-                if not best or dist < best.dist then
-                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist }
+                local score = (RARITY_VALUE[rarity] or 0) * BALANCED_RARITY_STUDS - dist
+                if not best or score > best.score or (score == best.score and dist < best.dist) then
+                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score }
                 end
             elseif pos and scale and blockedUntil then
                 skipped = skipped + 1
@@ -277,7 +282,7 @@ local function chooseTarget()
     for area in pairs(foundZones) do if area ~= "ALL" then ZONE_CHOICES[#ZONE_CHOICES + 1] = area end end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
     if best then
-        say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", best.rar, best.cat, best.scale, best.area, best.dist))
+        say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.score))
     else
         say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE))
     end
@@ -622,7 +627,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.9 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.0 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -631,4 +636,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("HOME ที่ฐาน → เลือก Scale/Zone/Rarity จากปุ่ม → SCAN หรือ START")
+say("BALANCED: rarity 1 ขั้น = ระยะ 400 studs | เลือก Scale/Zone/Rarity → START")
