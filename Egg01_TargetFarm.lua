@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.14
--- หลุดมือ: HOP ทันทีไม่รอ snapshot/1วิ | กันกระแทกสั้น | วิ่ง MoveTo | ไล่โซน
+-- Egg01 Target Farm v1.15
+-- ถือไข่: FieldEggCarry + fallback DropHeldEgg → วิ่งกลับทันที | หลุดมือ HOP | ไล่โซน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -54,10 +54,44 @@ local function findNet(name, className)
     for _, root in ipairs({ networking, RS }) do
         if root then
             for _, item in ipairs(root:GetDescendants()) do
-                if item.Name:find(name, 1, true) and (not className or item:IsA(className)) then return item end
+                if item.Name:find(name, 1, true) then
+                    if not className or item:IsA(className) then return item end
+                    if item:IsA("RemoteEvent") or item:IsA("UnreliableRemoteEvent") or item:IsA("RemoteFunction") then
+                        return item
+                    end
+                end
             end
         end
     end
+end
+
+-- ถือไข่จริงไหม: RE หรือ GUI DropHeldEgg (ตอนไม่มี FieldEggCarry)
+local function guiShowsCarry()
+    local g = PG:FindFirstChild("DropHeldEgg")
+    if g then return true end
+    for _, c in ipairs(PG:GetChildren()) do
+        if c.Name:find("DropHeld", 1, true) or c.Name:find("HeldEgg", 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function isHolding()
+    if S.carrying then return true end
+    if guiShowsCarry() then
+        S.carrying = true
+        return true
+    end
+    return false
+end
+
+local function markHolding(why)
+    if S.carrying then return end
+    S.carrying = true
+    local _, r = humRoot()
+    if r then S.lastCarryPos = r.Position end
+    say(why or "ถือไข่แล้ว — วิ่งกลับทันที")
 end
 
 -- ===== GUI =====
@@ -85,7 +119,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.14"
+title.Text = "Egg01 Target Farm v1.15"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -658,19 +692,18 @@ local function returnHome()
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
-        if S.carrying then
+        if isHolding() then
             S.lastCarryPos = r.Position
         elseif not recoverDroppedEgg() then
             return false
         end
         h, r = humRoot()
         if not h or not r then return false end
-        if not S.carrying then
+        if not isHolding() then
             task.wait(0.05)
         else
             local d = dist2(r.Position, S.home)
             if d <= HOME_R then stopMove(); return true end
-            -- วิ่งปกติด้วย MoveTo เท่านั้น — ไม่ HOP / ไม่ตัด velocity
             h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
             if os.clock() - lastReport >= 1 then
                 say(string.format("วิ่งกลับ HOME d=%.0f", d))
@@ -748,23 +781,25 @@ local function runOne()
                         elseif S.run and not S.skipUids[tostring(target.uid)] then
                             say(string.format("ยิง Steal (match=%.1f)", readyMatch or matchD))
                             fireSteal(target.pp)
-                            local deadline, lastFire = os.clock() + 6, os.clock()
-                            while S.run and not S.carrying and os.clock() < deadline do
-                                if os.clock() - lastFire >= 0.55 then
+                            -- รอถือไข่สั้นๆ — เจอ Carry/DropHeldEgg แล้ววิ่งกลับทันที
+                            local deadline, lastFire = os.clock() + 4, os.clock()
+                            while S.run and not isHolding() and os.clock() < deadline do
+                                if guiShowsCarry() then markHolding("GUI DropHeldEgg — ถือไข่แล้ว") break end
+                                if os.clock() - lastFire >= 0.4 then
                                     local pp2 = select(1, promptAtTarget(target))
                                     if pp2 then fireSteal(pp2) end
                                     lastFire = os.clock()
                                 end
-                                task.wait(0.12)
+                                task.wait(0.08)
                             end
-                            if not S.carrying then
+                            if not isHolding() then
                                 skipTarget("Steal ไม่สำเร็จ/เป้าย้าย")
                             else
                                 S.heldUid = tostring(target.uid)
                                 S.heldCat = tostring(target.cat)
                                 local _, rHold = humRoot()
                                 if rHold then S.lastCarryPos = rHold.Position end
-                                say("ได้ไข่แล้ว — กลับบ้าน")
+                                say("ได้ไข่แล้ว — วิ่งกลับทันที")
                                 if returnHome() then
                                     say("ถึง HOME — วางเข้าคอกเอง")
                                 else
@@ -898,8 +933,9 @@ bRarity.MouseButton1Click:Connect(function()
     rarityMenu.Visible = not rarityMenu.Visible
 end)
 
-local carry = findNet("FieldEggCarry")
-if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) then
+local function bindCarryRemote(carry)
+    if not carry then return false end
+    if not (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) then return false end
     S.conns[#S.conns + 1] = carry.OnClientEvent:Connect(function(row)
         if typeof(row) == "table" and row.IsCarrying ~= nil then
             local was = S.carrying
@@ -910,7 +946,7 @@ if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) th
                 if r then S.lastCarryPos = r.Position end
                 if row.Uid ~= nil then S.heldUid = tostring(row.Uid) end
                 if row.AssetCategory then S.heldCat = tostring(row.AssetCategory) end
-                say("server: ถือไข่แล้ว" .. (S.heldCat and (" " .. S.heldCat) or ""))
+                say("server: ถือไข่แล้ว" .. (S.heldCat and (" " .. S.heldCat) or "") .. " — วิ่งกลับได้")
             elseif was and S.run then
                 say("โดนหลุดมือ — กันกระแทก + HOP ไปไข่ที่ถูก")
                 if not S.recovering then
@@ -921,10 +957,35 @@ if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) th
             end
         end
     end)
+    return true
+end
+
+-- หา FieldEggCarry ทันที + ลองใหม่ถ้า Networking ยังไม่โหลด
+local carry = findNet("FieldEggCarry")
+if bindCarryRemote(carry) then
     lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
 else
-    lines[#lines + 1] = "ไม่พบ FieldEggCarry — จะตรวจผล Steal ไม่ได้"
+    lines[#lines + 1] = "รอ FieldEggCarry… (ใช้ DropHeldEgg สำรอง)"
+    task.spawn(function()
+        for _ = 1, 30 do
+            task.wait(0.5)
+            local c = findNet("FieldEggCarry")
+            if bindCarryRemote(c) then
+                say("ฟัง FieldEggCarry ✅ (สาย)")
+                return
+            end
+        end
+        say("ไม่พบ FieldEggCarry — ใช้ GUI DropHeldEgg แทน")
+    end)
 end
+
+-- ปุ่ม Drop โผล่ = ถือไข่แล้ว → ตั้ง carrying ทันที
+S.conns[#S.conns + 1] = PG.ChildAdded:Connect(function(ch)
+    if ch.Name:find("DropHeld", 1, true) or ch.Name == "DropHeldEgg" then
+        if S.run then markHolding("GUI DropHeldEgg — วิ่งกลับทันที") end
+    end
+end)
+if guiShowsCarry() and S.run then markHolding("GUI DropHeldEgg") end
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = humRoot()
@@ -940,7 +1001,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.14 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.15 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
