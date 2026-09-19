@@ -1,6 +1,6 @@
--- Egg01 Target Farm v1.3
+-- Egg01 Target Farm v1.4
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
--- Re-upload: same v1.3 behavior
+-- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -84,7 +84,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.3"
+title.Text = "Egg01 Target Farm v1.4"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -433,15 +433,16 @@ local function runOne()
             end
         end
         if S.run then
-            say("ยิง Steal")
-            fireSteal(target.pp)
-            local deadline = os.clock() + 5
-            while S.run and not S.carrying and os.clock() < deadline do task.wait(0.2) end
-            if not S.carrying then say("Steal ไม่สำเร็จ/เป้าย้าย") S.run = false end
-        end
-        if S.run and S.carrying then
-            say("ได้ไข่แล้ว — กลับบ้าน")
-            if returnHome() then say("ถึง HOME — วางเข้าคอกเอง") else say("กลับบ้านไม่สำเร็จ") end
+            say("ยิง Steal + วิ่งกลับทันที")
+            if not fireSteal(target.pp) then
+                say("ยิง Steal ไม่สำเร็จ")
+                S.run = false
+            else
+                -- บางเซิร์ฟเวอร์ไม่มี FieldEggCarry ฝั่ง client: ออกจากจุดเสี่ยงก่อน
+                -- ถ้า event มีและไข่หลุด มันจะเปลี่ยน carrying=false เพื่อเข้า recovery เอง
+                S.carrying = true
+                if returnHome() then say("ถึง HOME — วางเข้าคอกเอง") else say("กลับบ้านไม่สำเร็จ") end
+            end
         end
         S.run = false
         bStart.Text = "START"
@@ -533,6 +534,7 @@ end)
 
 local carry = findNet("FieldEggCarry")
 if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) then
+    S.carryAvailable = true
     S.conns[#S.conns + 1] = carry.OnClientEvent:Connect(function(row)
         if typeof(row) == "table" and row.IsCarrying ~= nil then
             S.carrying = row.IsCarrying == true
@@ -554,7 +556,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.3 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.4 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
