@@ -1,5 +1,5 @@
--- Egg01 Target Farm v1.9
--- ไล่โซนตามลำดับที่ติ๊ก | Zone multi-tick | Prompt Steal/ขโมย | ยิงซ้ำ | HOME_R=110
+-- Egg01 Target Farm v1.10
+-- โดนตีหลุดมือ: ตัดกระเด็น+HOP ทันที | ไล่โซนตามคิว | Prompt/ยิงซ้ำ | HOME_R=110
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -15,7 +15,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, lastCarryPos = nil, skipUids = {}, focusZone = nil, zoneIdx = 1 }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, lastCarryPos = nil, skipUids = {}, focusZone = nil, zoneIdx = 1, recovering = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE = 1
@@ -85,7 +85,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.9"
+title.Text = "Egg01 Target Farm v1.10"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -468,82 +468,125 @@ local function promptReadyToFire(target, prompt)
     return (pos - root.Position).Magnitude <= STEAL_R, matchD
 end
 
--- HOP 14: ระยะที่ผ่าน MoveSpy แล้ว ใช้เฉพาะตอนตามเก็บไข่ที่หลุดมือ
+-- ตัดแรงกระเด็น/ลอยตอนโดนตี — แล้ว HOP หาไข่ทันที
+local function killKnockback()
+    local h, r = humRoot()
+    if not r then return end
+    pcall(function()
+        r.AssemblyLinearVelocity = Vector3.zero
+        r.AssemblyAngularVelocity = Vector3.zero
+    end)
+    if h then
+        pcall(function()
+            h.PlatformStand = false
+            h:ChangeState(Enum.HumanoidStateType.Running)
+        end)
+        h:Move(Vector3.zero)
+        h:MoveTo(r.Position)
+    end
+end
+
+-- HOP 14: ตัด velocity ทุกก้าว — ใช้ตอนเก็บไข่หลุดมือ / กันลอยไกล
 local function hopTo(pos, radius, limit)
     local untilAt = os.clock() + limit
     while S.run and os.clock() < untilAt do
         local h, r = humRoot()
         if not h or not r then return false end
+        killKnockback()
         local flat = Vector3.new(pos.X - r.Position.X, 0, pos.Z - r.Position.Z)
-        if flat.Magnitude <= radius then stopMove(); return true end
-        local step = math.min(14, flat.Magnitude - radius)
+        if flat.Magnitude <= radius then
+            stopMove()
+            killKnockback()
+            return true
+        end
+        local step = math.min(14, math.max(flat.Magnitude - radius, 0))
+        if step < 0.5 then step = flat.Magnitude end
         local dest = r.Position + flat.Unit * step
+        local y = dest.Y
+        if typeof(pos) == "Vector3" and math.abs(r.Position.Y - pos.Y) > 10 then
+            y = r.Position.Y + math.clamp(pos.Y - r.Position.Y, -6, 6)
+        end
         h:Move(flat.Unit, false)
-        r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
-        task.wait(0.10)
+        r.CFrame = CFrame.new(dest.X, y, dest.Z) * (r.CFrame - r.CFrame.Position)
+        task.wait(0.08)
     end
     return false
 end
 
 local function recoverDroppedEgg()
+    if S.recovering then
+        local waitUntil = os.clock() + 20
+        while S.recovering and not S.carrying and os.clock() < waitUntil do
+            if not S.run then return false end
+            task.wait(0.1)
+        end
+        return S.carrying == true
+    end
+    S.recovering = true
+    local ok = false
     local _, root = humRoot()
-    if not root then return false end
+    if root then
+        killKnockback() -- ตัดกระเด็นก่อนก้าวแรก
+        local egg = select(1, nearestSteal(RECOVER_R))
+        local goal = (egg and egg.pos) or S.lastCarryPos or root.Position
+        local goalD = (Vector3.new(goal.X, 0, goal.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude
+        say(string.format("ไข่หลุดมือ — ตัดกระเด็น+HOP ทันที d=%.0f%s", goalD, egg and "" or " (จุดถือล่าสุด)"))
 
-    -- จุดเป้า: Prompt ที่เจอ / ตำแหน่งถือไข่ล่าสุด / ยืนอยู่ตอนนี้
-    local egg, d = nearestSteal(RECOVER_R)
-    local goal = (egg and egg.pos) or S.lastCarryPos or root.Position
-    local goalD = (Vector3.new(goal.X, 0, goal.Z) - Vector3.new(root.Position.X, 0, root.Position.Z)).Magnitude
-    say(string.format("ไข่หลุดมือ — HOP หาไข่ทันที d=%.0f%s", goalD, egg and "" or " (ใช้ตำแหน่งล่าสุด)"))
-
-    if not hopTo(goal, APPROACH_R, 14) then
-        say("HOP หาไข่ไม่ถึง")
-        return false
+        -- กระโดดเข้าหาไข่ทันที (timeout ยาวขึ้น — โดนดีดไกลได้)
+        if hopTo(goal, APPROACH_R, 22) then
+            say("รอ Prompt 1 วินาที…")
+            task.wait(1)
+            if S.run then
+                egg = nil
+                local retryUntil = os.clock() + 4
+                while S.run and os.clock() < retryUntil do
+                    killKnockback()
+                    egg = select(1, nearestSteal(math.max(STEAL_R, 36)))
+                    if egg then break end
+                    if S.lastCarryPos then hopTo(S.lastCarryPos, APPROACH_R, 4) end
+                    task.wait(0.2)
+                end
+                if egg then
+                    fireSteal(egg.pp)
+                    local deadline = os.clock() + 5
+                    while S.run and not S.carrying and os.clock() < deadline do
+                        killKnockback()
+                        task.wait(0.12)
+                    end
+                    if S.carrying then
+                        say("เก็บไข่คืนแล้ว — วิ่งต่อ")
+                        ok = true
+                    else
+                        say("เก็บไข่คืนไม่สำเร็จ")
+                    end
+                else
+                    say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
+                end
+            end
+        else
+            say("HOP หาไข่ไม่ถึง")
+        end
     end
-
-    -- โดนตีแล้ว Prompt ยังไม่ขึ้นทันที — รอ 1 วิ แล้วค่อยยิง
-    say("รอ Prompt 1 วินาที…")
-    task.wait(1)
-    if not S.run then return false end
-
-    egg = nil
-    local retryUntil = os.clock() + 3
-    while S.run and os.clock() < retryUntil do
-        egg = select(1, nearestSteal(math.max(STEAL_R, 28)))
-        if egg then break end
-        -- ยังไม่เจอ — HOP ใกล้จุดเดิมอีกนิด
-        if S.lastCarryPos then hopTo(S.lastCarryPos, APPROACH_R, 3) end
-        task.wait(0.25)
-    end
-    if not egg then
-        say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
-        return false
-    end
-
-    fireSteal(egg.pp)
-    local deadline = os.clock() + 4
-    while S.run and not S.carrying and os.clock() < deadline do task.wait(0.15) end
-    if S.carrying then
-        say("เก็บไข่คืนแล้ว — วิ่งต่อ")
-        return true
-    end
-    say("เก็บไข่คืนไม่สำเร็จ")
-    return false
+    S.recovering = false
+    return ok
 end
 
 local function returnHome()
-    local deadline, lastReport = os.clock() + 120, 0
+    local deadline, lastReport = os.clock() + 180, 0
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
         if S.carrying then
             S.lastCarryPos = r.Position
+            -- ระหว่างวิ่งกลับ ถ้าเริ่มลอย/กระเด็นหนัก ตัด velocity เบาๆ
+            local v = r.AssemblyLinearVelocity
+            if v and v.Magnitude > 80 then killKnockback() end
         elseif not recoverDroppedEgg() then
             return false
         end
         h, r = humRoot()
         if not h or not r then return false end
         if not S.carrying then
-            -- เพิ่งเก็บคืน — ลูปต่อเพื่ออัปเดตตำแหน่งแล้ววิ่งต่อ
             task.wait(0.05)
         else
             local d = dist2(r.Position, S.home)
@@ -774,14 +817,23 @@ local carry = findNet("FieldEggCarry")
 if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) then
     S.conns[#S.conns + 1] = carry.OnClientEvent:Connect(function(row)
         if typeof(row) == "table" and row.IsCarrying ~= nil then
+            local was = S.carrying
             S.carrying = row.IsCarrying == true
             if row.AreaId then S.eggArea = row.AreaId end
             if S.carrying then
                 local _, r = humRoot()
                 if r then S.lastCarryPos = r.Position end
                 say("server: ถือไข่แล้ว")
+            elseif was and S.run then
+                -- โดนตีหลุดมือ: ตัดกระเด็น + HOP ทันที ไม่รอ returnHome รอบถัดไป
+                say("โดนหลุดมือ — HOP ตัดกระเด็นทันที")
+                killKnockback()
+                if not S.recovering then
+                    task.spawn(function()
+                        recoverDroppedEgg()
+                    end)
+                end
             end
-            -- หลุดมือ: คง lastCarryPos ตอนยังถือ (ไข่ตกแถวนั้น) อย่าทับด้วยจุดหลังโดนดีด
         end
     end)
     lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
@@ -795,10 +847,15 @@ bHome.MouseButton1Click:Connect(function()
 end)
 bScan.MouseButton1Click:Connect(chooseTarget)
 bStart.MouseButton1Click:Connect(runOne)
-bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
+bStop.MouseButton1Click:Connect(function()
+    S.run = false
+    S.recovering = false
+    bStart.Text = "START"
+    say("STOP")
+end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.9 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.10 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
