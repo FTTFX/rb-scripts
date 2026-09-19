@@ -1,4 +1,4 @@
--- Egg01 Target Farm v1.6
+-- Egg01 Target Farm v1.7
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, hopUsed = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, lastCarryScan = 0, hopUsed = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -84,7 +84,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v1.6"
+title.Text = "Egg01 Target Farm v1.7"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -351,7 +351,26 @@ local function hopOnceToward(pos, radius)
     return true
 end
 
+-- Networking บางรอบยังไม่ถูกสร้างตอน inject; เรียกซ้ำขณะวิ่งกลับได้
+local function attachCarryListener()
+    if S.carryConn then return true end
+    local carry = findNet("FieldEggCarry")
+    if not carry or not (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) then return false end
+    S.carryAvailable = true
+    S.carryConn = carry.OnClientEvent:Connect(function(row)
+        if typeof(row) == "table" and row.IsCarrying ~= nil then
+            S.carrying = row.IsCarrying == true
+            if row.AreaId then S.eggArea = row.AreaId end
+            if S.carrying then say("server: ถือไข่แล้ว") else say("server: ไข่หลุดมือ — กำลังกู้") end
+        end
+    end)
+    S.conns[#S.conns + 1] = S.carryConn
+    lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
+    return true
+end
+
 local function recoverDroppedEgg()
+    stopMove() -- event แจ้งหลุด: หยุดวิ่งก่อน แล้วค่อยหาจุดไข่
     local egg, d = nearestSteal(RECOVER_R)
     if not egg then
         say("ไข่หลุดมือ แต่ไม่เจอ Prompt ใกล้ตัว")
@@ -379,6 +398,10 @@ local function returnHome()
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
+        if not S.carryAvailable and os.clock() - S.lastCarryScan >= 1 then
+            S.lastCarryScan = os.clock()
+            attachCarryListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
+        end
         if not S.carrying and not recoverDroppedEgg() then return false end
         h, r = humRoot()
         if not h or not r then return false end
@@ -546,18 +569,7 @@ bRarity.MouseButton1Click:Connect(function()
     rarityMenu.Visible = not rarityMenu.Visible
 end)
 
-local carry = findNet("FieldEggCarry")
-if carry and (carry:IsA("RemoteEvent") or carry:IsA("UnreliableRemoteEvent")) then
-    S.carryAvailable = true
-    S.conns[#S.conns + 1] = carry.OnClientEvent:Connect(function(row)
-        if typeof(row) == "table" and row.IsCarrying ~= nil then
-            S.carrying = row.IsCarrying == true
-            if row.AreaId then S.eggArea = row.AreaId end
-            if S.carrying then say("server: ถือไข่แล้ว") end
-        end
-    end)
-    lines[#lines + 1] = "ฟัง FieldEggCarry ✅"
-else
+if not attachCarryListener() then
     lines[#lines + 1] = "ไม่พบ FieldEggCarry — จะตรวจผล Steal ไม่ได้"
 end
 
@@ -570,7 +582,7 @@ bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function() S.run = false; bStart.Text = "START"; say("STOP") end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v1.6 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v1.7 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
