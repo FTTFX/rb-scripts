@@ -1,10 +1,15 @@
 -- Egg01 Rift Farm v1.0 -- เฉพาะไข่ที่ชื่อ/Category มี Rift ใน FieldEggSnapshot
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local S={run=false,home=nil,gui=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function net(n) for _,x in ipairs(RS:GetDescendants()) do if x.Name:find(n,1,true) then return x end end end
+local function attachCarry()
+ if S.carryConn then return true end
+ local e=net("FieldEggCarry"); if not e or not e:IsA("RemoteEvent") then return false end
+ S.carryConn=e.OnClientEvent:Connect(function(row) if typeof(row)=="table" and row.IsCarrying~=nil then S.carrying=row.IsCarrying==true end end); return true
+end
 local function pos(r) for _,k in ipairs({"BottomCFrame","BoundsCFrame","CFrame","Position"}) do local v=r[k]; if typeof(v)=="CFrame" then return v.Position elseif typeof(v)=="Vector3" then return v end end end
 local function rift(r) for _,k in ipairs({"AssetCategory","AssetId","AssetName","Name","EggType","Type"}) do if tostring(r[k]or""):lower():find("rift",1,true) then return true end end end
 local function wanted()
@@ -27,8 +32,10 @@ local function one(t)
  if not walk(t.pos,8,90) then say("ไป Rift egg ไม่สำเร็จ") return end; stop()
  local pick,md; for _,v in ipairs(prompts()) do local d=(v.pos-t.pos).Magnitude; if d<30 and (not md or d<md) then pick,md=v,d end end
  if not pick then say("Rift egg มีใน Snapshot แต่ไม่พบ Prompt") return end
- say(string.format("Rift Prompt match=%.1f — Steal",md)); pcall(function() local old=pick.p.HoldDuration; pick.p.HoldDuration=0; fp(pick.p); pick.p.HoldDuration=old end)
- task.wait(.35); if S.home then walk(S.home,60,120); stop(); say("กลับ HOME") else say("เก็บแล้ว — ไม่มี HOME จึงหยุด") end
+ say(string.format("Rift Prompt match=%.1f — Steal",md)); S.carrying=false; pcall(function() local old=pick.p.HoldDuration; pick.p.HoldDuration=0; fp(pick.p); pick.p.HoldDuration=old end)
+ local untilT=os.clock()+2; while S.run and os.clock()<untilT and not S.carrying do task.wait(.05) end
+ if not S.carrying then say("Steal ยังไม่ยืนยันถือไข่ — ไม่วิ่งกลับ") return end
+ say("ถือไข่แล้ว — กลับ HOME"); if S.home then walk(S.home,60,120); stop(); say("กลับ HOME") else say("เก็บแล้ว — ไม่มี HOME จึงหยุด") end
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
@@ -38,5 +45,5 @@ local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not fp then say("ไม่มี fireproximityprompt") return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — รอเฉพาะ Rift egg") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.0 ===\n"..table.concat(lines,"\n"))end end)
+attachCarry(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not fp then say("ไม่มี fireproximityprompt") return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — เก็บตาม 3 ชื่อใน UI") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.1 ===\n"..table.concat(lines,"\n"))end end)
 say("เปิด Rift → HOME → START | เก็บเฉพาะ 3 ตัวที่ Rift ขอ")
