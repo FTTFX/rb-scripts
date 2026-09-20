@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.9
+-- Egg01 Target Farm v3.0
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -90,7 +90,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.9"
+title.Text = "Egg01 Target Farm v3.0"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -247,6 +247,15 @@ local function getPrompts()
     return out
 end
 
+-- Event egg ไม่ควรถูกพลาดเพราะยังไม่มี rarity config หรือ scale ต่ำกว่า filter
+local function isRiftEgg(row)
+    if typeof(row) ~= "table" then return false end
+    for _, key in ipairs({ "AssetCategory", "AssetId", "AssetName", "Name", "EggType", "Type" }) do
+        if tostring(row[key] or ""):lower():find("rift", 1, true) then return true end
+    end
+    return false
+end
+
 local function chooseTarget()
     readConfig()
     local rf = findNet("AskFieldEggSnapshot", "RemoteFunction")
@@ -263,19 +272,21 @@ local function chooseTarget()
         if typeof(row) == "table" then
             local pos, scale, area = posOf(row), tonumber(row.AssetScale), row.AreaId
             if area then foundZones[tostring(area)] = true end
+            local riftEgg = isRiftEgg(row)
             local rarity = rarityMap[tostring(row.AssetCategory or "")]
             local targetKey = tostring(row.Uid or key)
             local blockedUntil = S.skipped[targetKey]
             if blockedUntil and blockedUntil <= os.clock() then S.skipped[targetKey] = nil; blockedUntil = nil end
-            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not blockedUntil then
+            local normalPass = scale and scale >= MIN_SCALE and zoneAllowed(area) and rarity and selectedRarities[rarity]
+            if pos and scale and row.State ~= "Carried" and (riftEgg or normalPass) and not blockedUntil then
                 eligible = eligible + 1
                 local dist = (pos - root.Position).Magnitude
-                -- Rarity คือแกนหลัก; scale ใหญ่มาก (ยกกำลังสอง) จึงมีสิทธิ์แซงระดับที่สูงกว่าได้
-                local rarityScore = (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
+                -- Rift ที่เจอใน snapshot มี priority สูงสุด; ไข่ปกติใช้ rarity + scale เช่นเดิม
+                local rarityScore = riftEgg and 1000000000000 or (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
                 local scaleScore = scale * scale * SCALE_SQUARED_POINTS
                 local score = rarityScore + scaleScore - math.min(dist, 99999)
                 if not best or score > best.score or (score == best.score and dist < best.dist) then
-                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
+                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or row.AssetName or "?", rar = riftEgg and "RIFT" or rarity, isRift = riftEgg, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
                 end
             elseif pos and scale and blockedUntil then
                 skipped = skipped + 1
@@ -287,7 +298,7 @@ local function chooseTarget()
     for area in pairs(foundZones) do if area ~= "ALL" then ZONE_CHOICES[#ZONE_CHOICES + 1] = area end end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
     if best then
-        say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
+        say(string.format("%s %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.isRift and "RIFT TARGET" or "TARGET", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
     else
         say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE))
     end
@@ -813,7 +824,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.9 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.0 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -822,4 +833,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("กด HOME ที่ฐานก่อน START | ไข่หลุด=Fly เบรก 0.12s รอ UID + HOP กันกระแทก 1 ครั้ง")
+say("RIFT EVENT FIRST | กด HOME ที่ฐานก่อน START | ไข่หลุด=Fly เบรก 0.12s รอ UID")
