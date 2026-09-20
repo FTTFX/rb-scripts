@@ -11,28 +11,67 @@ local function attachCarry()
  S.carryConn=e.OnClientEvent:Connect(function(row) if typeof(row)=="table" and row.IsCarrying~=nil then S.carrying=row.IsCarrying==true end end); return true
 end
 local function pos(r) for _,k in ipairs({"BottomCFrame","BoundsCFrame","CFrame","Position"}) do local v=r[k]; if typeof(v)=="CFrame" then return v.Position elseif typeof(v)=="Vector3" then return v end end end
-local function rift(r) for _,k in ipairs({"AssetCategory","AssetId","AssetName","Name","EggType","Type"}) do if tostring(r[k]or""):lower():find("rift",1,true) then return true end end end
+-- ไม่มีตัวกรอง Rarity: Rift ต้องการชื่อใดก็หาได้หมด แม้เป็น Common/Rare
+local function norm(s) return tostring(s or ""):lower():gsub("[^%w]", "") end
+local function rowNames(row)
+ local out={}
+ for _,k in ipairs({"AssetCategory","AssetName","Name","EggType","Type","AssetId"}) do
+  local v=row and row[k]; if v~=nil then out[#out+1]=tostring(v) end
+ end
+ local c=row and row.Config
+ if typeof(c)=="table" then for _,k in ipairs({"AssetCategory","AssetName","Name","Id","_id"}) do if c[k]~=nil then out[#out+1]=tostring(c[k]) end end end
+ return out
+end
 local function wanted()
  local root=LP.PlayerGui:FindFirstChild("RiftTradeIn",true); root=root and root:FindFirstChild("SacrificeInputs",true)
  if not root then say("เปิดหน้า Rift ก่อนเพื่ออ่าน 3 เป้า") return end
  local out={}; for i=1,3 do local box=root:FindFirstChild("Input"..i); local e=box and box:FindFirstChild("Empty"); local n=e and e:FindFirstChild("Name"); local a=e and e:FindFirstChild("Amount"); if n and a and a.Text=="0/1" then out[#out+1]=n.Text end end
  if #out==0 then say("Rift ครบ 3 ตัวแล้ว — รอคุณ STOP") return {} end; return out
 end
+local prompts,worldTarget
 local function target()
  local need=wanted(); if not need or #need==0 then return end
  local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then say("ไม่พบ Snapshot") return end
  local ok,a=pcall(function() return rf:InvokeServer() end); local rec=ok and (a.Records or a.records or a); local _,root=hr(); if typeof(rec)~="table" or not root then return end
- local best; for id,row in pairs(rec) do local p=typeof(row)=="table" and pos(row); local cat=tostring(row and (row.AssetCategory or row.AssetName) or ""); local wantedName=false; for _,n in ipairs(need) do if cat:lower()==n:lower() then wantedName=n end end; if p and wantedName and row.State~="Carried" then local d=(p-root.Position).Magnitude; if not best or d<best.d then best={uid=row.Uid or id,cat=cat,need=wantedName,pos=p,d=d} end end end
- if best then say(string.format("RIFT NEED %s d=%.0f",best.need,best.d)) else say("ยังไม่เจอไข่: "..table.concat(need,", ")) end; return best
+ local best; local total,withPos=0,0
+ for id,row in pairs(rec) do
+  if typeof(row)=="table" then
+   total=total+1; local p=pos(row); if p then withPos=withPos+1 end
+   local cat=tostring(row.AssetCategory or row.AssetName or row.Name or "?"); local wantedName=false
+   for _,n in ipairs(need) do
+    local want=norm(n)
+    for _,candidate in ipairs(rowNames(row)) do
+     local got=norm(candidate)
+     if got==want or (got~="" and (got:find(want,1,true) or want:find(got,1,true))) then wantedName=n; break end
+    end
+    if wantedName then break end
+   end
+   if p and wantedName and tostring(row.State or "")~="Carried" then
+    local d=(p-root.Position).Magnitude
+    if not best or d<best.d then best={uid=row.Uid or id,cat=cat,need=wantedName,pos=p,d=d} end
+   end
+  end
+ end
+ if not best and worldTarget then best=worldTarget(need,root) end
+ if best then say(string.format("RIFT NEED %s d=%.0f%s (ไม่ล็อก rarity)",best.need,best.d,best.world and " [world]" or "")) else say(string.format("ยังไม่เจอ: %s | Snapshot=%d pos=%d | ไม่ล็อก rarity",table.concat(need,", "),total,withPos)) end; return best
 end
-local function prompts() local o={}; for _,x in ipairs(workspace:GetDescendants()) do if x:IsA("ProximityPrompt") and x.Enabled and tostring(x.ActionText):lower():find("steal",1,true) then local q=x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart",true)); if q then o[#o+1]={p=x,pos=q.Position} end end end; return o end
+prompts=function() local o={}; for _,x in ipairs(workspace:GetDescendants()) do if x:IsA("ProximityPrompt") and x.Enabled and tostring(x.ActionText):lower():find("steal",1,true) then local q=x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart",true)); if q then o[#o+1]={p=x,pos=q.Position} end end end; return o end
+worldTarget=function(need,root)
+ local best
+ for _,v in ipairs(prompts()) do
+  local words={}; local node=v.p.Parent
+  for _=1,5 do if not node then break end; words[#words+1]=node.Name; for _,d in ipairs(node:GetDescendants()) do if d:IsA("TextLabel") or d:IsA("TextButton") then words[#words+1]=d.Text elseif d:IsA("StringValue") then words[#words+1]=d.Value end end; node=node.Parent end
+  for _,want in ipairs(need) do for _,word in ipairs(words) do if norm(word)==norm(want) then local dist=(v.pos-root.Position).Magnitude; if not best or dist<best.d then best={need=want,cat=want,pos=v.pos,d=dist,world=true,worldPrompt=v.p} end; break end end end
+ end
+ return best
+end
 local function walk(p,rad,lim) local t=os.clock(); while S.run and os.clock()-t<lim do local h,r=hr(); if not h or not r then return end; local g=Vector3.new(p.X,r.Position.Y,p.Z); if (g-r.Position).Magnitude<=rad then return true end; h:MoveTo(g); task.wait(.15) end end
 local function stop() local h,r=hr(); if h and r then h:MoveTo(r.Position); h:Move(Vector3.zero) end end
 local function one(t)
  if not walk(t.pos,8,90) then say("ไป Rift egg ไม่สำเร็จ") return end; stop()
- local pick,md; for _,v in ipairs(prompts()) do local d=(v.pos-t.pos).Magnitude; if d<30 and (not md or d<md) then pick,md=v,d end end
+ local pick,md=t.worldPrompt,t.worldPrompt and 0 or nil; for _,v in ipairs(prompts()) do local d=(v.pos-t.pos).Magnitude; if not pick and d<30 and (not md or d<md) then pick,md=v.p,d end end
  if not pick then say("Rift egg มีใน Snapshot แต่ไม่พบ Prompt") return end
- say(string.format("Rift Prompt match=%.1f — Steal",md)); S.carrying=false; pcall(function() local old=pick.p.HoldDuration; pick.p.HoldDuration=0; fp(pick.p); pick.p.HoldDuration=old end)
+ say(string.format("Rift Prompt match=%.1f — Steal",md)); S.carrying=false; pcall(function() local old=pick.HoldDuration; pick.HoldDuration=0; fp(pick); pick.HoldDuration=old end)
  local untilT=os.clock()+2; while S.run and os.clock()<untilT and not S.carrying do task.wait(.05) end
  if not S.carrying then say("Steal ยังไม่ยืนยันถือไข่ — ไม่วิ่งกลับ") return end
  say("ถือไข่แล้ว — กลับ HOME"); if S.home then walk(S.home,60,120); stop(); say("กลับ HOME") else say("เก็บแล้ว — ไม่มี HOME จึงหยุด") end
