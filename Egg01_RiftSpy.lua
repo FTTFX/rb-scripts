@@ -1,4 +1,4 @@
--- Egg01 Rift Spy v1.1
+-- Egg01 Rift Spy v1.2
 -- อ่านอย่างเดียว: ไม่ FireServer, ไม่กด Prompt, ไม่ขยับตัวละคร
 
 if _G.EGG01_RIFT_SPY then
@@ -142,6 +142,20 @@ local function bindRemote(remote)
     end)
 end
 
+local function readRiftState()
+    local remote
+    for _, inst in ipairs(RS:GetDescendants()) do
+        if inst:IsA("RemoteFunction") and inst.Name == "AskState" and hasKey(pathOf(inst)) then remote = inst break end
+    end
+    if not remote then say("ไม่พบ RF/Rift/AskState") return end
+    local ok, result = pcall(function() return remote:InvokeServer() end)
+    if ok then
+        say("RIFT STATE ← " .. compact(result))
+    else
+        say("RIFT STATE error: " .. tostring(result))
+    end
+end
+
 local function scanAll()
     local world = scanTree(workspace, "WS")
     local repl = scanTree(RS, "RS")
@@ -195,7 +209,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel", panel)
 title.Size = UDim2.new(1, -42, 0, 28); title.Position = UDim2.new(0, 10, 0, 4)
-title.BackgroundTransparency = 1; title.Text = "Egg01 Rift Spy v1.1 — READ ONLY"; title.TextColor3 = Color3.fromRGB(210, 175, 255)
+title.BackgroundTransparency = 1; title.Text = "Egg01 Rift Spy v1.2 — READ ONLY"; title.TextColor3 = Color3.fromRGB(210, 175, 255)
 title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
 
 local function button(text, x, color)
@@ -206,7 +220,7 @@ local function button(text, x, color)
     return b
 end
 
-local bScan = button("SCAN", 10, Color3.fromRGB(48, 98, 170))
+local bScan = button("STATE", 10, Color3.fromRGB(48, 98, 170))
 local bStart = button("START", 87, Color3.fromRGB(35, 145, 75))
 local bStop = button("STOP", 164, Color3.fromRGB(165, 50, 55))
 local bClear = button("CLEAR", 241, Color3.fromRGB(75, 75, 80))
@@ -220,7 +234,7 @@ logBox.TextColor3 = Color3.fromRGB(175, 245, 185); logBox.Font = Enum.Font.Code;
 logBox.TextXAlignment = Enum.TextXAlignment.Left; logBox.TextYAlignment = Enum.TextYAlignment.Top; logBox.TextWrapped = false
 Instance.new("UICorner", logBox).CornerRadius = UDim.new(0, 5)
 
-bScan.MouseButton1Click:Connect(scanAll)
+bScan.MouseButton1Click:Connect(function() scanAll(); readRiftState() end)
 bStart.MouseButton1Click:Connect(function()
     if S.run then return end
     S.run = true; bStart.Text = "ON"
@@ -248,9 +262,9 @@ bStop.MouseButton1Click:Connect(function() stopWatch(); bStart.Text = "START"; s
 bClear.MouseButton1Click:Connect(function() lines = {}; S.seen = {}; logBox.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Rift Spy v1.1 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Rift Spy v1.2 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function() stopWatch(); gui:Destroy(); _G.EGG01_RIFT_SPY = nil end)
 
-say("พร้อม — กด START, เปิด Rift แล้วกด Refresh/REROLL เอง 1 ครั้งเพื่อจับ Remote")
+say("พร้อม — กด STATE อ่าน Rift state | START แล้วกด Refresh/REROLL เอง 1 ครั้ง")
