@@ -5,7 +5,7 @@ if _G.EGG01_EXPERIMENT_FARM then
 end
 local Players=game:GetService("Players")
 local LP=Players.LocalPlayer
-local S={run=false,gui=nil,lines={}}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,gui=nil,lines={},searchOrigin=nil,searchIndex=0}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -56,9 +56,11 @@ local function robots()
     for _,x in ipairs(workspace:GetDescendants()) do
         if x:IsA("TextLabel") or x:IsA("TextButton") then
             local s=norm(x.Text)
-            if s:find("drscramble",1,true) or s:find("experiment",1,true) then
+            -- ป้ายชื่อหุ่นบางรอบมาเป็น "6/10 HP" ก่อนชื่อ Dr. Scramble จึงใช้ทั้งสองแบบ
+            local hasHP=tostring(x.Text):match("%d+%s*/%s*%d+")~=nil
+            if s:find("drscramble",1,true) or s:find("experiment",1,true) or hasHP then
                 local m=modelOf(x); local p=rootPart(m)
-                if m and p and not seen[m] and isExperiment(m) then
+                if m and p and not seen[m] and (isExperiment(m) or hasHP) then
                     seen[m]=true; local hp,max,label=hpOf(m)
                     if not hp or hp>0 then out[#out+1]={m=m,p=p,pos=p.Position,hp=hp,max=max,label=label,d=(p.Position-r.Position).Magnitude} end
                 end
@@ -67,12 +69,23 @@ local function robots()
     end
     table.sort(out,function(a,b)return a.d<b.d end); return out
 end
+local function searchStep()
+    local _,_,r=char(); if not r then return end
+    S.searchOrigin=S.searchOrigin or r.Position
+    -- เดินค้นหาแบบวงรอบ: ไม่วาร์ป และ scan ใหม่ทุกจุด
+    local offsets={Vector3.new(110,0,0),Vector3.new(110,0,110),Vector3.new(0,0,110),Vector3.new(-110,0,110),Vector3.new(-110,0,0),Vector3.new(-110,0,-110),Vector3.new(0,0,-110),Vector3.new(110,0,-110)}
+    S.searchIndex=(S.searchIndex % #offsets)+1
+    local goal=S.searchOrigin+offsets[S.searchIndex]
+    say(string.format("ไม่พบหุ่น — เดินค้นหาจุด %d/%d",S.searchIndex,#offsets))
+    walkTo(goal,14,12)
+end
+local walkTo
 local function scan()
     local all=robots(); say("พบหุ่น="..#all)
     for i=1,math.min(#all,6) do local x=all[i]; say(string.format("#%d %s hp=%s d=%.0f",i,x.m.Name,x.label or "?",x.d)) end
     return all
 end
-local function walkTo(point,range,limit)
+walkTo=function(point,range,limit)
     local began=os.clock()
     while S.run and os.clock()-began<limit do
         local _,h,r=char(); if not h or not r or h.Health<=0 then return false end
@@ -117,7 +130,8 @@ local folded=false;fold.MouseButton1Click:Connect(function() folded=not folded;f
 scanB.MouseButton1Click:Connect(scan)
 start.MouseButton1Click:Connect(function()
     if S.run then return end;S.run=true;start.Text="ON";say("AUTO ON — สแกน → วิ่ง → ตีหุ่นทีละตัว")
-    task.spawn(function() while S.run do local all=robots();if #all==0 then say("ไม่พบหุ่น — รอ 2s");task.wait(2) else hit(all[1]);task.wait(.4) end end;start.Text="AUTO" end)
+    local _,_,r=char();S.searchOrigin=r and r.Position or nil;S.searchIndex=0
+    task.spawn(function() while S.run do local all=robots();if #all==0 then searchStep();task.wait(.4) else hit(all[1]);task.wait(.4) end end;start.Text="AUTO" end)
 end)
 stopB.MouseButton1Click:Connect(function()S.run=false;local _,h,r=char();if h and r then h:MoveTo(r.Position);h:Move(Vector3.zero)end;say("STOP")end)
 copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.0 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
