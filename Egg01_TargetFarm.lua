@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.4
+-- Egg01 Target Farm v2.5
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -88,7 +88,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.4"
+title.Text = "Egg01 Target Farm v2.5"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -365,6 +365,27 @@ local function hopOnceToward(pos, radius)
     return true
 end
 
+-- ตัดเฉพาะแกน "ล็อกตัว" จาก 78RB_Fly: BodyVelocity=0 ชั่วครู่ แล้วลบทันที
+-- ไม่เปิด Fly loop/NOCLIP และไม่บังคับความเร็วระหว่างเดิน
+local function brakePulse(h, r, reason)
+    if not h or not r or not r.Parent then return false end
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "Egg01_BrakePulse"
+    bv.MaxForce = Vector3.new(1, 1, 1) * 9e9
+    bv.Velocity = Vector3.zero
+    bv.Parent = r
+    task.wait(0.08)
+    pcall(function() bv:Destroy() end)
+    if h.Parent and r.Parent then
+        h.PlatformStand = false
+        h.Sit = false
+        h:MoveTo(r.Position)
+        h:Move(Vector3.zero)
+    end
+    if reason then say("เบรกนิ่ง 0.08s — " .. reason) end
+    return true
+end
+
 -- กันอาการโดนตีเฉพาะตอนแบกกลับบ้าน: กระเด้งหนึ่งครั้ง แล้วรอบถัดไปกลับไป MoveTo ปกติ
 local function impactHopTowardHome(h, r, homeDistance)
     if S.impactHopUsed or not S.home then return false end
@@ -382,6 +403,7 @@ local function impactHopTowardHome(h, r, homeDistance)
     if flat.Magnitude <= HOME_R then return false end
     local reason = disrupted and ("state=" .. state.Name) or "ถูกผลักถอย"
     S.impactHopUsed = true
+    brakePulse(h, r, "รับแรงกระแทก")
     h.PlatformStand = false
     h.Sit = false
     h:ChangeState(Enum.HumanoidStateType.Running)
@@ -480,6 +502,8 @@ local function recoverDroppedEgg(dropPos)
     hopOnceToward(egg.pos, APPROACH_R)
     if not walkTo(egg.pos, APPROACH_R, 10) then return false end
     stopMove()
+    local bh, br = humRoot()
+    brakePulse(bh, br, "ถึงไข่ที่หลุด")
     egg = dropPos and stealAtPosition(dropPos, 30, true) or nearestSteal(STEAL_R)
     if not egg then say("Prompt UID เดิมหายระหว่างกลับไป") return false end
     if not fireSteal(egg.pp) then say("เก็บไข่คืนไม่สำเร็จ") return false end
@@ -548,6 +572,10 @@ local function farmTarget(target)
         return
     end
     stopMove() -- ยกเลิก MoveTo เดิมก่อนกด ไม่ให้ตัวละครไหลเลยไข่
+    do
+        local bh, br = humRoot()
+        brakePulse(bh, br, "ถึงตำแหน่งไข่")
+    end
     if not S.run then return end
 
     local prompt, matchD
@@ -578,6 +606,10 @@ local function farmTarget(target)
             return
         end
         stopMove()
+        do
+            local bh, br = humRoot()
+            brakePulse(bh, br, "ถึง Prompt")
+        end
         prompt = select(1, promptAtTarget(target, PROMPT_EXACT_R, true))
         if not prompt then
             say("Prompt หายระหว่างเข้าใกล้")
@@ -740,7 +772,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.4 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.5 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -749,4 +781,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("RARITY FIRST + Big Scale | Return Guard + HOP กันกระแทก 1 ครั้ง")
+say("RARITY FIRST + Big Scale | เบรก 0.08s + HOP กันกระแทก 1 ครั้ง")
