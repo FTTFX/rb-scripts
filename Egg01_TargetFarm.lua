@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.7
+-- Egg01 Target Farm v2.8
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -90,7 +90,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.7"
+title.Text = "Egg01 Target Farm v2.8"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -456,6 +456,7 @@ local function attachCarryListener()
             S.carrying = row.IsCarrying == true
             S.carryLostAt = S.carrying and 0 or os.clock()
             if row.AreaId then S.eggArea = row.AreaId end
+            if S.carrying then S.returnPaused = false end
             if S.carrying and S.expectedUid and row.Uid then
                 if tostring(row.Uid) == tostring(S.expectedUid) then
                     S.carryVerified = true
@@ -468,7 +469,13 @@ local function attachCarryListener()
             elseif S.carrying then
                 say("server: ถือไข่แล้ว")
             else
-                say("server: ไข่หลุดมือ — กำลังกู้")
+                if S.returning then
+                    S.returnPaused = true
+                    stopMove() -- หยุดทันทีใน callback ไม่รอรอบ MoveTo ถัดไป
+                    say("server: ไข่หลุดมือ — หยุดทันที รอพิกัด UID")
+                else
+                    say("server: ไข่หลุดมือ — กำลังกู้")
+                end
             end
         end
     end)
@@ -490,6 +497,8 @@ local function attachShiftListener()
         if pos then
             S.droppedPos = pos
             S.carrying = false
+            S.returnPaused = true
+            stopMove()
             say(string.format("UID %s หลุดมือ @%.0f,%.0f — กลับไปเก็บ", tostring(S.carriedUid), pos.X, pos.Z))
         end
     end)
@@ -519,7 +528,7 @@ local function recoverDroppedEgg(dropPos)
     egg = dropPos and stealAtPosition(dropPos, 30, true) or nearestSteal(STEAL_R)
     if not egg then say("Prompt UID เดิมหายระหว่างกลับไป") return false end
     if not fireSteal(egg.pp) then say("เก็บไข่คืนไม่สำเร็จ") return false end
-    S.droppedPos, S.carrying = nil, true -- เดินต่อทันที แม้ Carry event ยังไม่ถูกส่ง
+    S.droppedPos, S.carrying, S.returnPaused = nil, true, false -- เดินต่อทันที แม้ Carry event ยังไม่ถูกส่ง
     say("เก็บไข่ UID เดิมแล้ว — วิ่งต่อ")
     return true
 end
@@ -543,33 +552,43 @@ local function returnHome()
             attachShiftListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
         end
         local dropPos = S.droppedPos
-        if dropPos then
-            if not recoverDroppedEgg(dropPos) then return false end
-        elseif not S.carrying then
-            -- ถ้ามี Shift listener ให้รอพิกัด UID เดิมก่อน: ห้ามหยิบไข่ใกล้ตัวแบบสุ่ม
-            if S.shiftConn then
-                if os.clock() - (S.carryLostAt or os.clock()) >= 2 then
-                    say("ไข่หลุด แต่ไม่ได้พิกัด UID เดิม — ไม่หยิบไข่อื่น")
-                    return false
-                end
-            elseif not recoverDroppedEgg(nil) then
+        -- Carry=false มาก่อน Shift ได้: ยืนรอ UID โดยไม่ออก MoveTo ไป HOME
+        if S.returnPaused and not dropPos and S.shiftConn then
+            stopMove()
+            if os.clock() - (S.carryLostAt or os.clock()) >= 2 then
+                say("ไข่หลุด แต่ไม่ได้พิกัด UID เดิม — ไม่หยิบไข่อื่น")
                 return false
             end
+            task.wait(0.05)
+        else
+            if dropPos then
+                if not recoverDroppedEgg(dropPos) then return false end
+            elseif not S.carrying then
+            -- ถ้ามี Shift listener ให้รอพิกัด UID เดิมก่อน: ห้ามหยิบไข่ใกล้ตัวแบบสุ่ม
+                if S.shiftConn then
+                    if os.clock() - (S.carryLostAt or os.clock()) >= 2 then
+                        say("ไข่หลุด แต่ไม่ได้พิกัด UID เดิม — ไม่หยิบไข่อื่น")
+                        return false
+                    end
+                elseif not recoverDroppedEgg(nil) then
+                    return false
+                end
+            end
+            h, r = humRoot()
+            if not h or not r then return false end
+            local d = dist2(r.Position, S.home)
+            if d <= HOME_R then stopMove(); return true end
+            -- ตรวจการผลัก/ล้มก่อนสั่งเดินรอบถัดไป; HOP นี้เกิดได้เพียงครั้งเดียวต่อการกลับบ้าน
+            impactHopTowardHome(h, r, d)
+            S.lastReturnDist = d
+            -- เดินตรงยาวถึง HOME; ยิง MoveTo ซ้ำเฉพาะเพื่อกันชน/สะดุด
+            h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+            if os.clock() - lastReport >= 1 then
+                say(string.format("วิ่งกลับ HOME d=%.0f", d))
+                lastReport = os.clock()
+            end
+            task.wait(0.15)
         end
-        h, r = humRoot()
-        if not h or not r then return false end
-        local d = dist2(r.Position, S.home)
-        if d <= HOME_R then stopMove(); return true end
-        -- ตรวจการผลัก/ล้มก่อนสั่งเดินรอบถัดไป; HOP นี้เกิดได้เพียงครั้งเดียวต่อการกลับบ้าน
-        impactHopTowardHome(h, r, d)
-        S.lastReturnDist = d
-        -- เดินตรงยาวถึง HOME; ยิง MoveTo ซ้ำเฉพาะเพื่อกันชน/สะดุด
-        h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
-        if os.clock() - lastReport >= 1 then
-            say(string.format("วิ่งกลับ HOME d=%.0f", d))
-            lastReport = os.clock()
-        end
-        task.wait(0.15)
     end
     return false
 end
@@ -643,7 +662,7 @@ local function farmTarget(target)
     end
     -- บางเซิร์ฟเวอร์ไม่มี FieldEggCarry ฝั่ง client: ออกจากจุดเสี่ยงก่อน
     -- ถ้า event มีและไข่หลุด มันจะเปลี่ยน carrying=false เพื่อเข้า recovery เอง
-    S.carriedUid, S.droppedPos, S.carryLostAt, S.returning = target.uid, nil, 0, true
+    S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused = target.uid, nil, 0, true, false
     -- event อาจตอบทันทีใน fireSteal; อย่าเขียนทับผล UID ไม่ตรง
     if not S.carryMismatchUid then S.carrying = true end
     if returnHome() then
@@ -651,7 +670,7 @@ local function farmTarget(target)
     elseif S.run then
         say("กลับบ้านไม่สำเร็จ — scan ใหม่")
     end
-    S.returning, S.carriedUid, S.expectedUid, S.droppedPos = false, nil, nil, nil
+    S.returning, S.carriedUid, S.expectedUid, S.droppedPos, S.returnPaused = false, nil, nil, nil, false
 end
 
 local function runOne()
@@ -784,7 +803,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.7 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.8 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -793,4 +812,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("กด HOME ที่ฐานก่อน START | เบรกก่อนถึง 20 studs (0.12s) + HOP กันกระแทก 1 ครั้ง")
+say("กด HOME ที่ฐานก่อน START | ไข่หลุด=หยุดทันที รอ UID + HOP กันกระแทก 1 ครั้ง")
