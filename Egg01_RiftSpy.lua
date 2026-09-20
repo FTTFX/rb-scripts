@@ -1,4 +1,4 @@
--- Egg01 Rift Spy v1.0
+-- Egg01 Rift Spy v1.1
 -- อ่านอย่างเดียว: ไม่ FireServer, ไม่กด Prompt, ไม่ขยับตัวละคร
 
 if _G.EGG01_RIFT_SPY then
@@ -13,7 +13,7 @@ local PPS = game:GetService("ProximityPromptService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 
-local S = { gui = nil, run = false, watchConns = {}, seen = {}, remoteBound = {} }
+local S = { gui = nil, run = false, watchConns = {}, seen = {}, remoteBound = {}, buttonBound = {}, lastRiftClick = 0 }
 _G.EGG01_RIFT_SPY = S
 local lines = {}
 local KEYWORDS = { "rift", "portal" }
@@ -84,7 +84,7 @@ end
 local function logRiftInstance(inst, source)
     if not inst or not inst.Parent then return end
     local path = pathOf(inst)
-    if not hasKey(inst.Name) and not hasKey(path) then return end
+    if not hasKey(inst.Name) then return end -- v1.0 log ลูก UI ทุกชิ้นเพราะ parent มีคำว่า Rift
     local key = source .. ":" .. path
     if S.seen[key] then return end
     S.seen[key] = true
@@ -96,6 +96,16 @@ local function logRiftInstance(inst, source)
             say(string.format("RIFT PROMPT action=%q object=%q hold=%.1f path=%s", prompt.ActionText, prompt.ObjectText, prompt.HoldDuration, pathOf(prompt)))
         end
     end
+end
+
+local function bindRiftButton(inst)
+    if S.buttonBound[inst] or not (inst:IsA("TextButton") or inst:IsA("ImageButton")) then return end
+    if not hasKey(pathOf(inst)) then return end
+    S.buttonBound[inst] = true
+    S.watchConns[#S.watchConns + 1] = inst.Activated:Connect(function()
+        S.lastRiftClick = os.clock()
+        say(string.format("RIFT UI CLICK name=%q text=%q path=%s", inst.Name, inst:IsA("TextButton") and inst.Text or "", pathOf(inst)))
+    end)
 end
 
 local function scanTree(root, source)
@@ -114,6 +124,7 @@ local function scanTree(root, source)
                 end
             end
         end
+        bindRiftButton(inst)
     end
     return count
 end
@@ -142,7 +153,32 @@ end
 local function stopWatch()
     S.run = false
     for _, c in ipairs(S.watchConns) do pcall(function() c:Disconnect() end) end
-    S.watchConns, S.remoteBound = {}, {}
+    S.watchConns, S.remoteBound, S.buttonBound = {}, {}, {}
+end
+
+-- Hook นี้อ่าน FireServer/InvokeServer เท่านั้น และเขียน log เฉพาะ Rift หรือหลังคลิก Rift 2 วินาที
+_G.EGG01_RIFT_HOOK_LOG = function(remote, method, ...)
+    local active = _G.EGG01_RIFT_SPY
+    if not active or not active.run then return end
+    if method ~= "FireServer" and method ~= "InvokeServer" then return end
+    local nearClick = os.clock() - (active.lastRiftClick or 0) <= 2
+    if not nearClick and not hasKey(pathOf(remote)) and not argsHaveKey(...) then return end
+    local values = {}
+    for i = 1, math.min(6, select("#", ...)) do values[#values + 1] = compact(select(i, ...)) end
+    say("RIFT OUT " .. method .. " " .. pathOf(remote) .. " → " .. table.concat(values, " | "))
+end
+
+if hookmetamethod and getnamecallmethod and not _G.EGG01_RIFT_SPY_HOOKED then
+    _G.EGG01_RIFT_SPY_HOOKED = true
+    local oldNamecall
+    local wrap = newcclosure or function(fn) return fn end
+    oldNamecall = hookmetamethod(game, "__namecall", wrap(function(self, ...)
+        local method = getnamecallmethod()
+        if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction") or self:IsA("UnreliableRemoteEvent")) then
+            pcall(_G.EGG01_RIFT_HOOK_LOG, self, method, ...)
+        end
+        return oldNamecall(self, ...)
+    end))
 end
 
 -- ===== GUI =====
@@ -159,7 +195,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel", panel)
 title.Size = UDim2.new(1, -42, 0, 28); title.Position = UDim2.new(0, 10, 0, 4)
-title.BackgroundTransparency = 1; title.Text = "Egg01 Rift Spy v1.0 — READ ONLY"; title.TextColor3 = Color3.fromRGB(210, 175, 255)
+title.BackgroundTransparency = 1; title.Text = "Egg01 Rift Spy v1.1 — READ ONLY"; title.TextColor3 = Color3.fromRGB(210, 175, 255)
 title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
 
 local function button(text, x, color)
@@ -192,6 +228,7 @@ bStart.MouseButton1Click:Connect(function()
     S.watchConns[#S.watchConns + 1] = workspace.DescendantAdded:Connect(function(inst) logRiftInstance(inst, "WS+") end)
     S.watchConns[#S.watchConns + 1] = RS.DescendantAdded:Connect(function(inst) logRiftInstance(inst, "RS+"); bindRemote(inst) end)
     S.watchConns[#S.watchConns + 1] = PG.DescendantAdded:Connect(function(inst)
+        bindRiftButton(inst)
         if (inst:IsA("TextLabel") or inst:IsA("TextButton")) and hasKey(inst.Text) then
             say("RIFT UI+ text=" .. string.format("%q", inst.Text) .. " path=" .. pathOf(inst))
         end
@@ -211,9 +248,9 @@ bStop.MouseButton1Click:Connect(function() stopWatch(); bStart.Text = "START"; s
 bClear.MouseButton1Click:Connect(function() lines = {}; S.seen = {}; logBox.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Rift Spy v1.0 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Rift Spy v1.1 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function() stopWatch(); gui:Destroy(); _G.EGG01_RIFT_SPY = nil end)
 
-say("พร้อม — อยู่ใกล้ RIFT แล้วกด START, รอ event/ลองกดเองตามปกติ")
+say("พร้อม — กด START, เปิด Rift แล้วกด Refresh/REROLL เอง 1 ครั้งเพื่อจับ Remote")
