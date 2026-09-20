@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.2
+-- Egg01 Target Farm v2.3
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, skipped = {}, carriedUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -24,7 +24,7 @@ local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
-local RARITY_VALUE, BALANCED_RARITY_STUDS = {}, 400 -- หนึ่งขั้น rarity มีค่าน้ำหนักเท่าระยะ 400 studs
+local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS = {}, 100000, 10000
 local selectedRarities = {}
 for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
@@ -88,7 +88,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.2"
+title.Text = "Egg01 Target Farm v2.3"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -168,7 +168,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "BALANCED: rarity สำคัญ + ระยะ → START"
+status.Text = "RARITY FIRST + Big Scale → START"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -268,9 +268,12 @@ local function chooseTarget()
             if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not blockedUntil then
                 eligible = eligible + 1
                 local dist = (pos - root.Position).Magnitude
-                local score = (RARITY_VALUE[rarity] or 0) * BALANCED_RARITY_STUDS - dist
+                -- Rarity คือแกนหลัก; scale ใหญ่มาก (ยกกำลังสอง) จึงมีสิทธิ์แซงระดับที่สูงกว่าได้
+                local rarityScore = (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
+                local scaleScore = scale * scale * SCALE_SQUARED_POINTS
+                local score = rarityScore + scaleScore - math.min(dist, 99999)
                 if not best or score > best.score or (score == best.score and dist < best.dist) then
-                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score }
+                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
                 end
             elseif pos and scale and blockedUntil then
                 skipped = skipped + 1
@@ -282,7 +285,7 @@ local function chooseTarget()
     for area in pairs(foundZones) do if area ~= "ALL" then ZONE_CHOICES[#ZONE_CHOICES + 1] = area end end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
     if best then
-        say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.score))
+        say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
     else
         say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE))
     end
@@ -392,7 +395,20 @@ local function attachCarryListener()
             S.carrying = row.IsCarrying == true
             S.carryLostAt = S.carrying and 0 or os.clock()
             if row.AreaId then S.eggArea = row.AreaId end
-            if S.carrying then say("server: ถือไข่แล้ว") else say("server: ไข่หลุดมือ — กำลังกู้") end
+            if S.carrying and S.expectedUid and row.Uid then
+                if tostring(row.Uid) == tostring(S.expectedUid) then
+                    S.carryVerified = true
+                    say("server: ถือ UID เป้าหมายถูกต้อง")
+                else
+                    S.carryMismatchUid = row.Uid
+                    S.carrying = false
+                    say("server: UID ที่ถือไม่ตรงเป้า — หยุด")
+                end
+            elseif S.carrying then
+                say("server: ถือไข่แล้ว")
+            else
+                say("server: ไข่หลุดมือ — กำลังกู้")
+            end
         end
     end)
     S.conns[#S.conns + 1] = S.carryConn
@@ -447,6 +463,10 @@ local function returnHome()
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
+        if S.carryMismatchUid then
+            say("หยุดกลับบ้าน: ได้ UID คนละฟอง")
+            return false
+        end
         if not S.carryAvailable and os.clock() - S.lastCarryScan >= 1 then
             S.lastCarryScan = os.clock()
             attachCarryListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
@@ -535,19 +555,23 @@ local function farmTarget(target)
     if not S.run then return end
 
     say("ยิง Steal + วิ่งกลับทันที")
+    S.expectedUid, S.carryVerified, S.carryMismatchUid = target.uid, false, nil
     if not fireSteal(target.pp) then
         say("ยิง Steal ไม่สำเร็จ")
+        S.expectedUid = nil
         return
     end
     -- บางเซิร์ฟเวอร์ไม่มี FieldEggCarry ฝั่ง client: ออกจากจุดเสี่ยงก่อน
     -- ถ้า event มีและไข่หลุด มันจะเปลี่ยน carrying=false เพื่อเข้า recovery เอง
-    S.carrying, S.carriedUid, S.droppedPos, S.carryLostAt, S.returning = true, target.uid, nil, 0, true
+    S.carriedUid, S.droppedPos, S.carryLostAt, S.returning = target.uid, nil, 0, true
+    -- event อาจตอบทันทีใน fireSteal; อย่าเขียนทับผล UID ไม่ตรง
+    if not S.carryMismatchUid then S.carrying = true end
     if returnHome() then
         say("ถึง HOME — รอรอบถัดไป")
     elseif S.run then
         say("กลับบ้านไม่สำเร็จ — scan ใหม่")
     end
-    S.returning, S.carriedUid, S.droppedPos = false, nil, nil
+    S.returning, S.carriedUid, S.expectedUid, S.droppedPos = false, nil, nil, nil
 end
 
 local function runOne()
@@ -682,7 +706,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.2 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.3 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -691,4 +715,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("BALANCED: rarity 1 ขั้น = ระยะ 400 studs | Return Guard คุ้มกัน UID ตอนกลับบ้าน")
+say("RARITY FIRST + Big Scale | Return Guard + UID ตรวจไข่ที่ถือ")
