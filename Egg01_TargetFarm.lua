@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.3
+-- Egg01 Target Farm v2.4
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -88,7 +88,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.3"
+title.Text = "Egg01 Target Farm v2.4"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -360,7 +360,37 @@ local function hopOnceToward(pos, radius)
     h:Move(flat.Unit, false)
     r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
     task.wait(0.10)
+    h:MoveTo(r.Position)
+    h:Move(Vector3.zero)
+    return true
+end
+
+-- กันอาการโดนตีเฉพาะตอนแบกกลับบ้าน: กระเด้งหนึ่งครั้ง แล้วรอบถัดไปกลับไป MoveTo ปกติ
+local function impactHopTowardHome(h, r, homeDistance)
+    if S.impactHopUsed or not S.home then return false end
+    local state = h:GetState()
+    local disrupted = h.PlatformStand
+        or state == Enum.HumanoidStateType.Ragdoll
+        or state == Enum.HumanoidStateType.FallingDown
+        or state == Enum.HumanoidStateType.Physics
+        or state == Enum.HumanoidStateType.PlatformStanding
+    -- กรณีโดนผลักจนถอยจากบ้านอย่างชัดเจน แม้ State จะยังเป็น Running
+    local pushedBack = S.lastReturnDist and homeDistance >= S.lastReturnDist + 12
+    if not disrupted and not pushedBack then return false end
+
+    local flat = Vector3.new(S.home.X - r.Position.X, 0, S.home.Z - r.Position.Z)
+    if flat.Magnitude <= HOME_R then return false end
+    local reason = disrupted and ("state=" .. state.Name) or "ถูกผลักถอย"
+    S.impactHopUsed = true
+    h.PlatformStand = false
+    h.Sit = false
+    h:ChangeState(Enum.HumanoidStateType.Running)
+    local step = math.min(14, flat.Magnitude - HOME_R)
+    local dest = r.Position + flat.Unit * step
+    r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+    task.wait(0.10)
     stopMove()
+    say("โดนตี/กระแทก (" .. reason .. ") — HOP กู้ครั้งเดียว แล้ววิ่งต่อ")
     return true
 end
 
@@ -460,6 +490,7 @@ end
 
 local function returnHome()
     local deadline, lastReport = os.clock() + 120, 0
+    S.impactHopUsed, S.lastReturnDist = false, nil
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
@@ -493,6 +524,9 @@ local function returnHome()
         if not h or not r then return false end
         local d = dist2(r.Position, S.home)
         if d <= HOME_R then stopMove(); return true end
+        -- ตรวจการผลัก/ล้มก่อนสั่งเดินรอบถัดไป; HOP นี้เกิดได้เพียงครั้งเดียวต่อการกลับบ้าน
+        impactHopTowardHome(h, r, d)
+        S.lastReturnDist = d
         -- เดินตรงยาวถึง HOME; ยิง MoveTo ซ้ำเฉพาะเพื่อกันชน/สะดุด
         h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
         if os.clock() - lastReport >= 1 then
@@ -706,7 +740,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.3 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.4 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -715,4 +749,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("RARITY FIRST + Big Scale | Return Guard + UID ตรวจไข่ที่ถือ")
+say("RARITY FIRST + Big Scale | Return Guard + HOP กันกระแทก 1 ครั้ง")
