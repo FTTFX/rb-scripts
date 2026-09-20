@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v1.1 -- สแกนแทรกและข้ามไปตี HP สูงกว่าได้ทันที
+-- Egg01 Experiment Farm v1.2 -- กรองเฉพาะ DroneVisual ของ Dr. Scramble
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -41,7 +41,8 @@ end
 local function isExperiment(m)
     if not m or m:IsDescendantOf(LP.Character or Instance.new("Folder")) then return false end
     local name=norm(m.Name)
-    if name:find("scramble",1,true) or name:find("experiment",1,true) then return true end
+    -- หุ่นอีเวนต์ที่พบจริงใช้ชื่อ DroneVisual_<uuid>; ไม่รวม FuseMachine/เครื่องอื่น
+    if name:find("dronevisual",1,true) or name:find("scramble",1,true) or name:find("experiment",1,true) then return true end
     for _,x in ipairs(m:GetDescendants()) do
         if x:IsA("TextLabel") or x:IsA("TextButton") then
             local s=norm(x.Text)
@@ -56,13 +57,13 @@ local function robots()
     for _,x in ipairs(workspace:GetDescendants()) do
         if x:IsA("TextLabel") or x:IsA("TextButton") then
             local s=norm(x.Text)
-            -- ป้ายชื่อหุ่นบางรอบมาเป็น "6/10 HP" ก่อนชื่อ Dr. Scramble จึงใช้ทั้งสองแบบ
-            local hasHP=tostring(x.Text):match("%d+%s*/%s*%d+")~=nil
-            if s:find("drscramble",1,true) or s:find("experiment",1,true) or hasHP then
+            -- ป้ายชื่อหุ่นบางรอบมาเป็น "6/10 HP" ก่อนชื่อ Dr. Scramble
+            if s:find("drscramble",1,true) or s:find("experiment",1,true) or tostring(x.Text):match("%d+%s*/%s*%d+") then
                 local m=modelOf(x); local p=rootPart(m)
-                if m and p and not seen[m] and (isExperiment(m) or hasHP) then
+                if m and p and not seen[m] and isExperiment(m) then
                     seen[m]=true; local hp,max,label=hpOf(m)
-                    if not hp or hp>0 then out[#out+1]={m=m,p=p,pos=p.Position,hp=hp,max=max,label=label,d=(p.Position-r.Position).Magnitude} end
+                    local center=m:GetPivot().Position
+                    if not hp or hp>0 then out[#out+1]={m=m,p=p,pos=center,hp=hp,max=max,label=label,d=(center-r.Position).Magnitude} end
                 end
             end
         end
@@ -131,7 +132,7 @@ end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm";gui.ResetOnSpawn=false;gui.DisplayOrder=1022
 pcall(function()gui.Parent=(gethui and gethui()) or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,385,0,220);f.Position=UDim2.new(0,12,.42,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.1";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.2";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 72,0,30);b.Position=UDim2.new(0,x,0,38);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=11;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
 end
@@ -145,6 +146,6 @@ start.MouseButton1Click:Connect(function()
     task.spawn(function() while S.run do local all=robots();if #all==0 then searchStep();task.wait(.4) else hit(all[1]);task.wait(.4) end end;start.Text="AUTO" end)
 end)
 stopB.MouseButton1Click:Connect(function()S.run=false;local _,h,r=char();if h and r then h:MoveTo(r.Position);h:Move(Vector3.zero)end;say("STOP")end)
-copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.1 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
+copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.2 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
 close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_EXPERIMENT_FARM=nil end)
 say("SCAN → ตรวจหุ่น | AUTO → ไล่ตีด้วยไม้ปกติ")
