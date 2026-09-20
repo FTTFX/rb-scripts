@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.5
+-- Egg01 Target Farm v2.6
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -31,7 +31,9 @@ for i, rarity in ipairs(RARITY_ORDER) do
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
 local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R = 60, 16, 7, 100, 30
+local BRAKE_SECS, BRAKE_LEAD = 0.12, 20
 local lines = {}
+local brakePulse
 
 local function humRoot()
     local c = LP.Character
@@ -88,7 +90,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.5"
+title.Text = "Egg01 Target Farm v2.6"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -294,13 +296,20 @@ end
 
 local function walkTo(pos, radius, limit)
     local started = os.clock()
+    local braked = false
     while S.run and os.clock() - started < limit do
         local h, r = humRoot()
         if not h or not r or h.Health <= 0 then return false end
         local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
-        if (goal - r.Position).Magnitude <= radius then return true end
+        local d = (goal - r.Position).Magnitude
+        if d <= radius then return true, braked end
+        -- เริ่มเบรกก่อนถึงจริง เพื่อตัดแรงไถลก่อนเลย Prompt/ไข่
+        if not braked and d <= radius + BRAKE_LEAD and brakePulse then
+            brakePulse(h, r, "ชะลอก่อนถึงเป้า")
+            braked = true
+        end
         h:MoveTo(goal)
-        task.wait(0.3)
+        task.wait(braked and 0.10 or 0.18)
     end
     return false
 end
@@ -367,14 +376,14 @@ end
 
 -- ตัดเฉพาะแกน "ล็อกตัว" จาก 78RB_Fly: BodyVelocity=0 ชั่วครู่ แล้วลบทันที
 -- ไม่เปิด Fly loop/NOCLIP และไม่บังคับความเร็วระหว่างเดิน
-local function brakePulse(h, r, reason)
+brakePulse = function(h, r, reason)
     if not h or not r or not r.Parent then return false end
     local bv = Instance.new("BodyVelocity")
     bv.Name = "Egg01_BrakePulse"
     bv.MaxForce = Vector3.new(1, 1, 1) * 9e9
     bv.Velocity = Vector3.zero
     bv.Parent = r
-    task.wait(0.08)
+    task.wait(BRAKE_SECS)
     pcall(function() bv:Destroy() end)
     if h.Parent and r.Parent then
         h.PlatformStand = false
@@ -382,7 +391,7 @@ local function brakePulse(h, r, reason)
         h:MoveTo(r.Position)
         h:Move(Vector3.zero)
     end
-    if reason then say("เบรกนิ่ง 0.08s — " .. reason) end
+    if reason then say(string.format("เบรกนิ่ง %.2fs — %s", BRAKE_SECS, reason)) end
     return true
 end
 
@@ -500,10 +509,13 @@ local function recoverDroppedEgg(dropPos)
     local backD = root and (egg.pos - root.Position).Magnitude or d
     say(string.format("ไข่หลุดมือ — กลับไปเก็บ UID เดิม d=%.0f", backD or 0))
     hopOnceToward(egg.pos, APPROACH_R)
-    if not walkTo(egg.pos, APPROACH_R, 10) then return false end
+    local reached, braked = walkTo(egg.pos, APPROACH_R, 10)
+    if not reached then return false end
     stopMove()
-    local bh, br = humRoot()
-    brakePulse(bh, br, "ถึงไข่ที่หลุด")
+    if not braked then
+        local bh, br = humRoot()
+        brakePulse(bh, br, "ถึงไข่ที่หลุด")
+    end
     egg = dropPos and stealAtPosition(dropPos, 30, true) or nearestSteal(STEAL_R)
     if not egg then say("Prompt UID เดิมหายระหว่างกลับไป") return false end
     if not fireSteal(egg.pp) then say("เก็บไข่คืนไม่สำเร็จ") return false end
@@ -567,12 +579,13 @@ local function farmTarget(target)
     S.carrying, S.eggArea, S.hopUsed = false, target.area, false
     say("ไปหา " .. target.cat)
     -- เข้ากลางพิกัด Snapshot ก่อน เพื่อให้ Prompt รอบไข่สตรีมเข้ามา
-    if not walkTo(target.pos, 3, 80) then
+    local reachedTarget, targetBraked = walkTo(target.pos, 3, 80)
+    if not reachedTarget then
         say("ไปถึงไข่ไม่สำเร็จ")
         return
     end
     stopMove() -- ยกเลิก MoveTo เดิมก่อนกด ไม่ให้ตัวละครไหลเลยไข่
-    do
+    if not targetBraked then
         local bh, br = humRoot()
         brakePulse(bh, br, "ถึงตำแหน่งไข่")
     end
@@ -601,12 +614,13 @@ local function farmTarget(target)
     if ppPart then
         say(string.format("Prompt ของ %s match=%.1f — เข้าใกล้", target.cat, matchD))
         if hopOnceToward(ppPart.Position, APPROACH_R) then say("HOP เข้า Prompt ครั้งเดียวแล้ว") end
-        if not walkTo(ppPart.Position, APPROACH_R, 8) then
+        local reachedPrompt, promptBraked = walkTo(ppPart.Position, APPROACH_R, 8)
+        if not reachedPrompt then
             say("เข้า Prompt ไม่สำเร็จ")
             return
         end
         stopMove()
-        do
+        if not promptBraked then
             local bh, br = humRoot()
             brakePulse(bh, br, "ถึง Prompt")
         end
@@ -772,7 +786,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.5 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.6 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -781,4 +795,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("RARITY FIRST + Big Scale | เบรก 0.08s + HOP กันกระแทก 1 ครั้ง")
+say("RARITY FIRST + Big Scale | เบรกก่อนถึง 20 studs (0.12s) + HOP กันกระแทก 1 ครั้ง")
