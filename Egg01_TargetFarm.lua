@@ -1,4 +1,4 @@
--- Egg01 Target Farm v2.6
+-- Egg01 Target Farm v2.7
 -- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -90,7 +90,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v2.6"
+title.Text = "Egg01 Target Farm v2.7"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -658,10 +658,8 @@ local function runOne()
     if S.run then return end
     if not fp then say("executor ไม่มี fireproximityprompt") return end
     if not S.home then
-        local _, r = humRoot()
-        if not r then say("ไม่มีตัวละคร") return end
-        S.home = r.Position
-        say("HOME อัตโนมัติแล้ว")
+        say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน START")
+        return
     end
     S.run = true
     bStart.Text = "AUTO"
@@ -774,7 +772,7 @@ end
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = humRoot()
-    if r then S.home = r.Position; say("HOME ตั้งแล้ว") else say("ไม่มีตัวละคร") end
+    if r then S.home = r.Position; say("HOME ตั้งแล้ว (ตำแหน่งฐาน)") else say("ไม่มีตัวละคร") end
 end)
 bScan.MouseButton1Click:Connect(chooseTarget)
 bStart.MouseButton1Click:Connect(runOne)
@@ -786,7 +784,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v2.6 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v2.7 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -795,4 +793,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("RARITY FIRST + Big Scale | เบรกก่อนถึง 20 studs (0.12s) + HOP กันกระแทก 1 ครั้ง")
+say("กด HOME ที่ฐานก่อน START | เบรกก่อนถึง 20 studs (0.12s) + HOP กันกระแทก 1 ครั้ง")
