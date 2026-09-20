@@ -1,4 +1,4 @@
--- Egg01 Rift Spy v1.2
+-- Egg01 Rift Spy v1.3
 -- อ่านอย่างเดียว: ไม่ FireServer, ไม่กด Prompt, ไม่ขยับตัวละคร
 
 if _G.EGG01_RIFT_SPY then
@@ -143,11 +143,16 @@ local function bindRemote(remote)
 end
 
 local function readRiftState()
-    local remote
+    local remote, candidates = nil, 0
     for _, inst in ipairs(RS:GetDescendants()) do
-        if inst:IsA("RemoteFunction") and inst.Name == "AskState" and hasKey(pathOf(inst)) then remote = inst break end
+        if inst.Name == "AskState" then
+            candidates = candidates + 1
+            local path = pathOf(inst)
+            if hasKey(path) then remote = inst break end
+        end
     end
-    if not remote then say("ไม่พบ RF/Rift/AskState") return end
+    if not remote then say("ไม่พบ AskState ของ Rift (AskState ทั้งหมด=" .. candidates .. ")") return end
+    say("RIFT STATE CALL " .. pathOf(remote) .. " <" .. remote.ClassName .. ">")
     local ok, result = pcall(function() return remote:InvokeServer() end)
     if ok then
         say("RIFT STATE ← " .. compact(result))
@@ -209,7 +214,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel", panel)
 title.Size = UDim2.new(1, -42, 0, 28); title.Position = UDim2.new(0, 10, 0, 4)
-title.BackgroundTransparency = 1; title.Text = "Egg01 Rift Spy v1.2 — READ ONLY"; title.TextColor3 = Color3.fromRGB(210, 175, 255)
+title.BackgroundTransparency = 1; title.Text = "Egg01 Rift Spy v1.3 — READ ONLY"; title.TextColor3 = Color3.fromRGB(210, 175, 255)
 title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
 
 local function button(text, x, color)
@@ -262,7 +267,7 @@ bStop.MouseButton1Click:Connect(function() stopWatch(); bStart.Text = "START"; s
 bClear.MouseButton1Click:Connect(function() lines = {}; S.seen = {}; logBox.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Rift Spy v1.2 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Rift Spy v1.3 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function() stopWatch(); gui:Destroy(); _G.EGG01_RIFT_SPY = nil end)
