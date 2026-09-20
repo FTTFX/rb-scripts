@@ -67,7 +67,12 @@ local function robots()
             end
         end
     end
-    table.sort(out,function(a,b)return a.d<b.d end); return out
+    -- เลือกหุ่นเลือดรวมสูงก่อน: 10 → 5 → 3; ระยะทางเป็นตัวตัดสินเมื่อ HP เท่ากัน
+    table.sort(out,function(a,b)
+        local ah,bh=tonumber(a.max) or 0,tonumber(b.max) or 0
+        if ah~=bh then return ah>bh end
+        return a.d<b.d
+    end); return out
 end
 local function searchStep()
     local _,_,r=char(); if not r then return end
@@ -129,7 +134,7 @@ logBox=Instance.new("TextLabel",f);logBox.Size=UDim2.new(1,-16,0,132);logBox.Pos
 local folded=false;fold.MouseButton1Click:Connect(function() folded=not folded;f.Size=UDim2.new(0,385,0,folded and 34 or 220);for _,x in ipairs({scanB,start,stopB,copy,logBox})do x.Visible=not folded end;fold.Text=folded and "+" or "−"end)
 scanB.MouseButton1Click:Connect(scan)
 start.MouseButton1Click:Connect(function()
-    if S.run then return end;S.run=true;start.Text="ON";say("AUTO ON — สแกน → วิ่ง → ตีหุ่นทีละตัว")
+    if S.run then return end;S.run=true;start.Text="ON";say("AUTO ON — เลือก HP 10 → 5 → 3 แล้วค่อยตี")
     local _,_,r=char();S.searchOrigin=r and r.Position or nil;S.searchIndex=0
     task.spawn(function() while S.run do local all=robots();if #all==0 then searchStep();task.wait(.4) else hit(all[1]);task.wait(.4) end end;start.Text="AUTO" end)
 end)
