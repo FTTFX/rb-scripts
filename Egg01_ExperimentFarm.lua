@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v1.0 -- ไล่ตี Dr. Scramble's Experiments ด้วยการใช้ไม้ปกติ
+-- Egg01 Experiment Farm v1.1 -- สแกนแทรกและข้ามไปตี HP สูงกว่าได้ทันที
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -112,6 +112,12 @@ local function hit(robot)
     say("ตี "..robot.m.Name.." | "..(robot.label or "HP ?"))
     local began=os.clock(); local lastHP=robot.hp
     while S.run and os.clock()-began<10 do
+        -- ไม่รอให้เป้าปัจจุบันตาย: พบ HP สูงกว่าเมื่อไร เปลี่ยนทันที
+        local latest=robots()[1]
+        if latest and latest.m~=robot.m and (tonumber(latest.max) or 0)>(tonumber(robot.max) or 0) then
+            say(string.format("พบ HP %s สูงกว่า HP %s — เปลี่ยนไป %s",tostring(latest.max),tostring(robot.max),latest.m.Name))
+            return
+        end
         local p=rootPart(robot.m); if not p or not robot.m.Parent then say("หุ่นหาย/แพ้แล้ว"); return end
         local _,h,r=char(); if not h or not r or (p.Position-r.Position).Magnitude>14 then break end
         local hp,max,label=hpOf(robot.m)
@@ -125,7 +131,7 @@ end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm";gui.ResetOnSpawn=false;gui.DisplayOrder=1022
 pcall(function()gui.Parent=(gethui and gethui()) or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,385,0,220);f.Position=UDim2.new(0,12,.42,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.0";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.1";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 72,0,30);b.Position=UDim2.new(0,x,0,38);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=11;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
 end
@@ -139,6 +145,6 @@ start.MouseButton1Click:Connect(function()
     task.spawn(function() while S.run do local all=robots();if #all==0 then searchStep();task.wait(.4) else hit(all[1]);task.wait(.4) end end;start.Text="AUTO" end)
 end)
 stopB.MouseButton1Click:Connect(function()S.run=false;local _,h,r=char();if h and r then h:MoveTo(r.Position);h:Move(Vector3.zero)end;say("STOP")end)
-copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.0 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
+copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.1 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
 close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_EXPERIMENT_FARM=nil end)
 say("SCAN → ตรวจหุ่น | AUTO → ไล่ตีด้วยไม้ปกติ")
