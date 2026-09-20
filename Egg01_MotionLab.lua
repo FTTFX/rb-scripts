@@ -1,4 +1,4 @@
--- Egg01 Motion Lab v1.2 -- เทียบ Walk / Push / Walk + Hop brake
+-- Egg01 Motion Lab v1.3 -- เทียบ Walk / Walk + Boost / Walk + Hop brake
 if _G.EGG01_MOTION_LAB then _G.EGG01_MOTION_LAB.run=false; pcall(function() _G.EGG01_MOTION_LAB.gui:Destroy() end) end
 local Players=game:GetService("Players"); local LP=Players.LocalPlayer
 local S={run=false,home=nil,gui=nil,lines={}}; _G.EGG01_MOTION_LAB=S
@@ -6,12 +6,15 @@ local logBox
 local function say(m) S.lines[#S.lines+1]=tostring(m);if #S.lines>16 then table.remove(S.lines,1)end;if logBox then logBox.Text=table.concat(S.lines,"\n")end;warn("[MotionLab] "..tostring(m))end
 local function hr() local c=LP.Character;return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function stop() local h,r=hr();if h and r then h:MoveTo(r.Position);h:Move(Vector3.zero)end;local c=LP.Character;if c then local b=c:FindFirstChild("Egg01MotionPush");if b then b:Destroy()end end end
-local function pulsePush(r,dir)
-    local old=r:FindFirstChild("Egg01MotionPush");if old then old:Destroy()end
-    local b=Instance.new("BodyVelocity");b.Name="Egg01MotionPush";b.MaxForce=Vector3.new(18000,0,18000);b.P=1800;b.Velocity=dir*42;b.Parent=r
-    task.delay(.055,function()if b.Parent then b:Destroy()end end)
+local function pulseBoost(r,dir,h,extra)
+    -- เพิ่มเฉพาะส่วนที่ขาดจาก WS ปกติ; ไม่ตั้ง BodyVelocity มาทับการเดิน
+    local flat=Vector3.new(r.AssemblyLinearVelocity.X,0,r.AssemblyLinearVelocity.Z)
+    local target=math.max(0,h.WalkSpeed)+extra
+    local need=math.min(extra,math.max(0,target-flat.Magnitude))
+    if need>0.5 then r:ApplyImpulse(dir*r.AssemblyMass*need);return true end
+    return false
 end
-local function run(name,mode)
+local function run(name,mode,boost)
     local h,r=hr();if not h or not r then say("ไม่มีตัวละคร");S.run=false;return end
     if not S.home then say("กด HOME ที่ฐานก่อน");S.run=false;return end
     local began=os.clock();local start=(r.Position-S.home).Magnitude;local path,rollback,maxV,last=0,0,0,r.Position;local samplePos,sampleT,prevD=r.Position,began,start;local pushed,braked=false,false
@@ -21,7 +24,7 @@ local function run(name,mode)
         local flat=Vector3.new(S.home.X,r.Position.Y,S.home.Z);local delta=flat-r.Position;local d=delta.Magnitude
         if d<=5 then say(string.format("ถึง HOME %.2fs path=%.0f rollback=%.0f peak=%.0f",os.clock()-began,path,rollback,maxV));break end
         local dir=delta.Unit;h:MoveTo(flat)
-        if mode=="PUSH" and not braked and d>26 then pulsePush(r,dir);pushed=true end
+        if mode=="BOOST" and d>26 then pushed=pulseBoost(r,dir,h,boost or 0) or pushed end
         -- Hop สั้นเพียงครั้งเดียวเพื่อเบรกก่อนถึง ไม่ล็อกตำแหน่งค้าง
         if mode=="BRAKE" and not braked and d<=24 then
             braked=true;local step=math.min(10,math.max(0,d-7));r.CFrame=CFrame.new(r.Position+dir*step)* (r.CFrame-r.CFrame.Position);h:MoveTo(r.Position);say("HOP brake 1 ครั้ง @d="..math.floor(d))
@@ -40,11 +43,13 @@ local function run(name,mode)
 end
 local gui=Instance.new("ScreenGui");gui.Name="Egg01_MotionLab";gui.ResetOnSpawn=false;gui.DisplayOrder=1025;pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end);if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,410,0,245);f.Position=UDim2.new(0,12,.45,0);f.BackgroundColor3=Color3.fromRGB(23,31,45);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-50,0,30);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Motion Lab v1.2 — Walk / Push / Hop";title.TextColor3=Color3.fromRGB(180,220,255);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-50,0,30);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Motion Lab v1.3 — Walk + Boost Test";title.TextColor3=Color3.fromRGB(180,220,255);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(t,x,w,c)local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w,0,30);b.Position=UDim2.new(0,x,0,38);b.Text=t;b.BackgroundColor3=c;b.TextColor3=Color3.new(1,1,1);b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=11;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b end
-local home=button("HOME",10,62,Color3.fromRGB(45,105,165));local normal=button("WALK",78,62,Color3.fromRGB(70,115,160));local push=button("PUSH",146,62,Color3.fromRGB(35,145,75));local hop=button("WALK+HOP",214,76,Color3.fromRGB(130,100,45));local halt=button("STOP",296,62,Color3.fromRGB(165,50,55));local copy=button("COPY",364,38,Color3.fromRGB(75,75,80))
+local home=button("HOME",10,58,Color3.fromRGB(45,105,165));local normal=button("WALK",74,58,Color3.fromRGB(70,115,160));local push=button("BOOST",138,68,Color3.fromRGB(35,145,75));local hop=button("WALK+HOP",262,76,Color3.fromRGB(130,100,45));local halt=button("STOP",344,58,Color3.fromRGB(165,50,55));local copy=button("COPY",408,38,Color3.fromRGB(75,75,80))
+f.Size=UDim2.new(0,455,0,245)
+local boostBox=Instance.new("TextBox",f);boostBox.Size=UDim2.new(0,50,0,30);boostBox.Position=UDim2.new(0,212,0,38);boostBox.Text="20";boostBox.PlaceholderText="+0";boostBox.BackgroundColor3=Color3.fromRGB(55,70,85);boostBox.TextColor3=Color3.new(1,1,1);boostBox.Font=Enum.Font.GothamBold;boostBox.TextSize=12;boostBox.ClearTextOnFocus=false
 logBox=Instance.new("TextLabel",f);logBox.Size=UDim2.new(1,-16,0,158);logBox.Position=UDim2.new(0,8,0,78);logBox.BackgroundColor3=Color3.new(0,0,0);logBox.BackgroundTransparency=.2;logBox.TextColor3=Color3.fromRGB(180,245,190);logBox.Font=Enum.Font.Code;logBox.TextSize=10;logBox.TextXAlignment=Enum.TextXAlignment.Left;logBox.TextYAlignment=Enum.TextYAlignment.Top;logBox.TextWrapped=true;logBox.ClipsDescendants=true
 home.MouseButton1Click:Connect(function()local _,r=hr();if r then S.home=r.Position;say(string.format("HOME=(%.0f,%.0f,%.0f) — ออกไปไกลแล้วทดสอบ",r.Position.X,r.Position.Y,r.Position.Z))end end)
-local function startTest(name,mode) if S.run then say("กำลังทดสอบอยู่");return end;S.run=true;task.spawn(run,name,mode) end
-normal.MouseButton1Click:Connect(function()startTest("WALK","WALK")end);push.MouseButton1Click:Connect(function()startTest("PUSH","PUSH")end);hop.MouseButton1Click:Connect(function()startTest("WALK+HOP","BRAKE")end);halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end);copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Motion Lab v1.2 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
-say("HOME → ออกไปไกล → WALK/PUSH/WALK+HOP | ทุก test คืนแรงผลักเมื่อจบ")
+local function startTest(name,mode,boost) if S.run then say("กำลังทดสอบอยู่");return end;S.run=true;task.spawn(run,name,mode,boost) end
+normal.MouseButton1Click:Connect(function()startTest("WALK","WALK")end);push.MouseButton1Click:Connect(function()local n=math.clamp(tonumber(boostBox.Text) or 0,0,60);boostBox.Text=tostring(n);startTest("WALK+BOOST"..n,"BOOST",n)end);hop.MouseButton1Click:Connect(function()startTest("WALK+HOP","BRAKE")end);halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end);copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Motion Lab v1.3 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
+say("HOME → ออกไปไกล → WALK / BOOST(+0..60) / WALK+HOP")
