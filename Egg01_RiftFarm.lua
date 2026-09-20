@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.0 -- เฉพาะไข่ที่ชื่อ/Category มี Rift ใน FieldEggSnapshot
+-- Egg01 Rift Farm v1.1 -- อ่าน 3 เป้าจาก Rift UI และยืนยันถือไข่ก่อนกลับบ้าน
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
@@ -7,7 +7,7 @@ local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("
 local function net(n) for _,x in ipairs(RS:GetDescendants()) do if x.Name:find(n,1,true) then return x end end end
 local function attachCarry()
  if S.carryConn then return true end
- local e=net("FieldEggCarry"); if not e or not e:IsA("RemoteEvent") then return false end
+ local e=net("FieldEggCarry"); if not e or not (e:IsA("RemoteEvent") or e:IsA("UnreliableRemoteEvent")) then return false end
  S.carryConn=e.OnClientEvent:Connect(function(row) if typeof(row)=="table" and row.IsCarrying~=nil then S.carrying=row.IsCarrying==true end end); return true
 end
 local function pos(r) for _,k in ipairs({"BottomCFrame","BoundsCFrame","CFrame","Position"}) do local v=r[k]; if typeof(v)=="CFrame" then return v.Position elseif typeof(v)=="Vector3" then return v end end end
