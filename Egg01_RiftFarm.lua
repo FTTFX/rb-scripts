@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.2 -- ชื่อต้องตรงเต็มคำ และยืนยันถือไข่ก่อนกลับบ้าน
+-- Egg01 Rift Farm v1.3 -- ยืนยัน Prompt ด้วยชื่อ/UID ก่อน Steal
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
@@ -68,22 +68,57 @@ worldTarget=function(need,root)
 end
 local function walk(p,rad,lim) local t=os.clock(); while S.run and os.clock()-t<lim do local h,r=hr(); if not h or not r then return end; local g=Vector3.new(p.X,r.Position.Y,p.Z); if (g-r.Position).Magnitude<=rad then return true end; h:MoveTo(g); task.wait(.15) end end
 local function stop() local h,r=hr(); if h and r then h:MoveTo(r.Position); h:Move(Vector3.zero) end end
+local function refreshTarget(t)
+ if not t.uid then return true end
+ local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then return false end
+ local ok,a=pcall(function() return rf:InvokeServer() end); local rec=ok and (a.Records or a.records or a)
+ if typeof(rec)~="table" then return false end
+ for id,row in pairs(rec) do
+  if typeof(row)=="table" and tostring(row.Uid or id)==tostring(t.uid) and tostring(row.State or "")~="Carried" then
+   local p=pos(row); if p then t.pos=p; return true end
+  end
+ end
+ return false
+end
+local function promptProof(pp,t)
+ if pp==t.worldPrompt then return true,"world-name" end
+ local want,uid=norm(t.need),t.uid and tostring(t.uid) or nil
+ local node=pp.Parent
+ for _=1,5 do
+  if not node or node==workspace then break end
+  local values={node.Name}
+  for _,k in ipairs({"Uid","UID","EggUid","AssetCategory","AssetName","Name"}) do local v=node:GetAttribute(k); if v~=nil then values[#values+1]=tostring(v) end end
+  for _,d in ipairs(node:GetDescendants()) do
+   if d:IsA("TextLabel") or d:IsA("TextButton") then values[#values+1]=d.Text elseif d:IsA("StringValue") then values[#values+1]=d.Value end
+   for _,k in ipairs({"Uid","UID","EggUid","AssetCategory","AssetName"}) do local v=d:GetAttribute(k); if v~=nil then values[#values+1]=tostring(v) end end
+  end
+  for _,v in ipairs(values) do if norm(v)==want then return true,"name" end; if uid and tostring(v)==uid then return true,"uid" end end
+  node=node.Parent
+ end
+ return false,nil
+end
 local function one(t)
- if not walk(t.pos,8,90) then say("ไป Rift egg ไม่สำเร็จ") return end; stop()
- local pick,md=t.worldPrompt,t.worldPrompt and 0 or nil; for _,v in ipairs(prompts()) do local d=(v.pos-t.pos).Magnitude; if not pick and d<30 and (not md or d<md) then pick,md=v.p,d end end
- if not pick then say("Rift egg มีใน Snapshot แต่ไม่พบ Prompt") return end
- say(string.format("Rift Prompt match=%.1f — Steal",md)); S.carrying=false; pcall(function() local old=pick.HoldDuration; pick.HoldDuration=0; fp(pick); pick.HoldDuration=old end)
+ if not refreshTarget(t) then say("UID เป้าหมายหาย/เปลี่ยน — ไม่หยิบ") return end
+ if not walk(t.pos,6,90) then say("ไป Rift egg ไม่สำเร็จ") return end; stop()
+ if not refreshTarget(t) then say("UID เป้าหมายหายหลังเดินถึง — ไม่หยิบ") return end
+ local _,me=hr(); local pick,md,proof=nil,nil,nil
+ for _,v in ipairs(prompts()) do
+  local d=(v.pos-t.pos).Magnitude; local near=me and (v.pos-me.Position).Magnitude or math.huge; local ok,why=promptProof(v.p,t)
+  if d<=9 and near<=12 and ok and (not md or d<md) then pick,md,proof=v.p,d,why end
+ end
+ if not pick then say("ไม่ยืนยัน Prompt ตรงชื่อ/UID ของ "..t.need.." — ไม่หยิบ") return end
+ say(string.format("Prompt ยืนยัน %s match=%.1f — Steal",proof,md)); S.carrying=false; pcall(function() local old=pick.HoldDuration; pick.HoldDuration=0; fp(pick); pick.HoldDuration=old end)
  local untilT=os.clock()+2; while S.run and os.clock()<untilT and not S.carrying do task.wait(.05) end
  if not S.carrying then say("Steal ยังไม่ยืนยันถือไข่ — ไม่วิ่งกลับ") return end
  say("ถือไข่แล้ว — กลับ HOME"); if S.home then walk(S.home,60,120); stop(); say("กลับ HOME") else say("เก็บแล้ว — ไม่มี HOME จึงหยุด") end
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.2 — EXACT NAMES"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.3 — VERIFY PROMPT"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not fp then say("ไม่มี fireproximityprompt") return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — เก็บตาม 3 ชื่อใน UI") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.2 ===\n"..table.concat(lines,"\n"))end end)
+attachCarry(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not fp then say("ไม่มี fireproximityprompt") return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — เก็บตาม 3 ชื่อใน UI") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.3 ===\n"..table.concat(lines,"\n"))end end)
 say("เปิด Rift → HOME → START | เก็บเฉพาะ 3 ตัวที่ Rift ขอ")
