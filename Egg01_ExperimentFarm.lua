@@ -15,7 +15,7 @@ local TREAD_CLEAR_R=32  -- พ้นลู่
 local TREAD_PICK_R=120  -- เลือกลู่เรทสูงสุดในรัศมีนี้ (กันไปยืน +1000 ทั้งที่มี +2000 ข้างๆ)
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,lockedTread=nil,badTreads={},progAt=0,progBase=nil,progName=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,lockedTread=nil,badTreads={},progAt=0,progBase=nil,progName=nil,progOk=false,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -329,6 +329,7 @@ local function verifyTreadProgress(secs)
     if now>base+0.05 then
         say(string.format("ลู่ถูก — %s %.0f→%.0f",name or S.progName,base,now))
         if S.tread then S.lockedTread=S.tread end
+        S.progOk=true
         return true
     end
     say(string.format("ลู่ผิด — %s ไม่ขึ้น (%.0f) — เปลี่ยนลู่",name or S.progName,now))
@@ -337,6 +338,7 @@ local function verifyTreadProgress(secs)
         if S.lockedTread==S.tread then S.lockedTread=nil end
         S.tread=nil
     end
+    S.progOk=false
     return false
 end
 local function treadStandPos(bottom)
@@ -705,11 +707,20 @@ local function waitEvent()
         end
         if onTreadPad() then
             missSince=nil
-            if (S.progAt or 0)<=0 then beginProgCheck() end
-            local okProg=verifyTreadProgress(10)
-            if okProg==false then
-                returnTreadmill()
-                task.wait(0.5)
+            if not S.progOk then
+                if (S.progAt or 0)<=0 then beginProgCheck() end
+                local okProg=verifyTreadProgress(10)
+                if okProg==false then
+                    returnTreadmill()
+                    task.wait(0.5)
+                else
+                    n=jogTreadTick(n)
+                    if rem%60==0 and os.clock()-lastWaitSay>=5 then
+                        say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem))
+                        lastWaitSay=os.clock()
+                    end
+                    task.wait(0.18)
+                end
             else
                 n=jogTreadTick(n)
                 if rem%60==0 and os.clock()-lastWaitSay>=5 then
@@ -721,6 +732,7 @@ local function waitEvent()
         else
             S.progAt=0
             S.progBase=nil
+            S.progOk=false
             if not missSince then missSince=os.clock() end
             local missFor=os.clock()-missSince
             if missFor>=60 then
