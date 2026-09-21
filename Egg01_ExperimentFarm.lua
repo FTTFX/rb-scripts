@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.4 -- 5 นาทีแรกหลัง :00/:30 ไปตีทันที + tread/Abyss
+-- Egg01 Experiment Farm v2.5 -- จุด = GuardAreas.Abyss Ocean.Guard (~2283)
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -8,7 +8,7 @@ local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเกินไป)
 local FARM_WINDOW=300
-local FALLBACK=Vector3.new(1371.0,90.0,-357.0)
+local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
 local S={run=false,gui=nil,lines={},point=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
@@ -34,6 +34,7 @@ local function secsToBoundary(t)
     return rem
 end
 local function instPos(d)
+    if not d then return nil end
     if d:IsA("BasePart") then return d.Position end
     if d:IsA("Model") then
         local ok,pv=pcall(function() return d:GetPivot().Position end)
@@ -42,34 +43,41 @@ local function instPos(d)
     local p=d:FindFirstChildWhichIsA("BasePart",true)
     return p and p.Position
 end
-local function findAbyss()
-    local best,bestScore
-    for _,d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("Model") or d:IsA("Folder") or d:IsA("BasePart") then
-            local n=d.Name:lower()
-            if n:find("eggfit",1,true) or n:find("eggspot",1,true) or n:find("bounds",1,true) then
-                -- skip
-            else
-                local score=0
-                if n:find("abyss",1,true) and n:find("ocean",1,true) then score=100
-                elseif n=="abyss ocean" then score=100
-                elseif n:find("abyss",1,true) then score=80
-                elseif n:find("ocean",1,true) and not n:find("egg",1,true) then score=50
-                end
-                if score>0 then
-                    local pos=instPos(d)
-                    if pos and (not bestScore or score>bestScore) then
-                        best,bestScore=pos,score
-                        if score>=100 then
-                            return pos,d.Name
-                        end
-                    end
-                end
-            end
-        end
+local function findAbyssFolder()
+    local objs=workspace:FindFirstChild("__OBJECTS")
+    local areas=objs and objs:FindFirstChild("Areas")
+    local guards=areas and areas:FindFirstChild("GuardAreas")
+    if not guards then return nil end
+    local abyss=guards:FindFirstChild("Abyss Ocean") or guards:FindFirstChild("AbyssOcean")
+    if abyss then return abyss end
+    for _,ch in ipairs(guards:GetChildren()) do
+        if ch.Name:lower():find("abyss",1,true) then return ch end
     end
-    if best then return best,"ocean" end
-    return FALLBACK,"fallback"
+end
+local function findAbyss()
+    -- จุดจริง = Guard / Nests ใน GuardAreas.Abyss Ocean (ไม่ใช่ pivot ชื่อโซนที่ 1371)
+    local abyss=findAbyssFolder()
+    if abyss then
+        local guard=abyss:FindFirstChild("Guard")
+        if guard then
+            local gmodel=guard:FindFirstChild("Model") or guard
+            local pos=instPos(gmodel) or instPos(guard)
+            if pos then return pos,"Abyss Ocean.Guard" end
+        end
+        local nests=abyss:FindFirstChild("Nests")
+        if nests then
+            local sx,sy,sz,n=0,0,0,0
+            for _,nest in ipairs(nests:GetChildren()) do
+                local p=instPos(nest)
+                if p then sx=sx+p.X; sy=sy+p.Y; sz=sz+p.Z; n=n+1 end
+            end
+            if n>0 then return Vector3.new(sx/n,sy/n,sz/n),"Abyss Ocean.Nests" end
+        end
+        local sign=abyss:FindFirstChild("RequiredSpeedSign")
+        local sp=instPos(sign)
+        if sp then return sp,"Abyss Ocean.Sign" end
+    end
+    return FALLBACK,"fallback-guard"
 end
 local function resolvePoint()
     local pos,src=findAbyss()
@@ -359,7 +367,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.4 — event window"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.5 — Guard Abyss"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -389,7 +397,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.4 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.5 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
