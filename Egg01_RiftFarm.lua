@@ -1,7 +1,7 @@
--- Egg01 Rift Farm v1.14 -- ชื่อ Rift จับคู่ยืดหยุ่น (ตัด Egg) + Amount หลวม + miss debug
+-- Egg01 Rift Farm v1.15 -- ถ้า Snapshot ไม่มีชนิด → วิ่งไปไบโอม (Titan/Cherry) รอสปอว์น
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,live={},expectedUid=nil,carryVerified=false,carryMismatch=false}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,live={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function net(n) for _,x in ipairs(RS:GetDescendants()) do if x.Name:find(n,1,true) then return x end end end
@@ -84,8 +84,54 @@ local function attachShift()
   if not uid then return end
   if tostring(row.State or "")=="Carried" then S.live[uid]=nil; return end
   local p=pos(row)
-  if p then S.live[uid]={uid=uid,row=row,pos=p,t=os.clock()} end
+  if p then S.live[uid]={uid=uid,row=row,pos=p,t=os.clock(),area=row.AreaId} end
  end); return true
+end
+-- ไข่หายากเกิดเฉพาะไบโอม — Snapshot ไม่มีชนิด ≠ บั๊กชื่อ
+local NEED_BIOME={
+ spideron="Titan Temple",bladehide="Titan Temple",crustacia="Titan Temple",mantaris="Titan Temple",
+ rhinotaur="Titan Temple",mutantshark="Titan Temple",gorillaking="Titan Temple",nightflame="Titan Temple",
+ redpanda="Cherry Blossom",crane="Cherry Blossom",salamander="Cherry Blossom",snowowl="Cherry Blossom",
+ koi="Cherry Blossom",stag="Cherry Blossom",onitiger="Cherry Blossom",kitsune="Cherry Blossom",
+}
+local function biomeForNeed(n) return NEED_BIOME[nameKey(n)] end
+local function findGuardBiome(areaName)
+ if not areaName then return end
+ local areas=workspace:FindFirstChild("__OBJECTS"); areas=areas and areas:FindFirstChild("Areas")
+ local guards=areas and areas:FindFirstChild("GuardAreas"); if not guards then return end
+ local want=tostring(areaName):lower()
+ local hit=guards:FindFirstChild(areaName); if hit then return hit end
+ for _,c in ipairs(guards:GetChildren()) do
+  local n=c.Name:lower()
+  if n==want or n:find(want,1,true) or want:find(n,1,true) then return c end
+ end
+end
+local function biomeHubPos(areaName)
+ local biome=findGuardBiome(areaName)
+ if not biome then return end
+ for _,nm in ipairs({"Guard","Nests","RequiredSpeedSign"}) do
+  local node=biome:FindFirstChild(nm,true)
+  if node then
+   if node:IsA("Model") then local ok,cf=pcall(function()return node:GetPivot()end); if ok and cf then return cf.Position,areaName.."."..nm end end
+   if node:IsA("BasePart") then return node.Position,areaName.."."..nm end
+   local p=node:FindFirstChildWhichIsA("BasePart",true); if p then return p.Position,areaName.."."..nm end
+  end
+ end
+ local ok,cf=pcall(function()return biome:GetPivot()end); if ok and cf then return cf.Position,areaName end
+end
+local function proxyPosFromSnapshot(byUid,areaName,rootPos)
+ local want=tostring(areaName or ""):lower(); if want=="" then return end
+ local best,bestD
+ for _,row in pairs(byUid) do
+  if typeof(row)=="table" then
+   local area=tostring(row.AreaId or ""):lower()
+   if area~="" and (area==want or area:find(want,1,true) or want:find(area,1,true)) then
+    local p=pos(row) or (S.live[tostring(row.Uid or "")] and S.live[tostring(row.Uid)].pos)
+    if p then local d=(p-rootPos).Magnitude; if not best or d<bestD then best,bestD=p,d end end
+   end
+  end
+ end
+ if best then return best,areaName.." nest" end
 end
 local prompts
 local function target()
@@ -102,34 +148,66 @@ local function target()
   elseif not byUid[uid] and live.row then byUid[uid]=live.row end
  end
  local best; local total,withPos,nameHit,nameNoPos=0,0,0,0
- local nearCats={}
+ local areasNeeded,areaSeen={},{}
+ for _,n in ipairs(need) do local b=biomeForNeed(n); if b and not areaSeen[b] then areaSeen[b]=true; areasNeeded[#areasNeeded+1]=b end end
  for id,row in pairs(byUid) do
   if typeof(row)=="table" then
    total=total+1
    local live=S.live[tostring(row.Uid or id)]
    local p=pos(row) or (live and live.pos)
    if p then withPos=withPos+1 end
-   local cat=tostring(row.AssetCategory or row.AssetName or row.Name or "?")
    local wantedName=rowMatchesNeed(row,need)
    if wantedName then
     nameHit=nameHit+1
     if not p or tostring(row.State or "")=="Carried" then nameNoPos=nameNoPos+1
     else
      local d=(p-root.Position).Magnitude
-     if not best or d<best.d then best={uid=row.Uid or id,cat=cat,need=wantedName,pos=p,d=d} end
+     if not best or d<best.d then best={uid=row.Uid or id,cat=tostring(row.AssetCategory or "?"),need=wantedName,pos=p,d=d} end
     end
-   elseif p and #nearCats<8 then
-    nearCats[#nearCats+1]=cat
    end
   end
  end
  if best then
+  S.lastMiss=nil; S.hunt=nil
   say(string.format("RIFT NEED %s UID=%s d=%.0f",best.need,tostring(best.uid),best.d))
- else
-  local tip=nameHit>0 and string.format("ชื่อตรง=%d แต่ไม่มีพิกัด/Carried=%d",nameHit,nameNoPos) or ("ใกล้ๆ cat="..table.concat(nearCats,", "))
-  say(string.format("ยังไม่เจอ: %s | Snapshot=%d pos=%d | %s",table.concat(need,", "),total,withPos,tip))
+  return best
  end
- return best
+ -- ไม่มีชนิดในฟิลด์ → ไปไบโอมที่ไข่เกิด แล้วรอสปอว์น
+ local huntArea=areasNeeded[1]
+ local hub,hubLabel
+ if huntArea then
+  hub,hubLabel=biomeHubPos(huntArea)
+  if not hub then hub,hubLabel=proxyPosFromSnapshot(byUid,huntArea,root.Position) end
+ end
+ local tip
+ if nameHit>0 then tip=string.format("ชื่อตรง=%d แต่ไม่มีพิกัด/Carried=%d",nameHit,nameNoPos)
+ elseif huntArea then tip="ไม่มีในฟิลด์ → ไป "..huntArea..(hub and (" @"..tostring(hubLabel)) or " (ยังไม่เจอ Guard)")
+ else tip="ไม่มีใน Snapshot ตอนนี้"
+ end
+ local now=os.clock()
+ if not S.lastMiss or now-(S.lastMiss or 0)>=6 then
+  S.lastMiss=now
+  say(string.format("ยังไม่เจอ: %s | snap=%d | %s",table.concat(need,", "),total,tip))
+ end
+ if hub and S.run then
+  local d=(hub-root.Position).Magnitude
+  if d>80 then
+   S.hunt={pos=hub,area=huntArea,label=hubLabel}
+   return {uid=nil,need="HUNT",pos=hub,d=d,hunt=true,area=huntArea,label=hubLabel}
+  end
+ end
+end
+local function huntBiome(t)
+ if not t or not t.pos then return end
+ say(string.format("ไปไบโอม %s (%s) d=%.0f — รอไข่สปอว์น",tostring(t.area or "?"),tostring(t.label or "?"),t.d or -1))
+ if not walk(t.pos,40,180,90) then say("ไปไบโอมไม่สำเร็จ"); return end
+ say("ถึงไบโอมแล้ว — สแกนซ้ำ 12s")
+ local untilT=os.clock()+12
+ while S.run and os.clock()<untilT do
+  local hit=target()
+  if hit and not hit.hunt then return hit end
+  task.wait(1.2)
+ end
 end
 prompts=function() local o={}; for _,x in ipairs(workspace:GetDescendants()) do if x:IsA("ProximityPrompt") and x.Enabled and tostring(x.ActionText):lower():find("steal",1,true) then local q=x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart",true)); if q then o[#o+1]={p=x,pos=q.Position} end end end; return o end
 local function stop(label)
@@ -272,11 +350,11 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.14 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.15 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — RF Uid แล้วค่อย fp ใกล้ไข่") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.14 ===\n"..table.concat(lines,"\n"))end end)
-say("v1.14: จับคู่ชื่อตัด Egg + Amount หลวม + Shifted pos")
+attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — ไม่เจอชนิด → ไปไบโอมรอสปอว์น") task.spawn(function() while S.run do local t=target(); if t and t.hunt then huntBiome(t); task.wait(.5) elseif t then one(t);task.wait(1) else task.wait(2.5) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.15 ===\n"..table.concat(lines,"\n"))end end)
+say("v1.15: Snapshot ไม่มีชนิด → ไป Titan/Cherry รอสปอว์น")
