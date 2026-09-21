@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.15 — ออกเครื่องวิ่งให้ขาด + path Rift→วาฬ
+-- Egg01 Experiment Farm v2.16 — ตีเฉพาะรอบวาฬ + ไกลเกินค่อย Rift→วาฬ
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -9,6 +9,8 @@ local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเกินไป)
 local FARM_WINDOW=300
+local HUNT_RAD=220 -- ตี Drone เฉพาะในรัศมีรอบจุดวาฬ — ห้ามไล่ข้ามแมพ
+local AWAY_REPATH=380 -- ห่างวาฬเกินนี้ → บังคับ RiftMachine→วาฬ ใหม่
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0) -- RiftSpy MARK / RiftMachine
 local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,inFarm=false,onTread=false}; _G.EGG01_EXPERIMENT_FARM=S
@@ -357,8 +359,10 @@ local function hpOf(m)
         end
     end
 end
-local function robots()
+local function robots(hub,maxD)
     local _,_,r=char(); if not r then return {} end
+    hub=hub or S.point or FALLBACK
+    maxD=maxD or HUNT_RAD
     local out,seen={},{}
     for _,x in ipairs(workspace:GetDescendants()) do
         if x:IsA("Model") and not seen[x] and isExperiment(x) then
@@ -366,10 +370,12 @@ local function robots()
             local p=rootPart(x)
             if p then
                 local hp,_,label=hpOf(x)
-                -- ต้องมี HP จริง (ตัด prop/มาร์กเกอร์)
                 if hp and hp>0 then
                     local center=x:GetPivot().Position
-                    out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude}
+                    local fromHub=(center-hub).Magnitude
+                    if fromHub<=maxD then
+                        out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude,hubD=fromHub}
+                    end
                 end
             end
         end
@@ -386,12 +392,14 @@ end
 local function hit(robot)
     local _,_,me=char()
     local d=me and (robot.pos-me.Position).Magnitude or 99
+    if d>HUNT_RAD then say(string.format("ข้ามเป้าไกล d=%.0f (นอกโซนวาฬ)",d)); return end
     if not walk(robot.pos,10,d>28 and 80 or 50,55) then return end
     local tool=bat(); if not tool then say("ไม่มีไม้"); return end
     say("ตี "..robot.m.Name.." | "..(robot.label or "?"))
     local began=os.clock(); local lastHP=robot.hp
+    local hub=S.point or FALLBACK
     while S.run and os.clock()-began<10 do
-        local latest=robots()[1]
+        local latest=robots(hub,HUNT_RAD)[1]
         local currentPart=rootPart(robot.m)
         local _,_,me2=char()
         local currentD=currentPart and me2 and (currentPart.Position-me2.Position).Magnitude or math.huge
@@ -473,7 +481,7 @@ local function farm5min()
     local deadline=os.clock()+left
     local hub=S.point or FALLBACK
     S.inFarm=true
-    say(string.format("SCAN/ตี — เหลือหน้าต่าง %ds",left))
+    say(string.format("SCAN/ตีในรัศมี %d รอบวาฬ — เหลือ %ds",HUNT_RAD,left))
     while S.run and os.clock()<deadline do
         if S.repath then
             S.repath=false
@@ -482,13 +490,25 @@ local function farm5min()
             hub=S.point or FALLBACK
             if not S.run then break end
         end
-        local all=robots()
+        local _,_,me=char()
+        if me then
+            local away=(me.Position-hub).Magnitude
+            if away>AWAY_REPATH then
+                say(string.format("ห่างวาฬ %.0f — บังคับ RiftMachine→วาฬ",away))
+                goPoint()
+                hub=S.point or FALLBACK
+                if not S.run then break end
+            end
+        end
+        local all=robots(hub,HUNT_RAD)
         if #all==0 then
-            local _,_,me=char()
-            if me and (me.Position-hub).Magnitude>40 then walk(hub,20,45,55) end
+            if me and (me.Position-hub).Magnitude>40 then
+                say("ไม่มีโดรนในโซน — กลับจุดวาฬ")
+                walk(hub,20,45,55)
+            end
             task.wait(.6)
         else
-            say(string.format("พบ %d ตัว — ตีใกล้สุด d=%.0f",#all,all[1].d))
+            say(string.format("พบ %d ตัวในโซน — ตีใกล้สุด d=%.0f",#all,all[1].d))
             hit(all[1]); task.wait(.3)
         end
     end
@@ -523,7 +543,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.15 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.16 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -565,7 +585,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.15 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.16 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
