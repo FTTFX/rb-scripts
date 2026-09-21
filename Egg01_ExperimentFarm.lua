@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.13 — RiftMachine→วาฬ (walkOpen กันติดกำแพง)
+-- Egg01 Experiment Farm v2.14 — RiftMachine→วาฬ + เกิดใหม่ต้อง path ใหม่
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -11,7 +11,7 @@ local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเ�
 local FARM_WINDOW=300
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0) -- RiftSpy MARK / RiftMachine
-local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,inFarm=false}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -451,8 +451,16 @@ local function farm5min()
     if into<FARM_WINDOW then left=math.max(45,FARM_WINDOW-into) end
     local deadline=os.clock()+left
     local hub=S.point or FALLBACK
+    S.inFarm=true
     say(string.format("SCAN/ตี — เหลือหน้าต่าง %ds",left))
     while S.run and os.clock()<deadline do
+        if S.repath then
+            S.repath=false
+            say("เกิดใหม่ — RiftMachine → วาฬ อีกครั้ง")
+            goPoint()
+            hub=S.point or FALLBACK
+            if not S.run then break end
+        end
         local all=robots()
         if #all==0 then
             local _,_,me=char()
@@ -463,6 +471,7 @@ local function farm5min()
             hit(all[1]); task.wait(.3)
         end
     end
+    S.inFarm=false
     say("จบอีเวนต์ — กลับเครื่องวิ่ง")
 end
 local function loop()
@@ -470,8 +479,16 @@ local function loop()
         if not waitEvent() then break end
         leaveTreadmill()
         if not S.run then break end
+        S.repath=false
         goPoint()
         if not S.run then break end
+        -- ถ้าตกระหว่างทางมาเกิด → path ใหม่อีกรอบก่อนฟาร์ม
+        if S.repath then
+            S.repath=false
+            say("เกิดใหม่ตอนเดินทาง — RiftMachine → วาฬ ซ้ำ")
+            goPoint()
+            if not S.run then break end
+        end
         farm5min()
         if not S.run then break end
         returnTreadmill()
@@ -485,7 +502,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.13 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.14 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -527,17 +544,24 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.13 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.14 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-LP.CharacterAdded:Connect(function()
+LP.CharacterAdded:Connect(function(ch)
     if not S.gui or not S.gui.Parent then return end
-    task.wait(0.6)
+    task.wait(0.5)
+    pcall(function() ch:WaitForChild("HumanoidRootPart",8) end)
     setClip(true)
-    if not S.run then beginAuto() end
+    if not S.run then
+        beginAuto()
+        return
+    end
+    -- โดนตีตกแผนที่ / เกิดใหม่ → ต้อง path RiftMachine → วาฬ ใหม่
+    S.repath=true
+    say("เกิดใหม่ — มาร์ก repath RiftMachine→วาฬ")
 end)
 say("เปิดสคริปต์ = AUTO | ขั้น1 RiftMachine → ขั้น2 วาฬ")
 task.spawn(boot)
