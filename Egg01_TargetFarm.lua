@@ -1,5 +1,5 @@
--- Egg01 Target Farm v3.5
--- ฐาน=ลู่วิ่ง | ลู่วิ่ง→Rift(+30)→ไข่ | กลับผ่าน Rift(+30)→ลู่วิ่ง | ไข่หลุด=เก็บทันที | เบรกตาม MOTION_BRAKE
+-- Egg01 Target Farm v3.6
+-- ฐาน=ลู่วิ่ง | ลู่วิ่ง→Rift(-30)→ไข่ | กลับผ่าน Rift(-30)→ลู่วิ่ง | ไข่หลุด=เก็บทันที | เบรกตาม MOTION_BRAKE
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
@@ -34,7 +34,7 @@ for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
-local STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 16, 5, 100, 30, 18, 12, 30
+local STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 16, 5, 100, 30, 18, 12, -30
 local BRAKE_SECS = 0.12
 local FALLBACK_RIFT = Vector3.new(534.0, 71.0, -340.0)
 local lines = {}
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.5"
+title.Text = "Egg01 Target Farm v3.6"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -197,7 +197,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "ลู่วิ่ง→Rift(+30)→ไข่ | หลุด=เก็บทันที | เบรกแม่น"
+status.Text = "ลู่วิ่ง→Rift(-30)→ไข่ | หลุด=เก็บทันที | เบรกแม่น"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -336,14 +336,23 @@ end
 
 local function walkTo(pos, radius, limit)
     local started = os.clock()
+    local lastSay = 0
     while S.run and os.clock() - started < limit do
         local h, r = humRoot()
         if not h or not r or h.Health <= 0 then return false end
+        -- กันติดลู่วิ่ง/Sit แล้ว MoveTo ไม่เดิน
+        if h.Sit then h.Sit = false end
+        if h.PlatformStand then h.PlatformStand = false end
+        if h.WalkSpeed < 16 then h.WalkSpeed = 16 end
         local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
         local d = (goal - r.Position).Magnitude
         if d <= radius then stopMove(); return true end
+        if os.clock() - lastSay >= 2 then
+            say(string.format("…เดิน d=%.0f", d))
+            lastSay = os.clock()
+        end
         h:MoveTo(goal)
-        task.wait(0.12)
+        task.wait(0.08)
     end
     return false
 end
@@ -378,7 +387,7 @@ local function resolveRift(quiet)
     return pos
 end
 
--- จุดลึกใน Rift +30 studs ตามทิศทางเข้า (ไปไข่ / กลับลู่วิ่ง)
+-- จุด Rift ลึก RIFT_DEPTH studs (ค่าลบ = ทิศตรงข้ามเป้า ตามที่ยืนยัน)
 local function riftDeepTarget(fromPos, towardPos)
     local rift = resolveRift(true)
     local dir
@@ -392,6 +401,19 @@ local function riftDeepTarget(fromPos, towardPos)
     if dir.Magnitude < 1 then dir = Vector3.new(1, 0, 0) else dir = dir.Unit end
     local deep = Vector3.new(rift.X + dir.X * RIFT_DEPTH, math.max(rift.Y, 70), rift.Z + dir.Z * RIFT_DEPTH)
     return deep, rift
+end
+
+local function readyRun(label)
+    if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
+    local h, r = humRoot()
+    if not h or not r then return false end
+    h.Sit = false
+    h.PlatformStand = false
+    pcall(function() h:ChangeState(Enum.HumanoidStateType.GettingUp) end)
+    pcall(function() h:ChangeState(Enum.HumanoidStateType.Running) end)
+    if h.WalkSpeed < 16 then h.WalkSpeed = math.max(h.WalkSpeed, 16) end
+    if label then say(label) end
+    return true
 end
 
 local function stopMove()
@@ -445,25 +467,26 @@ local function walkSlow(pos, radius, limit, slowNear)
     return false
 end
 
--- ขั้น1 → Rift ลึก +30 แล้วค่อยไปเป้า
+-- ขั้น1 → Rift ลึก (RIFT_DEPTH) แล้วค่อยไปเป้า
 local function goViaRift(dest, radius, limit, destLabel)
     if not dest then return false end
+    readyRun()
     local _, r = humRoot()
     if not r then return false end
     local deep, rift = riftDeepTarget(r.Position, dest)
     local dDeep = dist2(r.Position, deep)
     if dDeep > RIFT_R then
-        say(string.format("ขั้น1 → Rift ลึก+%.0f @%.0f,%.0f,%.0f d=%.0f", RIFT_DEPTH, deep.X, deep.Y, deep.Z, dDeep))
+        say(string.format("ขั้น1 → Rift ลึก%+d @%.0f,%.0f,%.0f d=%.0f", RIFT_DEPTH, deep.X, deep.Y, deep.Z, dDeep))
         local lim1 = math.clamp(dDeep / 16 + 40, 50, 320)
         local okR = walkTo(deep, RIFT_R, lim1)
         if not S.run then return false end
         say(okR and ("ถึง Rift ลึกแล้ว → " .. (destLabel or "เป้า")) or ("Rift ไม่สุด → ไป" .. (destLabel or "เป้า") .. "ต่อ"))
     end
+    readyRun()
     local _, r2 = humRoot()
     local d2 = r2 and dist2(r2.Position, dest) or 9999
     say(string.format("ขั้น2 → %s d=%.0f (เบรกเข้าไข่)", destLabel or "เป้า", d2))
     local lim2 = limit or math.clamp(d2 / 14 + 60, 60, 400)
-    -- เข้าไข่ด้วย walkSlow ตาม MOTION_BRAKE (rad~5, slowNear=55)
     return walkSlow(dest, radius or APPROACH_R, lim2, 55)
 end
 
@@ -507,31 +530,48 @@ end
 local function leaveTreadmill()
     local _, r0 = humRoot()
     local bottom, d = nearestTreadmill(r0 and r0.Position or nil)
-    if not bottom or not d or d > 14 then return end
+    if not bottom or not d or d > 14 then
+        readyRun()
+        return true
+    end
     S.tread = bottom
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
-    local h, r = humRoot()
-    say(string.format("เจอไข่ — กระโดดออกจากลู่วิ่ง d=%.0f", d))
-    if h then
+    readyRun(string.format("เจอไข่ — กระโดดออกจากลู่วิ่ง d=%.0f", d))
+    local rift = resolveRift(true)
+    for attempt = 1, 2 do
+        if not S.run then return false end
+        local h, r = humRoot()
+        if not h or not r then return false end
         h.Jump = true
         pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
-    end
-    task.wait(0.25)
-    if h and r then
-        local dir = Vector3.new(r.Position.X - bottom.Position.X, 0, r.Position.Z - bottom.Position.Z)
-        if dir.Magnitude < 1 then dir = r.CFrame.RightVector else dir = dir.Unit end
-        local dest = r.Position + dir * 16
+        task.wait(0.2)
+        -- ถอยออกจากลู่วิ่งไปทาง Rift (ไม่ใช่สุ่มทิศ)
+        local away = Vector3.new(rift.X - bottom.Position.X, 0, rift.Z - bottom.Position.Z)
+        if away.Magnitude < 1 then
+            away = Vector3.new(r.Position.X - bottom.Position.X, 0, r.Position.Z - bottom.Position.Z)
+        end
+        if away.Magnitude < 1 then away = r.CFrame.LookVector else away = away.Unit end
+        local dest = bottom.Position + away * (18 + attempt * 8)
+        dest = Vector3.new(dest.X, r.Position.Y, dest.Z)
         local t0 = os.clock()
-        while S.run and os.clock() - t0 < 6 do
+        while S.run and os.clock() - t0 < 7 do
             local hh, rr = humRoot()
             if not hh or not rr then break end
+            readyRun()
             local g = Vector3.new(dest.X, rr.Position.Y, dest.Z)
-            if (g - rr.Position).Magnitude <= 3 then break end
+            if (g - rr.Position).Magnitude <= 4 then break end
+            if (bottom.Position - rr.Position).Magnitude > 14 then break end
             hh:MoveTo(g)
             task.wait(0.08)
         end
+        if not onTreadmill() then
+            readyRun("ออกจากลู่วิ่งแล้ว — ไป Rift")
+            return true
+        end
+        say("ยังติดลู่วิ่ง — กระโดดซ้ำ")
     end
-    stopMove()
+    readyRun()
+    return not onTreadmill()
 end
 
 local function returnTreadmill()
@@ -892,7 +932,7 @@ local function returnToTread()
                     S.lastReturnDist = dR
                     h:MoveTo(Vector3.new(deep.X, r.Position.Y, deep.Z))
                     if os.clock() - lastReport >= 1 then
-                        say(string.format("วิ่งกลับผ่าน Rift ลึก+%.0f d=%.0f", RIFT_DEPTH, dR))
+                        say(string.format("วิ่งกลับผ่าน Rift ลึก%+d d=%.0f", RIFT_DEPTH, dR))
                         lastReport = os.clock()
                     end
                     task.wait(0.15)
@@ -909,7 +949,7 @@ end
 -- ทำหนึ่งรอบโดยไม่ปิด S.run: ตัว loop ด้านล่างจะเลือกไข่ใหม่เอง
 local function farmTarget(target)
     S.carrying, S.eggArea, S.hopUsed = false, target.area, false
-    say("ไปหา " .. target.cat .. " | ลู่วิ่ง→Rift(+30)→ไข่")
+    say("ไปหา " .. target.cat .. " | ลู่วิ่ง→Rift(-30)→ไข่")
     -- ลู่วิ่ง → Rift ลึก → ไข่ (walkSlow เบรกตาม MOTION_BRAKE)
     local reachedTarget = goViaRift(target.pos, APPROACH_R, 120, target.cat)
     if not reachedTarget then
@@ -982,7 +1022,7 @@ local function runOne()
     if not fp then say("executor ไม่มี fireproximityprompt") return end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — ลู่วิ่ง→Rift(+30)→ไข่→Rift(+30)→ลู่วิ่ง | หลุด=เก็บทันที")
+    say("AUTO ON — ลู่วิ่ง→Rift(-30)→ไข่→Rift(-30)→ลู่วิ่ง | หลุด=เก็บทันที")
     resolveRift()
     task.spawn(function()
         if not onTreadmill() then
@@ -996,6 +1036,11 @@ local function runOne()
             end
             if not S.run or not target then break end
             leaveTreadmill()
+            if onTreadmill() then
+                say("ยังติดลู่วิ่งหลังกระโดด — บังคับออกอีกครั้ง")
+                leaveTreadmill()
+            end
+            readyRun()
             if not S.run then break end
             farmTarget(target)
             if S.run then task.wait(1) end
@@ -1099,7 +1144,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.5 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.6 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1117,7 +1162,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.5 | Rift+30 | เบรก walkSlow | ไข่หลุด=เก็บทันที | noclip ON")
+say("v3.6 | Rift-30 | บังคับออกลู่วิ่งแล้ววิ่ง | เบรก walkSlow | noclip ON")
 task.spawn(function()
     local c = LP.Character or LP.CharacterAdded:Wait()
     if c then pcall(function() c:WaitForChild("HumanoidRootPart", 8) end) end
