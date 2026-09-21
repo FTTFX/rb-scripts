@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.20 — ลู่ใกล้ตัว | ไม่เจอ1นาที=รีเซ็ต | PATHหลอก0-5
+-- Egg01 Experiment Farm v2.21 — ไม่เจอลิู่1นาที=ฆ่าตัวตายรีเซ็ต | PATHหลอก0-5
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -402,9 +402,15 @@ local function returnTreadmill()
     return false
 end
 local function resetTreadmill(why)
-    say(why or "รีเซ็ตเครื่องวิ่ง — ล้างจำแล้วหาใหม่")
+    say(why or "รีเซ็ต — ฆ่าตัวตาย เกิดใหม่")
     S.tread=nil
-    return returnTreadmill()
+    S.watchPos=nil
+    local _,h=char()
+    if h and h.Health>0 then
+        pcall(function() h.Health=0 end)
+    end
+    -- เกิดใหม่แล้ว CharacterAdded จะตั้ง repath ถ้า S.run อยู่
+    return true
 end
 local function jogTreadTick(n)
     local bottom=S.tread
@@ -604,10 +610,10 @@ local function waitEvent()
             if not missSince then missSince=os.clock() end
             local missFor=os.clock()-missSince
             if missFor>=60 then
-                say("ไม่เจอลู่วิ่งจริงครบ 1 นาที — รีเซ็ตจำเครื่องวิ่ง")
+                say("ไม่เจอลู่วิ่งจริงครบ 1 นาที — ฆ่าตัวตายรีเซ็ต")
                 missSince=nil
                 resetTreadmill()
-                task.wait(0.5)
+                task.wait(2)
             else
                 if os.clock()-lastWaitSay>=8 then
                     say(string.format("หลุดลู่ — กลับไปรอ (ยังไม่เจอ %.0fs/60s)",missFor))
@@ -690,7 +696,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.20 — ลู่ใกล้ตัว|ไม่เจอ1ม=รีเซ็ต"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.21 — ไม่เจอ1ม=ฆ่าตัวตาย"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -752,7 +758,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.20 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.21 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -773,5 +779,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.20 | ลู่=ใกล้ตัวเสมอ | ไม่เจอ1นาที=รีเซ็ต | PATH=หลอก0-5")
+say("v2.21 | ไม่เจอลู่1นาที=ฆ่าตัวตายรีเซ็ต | ลู่ใกล้ตัว | PATH=หลอก0-5")
 task.spawn(boot)
