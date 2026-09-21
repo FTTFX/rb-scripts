@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.9 -- วิ่งรูปตัว L (จัดแกน X/Z ก่อน) กันทะลุกำแพงตัวที
+-- Egg01 Experiment Farm v2.10 -- วิ่งตามขั้น: RIFT → วาฬ (Abyss) ไม่ใช้ L
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -10,7 +10,8 @@ local LP=Players.LocalPlayer
 local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเกินไป)
 local FARM_WINDOW=300
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
-local S={run=false,gui=nil,lines={},point=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local FALLBACK_RIFT=Vector3.new(2686.0,71.0,-375.0) -- ใกล้ฐาน/DOCK — หาโมเดล RIFT ไม่เจอใช้ตัวนี้
+local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -80,10 +81,37 @@ local function findAbyss()
     end
     return FALLBACK,"fallback-guard"
 end
+local function findRift()
+    local best,bestScore
+    local function consider(inst,score)
+        local p=instPos(inst)
+        if not p then return end
+        if not best or score>bestScore then best,bestScore=p,score end
+    end
+    for _,d in ipairs(workspace:GetDescendants()) do
+        local n=d.Name:lower()
+        if n=="rift" then consider(d,50)
+        elseif n:find("rift",1,true) and not n:find("trade",1,true) and not n:find("gui",1,true)
+            and not n:find("farm",1,true) and not n:find("input",1,true) then
+            consider(d,20)
+        end
+        if (d:IsA("TextLabel") or d:IsA("TextButton")) and tostring(d.Text):upper():gsub("%s+","")=="RIFT" then
+            consider(d.Adornee or d.Parent,40)
+        end
+    end
+    if best then return best,"RIFT" end
+    return FALLBACK_RIFT,"fallback-rift"
+end
 local function resolvePoint()
     local pos,src=findAbyss()
     S.point=pos
-    say(string.format("จุด=%s @%.0f,%.0f,%.0f",tostring(src),pos.X,pos.Y,pos.Z))
+    say(string.format("วาฬ=%s @%.0f,%.0f,%.0f",tostring(src),pos.X,pos.Y,pos.Z))
+    return pos
+end
+local function resolveRift()
+    local pos,src=findRift()
+    S.rift=pos
+    say(string.format("RIFT=%s @%.0f,%.0f,%.0f",tostring(src),pos.X,pos.Y,pos.Z))
     return pos
 end
 local function setClip(on)
@@ -139,34 +167,24 @@ local function walk(p,rad,lim,slowNear)
     restore()
     return false
 end
--- วิ่งรูปตัว L: จัดแกน X หรือ Z ให้ตรงเป้าก่อน แล้วค่อยวิ่งตรงยาว — ลดการทะลุกำแพงตัวที
-local function walkL(dest,rad,lim,slowNear)
-    local _,_,r=char(); if not r or not dest then return false end
-    local me=r.Position
-    local dx,dz=math.abs(dest.X-me.X),math.abs(dest.Z-me.Z)
-    if dx<12 and dz<12 then return walk(dest,rad,lim,slowNear) end
-    local mid
-    if dx>=dz then
-        mid=Vector3.new(dest.X,me.Y,me.Z)
-        say(string.format("L: จัดแกน X ก่อน @%.0f,%.0f",mid.X,mid.Z))
-    else
-        mid=Vector3.new(me.X,me.Y,dest.Z)
-        say(string.format("L: จัดแกน Z ก่อน @%.0f,%.0f",mid.X,mid.Z))
-    end
-    local lim1=math.clamp((lim or 90)*0.5,18,lim or 90)
-    walk(mid,math.max(rad or 12,10),lim1,slowNear)
-    if not S.run then return false end
-    return walk(dest,rad,lim,slowNear)
-end
+-- ขั้นที่ 1 ไป RIFT → ขั้นที่ 2 ไปวาฬ (เส้นทางตามจุด ไม่ใช่เส้นตรงทะลุกำแพง)
 local function goPoint()
-    local pos=resolvePoint()
+    local rift=resolveRift()
+    local whale=resolvePoint()
     local _,_,r=char(); if not r then return false end
-    local d=(pos-r.Position).Magnitude
-    local lim=math.clamp(d/18+35,50,240)
-    say(string.format("วิ่ง L → @%.0f,%.0f,%.0f",pos.X,pos.Y,pos.Z))
-    local ok=walkL(pos,20,lim,55)
-    say(ok and "ถึงจุดแล้ว" or "ไปจุดไม่ทัน")
-    return ok
+    local d1=(rift-r.Position).Magnitude
+    local lim1=math.clamp(d1/18+30,40,200)
+    say(string.format("ขั้น1 → RIFT @%.0f,%.0f,%.0f",rift.X,rift.Y,rift.Z))
+    local ok1=walk(rift,28,lim1,55)
+    if not S.run then return false end
+    say(ok1 and "ถึง RIFT แล้ว → ไปวาฬ" or "ใกล้ RIFT ไม่สุด — ไปวาฬต่อ")
+    local _,_,r2=char(); r2=r2 or r
+    local d2=(whale-r2.Position).Magnitude
+    local lim2=math.clamp(d2/18+30,40,200)
+    say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f",whale.X,whale.Y,whale.Z))
+    local ok2=walk(whale,20,lim2,55)
+    say(ok2 and "ถึงจุดวาฬแล้ว" or "ไปวาฬไม่ทัน")
+    return ok2
 end
 local function nearestTreadmill()
     local _,_,r=char(); if not r then return nil end
@@ -215,8 +233,8 @@ local function returnTreadmill()
     if not target then return end
     local _,_,r=char()
     local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
-    say("กลับเครื่องวิ่งเดิม (L)")
-    walkL(target,5,lim,55)
+    say("กลับเครื่องวิ่งเดิม")
+    walk(target,5,lim,55)
     say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
 end
 local function jogTreadTick(n)
@@ -288,17 +306,15 @@ end
 local function hit(robot)
     local _,_,me=char()
     local d=me and (robot.pos-me.Position).Magnitude or 99
-    local ok
-    if d>28 then ok=walkL(robot.pos,10,80,55) else ok=walk(robot.pos,10,50,55) end
-    if not ok then return end
+    if not walk(robot.pos,10,d>28 and 80 or 50,55) then return end
     local tool=bat(); if not tool then say("ไม่มีไม้"); return end
     say("ตี "..robot.m.Name.." | "..(robot.label or "?"))
     local began=os.clock(); local lastHP=robot.hp
     while S.run and os.clock()-began<10 do
         local latest=robots()[1]
         local currentPart=rootPart(robot.m)
-        local _,_,me=char()
-        local currentD=currentPart and me and (currentPart.Position-me.Position).Magnitude or math.huge
+        local _,_,me2=char()
+        local currentD=currentPart and me2 and (currentPart.Position-me2.Position).Magnitude or math.huge
         if latest and latest.m~=robot.m and latest.d+8<currentD then return end
         local p=rootPart(robot.m); if not p or not robot.m.Parent then say("กำจัดแล้ว"); return end
         local _,h,r=char(); if not h or not r or (p.Position-r.Position).Magnitude>14 then break end
@@ -376,7 +392,7 @@ local function farm5min()
         local all=robots()
         if #all==0 then
             local _,_,me=char()
-            if me and (me.Position-hub).Magnitude>40 then walkL(hub,20,45,55) end
+            if me and (me.Position-hub).Magnitude>40 then walk(hub,20,45,55) end
             task.wait(.6)
         else
             say(string.format("พบ %d ตัว — ตีใกล้สุด d=%.0f",#all,all[1].d))
@@ -405,7 +421,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.9 — L-PATH"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.10 — RIFT→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -446,7 +462,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.9 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.10 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -458,5 +474,5 @@ LP.CharacterAdded:Connect(function()
     setClip(true)
     if not S.run then beginAuto() end
 end)
-say("เปิดสคริปต์ = AUTO | วิ่งรูป L กันทะลุกำแพง")
+say("เปิดสคริปต์ = AUTO | ขั้น1 RIFT → ขั้น2 วาฬ")
 task.spawn(boot)
