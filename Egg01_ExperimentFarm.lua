@@ -1,28 +1,38 @@
--- Egg01 Experiment Farm v2.18 — walk แบบ 1.12 + Rift→วาฬ (ไม่สแกนแมพค้าง)
+-- Egg01 Experiment Farm v2.19 — เครื่องวิ่งหาได้ + ปุ่ม PATH ทดสอบ Rift→วาฬ
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
+    _G.EGG01_EXPERIMENT_FARM.test=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
 end
 local Players=game:GetService("Players")
 local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
-local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเกินไป)
+local LEAD=25
 local FARM_WINDOW=300
-local HUNT_RAD=220 -- ตี Drone เฉพาะในรัศมีรอบจุดวาฬ — ห้ามไล่ข้ามแมพ
-local AWAY_REPATH=380 -- ห่างวาฬเกินนี้ → บังคับ RiftMachine→วาฬ ใหม่
-local NEAR_WHALE=260 -- อยู่ในโซนนี้ = ข้าม path เข้าฟาร์ม
-local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
-local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0) -- RiftSpy MARK / RiftMachine
-local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,inFarm=false,onTread=false}; _G.EGG01_EXPERIMENT_FARM=S
+local HUNT_RAD=220
+local AWAY_REPATH=380
+local NEAR_WHALE=260
+local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
+local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
+local S={
+    run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,
+    clipConn=nil,clipParts={},repath=false,inFarm=false,onTread=false,
+    treadList=nil,treadAt=0,
+}
+_G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
-    S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
+    S.lines[#S.lines+1]=tostring(m); if #S.lines>14 then table.remove(S.lines,1) end
     if logBox then logBox.Text=table.concat(S.lines,"\n") end
     warn("[ExperimentFarm] "..tostring(m))
 end
+local function active()
+    return S.run or S.test
+end
 local function char()
-    local c=LP.Character; return c,c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart")
+    local c=LP.Character
+    return c,c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart")
 end
 local function serverNow()
     local ok,t=pcall(function() return workspace:GetServerTimeNow() end)
@@ -32,11 +42,8 @@ local function fmtHMS(t)
     t=math.floor(t%86400)
     return string.format("%02d:%02d:%02d",math.floor(t/3600),math.floor(t/60)%60,t%60)
 end
-local function secsToBoundary(t)
-    local sec=math.floor(t)%1800
-    local rem=1800-sec
-    if rem==1800 then rem=0 end
-    return rem
+local function secsIntoHalf(t)
+    return math.floor(t)%1800
 end
 local function instPos(d)
     if not d then return nil end
@@ -60,7 +67,6 @@ local function findAbyssFolder()
     end
 end
 local function findAbyss()
-    -- จุดจริง = Guard / Nests ใน GuardAreas.Abyss Ocean (ไม่ใช่ pivot ชื่อโซนที่ 1371)
     local abyss=findAbyssFolder()
     if abyss then
         local guard=abyss:FindFirstChild("Guard")
@@ -78,15 +84,11 @@ local function findAbyss()
             end
             if n>0 then return Vector3.new(sx/n,sy/n,sz/n),"Abyss Ocean.Nests" end
         end
-        local sign=abyss:FindFirstChild("RequiredSpeedSign")
-        local sp=instPos(sign)
-        if sp then return sp,"Abyss Ocean.Sign" end
     end
     return FALLBACK,"fallback-guard"
 end
+-- ห้าม GetDescendants ทั้งแมพตอนหา Rift (ค้าง) — path + FALLBACK เท่านั้น
 local function findRift()
-    -- ห้าม GetDescendants ทั้งแมพ — ค้างจนดูเหมือนไม่ยอมวิ่ง
-    if S.rift then return S.rift,"cache-rift" end
     local objs=workspace:FindFirstChild("__OBJECTS")
     local machines=objs and objs:FindFirstChild("Machines")
     local rm=machines and machines:FindFirstChild("RiftMachine")
@@ -95,6 +97,7 @@ local function findRift()
         local p=instPos(rift) or instPos(rm)
         if p then return Vector3.new(p.X,math.max(p.Y,70),p.Z),"RiftMachine" end
     end
+    if S.rift then return S.rift,"cache-rift" end
     return FALLBACK_RIFT,"fallback-rift"
 end
 local function resolvePoint()
@@ -140,13 +143,55 @@ local function stop(label)
     end
     if label then say(label) end
 end
--- วิ่งทั่วไป (เครื่องวิ่ง / วาฬใกล้ๆ)
+local function stopTreadScripts()
+    S.onTread=false
+    if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run=false end
+end
+-- แคชรายการเครื่องวิ่ง (สแกนทั้งแมพได้ แต่ไม่บ่อยกว่าทุก 20 วิ)
+local function refreshTreadList(force)
+    if not force and S.treadList and (os.clock()-S.treadAt)<20 then return S.treadList end
+    local list={}
+    local ok,desc=pcall(function() return workspace:GetDescendants() end)
+    if ok and desc then
+        for _,item in ipairs(desc) do
+            if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
+                list[#list+1]=item
+            end
+        end
+    end
+    S.treadList=list; S.treadAt=os.clock()
+    return list
+end
+local function nearestTreadmill()
+    local _,_,r=char(); if not r then return nil end
+    local best,bestD
+    for _,item in ipairs(refreshTreadList(false)) do
+        if item and item.Parent then
+            local d=(item.Position-r.Position).Magnitude
+            if not bestD or d<bestD then best,bestD=item,d end
+        end
+    end
+    if not best then
+        for _,item in ipairs(refreshTreadList(true)) do
+            if item and item.Parent then
+                local d=(item.Position-r.Position).Magnitude
+                if not bestD or d<bestD then best,bestD=item,d end
+            end
+        end
+    end
+    return best,bestD
+end
+local function treadStandPos(bottom)
+    if not bottom then return nil end
+    return bottom.CFrame:PointToWorldSpace(Vector3.new(0,bottom.Size.Y*0.5+2.5,0))
+end
+-- เดินสั้น (ใกล้เป้า)
 local function walk(p,rad,lim,slowNear)
     local t=os.clock(); local moveHum,oldSpeed,lastBand
     local function restore()
         if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
     end
-    while S.run and os.clock()-t<lim do
+    while active() and os.clock()-t<lim do
         local _,h,r=char(); if not h or not r or h.Health<=0 then restore(); return false end
         local g=Vector3.new(p.X,r.Position.Y,p.Z); local d=(g-r.Position).Magnitude
         if d<=rad then restore(); stop(); return true end
@@ -163,7 +208,7 @@ local function walk(p,rad,lim,slowNear)
     restore()
     return false
 end
--- เดินแบบ 1.12 (MoveTo+เบรก) + ไกล/น้ำใช้ CFrame ท่อนสั้น — ไม่สแกนแมพ
+-- เดินไกล/น้ำ (แบบ 1.12 + CFrame)
 local function walkOpen(p,rad,lim,slowNear)
     local t=os.clock(); local moveHum,oldSpeed,lastBand
     local lastPos,lastProg=nil,os.clock()
@@ -171,7 +216,7 @@ local function walkOpen(p,rad,lim,slowNear)
     local function restore()
         if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
     end
-    while S.run and os.clock()-t<lim do
+    while active() and os.clock()-t<lim do
         local _,h,r=char(); if not h or not r or h.Health<=0 then restore(); return false end
         local flat=Vector3.new(p.X,r.Position.Y,p.Z)
         local d=(flat-r.Position).Magnitude
@@ -217,68 +262,36 @@ local function walkOpen(p,rad,lim,slowNear)
     restore()
     return false
 end
--- ขั้น1 Rift → ขั้น2 วาฬ (พิกัดจากแคช/FALLBACK — ไม่สแกน)
-local function goPoint()
+-- force=true = ปุ่ม PATH บังคับ Rift→วาฬ แม้ใกล้วาฬ
+local function goPoint(force)
     stopTreadScripts()
-    say("เริ่ม path Rift→วาฬ")
-    local rift=S.rift or FALLBACK_RIFT
-    local whale=S.point or FALLBACK
-    if not S.rift then rift=resolveRift() end
-    if not S.point then whale=resolvePoint() end
+    say(force and "TEST path Rift→วาฬ" or "เริ่ม path Rift→วาฬ")
+    local rift=resolveRift()
+    local whale=resolvePoint()
     local _,_,r=char()
     if not r then
         say("รอ HRP..."); task.wait(1.2)
         _,_,r=char()
         if not r then say("ไม่มีตัว — ข้าม path"); return false end
     end
-    local dWhale=(Vector3.new(whale.X,r.Position.Y,whale.Z)-r.Position).Magnitude
-    if dWhale<=NEAR_WHALE then
-        say(string.format("อยู่โซนวาฬ d=%.0f — เข้าฟาร์มเลย",dWhale))
-        return true
+    if not force then
+        local dWhale=(Vector3.new(whale.X,r.Position.Y,whale.Z)-r.Position).Magnitude
+        if dWhale<=NEAR_WHALE then
+            say(string.format("อยู่โซนวาฬ d=%.0f — เข้าฟาร์มเลย",dWhale))
+            return true
+        end
     end
     local d1=(Vector3.new(rift.X,r.Position.Y,rift.Z)-r.Position).Magnitude
     say(string.format("ขั้น1 → Rift @%.0f,%.0f,%.0f d=%.0f",rift.X,rift.Y,rift.Z,d1))
     local ok1=walkOpen(rift,22,math.clamp(d1/12+40,40,300),55)
-    if not S.run then return false end
+    if not active() then return false end
     say(ok1 and "ถึง Rift → ไปวาฬ" or "Rift ไม่สุด → ไปวาฬต่อ")
     local _,_,r2=char(); r2=r2 or r
     local d2=(Vector3.new(whale.X,r2.Position.Y,whale.Z)-r2.Position).Magnitude
     say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f d=%.0f",whale.X,whale.Y,whale.Z,d2))
     local ok2=walkOpen(whale,20,math.clamp(d2/10+50,60,420),55)
-    say(ok2 and "ถึงวาฬแล้ว" or "วาฬไม่ทัน")
+    say(ok2 and "ถึงวาฬแล้ว ✓" or "วาฬไม่ทัน")
     return ok2
-end
-local function nearestTreadmill()
-    local _,_,r=char(); if not r then return nil end
-    local best,bestD
-    local function scan(root)
-        if not root then return end
-        for _,item in ipairs(root:GetDescendants()) do
-            if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
-                local d=(item.Position-r.Position).Magnitude
-                if not bestD or d<bestD then best,bestD=item,d end
-            end
-        end
-    end
-    local objs=workspace:FindFirstChild("__OBJECTS")
-    scan(objs)
-    if not best then
-        -- fallback แคบ: ลูกโดยตรงของ workspace ที่มีชื่อเกี่ยว treadmill
-        for _,ch in ipairs(workspace:GetChildren()) do
-            if ch.Name:lower():find("tread",1,true) or ch.Name:lower():find("machine",1,true) then
-                scan(ch)
-            end
-        end
-    end
-    return best,bestD
-end
-local function treadStandPos(bottom)
-    if not bottom then return nil end
-    return bottom.CFrame:PointToWorldSpace(Vector3.new(0,bottom.Size.Y*0.5+2.5,0))
-end
-local function stopTreadScripts()
-    S.onTread=false
-    if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run=false end
 end
 local function leaveTreadmill()
     local bottom,d=nearestTreadmill()
@@ -298,10 +311,7 @@ local function leaveTreadmill()
     if h and r then
         local dir=Vector3.new(r.Position.X-bottom.Position.X,0,r.Position.Z-bottom.Position.Z)
         if dir.Magnitude<1 then dir=r.CFrame.RightVector else dir=dir.Unit end
-        -- ถอยให้พ้นแผ่นเครื่องวิ่ง (เดิม 16 ยังโดน +Speed)
-        local goal=r.Position+dir*45
-        walk(goal,4,10,nil)
-        -- ยังใกล้ → ดัน CFrame อีกรอบ
+        walk(r.Position+dir*45,4,10,nil)
         local _,_,r2=char()
         if r2 and bottom.Parent and (r2.Position-bottom.Position).Magnitude<20 then
             r2.CFrame=CFrame.new(bottom.Position+dir*50+Vector3.new(0,6,0))
@@ -309,21 +319,34 @@ local function leaveTreadmill()
         end
     end
     stop()
-    say("ออกเครื่องวิ่งแล้ว — หยุด jog / TreadmillAuto")
+    say("ออกเครื่องวิ่งแล้ว")
 end
 local function returnTreadmill()
     local bottom=S.tread
-    if not bottom or not bottom.Parent then bottom=select(1,nearestTreadmill()) end
-    if not bottom then say("ไม่พบเครื่องวิ่งเดิม"); return end
+    if not bottom or not bottom.Parent then
+        bottom=select(1,nearestTreadmill())
+    end
+    if not bottom then
+        say("ไม่พบ TreadmillBottom — ลองสแกนใหม่")
+        refreshTreadList(true)
+        bottom=select(1,nearestTreadmill())
+    end
+    if not bottom then say("ไม่พบเครื่องวิ่งในแมพ"); return false end
     S.tread=bottom
     local target=treadStandPos(bottom)
-    if not target then return end
+    if not target then return false end
     local _,_,r=char()
-    local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
-    say("กลับเครื่องวิ่งเดิม")
-    walk(target,5,lim,55)
-    S.onTread=true
-    say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
+    local d=r and (target-r.Position).Magnitude or 999
+    local lim=math.clamp(d/12+40,45,300)
+    say(string.format("ไปเครื่องวิ่ง d=%.0f @%.0f,%.0f,%.0f",d,target.X,target.Y,target.Z))
+    local ok=walkOpen(target,5,lim,55)
+    if ok then
+        S.onTread=true
+        say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
+    else
+        say("ไปเครื่องวิ่งไม่สุด")
+    end
+    return ok
 end
 local function jogTreadTick(n)
     if not S.onTread then return n end
@@ -353,10 +376,8 @@ local function isExperiment(m)
     if not m or underClientEggs(m) then return false end
     if m:IsDescendantOf(LP.Character or Instance.new("Folder")) then return false end
     local name=m.Name:lower()
-    -- ห้าม: DrScrambleEvent = มาร์กเกอร์อีเวนต์ ไม่ใช่หุ่นตีได้
     if name:find("event",1,true) and not name:find("dronevisual",1,true) then return false end
-    if name:find("dronevisual",1,true) then return true end
-    return false
+    return name:find("dronevisual",1,true)~=nil
 end
 local function hpOf(m)
     for _,x in ipairs(m:GetDescendants()) do
@@ -374,14 +395,12 @@ local function robots(hub,maxD)
     local function consider(x)
         if not x or seen[x] or not x:IsA("Model") or not isExperiment(x) then return end
         seen[x]=true
-        local p=rootPart(x)
-        if not p then return end
+        local p=rootPart(x); if not p then return end
         local hp,_,label=hpOf(x)
         if not hp or hp<=0 then return end
         local center=x:GetPivot().Position
-        local fromHub=(center-hub).Magnitude
-        if fromHub<=maxD then
-            out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude,hubD=fromHub}
+        if (center-hub).Magnitude<=maxD then
+            out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude}
         end
     end
     local abyss=findAbyssFolder()
@@ -400,13 +419,16 @@ end
 local function bat()
     local c,h=char(); if not c or not h then return end
     local t=c:FindFirstChildOfClass("Tool")
-    if not t then t=LP.Backpack:FindFirstChildWhichIsA("Tool"); if t then pcall(function() h:EquipTool(t) end); task.wait(.15) end end
+    if not t then
+        t=LP.Backpack:FindFirstChildWhichIsA("Tool")
+        if t then pcall(function() h:EquipTool(t) end); task.wait(.15) end
+    end
     return t
 end
 local function hit(robot)
     local _,_,me=char()
     local d=me and (robot.pos-me.Position).Magnitude or 99
-    if d>HUNT_RAD then say(string.format("ข้ามเป้าไกล d=%.0f (นอกโซนวาฬ)",d)); return end
+    if d>HUNT_RAD then return end
     if not walk(robot.pos,10,d>28 and 80 or 50,55) then return end
     local tool=bat(); if not tool then say("ไม่มีไม้"); return end
     say("ตี "..robot.m.Name.." | "..(robot.label or "?"))
@@ -427,16 +449,18 @@ local function hit(robot)
         task.wait(.62)
     end
 end
-local function secsIntoHalf(t)
-    return math.floor(t)%1800
-end
 local function waitEvent()
     local n=0
     do
         local b,d=nearestTreadmill()
-        if b and d and d<=14 then S.tread=b end
+        if b then
+            S.tread=b
+            if d and d<=14 then S.onTread=true end
+            say(string.format("พบเครื่องวิ่ง %d ตัว | ใกล้สุด d=%.0f",#(S.treadList or {}),d or -1))
+        else
+            say("เตือน: ยังไม่พบ TreadmillBottom")
+        end
     end
-    -- นอกอีเวนต์และยังไม่บนเครื่องวิ่ง → ไปยืนรอ
     do
         local t=serverNow()
         local into=secsIntoHalf(t)
@@ -448,6 +472,7 @@ local function waitEvent()
                 returnTreadmill()
             elseif b then
                 S.tread=b; S.onTread=true
+                say("อยู่บนเครื่องวิ่งแล้ว — รอ")
             end
         end
     end
@@ -458,7 +483,7 @@ local function waitEvent()
         local rem=1800-into
         if rem==1800 then rem=0; into=0 end
         if into<FARM_WINDOW then
-            say(string.format("อีเวนต์กำลังเปิด %s — เข้าไปแล้ว %ds / เหลือ ~%ds",fmtHMS(t),into,FARM_WINDOW-into))
+            say(string.format("อีเวนต์เปิด %s — เข้าแล้ว %ds / เหลือ ~%ds",fmtHMS(t),into,FARM_WINDOW-into))
             return true
         end
         if rem<=LEAD then
@@ -474,10 +499,14 @@ local function waitEvent()
         else
             local b,d=nearestTreadmill()
             if b and (not d or d>14) then
-                say("หลุดเครื่องวิ่ง — วิ่งกลับไปรอ")
+                say("หลุดเครื่องวิ่ง — กลับไปรอ")
                 returnTreadmill()
             elseif b and d and d<=14 then
                 S.tread=b; S.onTread=true
+            elseif not b then
+                if (os.clock()-lastWaitSay)>12 then
+                    say("รออีเวนต์ — ยังไม่เจอเครื่องวิ่ง"); lastWaitSay=os.clock()
+                end
             end
             if rem<=60 and (os.clock()-lastWaitSay)>8 then
                 say(string.format("รอ :00/:30 | %s | อีก %ds",fmtHMS(t),rem)); lastWaitSay=os.clock()
@@ -495,24 +524,21 @@ local function farm5min()
     local deadline=os.clock()+left
     local hub=S.point or FALLBACK
     S.inFarm=true
-    say(string.format("SCAN/ตีในรัศมี %d รอบวาฬ — เหลือ %ds",HUNT_RAD,left))
+    say(string.format("SCAN/ตีรัศมี %d รอบวาฬ — เหลือ %ds",HUNT_RAD,left))
     while S.run and os.clock()<deadline do
         if S.repath then
             S.repath=false
-            say("เกิดใหม่ — RiftMachine → วาฬ อีกครั้ง")
-            goPoint()
+            say("เกิดใหม่ — Rift→วาฬ อีกครั้ง")
+            goPoint(false)
             hub=S.point or FALLBACK
             if not S.run then break end
         end
         local _,_,me=char()
-        if me then
-            local away=(me.Position-hub).Magnitude
-            if away>AWAY_REPATH then
-                say(string.format("ห่างวาฬ %.0f — บังคับ RiftMachine→วาฬ",away))
-                goPoint()
-                hub=S.point or FALLBACK
-                if not S.run then break end
-            end
+        if me and (me.Position-hub).Magnitude>AWAY_REPATH then
+            say(string.format("ห่างวาฬ %.0f — บังคับ Rift→วาฬ", (me.Position-hub).Magnitude))
+            goPoint(false)
+            hub=S.point or FALLBACK
+            if not S.run then break end
         end
         local all=robots(hub,HUNT_RAD)
         if #all==0 then
@@ -522,7 +548,7 @@ local function farm5min()
             end
             task.wait(.6)
         else
-            say(string.format("พบ %d ตัวในโซน — ตีใกล้สุด d=%.0f",#all,all[1].d))
+            say(string.format("พบ %d ตัวในโซน — ตี d=%.0f",#all,all[1].d))
             hit(all[1]); task.wait(.3)
         end
     end
@@ -535,14 +561,13 @@ local function loop()
         leaveTreadmill()
         if not S.run then break end
         S.repath=false
-        say("ออกเครื่องแล้ว → RiftMachine→วาฬ / หรือฟาร์มถ้าอยู่โซน")
-        local ok=goPoint()
+        local ok=goPoint(false)
         say(ok and "path เสร็จ → ฟาร์ม" or "path ไม่สุด → ฟาร์มต่อ")
         if not S.run then break end
         if S.repath then
             S.repath=false
-            say("เกิดใหม่ตอนเดินทาง — RiftMachine → วาฬ ซ้ำ")
-            goPoint()
+            say("เกิดใหม่ตอนเดินทาง — path ซ้ำ")
+            goPoint(false)
             if not S.run then break end
         end
         farm5min()
@@ -550,74 +575,121 @@ local function loop()
         returnTreadmill()
     end
 end
+
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm"; gui.ResetOnSpawn=false; gui.DisplayOrder=1022
 pcall(function() gui.Parent=(gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end
 S.gui=gui
-local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDim2.new(0,12,.45,0)
+local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,340,0,230); f.Position=UDim2.new(0,12,.42,0)
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.18 — Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.19 — Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
-local function button(text,x,color,w)
-    local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
+local function button(text,x,y,color,w)
+    local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 62,0,26); b.Position=UDim2.new(0,x,0,y)
     b.Text=text; b.TextColor3=Color3.new(1,1,1); b.BackgroundColor3=color; b.BorderSizePixel=0
     b.Font=Enum.Font.GothamBold; b.TextSize=11; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5); return b
 end
-local startB=button("AUTO",10,Color3.fromRGB(35,145,75))
-local stopB=button("STOP",88,Color3.fromRGB(165,50,55))
-local copyB=button("COPY",166,Color3.fromRGB(75,75,80),52)
-local closeB=button("X",244,Color3.fromRGB(145,50,65),28)
-logBox=Instance.new("TextLabel",f); logBox.Size=UDim2.new(1,-16,0,128); logBox.Position=UDim2.new(0,8,0,66)
+local startB=button("AUTO",10,32,Color3.fromRGB(35,145,75),58)
+local stopB=button("STOP",72,32,Color3.fromRGB(165,50,55),58)
+local pathB=button("PATH",134,32,Color3.fromRGB(70,110,180),58)
+local treadB=button("TREAD",196,32,Color3.fromRGB(120,90,40),58)
+local copyB=button("COPY",258,32,Color3.fromRGB(75,75,80),40)
+local closeB=button("X",302,32,Color3.fromRGB(145,50,65),28)
+logBox=Instance.new("TextLabel",f); logBox.Size=UDim2.new(1,-16,0,158); logBox.Position=UDim2.new(0,8,0,64)
 logBox.BackgroundColor3=Color3.new(0,0,0); logBox.BackgroundTransparency=.2; logBox.TextColor3=Color3.fromRGB(180,245,190)
 logBox.Font=Enum.Font.Code; logBox.TextSize=10; logBox.TextXAlignment=Enum.TextXAlignment.Left
 logBox.TextYAlignment=Enum.TextYAlignment.Top; logBox.TextWrapped=true; logBox.ClipsDescendants=true
+
 local function beginAuto()
-    if S.run then return end
+    if S.run or S.test then say("หยุด TEST/AUTO ก่อน"); return end
     S.run=true; startB.Text="ON"
-    resolveRift()
-    resolvePoint()
+    setClip(true)
+    resolveRift(); resolvePoint()
+    refreshTreadList(true)
     local b,d=nearestTreadmill()
-    if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO ON — อีเวนต์: RiftMachine → วาฬ | นอก=เครื่องวิ่งรอ")
+    if b then
+        S.tread=b
+        say(string.format("จำเครื่องวิ่ง d=%.0f (ทั้งหมด %d)",d or -1,#(S.treadList or {})))
+    else
+        say("เตือน: ไม่พบเครื่องวิ่งตอนเปิด")
+    end
+    say("AUTO ON — นอกอีเวนต์=เครื่องวิ่ง | อีเวนต์=Rift→วาฬ")
     task.spawn(function()
-        loop()
+        local ok,err=pcall(loop)
+        if not ok then say("ERROR loop: "..tostring(err)) end
+        S.run=false
         if S.gui and S.gui.Parent then startB.Text="AUTO" end
     end)
 end
+local function runPathTest()
+    if S.test then say("PATH กำลังทดสอบอยู่"); return end
+    if S.run then S.run=false; stop("หยุด AUTO เพื่อ TEST"); task.wait(0.2) end
+    S.test=true; pathB.Text="..."
+    setClip(true)
+    task.spawn(function()
+        local ok,err=pcall(function()
+            goPoint(true)
+        end)
+        if not ok then say("ERROR PATH: "..tostring(err)) end
+        S.test=false
+        if pathB and pathB.Parent then pathB.Text="PATH" end
+    end)
+end
+local function runTreadTest()
+    if S.test then say("BUSY"); return end
+    if S.run then S.run=false; stop("หยุด AUTO เพื่อ TREAD"); task.wait(0.2) end
+    S.test=true; treadB.Text="..."
+    setClip(true)
+    task.spawn(function()
+        local ok,err=pcall(function()
+            refreshTreadList(true)
+            local b,d=nearestTreadmill()
+            if not b then say("TREAD FAIL — ไม่พบ TreadmillBottom"); return end
+            say(string.format("TREAD TEST เจอ d=%.0f n=%d",d or -1,#(S.treadList or {})))
+            returnTreadmill()
+        end)
+        if not ok then say("ERROR TREAD: "..tostring(err)) end
+        S.test=false
+        if treadB and treadB.Parent then treadB.Text="TREAD" end
+    end)
+end
+
 local function boot()
     setClip(true)
     local c=LP.Character or LP.CharacterAdded:Wait()
     if c then c:WaitForChild("HumanoidRootPart",8) end
     task.wait(0.4)
+    refreshTreadList(true)
+    say(string.format("พร้อม | เครื่องวิ่งในแคช=%d | กด PATH ทดสอบ Rift→วาฬ",#(S.treadList or {})))
     if S.gui and S.gui.Parent then beginAuto() end
 end
 startB.MouseButton1Click:Connect(beginAuto)
 stopB.MouseButton1Click:Connect(function()
-    S.run=false; stop("STOP"); startB.Text="AUTO"
+    S.run=false; S.test=false; stop("STOP"); startB.Text="AUTO"; pathB.Text="PATH"; treadB.Text="TREAD"
 end)
+pathB.MouseButton1Click:Connect(runPathTest)
+treadB.MouseButton1Click:Connect(runTreadTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
-    local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.18 ===\n"..table.concat(S.lines,"\n")..extra)
+    local extra=""
+    if S.point then extra=extra..string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) end
+    if S.rift then extra=extra..string.format("\nRIFT=%.1f,%.1f,%.1f",S.rift.X,S.rift.Y,S.rift.Z) end
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.19 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
-    S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
+    S.run=false; S.test=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
 LP.CharacterAdded:Connect(function(ch)
     if not S.gui or not S.gui.Parent then return end
     task.wait(0.5)
     pcall(function() ch:WaitForChild("HumanoidRootPart",8) end)
     setClip(true)
-    if not S.run then
-        beginAuto()
-        return
-    end
-    -- โดนตีตกแผนที่ / เกิดใหม่ → ต้อง path RiftMachine → วาฬ ใหม่
+    if not S.run then return end
     S.repath=true
-    say("เกิดใหม่ — มาร์ก repath RiftMachine→วาฬ")
+    say("เกิดใหม่ — มาร์ก repath Rift→วาฬ")
 end)
-say("เปิดสคริปต์ = AUTO | ขั้น1 RiftMachine → ขั้น2 วาฬ")
+say("v2.19 | AUTO=ฟาร์ม | PATH=ทดสอบ Rift→วาฬ | TREAD=ทดสอบเครื่องวิ่ง")
 task.spawn(boot)
