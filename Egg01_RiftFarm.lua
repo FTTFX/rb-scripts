@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.17 -- ชื่อ: สลับคำได้ + LCS≥80%ชื่อสั้น | สแกนไบโอมถี่ + ไม่หยิบ Blade Head เป็น Bladehide
+-- Egg01 Rift Farm v1.18 -- สแกนระหว่างเดิน เป้าเปลี่ยนแล้วสลับทันที ไม่ต้อง STOP
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,live={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
@@ -175,10 +175,10 @@ local function proxyPosFromSnapshot(byUid,areaName,rootPos)
  if best then return best,areaName.." nest" end
 end
 local prompts
-local function target()
+local function target(quiet)
  local need=wanted(); if not need or #need==0 then return end
  attachShift()
- local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then say("ไม่พบ Snapshot") return end
+ local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then if not quiet then say("ไม่พบ Snapshot") end return end
  local ok,a=pcall(function() return rf:InvokeServer() end); local rec=ok and (a.Records or a.records or a); local _,root=hr(); if typeof(rec)~="table" or not root then return end
  local byUid={}
  for id,row in pairs(rec) do
@@ -213,7 +213,7 @@ local function target()
  if best then
   S.lastMiss=nil; S.hunt=nil
   local loose=(best.score or 100)<100 and ("≈"..tostring(best.via or best.cat).." ") or ""
-  say(string.format("RIFT NEED %s %sUID=%s d=%.0f",best.need,loose,tostring(best.uid),best.d))
+  if not quiet then say(string.format("RIFT NEED %s %sUID=%s d=%.0f",best.need,loose,tostring(best.uid),best.d)) end
   return best
  end
  -- ไม่มีชนิดในฟิลด์ → ไปไบโอมที่ไข่เกิด แล้วรอสปอว์น
@@ -229,7 +229,7 @@ local function target()
  else tip="ไม่มีใน Snapshot ตอนนี้"
  end
  local now=os.clock()
- if not S.lastMiss or now-(S.lastMiss or 0)>=6 then
+ if not quiet and (not S.lastMiss or now-(S.lastMiss or 0)>=6) then
   S.lastMiss=now
   say(string.format("ยังไม่เจอ: %s | snap=%d | %s",table.concat(need,", "),total,tip))
  end
@@ -240,20 +240,6 @@ local function target()
   end
   -- อยู่ไบโอมแล้ว — ให้ลูปสแกนถี่ ไม่เดินซ้ำ
   return {uid=nil,need="WAIT",pos=hub,d=d,hunt=true,wait=true,area=huntArea,label=hubLabel}
- end
-end
-local function huntBiome(t)
- if not t or not t.pos then return end
- if not t.wait then
-  say(string.format("ไปไบโอม %s (%s) d=%.0f — รอไข่สปอว์น",tostring(t.area or "?"),tostring(t.label or "?"),t.d or -1))
-  if not walk(t.pos,40,180,90) then say("ไปไบโอมไม่สำเร็จ"); return end
-  say("ถึงไบโอมแล้ว — สแกนซ้ำเรื่อยๆ")
- end
- local untilT=os.clock()+45
- while S.run and os.clock()<untilT do
-  local hit=target()
-  if hit and not hit.hunt then one(hit); return end
-  task.wait(0.75)
  end
 end
 prompts=function() local o={}; for _,x in ipairs(workspace:GetDescendants()) do if x:IsA("ProximityPrompt") and x.Enabled and tostring(x.ActionText):lower():find("steal",1,true) then local q=x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart",true)); if q then o[#o+1]={p=x,pos=q.Position} end end end; return o end
@@ -268,13 +254,19 @@ local function stop(label)
  end
  if label then say(label) end
 end
-local function walk(p,rad,lim,slowNear)
- local t=os.clock(); local moveHum,oldSpeed,lastBand
+local function walk(p,rad,lim,slowNear,watchUid)
+ local t0=os.clock(); local moveHum,oldSpeed,lastBand,lastSay,lastPoll=nil,nil,nil,0,0
  local function restore()
   if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
  end
- while S.run and os.clock()-t<lim do
+ while S.run and os.clock()-t0<lim do
   local h,r=hr(); if not h or not r then restore(); return end
+  if watchUid and os.clock()-lastPoll>2 then
+   lastPoll=os.clock()
+   local n=target(true)
+   if not n or n.hunt or tostring(n.uid)~=tostring(watchUid) then restore(); say("เป้าเปลี่ยน — สแกนใหม่"); return false,"switch" end
+   if n.pos then p=n.pos end
+  end
   local g=Vector3.new(p.X,r.Position.Y,p.Z); local d=(g-r.Position).Magnitude
   if d<=rad then restore(); stop(); return true end
   if slowNear then
@@ -285,7 +277,12 @@ local function walk(p,rad,lim,slowNear)
    if band~=lastBand and band~="ปกติ" then say(band.."ก่อนถึงไข่ — เหลือ "..math.floor(d).." studs") end
    lastBand=band
   end
-  h:MoveTo(g); task.wait(.04)
+  local dir=g-r.Position
+  local step=math.min(dir.Magnitude,110)
+  local goal=r.Position+dir.Unit*step
+  h:MoveTo(Vector3.new(goal.X,r.Position.Y,goal.Z))
+  if d>80 and os.clock()-lastSay>6 then lastSay=os.clock(); say(string.format("เดิน d=%.0f",d)) end
+  task.wait(.12)
  end
  restore()
 end
@@ -345,7 +342,11 @@ local function fireSteal(pick)
 end
 local function one(t)
  if not refreshTarget(t) then say("UID เป้าหมายหาย/เปลี่ยน — ไม่หยิบ") return end
- if not walk(t.pos,5,90,55) then say("ไป Rift egg ไม่สำเร็จ") return end
+ local _,me=hr(); local dist=me and (t.pos-me.Position).Magnitude or (t.d or 200)
+ local lim=math.clamp(dist/12+40,50,280)
+ local ok,why=walk(t.pos,5,lim,55,t.uid)
+ if why=="switch" then return end
+ if not ok then say("ไป Rift egg ไม่สำเร็จ") return end
  if not refreshTarget(t) then say("UID เป้าหมายหายหลังเดินถึง — ไม่หยิบ") return end
  if not attachCarry() then say("ไม่พบ FieldEggCarry — ยังตรวจ UID หลังหยิบไม่ได้") return end
  S.expectedUid=t.uid; S.carrying=false; S.carryVerified=false; S.carryMismatch=false
@@ -397,11 +398,11 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.17 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.18 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — สแกนถี่ | ชื่อต้องใกล้เคียงจริง") task.spawn(function() while S.run do local t=target(); if t and t.hunt then huntBiome(t); task.wait(.3) elseif t then one(t);task.wait(.8) else task.wait(1) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.17 ===\n"..table.concat(lines,"\n"))end end)
-say("v1.17: ไม่จับ Blade Head/Sand Spider ผิด | สแกนไบโอมทุก 0.75s")
+attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — สแกนระหว่างเดิน เป้าเปลี่ยนสลับเอง") task.spawn(function() while S.run do local t=target(); if t and t.hunt and not t.wait then if not S.huntAt or os.clock()-S.huntAt>12 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s d=%.0f — สแกนระหว่างทาง",tostring(t.area),t.d or -1)) end; walk(t.pos,50,2.4) elseif t and t.hunt then task.wait(.6) elseif t then one(t);task.wait(.4) else task.wait(.8) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.18 ===\n"..table.concat(lines,"\n"))end end)
+say("v1.18: เดินเป็นท่อน + สแกนตลอด เป้าเปลี่ยนแล้วไปต่อ ไม่ต้อง STOP")
