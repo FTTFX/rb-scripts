@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v1.7 -- ZONE fish/egg + DroneVisual only + SCHED + CLIP corridor
+-- Egg01 Experiment Farm v1.8 -- Abyss Ocean FISH + DroneVisual + SCHED + CLIP
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -9,11 +9,12 @@ local LP=Players.LocalPlayer
 local LEAD=60
 local FARM_WINDOW=600
 local DEFAULT_DOCK=Vector3.new(2194.0,70.8,-364.1)
+local DEFAULT_FISH=Vector3.new(1371.0,90.0,-357.0) -- Abyss Ocean จาก ZONE scan
 local ZONE_KEYS={
-    fish=3,ocean=3,sea=3,water=2,coral=2,aquatic=3,catfish=3,
-    egg=2,eggs=2,hatch=1,biome=1,area=1,swamp=2,lake=2,reef=3,
+    abyss=10,ocean=8,fish=7,sea=6,reef=6,coral=5,aquatic=5,catfish=5,
+    water=3,lake=3,swamp=3,
 }
-local S={run=false,mode=nil,gui=nil,lines={},searchOrigin=nil,searchIndex=0,dock=DEFAULT_DOCK,fish=nil,clockSkew=0,clip=false,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,mode=nil,gui=nil,lines={},searchOrigin=nil,searchIndex=0,dock=DEFAULT_DOCK,fish=DEFAULT_FISH,clockSkew=0,clip=false,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>16 then table.remove(S.lines,1) end
@@ -163,10 +164,14 @@ local function robots()
     table.sort(out,function(a,b) return a.d<b.d end); return out
 end
 local function zoneScore(name)
-    local n=name:lower(); local score,tag=0,nil
+    local n=name:lower()
+    if n:find("eggfit",1,true) or n:find("eggspot",1,true) or n:find("eggpoint",1,true)
+        or n:find("eggcarry",1,true) or n:find("bounds",1,true) then return 0,nil end
+    local score,tag=0,nil
     for k,w in pairs(ZONE_KEYS) do
         if n:find(k,1,true) and w>score then score=w; tag=k end
     end
+    if n:find("abyss",1,true) then score=score+5; tag=tag or "abyss" end
     return score,tag
 end
 local function instPos(d)
@@ -187,25 +192,23 @@ local function scanZones()
     local hits,seen={},{}
     local function add(d,bonus)
         if seen[d] then return end
+        if not (d:IsA("Model") or d:IsA("Folder") or d:IsA("BasePart")) then return end
+        -- รับเฉพาะชื่อโซนชัด (ไม่กวาด area ทั่วแมพ)
         local score,tag=zoneScore(d.Name)
         score=score+(bonus or 0)
-        if score<=0 then return end
+        if score<3 then return end
         local pos=instPos(d); if not pos then return end
         local dd=(pos-r.Position).Magnitude
-        if dd>4500 then return end
+        if dd>2500 then return end
         seen[d]=true
         hits[#hits+1]={d=d,pos=pos,dist=dd,score=score,tag=tag or "?",name=d.Name,path=shortPath(d)}
     end
     local objs=workspace:FindFirstChild("__OBJECTS")
     local areas=objs and objs:FindFirstChild("Areas")
     if areas then
-        for _,ch in ipairs(areas:GetDescendants()) do
-            if ch:IsA("BasePart") or ch:IsA("Model") or ch:IsA("Folder") then add(ch,2) end
-        end
+        for _,ch in ipairs(areas:GetDescendants()) do add(ch,2) end
     end
-    for _,d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("BasePart") or d:IsA("Model") or d:IsA("Folder") then add(d,0) end
-    end
+    for _,d in ipairs(workspace:GetDescendants()) do add(d,0) end
     table.sort(hits,function(a,b)
         if a.score~=b.score then return a.score>b.score end
         return a.dist<b.dist
@@ -215,29 +218,27 @@ local function scanZones()
         local h=hits[i]
         say(string.format("#%d [%s/%d] %s d=%.0f @%.0f,%.0f,%.0f",i,h.tag,h.score,h.name,h.dist,h.pos.X,h.pos.Y,h.pos.Z))
     end
-    if #hits==0 then say("ไม่เจอชื่อโซน fish/ocean/egg — ลอง MARK FISH เองที่โซนปลา") end
+    if #hits==0 then say("ไม่เจอ Abyss/Ocean — ยืนโซนปลาแล้วกด FISH") end
     return hits
 end
 local function pickFishZone(hits)
     hits=hits or scanZones()
     if #hits==0 then return nil end
-    local origin=S.dock or select(3,char()) and select(3,char()).Position
+    -- 1) ชื่อ Abyss Ocean ตรงๆ
+    for _,h in ipairs(hits) do
+        local n=h.name:lower()
+        if n:find("abyss",1,true) and n:find("ocean",1,true) then return h end
+    end
+    -- 2) tag ocean/fish/sea — ใกล้สุดไม่ใช่ไกลสุด
     local best
     for _,h in ipairs(hits) do
         local tag=h.tag
-        local fishy=tag=="fish" or tag=="ocean" or tag=="sea" or tag=="coral" or tag=="reef" or tag=="aquatic" or tag=="catfish" or tag=="egg" or tag=="eggs"
-        if fishy then
-            local ahead=0
-            if origin then
-                -- ทางเดินแนว X เป็นหลัก: ชอบจุดที่ห่างจาก dock ไปข้างหน้า
-                ahead=(h.pos-origin).Magnitude
-            end
-            local rank=h.score*1000+ahead
+        if tag=="abyss" or tag=="ocean" or tag=="fish" or tag=="sea" or tag=="reef" or tag=="coral" or tag=="aquatic" then
+            local rank=h.score*10000-h.dist
             if not best or rank>best.rank then best={h=h,rank=rank} end
         end
     end
-    if not best then best={h=hits[1],rank=0} end
-    return best.h
+    return best and best.h or hits[1]
 end
 local function goTo(pos,label,useClip,rad)
     rad=rad or 18
@@ -256,11 +257,19 @@ local function goDock(useClip)
     return goTo(S.dock,"DOCK",useClip,12)
 end
 local function goFish(useClip)
-    if S.fish then return goTo(S.fish,"FISH",useClip~=false,20) end
-    local z=pickFishZone()
-    if not z then say("ยังไม่มีจุด FISH — กด ZONE หรือยืนโซนปลาแล้วกด FISH"); return false end
-    S.fish=z.pos
-    say(string.format("เลือก FISH จากโมเดล %s [%s] @%.0f,%.0f,%.0f",z.name,z.tag,z.pos.X,z.pos.Y,z.pos.Z))
+    -- ถ้า FISH เก่าเป็น EggFit ไกลผิด → เลือกใหม่
+    local bad=S.fish and ((S.fish-DEFAULT_DOCK).Magnitude>2000)
+    if (not S.fish) or bad then
+        local z=pickFishZone()
+        if z then
+            S.fish=z.pos
+            say(string.format("เลือก FISH จากโมเดล %s [%s] @%.0f,%.0f,%.0f",z.name,z.tag,z.pos.X,z.pos.Y,z.pos.Z))
+        elseif not S.fish then
+            S.fish=DEFAULT_FISH
+            say(string.format("ใช้ DEFAULT FISH Abyss Ocean @%.0f,%.0f,%.0f",S.fish.X,S.fish.Y,S.fish.Z))
+        end
+    end
+    if not S.fish then say("ยังไม่มีจุด FISH — กด ZONE หรือยืนโซนปลาแล้วกด FISH"); return false end
     return goTo(S.fish,"FISH",useClip~=false,20)
 end
 local function searchStep()
@@ -343,7 +352,7 @@ end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm";gui.ResetOnSpawn=false;gui.DisplayOrder=1022
 pcall(function()gui.Parent=(gethui and gethui()) or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,500,0,268);f.Position=UDim2.new(0,12,.38,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,26);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.7 — ZONE";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,26);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.8 — Abyss";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,y,color,w)
     local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 62,0,26);b.Position=UDim2.new(0,x,0,y);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=10;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
 end
@@ -374,7 +383,7 @@ zoneB.MouseButton1Click:Connect(function()
     local z=pickFishZone(hits)
     if z then
         S.fish=z.pos
-        say(string.format("FISH auto=%s [%s] %.0f,%.0f,%.0f",z.name,z.tag,z.pos.X,z.pos.Y,z.pos.Z))
+        say(string.format("FISH = %s [%s] %.0f,%.0f,%.0f",z.name,z.tag,z.pos.X,z.pos.Y,z.pos.Z))
     end
 end)
 dockB.MouseButton1Click:Connect(function()
@@ -438,9 +447,9 @@ copy.MouseButton1Click:Connect(function()
     local extra=""
     if S.dock then extra=extra..string.format("\nDOCK=%.1f,%.1f,%.1f",S.dock.X,S.dock.Y,S.dock.Z) end
     if S.fish then extra=extra..string.format("\nFISH=%.1f,%.1f,%.1f",S.fish.X,S.fish.Y,S.fish.Z) end
-    if c then pcall(c,"=== Egg01 Experiment Farm v1.7 ===\n"..table.concat(S.lines,"\n")..extra);copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end
+    if c then pcall(c,"=== Egg01 Experiment Farm v1.8 ===\n"..table.concat(S.lines,"\n")..extra);copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end
 end)
 close.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("v1.7: ZONE หาโมเดล fish/ocean/egg → →FISH วิ่ง CLIP | SCAN เหลือแค่ DroneVisual | SCHED=DOCK→FISH→FARM")
+say("v1.8: FISH=Abyss Ocean @1371,90,-357 | ไม่เลือก EggFitBounds | ZONE/→FISH")
