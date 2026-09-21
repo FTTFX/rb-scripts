@@ -1,4 +1,4 @@
--- Egg01 Target Farm v3.9.2 (Rift-50 จุดปลอดภัย)
+-- Egg01 Target Farm v3.9.3 (Rift หยุดก่อนเส้น)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -34,7 +34,7 @@ for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 7, 100, 30, 25, 12, -50
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 7, 100, 30, 6, 12, -8
 local BRAKE_SECS = 0.12
 local FALLBACK_RIFT = Vector3.new(534.0, 71.0, -340.0)
 local lines = {}
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.9.2 (Rift-50)"
+title.Text = "Egg01 Target Farm v3.9.3 (Rift ก่อนเส้น)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -421,7 +421,7 @@ local function resolveRift(quiet)
     return pos
 end
 
--- จุด Rift ลึก RIFT_DEPTH (-50 = ทิศตรงข้ามเป้า / จุดปลอดภัย)
+-- จุด Rift ลึก RIFT_DEPTH (-8 = ฝั่งปลอดภัย ก่อนเข้าเส้น)
 local function riftDeepTarget(towardPos)
     local rift = resolveRift(true)
     local dir = Vector3.new(1, 0, 0)
@@ -432,7 +432,7 @@ local function riftDeepTarget(towardPos)
     return Vector3.new(rift.X + dir.X * RIFT_DEPTH, math.max(rift.Y, 70), rift.Z + dir.Z * RIFT_DEPTH), rift
 end
 
--- HOME/ลู่วิ่ง → Rift ลึก-50 → เป้า
+-- HOME/ลู่วิ่ง → Rift ก่อนเส้น → เป้า
 local function goViaRift(dest, radius, limit, destLabel)
     if not dest then return false end
     local deep = select(1, riftDeepTarget(dest))
@@ -1041,7 +1041,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.2 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.3 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1059,4 +1059,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.9.2 | กด HOME → START | Rift ลึก-50 | HOME→Rift→ไข่→HOME")
+say("v3.9.3 | กด HOME → START | Rift ก่อนเส้น (-8) | HOME→Rift→ไข่→HOME")
