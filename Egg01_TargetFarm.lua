@@ -1,5 +1,5 @@
--- Egg01 Target Farm v3.0
--- ติ๊ก Rarity → สแกนตลอด; เจอไข่=กระโดดลู่วิ่ง→Steal→HOME; ไม่เจอ=วิ่งลู่วิ่งรอ (แบบ ExperimentFarm)
+-- Egg01 Target Farm v3.1
+-- ติ๊ก Rarity → สแกน; เจอไข่: HOME→Rift→Steal→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -30,8 +30,9 @@ for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R = 60, 16, 7, 100, 30
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R = 60, 16, 7, 100, 30, 25
 local BRAKE_SECS, BRAKE_LEAD = 0.12, 20
+local FALLBACK_RIFT = Vector3.new(534.0, 71.0, -340.0)
 local lines = {}
 local brakePulse
 
@@ -90,7 +91,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.0"
+title.Text = "Egg01 Target Farm v3.1"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -170,7 +171,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "ติ๊ก Rarity → AUTO | ไม่เจอไข่=ลู่วิ่งรอ"
+status.Text = "HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่ง"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -325,6 +326,57 @@ local function walkTo(pos, radius, limit)
         task.wait(braked and 0.10 or 0.18)
     end
     return false
+end
+
+local function instPos(inst)
+    if not inst then return nil end
+    if inst:IsA("BasePart") then return inst.Position end
+    local ok, piv = pcall(function() return inst:GetPivot() end)
+    if ok and piv then return piv.Position end
+    local p = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+    return p and p.Position
+end
+
+local function findRift()
+    local objs = workspace:FindFirstChild("__OBJECTS")
+    local machines = objs and objs:FindFirstChild("Machines")
+    local rm = machines and machines:FindFirstChild("RiftMachine")
+    if rm then
+        local rift = rm:FindFirstChild("Rift")
+        local p = instPos(rift) or instPos(rm)
+        if p then return Vector3.new(p.X, math.max(p.Y, 70), p.Z), "RiftMachine" end
+    end
+    return FALLBACK_RIFT, "fallback-rift"
+end
+
+local function resolveRift(quiet)
+    local pos, src = findRift()
+    S.rift = pos
+    if not quiet then
+        say(string.format("RIFT=%s @%.0f,%.0f,%.0f", tostring(src), pos.X, pos.Y, pos.Z))
+    end
+    return pos
+end
+
+-- ขั้น1 → Rift แล้วค่อยไปเป้า (MoveTo เท่านั้น)
+local function goViaRift(dest, radius, limit, destLabel)
+    if not dest then return false end
+    local rift = resolveRift(true)
+    local _, r = humRoot()
+    if not r then return false end
+    local dR = dist2(r.Position, rift)
+    if dR > RIFT_R then
+        say(string.format("ขั้น1 → Rift @%.0f,%.0f,%.0f d=%.0f", rift.X, rift.Y, rift.Z, dR))
+        local lim1 = math.clamp(dR / 16 + 40, 50, 320)
+        local okR = walkTo(rift, RIFT_R, lim1)
+        if not S.run then return false end
+        say(okR and ("ถึง Rift แล้ว → " .. (destLabel or "เป้า")) or ("Rift ไม่สุด → ไป" .. (destLabel or "เป้า") .. "ต่อ"))
+    end
+    local _, r2 = humRoot()
+    local d2 = r2 and dist2(r2.Position, dest) or 9999
+    say(string.format("ขั้น2 → %s d=%.0f", destLabel or "เป้า", d2))
+    local lim2 = limit or math.clamp(d2 / 14 + 60, 60, 400)
+    return walkTo(dest, radius, lim2)
 end
 
 local function stopMove()
@@ -680,8 +732,10 @@ local function recoverDroppedEgg(dropPos)
 end
 
 local function returnHome()
-    local deadline, lastReport = os.clock() + 120, 0
+    local deadline, lastReport = os.clock() + 180, 0
     S.impactHopUsed, S.lastReturnDist = false, nil
+    resolveRift(true)
+    local phase = "rift" -- กลับผ่าน Rift ก่อน แล้วค่อย HOME
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
@@ -722,18 +776,33 @@ local function returnHome()
             end
             h, r = humRoot()
             if not h or not r then return false end
-            local d = dist2(r.Position, S.home)
-            if d <= HOME_R then stopMove(); return true end
-            -- ตรวจการผลัก/ล้มก่อนสั่งเดินรอบถัดไป; HOP นี้เกิดได้เพียงครั้งเดียวต่อการกลับบ้าน
-            impactHopTowardHome(h, r, d)
-            S.lastReturnDist = d
-            -- เดินตรงยาวถึง HOME; ยิง MoveTo ซ้ำเฉพาะเพื่อกันชน/สะดุด
-            h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
-            if os.clock() - lastReport >= 1 then
-                say(string.format("วิ่งกลับ HOME d=%.0f", d))
-                lastReport = os.clock()
+            local dHome = dist2(r.Position, S.home)
+            if dHome <= HOME_R then stopMove(); return true end
+            local rift = S.rift or resolveRift(true)
+            if phase == "rift" and rift then
+                local dR = dist2(r.Position, rift)
+                if dR <= RIFT_R then
+                    phase = "home"
+                    say("ถึง Rift แล้ว → วิ่งกลับ HOME")
+                else
+                    S.lastReturnDist = dR
+                    h:MoveTo(Vector3.new(rift.X, r.Position.Y, rift.Z))
+                    if os.clock() - lastReport >= 1 then
+                        say(string.format("วิ่งกลับผ่าน Rift d=%.0f", dR))
+                        lastReport = os.clock()
+                    end
+                    task.wait(0.15)
+                end
+            else
+                impactHopTowardHome(h, r, dHome)
+                S.lastReturnDist = dHome
+                h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
+                if os.clock() - lastReport >= 1 then
+                    say(string.format("วิ่งกลับ HOME d=%.0f", dHome))
+                    lastReport = os.clock()
+                end
+                task.wait(0.15)
             end
-            task.wait(0.15)
         end
     end
     return false
@@ -742,9 +811,9 @@ end
 -- ทำหนึ่งรอบโดยไม่ปิด S.run: ตัว loop ด้านล่างจะเลือกไข่ใหม่เอง
 local function farmTarget(target)
     S.carrying, S.eggArea, S.hopUsed = false, target.area, false
-    say("ไปหา " .. target.cat)
-    -- เข้ากลางพิกัด Snapshot ก่อน เพื่อให้ Prompt รอบไข่สตรีมเข้ามา
-    local reachedTarget, targetBraked = walkTo(target.pos, 3, 80)
+    say("ไปหา " .. target.cat .. " ผ่าน Rift")
+    -- HOME/ลู่วิ่ง → Rift → ไข่ (เข้ากลาง Snapshot ให้ Prompt สตรีม)
+    local reachedTarget, targetBraked = goViaRift(target.pos, 3, 120, target.cat)
     if not reachedTarget then
         say("ไปถึงไข่ไม่สำเร็จ")
         return
@@ -828,7 +897,8 @@ local function runOne()
     end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — สแกนตาม Rarity | มีไข่=เก็บ→HOME | ไม่มี=ลู่วิ่งรอ")
+    say("AUTO ON — HOME→Rift→ไข่→Rift→HOME | ไม่มีเป้า=ลู่วิ่งรอ")
+    resolveRift()
     task.spawn(function()
         while S.run do
             local target = chooseTarget(true)
@@ -944,7 +1014,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.0 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.1 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -953,4 +1023,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("กด HOME ที่ฐาน → ติ๊ก Rarity → START | ไม่เจอไข่=ลู่วิ่งรอ สแกนตลอด")
+say("กด HOME → ติ๊ก Rarity → START | path: HOME→Rift→ไข่→Rift→HOME")
