@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v1.5 -- DOCK + SCHED :00/:30 + CLIP test + MOTION_BRAKE
+-- Egg01 Experiment Farm v1.6 -- DOCK default + SCHED :00/:30 + BossFight watch + CLIP
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -8,7 +8,8 @@ local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local LEAD=60
 local FARM_WINDOW=600
-local S={run=false,mode=nil,gui=nil,lines={},searchOrigin=nil,searchIndex=0,dock=nil,clockSkew=0,clip=false,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local DEFAULT_DOCK=Vector3.new(2686.4,70.8,-374.9)
+local S={run=false,mode=nil,gui=nil,lines={},searchOrigin=nil,searchIndex=0,dock=DEFAULT_DOCK,clockSkew=0,clip=false,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>14 then table.remove(S.lines,1) end
@@ -31,6 +32,12 @@ local function secsToBoundary(t)
     local rem=1800-sec
     if rem==1800 then rem=0 end
     return rem
+end
+local function bossTimerText()
+    local pg=LP:FindFirstChild("PlayerGui"); if not pg then return nil end
+    local boss=pg:FindFirstChild("BossFightUI",true); if not boss then return nil end
+    local lab=boss:FindFirstChild("TimerLabel",true)
+    if lab and (lab:IsA("TextLabel") or lab:IsA("TextButton")) then return tostring(lab.Text) end
 end
 local function setClip(on)
     local c=LP.Character
@@ -203,12 +210,13 @@ local function waitForLead()
     while S.run do
         local t=serverNow()
         local rem=secsToBoundary(t)
+        local boss=bossTimerText()
         if rem<=LEAD then
-            say(string.format("ใกล้รอบ %s — เหลือ %ds ≤ LEAD %d — ไป DOCK",fmtHMS(t),rem,LEAD))
+            say(string.format("ใกล้รอบ %s — เหลือ %ds ≤ LEAD %d — ไป DOCK (boss=%s)",fmtHMS(t),rem,LEAD,tostring(boss or "-")))
             return true
         end
         if rem%30==0 or rem==LEAD+1 then
-            say(string.format("รอรอบ :00/:30 | server %s | อีก %ds (LEAD=%d)",fmtHMS(t),rem,LEAD))
+            say(string.format("รอรอบ :00/:30 | server %s | อีก %ds | boss=%s",fmtHMS(t),rem,tostring(boss or "-")))
         end
         task.wait(1)
     end
@@ -236,7 +244,7 @@ end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm";gui.ResetOnSpawn=false;gui.DisplayOrder=1022
 pcall(function()gui.Parent=(gethui and gethui()) or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,460,0,248);f.Position=UDim2.new(0,12,.40,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,28);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.5 — SCHED";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,28);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.6 — SCHED";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,y,color,w)
     local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 68,0,28);b.Position=UDim2.new(0,x,0,y);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=11;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
 end
@@ -311,9 +319,9 @@ end)
 copy.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.dock and string.format("\nDOCK=%.1f,%.1f,%.1f",S.dock.X,S.dock.Y,S.dock.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v1.5 ===\n"..table.concat(S.lines,"\n")..extra);copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end
+    if c then pcall(c,"=== Egg01 Experiment Farm v1.6 ===\n"..table.concat(S.lines,"\n")..extra);copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end
 end)
 close.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("DOCK ที่อู่เชียน → SCHED รอ :00/:30 | CLIP/→DOCK ทดสอบหนูขลิบ | AUTO ไล่ตีทันที")
+say(string.format("DOCK default %.0f,%.0f,%.0f — SCHED รอ server :00/:30 | CLIP/→DOCK ทดสอบ | AUTO ไล่ตี",DEFAULT_DOCK.X,DEFAULT_DOCK.Y,DEFAULT_DOCK.Z))
