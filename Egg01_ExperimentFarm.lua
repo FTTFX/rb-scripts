@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.21 — ไม่เจอลิู่1นาที=ฆ่าตัวตายรีเซ็ต | PATHหลอก0-5
+-- Egg01 Experiment Farm v2.22 — ลู่เรทสูงสุด (+/step) | LOCK | ฆ่าตัวตาย1ม | PATHหลอก0-5
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -11,10 +11,11 @@ local LP=Players.LocalPlayer
 local LEAD=25
 local FARM_WINDOW=300 -- :00–:05 และ :30–:35 (วินาทีในครึ่งชั่วโมง)
 local TREAD_ON_R=22      -- ถือว่ายังบนลู่
-local TREAD_CLEAR_R=32  -- พ้นลู่ (เดิม 42 สูงเกิน — d=31–35 ออกแล้วแต่ยังไม่ผ่าน)
+local TREAD_CLEAR_R=32  -- พ้นลู่
+local TREAD_PICK_R=120  -- เลือกลู่เรทสูงสุดในรัศมีนี้ (กันไปยืน +1000 ทั้งที่มี +2000 ข้างๆ)
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,lockedTread=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -226,16 +227,54 @@ local function goPoint()
 end
 local function nearestTreadmill()
     local _,_,r=char(); if not r then return nil end
-    local best,bestD
+    -- ล็อกไว้แล้ว → ใช้ตัวนั้น
+    if S.lockedTread and S.lockedTread.Parent then
+        return S.lockedTread,(S.lockedTread.Position-r.Position).Magnitude
+    end
+    local function stepRate(bottom)
+        local rate=0
+        local root=bottom
+        for _=1,8 do
+            if not root.Parent or root.Parent==workspace then break end
+            root=root.Parent
+        end
+        local ok,desc=pcall(function() return root:GetDescendants() end)
+        if not ok or not desc then return 0 end
+        for _,d in ipairs(desc) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                local t=tostring(d.Text or ""):gsub(",",""):gsub("%s","")
+                local n=t:match("%+?(%d+)/step") or t:match("%+?(%d+)/Step")
+                if n then rate=math.max(rate,tonumber(n) or 0) end
+            end
+        end
+        return rate
+    end
+    local best,bestD,bestRate
     local ok,desc=pcall(function() return workspace:GetDescendants() end)
     if not ok or not desc then return nil end
     for _,item in ipairs(desc) do
         if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
             local d=(item.Position-r.Position).Magnitude
-            if not bestD or d<bestD then best,bestD=item,d end
+            if d<=TREAD_PICK_R then
+                local rate=stepRate(item)
+                if not best
+                    or rate>bestRate
+                    or (rate==bestRate and d<(bestD or 1e9)) then
+                    best,bestD,bestRate=item,d,rate
+                end
+            end
         end
     end
-    return best,bestD
+    -- ไม่มีในรัศมี → ใกล้สุดทั้งแมพ
+    if not best then
+        for _,item in ipairs(desc) do
+            if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
+                local d=(item.Position-r.Position).Magnitude
+                if not bestD or d<bestD then best,bestD,bestRate=item,d,0 end
+            end
+        end
+    end
+    return best,bestD,bestRate or 0
 end
 local function treadStandPos(bottom)
     if not bottom then return nil end
@@ -384,15 +423,17 @@ local function leaveTreadmill()
     return clear
 end
 local function returnTreadmill()
-    -- เสมอเลือกใกล้ตัว (กันจำเครื่องวิ่งผิด)
-    local bottom=select(1,nearestTreadmill())
+    local bottom,d,rate=nearestTreadmill()
     if not bottom then say("ไม่พบเครื่องวิ่ง"); return false end
     S.tread=bottom
     local target=treadStandPos(bottom)
     if not target then return false end
     local _,_,r=char()
     local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
-    say(string.format("กลับเครื่องวิ่งใกล้สุด d=%.0f",r and (bottom.Position-r.Position).Magnitude or -1))
+    say(string.format("ไปลู่เรทสูงสุด +%s/step d=%.0f%s",
+        tostring(rate and rate>0 and rate or "?"),
+        d or (r and (bottom.Position-r.Position).Magnitude) or -1,
+        S.lockedTread==bottom and " (LOCK)" or ""))
     walk(target,5,lim,55)
     if onTreadPad() then
         say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
@@ -692,22 +733,23 @@ local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm"; gui.ResetO
 pcall(function() gui.Parent=(gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end
 S.gui=gui
-local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDim2.new(0,12,.45,0)
+local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,210); f.Position=UDim2.new(0,12,.45,0)
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.21 — ไม่เจอ1ม=ฆ่าตัวตาย"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.22 — ลู่เรทสูงสุด | LOCK"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
-    local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
+    local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 52,0,28); b.Position=UDim2.new(0,x,0,32)
     b.Text=text; b.TextColor3=Color3.new(1,1,1); b.BackgroundColor3=color; b.BorderSizePixel=0
     b.Font=Enum.Font.GothamBold; b.TextSize=11; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5); return b
 end
 local startB=button("AUTO",10,Color3.fromRGB(35,145,75))
-local stopB=button("STOP",72,Color3.fromRGB(165,50,55))
-local pathB=button("PATH",134,Color3.fromRGB(70,110,180))
-local copyB=button("COPY",196,Color3.fromRGB(75,75,80),52)
-local closeB=button("X",252,Color3.fromRGB(145,50,65),28)
+local stopB=button("STOP",66,Color3.fromRGB(165,50,55))
+local pathB=button("PATH",122,Color3.fromRGB(70,110,180))
+local lockB=button("LOCK",178,Color3.fromRGB(120,90,40),52)
+local copyB=button("COPY",234,Color3.fromRGB(75,75,80),48)
+local closeB=button("X",286,Color3.fromRGB(145,50,65),28)
 logBox=Instance.new("TextLabel",f); logBox.Size=UDim2.new(1,-16,0,136); logBox.Position=UDim2.new(0,8,0,66)
 logBox.BackgroundColor3=Color3.new(0,0,0); logBox.BackgroundTransparency=.2; logBox.TextColor3=Color3.fromRGB(180,245,190)
 logBox.Font=Enum.Font.Code; logBox.TextSize=10; logBox.TextXAlignment=Enum.TextXAlignment.Left
@@ -717,9 +759,12 @@ local function beginAuto()
     if S.run or S.test then return end
     S.run=true; startB.Text="ON"
     resolveRift(); resolvePoint()
-    local b,d=nearestTreadmill()
-    if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO ON — ค้าง5s=เริ่มใหม่ | ออกลู่→Rift→วาฬ")
+    local b,d,rate=nearestTreadmill()
+    if b then
+        S.tread=b
+        say(string.format("จำลู่ +%s/step d=%.0f",tostring(rate and rate>0 and rate or "?"),d or -1))
+    end
+    say("AUTO ON — ลู่เรทสูงสุดใน 120 | ค้าง5s=เริ่มใหม่")
     task.spawn(function()
         local ok,err=pcall(loop)
         if not ok then say("ERROR: "..tostring(err)) end
@@ -755,10 +800,25 @@ stopB.MouseButton1Click:Connect(function()
     S.run=false; S.test=false; S.fakeUntil=0; stop("STOP"); startB.Text="AUTO"; pathB.Text="PATH"
 end)
 pathB.MouseButton1Click:Connect(runPathTest)
+lockB.MouseButton1Click:Connect(function()
+    local on,b,d=onTreadPad()
+    if on and b then
+        S.lockedTread=b
+        S.tread=b
+        lockB.Text="ON"
+        say(string.format("LOCK ลู่นี้แล้ว d=%.0f — จะกลับลู่นี้เสมอ",d or -1))
+    elseif S.lockedTread then
+        S.lockedTread=nil
+        lockB.Text="LOCK"
+        say("ปลด LOCK — เลือกลู่เรทสูงสุดอัตโนมัติ")
+    else
+        say("ยืนบนลู่ที่ต้องการแล้วกด LOCK")
+    end
+end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.21 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.22 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -779,5 +839,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.21 | ไม่เจอลู่1นาที=ฆ่าตัวตายรีเซ็ต | ลู่ใกล้ตัว | PATH=หลอก0-5")
+say("v2.22 | ลู่=เรทสูงสุดใน120studs | LOCK=จำลู่ | ไม่เจอ1ม=ฆ่าตัวตาย")
 task.spawn(boot)
