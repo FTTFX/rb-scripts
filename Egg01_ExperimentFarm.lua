@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.16 — ตีเฉพาะรอบวาฬ + ไกลเกินค่อย Rift→วาฬ
+-- Egg01 Experiment Farm v2.17 — CFrame เดินทาง (น้ำ) + อยู่โซนวาฬแล้วเข้าฟาร์มเลย
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -11,6 +11,7 @@ local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเ�
 local FARM_WINDOW=300
 local HUNT_RAD=220 -- ตี Drone เฉพาะในรัศมีรอบจุดวาฬ — ห้ามไล่ข้ามแมพ
 local AWAY_REPATH=380 -- ห่างวาฬเกินนี้ → บังคับ RiftMachine→วาฬ ใหม่
+local NEAR_WHALE=260 -- อยู่ในโซนนี้ = ข้าม path เข้าฟาร์ม
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0) -- RiftSpy MARK / RiftMachine
 local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,inFarm=false,onTread=false}; _G.EGG01_EXPERIMENT_FARM=S
@@ -177,12 +178,12 @@ local function walk(p,rad,lim,slowNear)
     restore()
     return false
 end
--- วิ่งไป RiftMachine/วาฬ: แบ่งท่อน + ยกตัวเมื่อติด (noclip — ไม่ใช้เส้น L)
-local CHUNK=90
+-- วิ่งทางไกล/ในน้ำ: CFrame ทีละท่อน (MoveTo ว่ายน้ำมักค้าง)
+local CHUNK=70
 local STUCK_MIN=2.5
-local STUCK_SEC=0.85
-local LIFT=14
-local NUDGE=18
+local STUCK_SEC=0.7
+local LIFT=16
+local NUDGE=22
 local function walkOpen(p,rad,lim,slowNear)
     local t=os.clock(); local moveHum,oldSpeed,lastBand
     local lastPos,lastProg=nil,os.clock()
@@ -198,12 +199,6 @@ local function walkOpen(p,rad,lim,slowNear)
         if d>200 and (lastDistLog==0 or lastDistLog-d>=250) then
             say(string.format("เดินทางเหลือ %.0f studs",d)); lastDistLog=d
         end
-        local goal=flat
-        if d>CHUNK then
-            local dir=Vector3.new(flat.X-r.Position.X,0,flat.Z-r.Position.Z)
-            if dir.Magnitude>0.1 then goal=r.Position+dir.Unit*CHUNK end
-            goal=Vector3.new(goal.X,r.Position.Y,goal.Z)
-        end
         if slowNear then
             if not moveHum then moveHum=h; oldSpeed=h.WalkSpeed end
             local band,cap
@@ -212,44 +207,70 @@ local function walkOpen(p,rad,lim,slowNear)
             if band~=lastBand and band~="ปกติ" then say(band.." — เหลือ "..math.floor(d).." studs") end
             lastBand=band
         end
+        local dir=Vector3.new(p.X-r.Position.X,0,p.Z-r.Position.Z)
+        if dir.Magnitude<0.1 then dir=r.CFrame.LookVector else dir=dir.Unit end
+        local step=math.min(CHUNK,math.max(8,d-rad))
+        local swimming=false
+        pcall(function()
+            local st=h:GetState()
+            swimming=st==Enum.HumanoidStateType.Swimming or st==Enum.HumanoidStateType.Freefall
+        end)
+        -- น้ำ / ไกล: ดัน CFrame (noclip) — พื้นใกล้: MoveTo เสริม
+        if swimming or d>120 then
+            local liftY=(swimming and 8 or 3)
+            r.CFrame=CFrame.new(r.Position+dir*step+Vector3.new(0,liftY,0))
+            r.AssemblyLinearVelocity=Vector3.zero
+        else
+            local goal=r.Position+dir*math.min(CHUNK,d)
+            goal=Vector3.new(goal.X,r.Position.Y,goal.Z)
+            h:MoveTo(goal)
+        end
         if lastPos then
             local moved=(r.Position-lastPos).Magnitude
             if moved<STUCK_MIN and (os.clock()-lastProg)>=STUCK_SEC then
-                local dir=Vector3.new(p.X-r.Position.X,0,p.Z-r.Position.Z)
-                if dir.Magnitude<0.1 then dir=r.CFrame.LookVector else dir=dir.Unit end
                 local lift=r.Position+Vector3.new(0,LIFT,0)+dir*NUDGE
                 say(string.format("ดันพ้นกำแพง → %.0f,%.0f,%.0f",lift.X,lift.Y,lift.Z))
                 r.CFrame=CFrame.new(lift)
                 r.AssemblyLinearVelocity=Vector3.zero
                 lastPos=r.Position; lastProg=os.clock()
-                task.wait(.08)
             elseif moved>=STUCK_MIN then
                 lastPos=r.Position; lastProg=os.clock()
             end
         else
             lastPos=r.Position; lastProg=os.clock()
         end
-        h:MoveTo(goal); task.wait(.04)
+        task.wait(swimming and .06 or .04)
     end
     restore()
     return false
 end
--- ขั้น1 RiftMachine → ขั้น2 วาฬ
+-- ขั้น1 RiftMachine → ขั้น2 วาฬ (ถ้าอยู่โซนวาฬแล้วข้าม)
 local function goPoint()
     stopTreadScripts()
+    say("เริ่ม path → เช็กตำแหน่ง")
     local rift=resolveRift()
     local whale=resolvePoint()
-    local _,_,r=char(); if not r then return false end
-    local d1=(rift-r.Position).Magnitude
+    local _,_,r=char()
+    if not r then
+        say("ยังไม่มี HRP — รอเกิด"); task.wait(1)
+        _,_,r=char()
+        if not r then say("ไม่มีตัวละคร — ข้าม path"); return false end
+    end
+    local dWhale=(Vector3.new(whale.X,r.Position.Y,whale.Z)-r.Position).Magnitude
+    if dWhale<=NEAR_WHALE then
+        say(string.format("อยู่โซนวาฬแล้ว d=%.0f — ข้าม Rift เข้าฟาร์ม",dWhale))
+        return true
+    end
+    local d1=(Vector3.new(rift.X,r.Position.Y,rift.Z)-r.Position).Magnitude
     local lim1=math.clamp(d1/14+40,50,280)
-    say(string.format("ขั้น1 → RiftMachine @%.0f,%.0f,%.0f",rift.X,rift.Y,rift.Z))
+    say(string.format("ขั้น1 → RiftMachine @%.0f,%.0f,%.0f d=%.0f",rift.X,rift.Y,rift.Z,d1))
     local ok1=walkOpen(rift,22,lim1,55)
     if not S.run then return false end
     say(ok1 and "ถึง RiftMachine แล้ว → ไปวาฬ" or "ใกล้ RiftMachine ไม่สุด — ไปวาฬต่อ")
     local _,_,r2=char(); r2=r2 or r
-    local d2=(whale-r2.Position).Magnitude
-    local lim2=math.clamp(d2/12+60,80,420)
-    say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f ระยะ~%.0f (เดินทาง ไม่ใช่เครื่องวิ่ง)",whale.X,whale.Y,whale.Z,d2))
+    local d2=(Vector3.new(whale.X,r2.Position.Y,whale.Z)-r2.Position).Magnitude
+    local lim2=math.clamp(d2/10+60,80,420)
+    say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f ระยะ~%.0f",whale.X,whale.Y,whale.Z,d2))
     local ok2=walkOpen(whale,20,lim2,55)
     say(ok2 and "ถึงจุดวาฬแล้ว" or "ไปวาฬไม่ทัน")
     return ok2
@@ -521,9 +542,10 @@ local function loop()
         leaveTreadmill()
         if not S.run then break end
         S.repath=false
-        goPoint()
+        say("ออกเครื่องแล้ว → RiftMachine→วาฬ / หรือฟาร์มถ้าอยู่โซน")
+        local ok=goPoint()
+        say(ok and "path เสร็จ → ฟาร์ม" or "path ไม่สุด → ฟาร์มต่อ")
         if not S.run then break end
-        -- ถ้าตกระหว่างทางมาเกิด → path ใหม่อีกรอบก่อนฟาร์ม
         if S.repath then
             S.repath=false
             say("เกิดใหม่ตอนเดินทาง — RiftMachine → วาฬ ซ้ำ")
@@ -543,7 +565,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.16 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.17 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -585,7 +607,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.16 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.17 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
