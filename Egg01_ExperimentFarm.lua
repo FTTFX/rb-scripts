@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.6 -- noclip ตลอดจนกว่าจะปิด GUI
+-- Egg01 Experiment Farm v2.7 -- รันแล้ว AUTO ทันที | นอกอีเวนต์ → เครื่องวิ่งรอ
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -295,12 +295,26 @@ local function waitEvent()
         local b,d=nearestTreadmill()
         if b and d and d<=14 then S.tread=b end
     end
+    -- นอกอีเวนต์และยังไม่บนเครื่องวิ่ง → ไปยืนรอ
+    do
+        local t=serverNow()
+        local into=secsIntoHalf(t)
+        local rem=1800-into; if rem==1800 then rem=0; into=0 end
+        if into>=FARM_WINDOW and rem>LEAD then
+            local b,d=nearestTreadmill()
+            if not (b and d and d<=14) then
+                say("นอกอีเวนต์ — ไปเครื่องวิ่งรอ")
+                returnTreadmill()
+            elseif b then
+                S.tread=b
+            end
+        end
+    end
     while S.run do
         local t=serverNow()
         local into=secsIntoHalf(t)
         local rem=1800-into
         if rem==1800 then rem=0; into=0 end
-        -- อยู่ใน 5 นาทีแรกหลัง :00/:30 = อีเวนต์กำลังเปิด → ไปตีเลย
         if into<FARM_WINDOW then
             say(string.format("อีเวนต์กำลังเปิด %s — เข้าไปแล้ว %ds / เหลือ ~%ds",fmtHMS(t),into,FARM_WINDOW-into))
             return true
@@ -314,6 +328,13 @@ local function waitEvent()
             if rem%60==0 then say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem)) end
             task.wait(0.18)
         else
+            local b,d=nearestTreadmill()
+            if b and (not d or d>14) then
+                say("หลุดเครื่องวิ่ง — วิ่งกลับไปรอ")
+                returnTreadmill()
+            elseif b and d and d<=14 then
+                S.tread=b
+            end
             if rem%60==0 then say(string.format("รอ :00/:30 | %s | อีก %ds",fmtHMS(t),rem)) end
             task.wait(1)
         end
@@ -361,7 +382,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.6 — CLIP ON"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.7 — AUTO"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -376,26 +397,28 @@ logBox=Instance.new("TextLabel",f); logBox.Size=UDim2.new(1,-16,0,128); logBox.P
 logBox.BackgroundColor3=Color3.new(0,0,0); logBox.BackgroundTransparency=.2; logBox.TextColor3=Color3.fromRGB(180,245,190)
 logBox.Font=Enum.Font.Code; logBox.TextSize=10; logBox.TextXAlignment=Enum.TextXAlignment.Left
 logBox.TextYAlignment=Enum.TextYAlignment.Top; logBox.TextWrapped=true; logBox.ClipsDescendants=true
-startB.MouseButton1Click:Connect(function()
+local function beginAuto()
     if S.run then return end
     S.run=true; startB.Text="ON"
     resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("START — ถ้าอีเวนต์เปิดอยู่จะไปตีทันที")
+    say("AUTO — ในอีเวนต์=ไปตี | นอก=ขึ้นเครื่องวิ่งรอ")
     task.spawn(function() loop(); startB.Text="START" end)
-end)
+end
+startB.MouseButton1Click:Connect(beginAuto)
 stopB.MouseButton1Click:Connect(function()
     S.run=false; stop("STOP"); startB.Text="START"
 end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.6 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.7 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("CLIP ON ตลอด — ปิดเมื่อกด X")
+say("CLIP ON — รันแล้ว AUTO ทันที")
 setClip(true)
+task.defer(beginAuto)
