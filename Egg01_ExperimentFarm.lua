@@ -332,17 +332,12 @@ local function leaveTreadmill()
     local ok,dd=false,d0
     for round=1,3 do
         if not busy() then break end
-        -- รอบ1 ยังใกล้ → กระโดด 1 ครั้ง | รอบ2+ ยังใกล้ → กระโดด 2 ครั้ง
-        if round==1 then
-            say("ออกลู่ รอบ1 ยังใกล้ — กระโดด 1 ครั้ง")
-            leaveJump(1)
-        else
-            say(string.format("ออกลู่ รอบ%d ยังใกล้ — กระโดด 2 ครั้ง",round))
-            leaveJump(2)
-        end
         ok,dd=dashOffTread(bottom,3.5)
         say(string.format("ออกลู่ รอบ%d d=%.0f %s",round,dd or -1,ok and "✓" or "ยังใกล้"))
         if ok then break end
+        local jumps=(round==1) and 1 or 2
+        say(string.format("ออกลู่ รอบ%d ยังใกล้ — กระโดด %d ครั้ง",round,jumps))
+        leaveJump(jumps)
         local _,_,r=char()
         local rift=S.rift or select(1,findRift())
         if r and rift then walk(rift,22,8,nil) end
