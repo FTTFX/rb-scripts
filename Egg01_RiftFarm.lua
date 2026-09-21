@@ -1,7 +1,7 @@
--- Egg01 Rift Farm v1.21 -- หมุนไบโอมถ้าไม่เกิดนาน + โชว์ชนิดในโซนตอนรอ
-if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
+-- Egg01 Rift Farm v1.22 -- eggDB แบบ SizeEPS (Snapshot+Shifted+Batch+Gone) เจอสปอว์นทันที
+if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,clipConn=nil,clipParts={},live={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function setClip(on)
@@ -43,6 +43,65 @@ local function attachCarry()
  end); return true
 end
 local function pos(r) for _,k in ipairs({"BottomCFrame","BoundsCFrame","CFrame","Position"}) do local v=r[k]; if typeof(v)=="CFrame" then return v.Position elseif typeof(v)=="Vector3" then return v end end end
+local function upsert(row, uidHint)
+ if typeof(row)~="table" then return false end
+ local uid=row.Uid or uidHint; if not uid then return false end
+ uid=tostring(uid)
+ local e=S.eggDB[uid] or {uid=uid}
+ if row.AssetCategory then e.cat=tostring(row.AssetCategory) end
+ if row.AssetName then e.name=tostring(row.AssetName) end
+ if row.AreaId then e.area=tostring(row.AreaId) end
+ if row.State then e.state=tostring(row.State) end
+ local p=pos(row); if p then e.pos=p end
+ e.row=row; e.t=os.clock()
+ S.eggDB[uid]=e
+ return true
+end
+local function ingest(value)
+ if typeof(value)~="table" then return 0 end
+ local n=0
+ local records=value.Records or value.records
+ if typeof(records)=="table" then
+  for k,row in pairs(records) do if upsert(row,typeof(k)=="string" and k or nil) then n=n+1 end end
+  return n
+ end
+ if value[1] then
+  for _,row in ipairs(value) do
+   if typeof(row)=="table" and (row.Records or row.records) then n=n+ingest(row)
+   elseif upsert(row) then n=n+1 end
+  end
+  return n
+ end
+ if upsert(value) then return 1 end
+ for k,row in pairs(value) do if upsert(row,typeof(k)=="string" and k or nil) then n=n+1 end end
+ return n
+end
+local function attachEggFeed()
+ if #S.eggConns>0 then return true end
+ local function bind(name,fn)
+  local e=net(name)
+  if e and (e:IsA("RemoteEvent") or e:IsA("UnreliableRemoteEvent")) then
+   S.eggConns[#S.eggConns+1]=e.OnClientEvent:Connect(fn); return true
+  end
+ end
+ bind("FieldEggShifted",function(row) upsert(row) end)
+ bind("FieldEggBatchShifted",function(v) ingest(v) end)
+ bind("FieldEggGone",function(row)
+  local uid=typeof(row)=="table" and row.Uid or row
+  if uid then S.eggDB[tostring(uid)]=nil end
+ end)
+ return #S.eggConns>0
+end
+local function refreshSnapshot()
+ attachEggFeed()
+ local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then return 0 end
+ local ok,res=pcall(function() return rf:InvokeServer() end)
+ if not ok or typeof(res)~="table" then return 0 end
+ local prev=S.eggDB; S.eggDB={}
+ local n=ingest(res)
+ if n==0 then S.eggDB=prev end
+ return n
+end
 -- ไม่มีตัวกรอง Rarity: Rift ต้องการชื่อใดก็หาได้หมด แม้เป็น Common/Rare
 local RAR={common=true,uncommon=true,rare=true,epic=true,legendary=true,mythic=true,cosmic=true,secret=true,eternal=true,divine=true}
 local function norm(s) return tostring(s or ""):lower():gsub("[^%w]", "") end
@@ -136,16 +195,137 @@ local function wanted()
  return out
 end
 local function attachShift()
- if S.shiftConn then return true end
- local e=net("FieldEggShifted"); if not e or not (e:IsA("RemoteEvent") or e:IsA("UnreliableRemoteEvent")) then return false end
- S.shiftConn=e.OnClientEvent:Connect(function(row)
-  if typeof(row)~="table" then return end
-  local uid=row.Uid and tostring(row.Uid)
-  if not uid then return end
-  if tostring(row.State or "")=="Carried" then S.live[uid]=nil; return end
-  local p=pos(row)
-  if p then S.live[uid]={uid=uid,row=row,pos=p,t=os.clock(),area=row.AreaId} end
- end); return true
+ return attachEggFeed()
+end
+local function eggMatchesNeed(e,needList)
+ if not e or not e.cat then return end
+ for _,n in ipairs(needList) do
+  local s=matchScore(n,e.cat)
+  if e.name then s=math.max(s,matchScore(n,e.name)) end
+  if s>=50 then return n,s,e.cat end
+ end
+end
+local function nearestStealPos(eggPos)
+ if not eggPos then return end
+ local best,bestD
+ for _,x in ipairs(workspace:GetDescendants()) do
+  if x:IsA("ProximityPrompt") and x.Enabled and tostring(x.ActionText):lower():find("steal",1,true) then
+   local q=x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart",true))
+   if q then
+    local d=(q.Position-eggPos).Magnitude
+    if d<=14 and (not bestD or d<bestD) then best,bestD=q.Position,d end
+   end
+  end
+ end
+ return best,bestD
+end
+local function proxyPosFromSnapshot(areaName,rootPos)
+ local want=tostring(areaName or ""):lower(); if want=="" then return end
+ local best,bestD
+ for _,e in pairs(S.eggDB) do
+  local area=tostring(e.area or ""):lower()
+  if area~="" and (area==want or area:find(want,1,true) or want:find(area,1,true)) and e.pos then
+   local d=flatDist(e.pos,rootPos); if not best or d<bestD then best,bestD=e.pos,d end
+  end
+ end
+ if best then return best,areaName.." nest" end
+end
+local prompts
+local function target(quiet)
+ local need=wanted(); if not need or #need==0 then return end
+ attachEggFeed()
+ if not quiet then
+  local now0=os.clock()
+  if not S.lastSnap or now0-(S.lastSnap or 0)>2.5 then S.lastSnap=now0; refreshSnapshot() end
+ end
+ local _,root=hr(); if not root then return end
+ local best; local total,withPos,nameHit,nameNoPos=0,0,0,0
+ local areasNeeded,areaSeen={},{}
+ for _,n in ipairs(need) do local b=biomeForNeed(n); if b and not areaSeen[b] then areaSeen[b]=true; areasNeeded[#areasNeeded+1]=b end end
+ local function areaCats(areaName)
+  local want=tostring(areaName or ""):lower(); local counts,list={},{}
+  for _,e in pairs(S.eggDB) do
+   local area=tostring(e.area or ""):lower()
+   if area~="" and (area==want or area:find(want,1,true) or want:find(area,1,true)) then
+    local cat=tostring(e.cat or "?")
+    if not counts[cat] then counts[cat]=0; list[#list+1]=cat end
+    counts[cat]=counts[cat]+1
+   end
+  end
+  table.sort(list)
+  local parts={}
+  for i=1,math.min(10,#list) do parts[#parts+1]=list[i].."x"..tostring(counts[list[i]]) end
+  return #list,table.concat(parts,", ")
+ end
+ for uid,e in pairs(S.eggDB) do
+  total=total+1
+  if e.pos then withPos=withPos+1 end
+  local wantedName,score,via=eggMatchesNeed(e,need)
+  if wantedName then
+   nameHit=nameHit+1
+   if not e.pos or e.state=="Carried" then nameNoPos=nameNoPos+1
+   else
+    local walkPos=nearestStealPos(e.pos) or e.pos
+    local d=(walkPos-root.Position).Magnitude
+    if not best or score>best.score or (score==best.score and d<best.d) then
+     best={uid=uid,cat=tostring(e.cat or "?"),need=wantedName,pos=walkPos,eggPos=e.pos,d=d,score=score,via=via}
+    end
+   end
+  end
+ end
+ if best then
+  S.lastMiss=nil; S.hunt=nil; S.waitSince=nil
+  local loose=(best.score or 100)<100 and ("≈"..tostring(best.via or best.cat).." ") or ""
+  if not quiet then say(string.format("RIFT NEED %s %sUID=%s d=%.0f [eggDB]",best.need,loose,tostring(best.uid),best.d)) end
+  return best
+ end
+ local now=os.clock()
+ S.huntIdx=S.huntIdx or 1
+ if #areasNeeded>1 and S.waitSince and now-S.waitSince>=WAIT_ROTATE then
+  S.huntIdx=S.huntIdx+1; S.waitSince=nil; S.stood=false
+  if not quiet then say(string.format("รอครบ %ds ไม่เกิดเป้า — หมุนไบโอม",WAIT_ROTATE)) end
+ end
+ local huntArea=#areasNeeded>0 and areasNeeded[((S.huntIdx-1)%#areasNeeded)+1] or nil
+ local hub,hubLabel
+ if huntArea then
+  hub,hubLabel=biomeHubPos(huntArea)
+  if not hub then hub,hubLabel=proxyPosFromSnapshot(huntArea,root.Position) end
+ end
+ local tip
+ if nameHit>0 then tip=string.format("ชื่อตรง=%d แต่ไม่มีพิกัด/Carried=%d",nameHit,nameNoPos)
+ elseif huntArea then tip="eggDB ไม่มีเป้า → "..huntArea
+ else tip="eggDB ว่างเป้า"
+ end
+ if hub and S.run then
+  local d=flatDist(hub,root.Position)
+  if d<=140 then
+   if not S.waitSince then S.waitSince=now end
+   if not quiet and (not S.lastCatSay or now-(S.lastCatSay or 0)>=20) then
+    S.lastCatSay=now
+    local nCat,cats=areaCats(huntArea)
+    local dbN=0; for _ in pairs(S.eggDB) do dbN=dbN+1 end
+    say(string.format("โซน %s มี %d ชนิด | eggDB=%d: %s",tostring(huntArea),nCat,dbN,cats~="" and cats or "(ว่าง)"))
+    say("ต้องการ: "..table.concat(need,", ").." — ยังไม่สปอว์นในฟิลด์")
+   end
+   if not quiet and (not S.lastWaitSay or now-(S.lastWaitSay or 0)>=8) then
+    S.lastWaitSay=now
+    say(string.format("ยืนรอที่ %s (dXZ=%.0f) — สแกน eggDB เรื่อยๆ",tostring(hubLabel or huntArea),d))
+   end
+   return {uid=nil,need="WAIT",pos=hub,d=d,hunt=true,wait=true,area=huntArea,label=hubLabel}
+  end
+  S.waitSince=nil
+  if not quiet and (not S.lastMiss or now-(S.lastMiss or 0)>=6) then
+   S.lastMiss=now
+   local dbN=0; for _ in pairs(S.eggDB) do dbN=dbN+1 end
+   say(string.format("ยังไม่เจอ: %s | eggDB=%d | ไป %s dXZ=%.0f",table.concat(need,", "),dbN,tostring(hubLabel or huntArea),d))
+  end
+  return {uid=nil,need="HUNT",pos=hub,d=d,hunt=true,area=huntArea,label=hubLabel}
+ end
+ if not quiet and (not S.lastMiss or now-(S.lastMiss or 0)>=6) then
+  S.lastMiss=now
+  local dbN=0; for _ in pairs(S.eggDB) do dbN=dbN+1 end
+  say(string.format("ยังไม่เจอ: %s | eggDB=%d | %s",table.concat(need,", "),dbN,tip))
+ end
 end
 -- ไข่หายากเกิดเฉพาะไบโอม — Snapshot ไม่มีชนิด ≠ บั๊กชื่อ
 local NEED_BIOME={
@@ -194,124 +374,6 @@ local function biomeHubPos(areaName)
   end
  end
  local ok,cf=pcall(function()return biome:GetPivot()end); if ok and cf then return cf.Position,areaName end
-end
-local function proxyPosFromSnapshot(byUid,areaName,rootPos)
- local want=tostring(areaName or ""):lower(); if want=="" then return end
- local best,bestD
- for _,row in pairs(byUid) do
-  if typeof(row)=="table" then
-   local area=tostring(row.AreaId or ""):lower()
-   if area~="" and (area==want or area:find(want,1,true) or want:find(area,1,true)) then
-    local p=pos(row) or (S.live[tostring(row.Uid or "")] and S.live[tostring(row.Uid)].pos)
-    if p then local d=(p-rootPos).Magnitude; if not best or d<bestD then best,bestD=p,d end end
-   end
-  end
- end
- if best then return best,areaName.." nest" end
-end
-local prompts
-local function target(quiet)
- local need=wanted(); if not need or #need==0 then return end
- attachShift()
- local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then if not quiet then say("ไม่พบ Snapshot") end return end
- local ok,a=pcall(function() return rf:InvokeServer() end); local rec=ok and (a.Records or a.records or a); local _,root=hr(); if typeof(rec)~="table" or not root then return end
- local byUid={}
- for id,row in pairs(rec) do
-  if typeof(row)=="table" then byUid[tostring(row.Uid or id)]=row end
- end
- for uid,live in pairs(S.live) do
-  if os.clock()-(live.t or 0)>90 then S.live[uid]=nil
-  elseif not byUid[uid] and live.row then byUid[uid]=live.row end
- end
- local best; local total,withPos,nameHit,nameNoPos=0,0,0,0
- local areasNeeded,areaSeen={},{}
- for _,n in ipairs(need) do local b=biomeForNeed(n); if b and not areaSeen[b] then areaSeen[b]=true; areasNeeded[#areasNeeded+1]=b end end
- local function areaCats(areaName)
-  local want=tostring(areaName or ""):lower(); local counts,list={},{}
-  for _,row in pairs(byUid) do
-   if typeof(row)=="table" then
-    local area=tostring(row.AreaId or ""):lower()
-    if area~="" and (area==want or area:find(want,1,true) or want:find(area,1,true)) then
-     local cat=tostring(row.AssetCategory or "?")
-     if not counts[cat] then counts[cat]=0; list[#list+1]=cat end
-     counts[cat]=counts[cat]+1
-    end
-   end
-  end
-  table.sort(list)
-  local parts={}
-  for i=1,math.min(10,#list) do parts[#parts+1]=list[i].."x"..tostring(counts[list[i]]) end
-  return #list,table.concat(parts,", ")
- end
- for id,row in pairs(byUid) do
-  if typeof(row)=="table" then
-   total=total+1
-   local live=S.live[tostring(row.Uid or id)]
-   local p=pos(row) or (live and live.pos)
-   if p then withPos=withPos+1 end
-   local wantedName,score,via=rowMatchesNeed(row,need)
-   if wantedName then
-    nameHit=nameHit+1
-    if not p or tostring(row.State or "")=="Carried" then nameNoPos=nameNoPos+1
-    else
-     local d=(p-root.Position).Magnitude
-     if not best or score>best.score or (score==best.score and d<best.d) then
-      best={uid=row.Uid or id,cat=tostring(row.AssetCategory or "?"),need=wantedName,pos=p,d=d,score=score,via=via}
-     end
-    end
-   end
-  end
- end
- if best then
-  S.lastMiss=nil; S.hunt=nil; S.waitSince=nil
-  local loose=(best.score or 100)<100 and ("≈"..tostring(best.via or best.cat).." ") or ""
-  if not quiet then say(string.format("RIFT NEED %s %sUID=%s d=%.0f",best.need,loose,tostring(best.uid),best.d)) end
-  return best
- end
- -- ไม่มีชนิดในฟิลด์ → หมุนไบโอมของเป้าที่ค้าง
- local now=os.clock()
- S.huntIdx=S.huntIdx or 1
- if #areasNeeded>1 and S.waitSince and now-S.waitSince>=WAIT_ROTATE then
-  S.huntIdx=S.huntIdx+1; S.waitSince=nil; S.stood=false
-  if not quiet then say(string.format("รอครบ %ds ไม่เกิดเป้า — หมุนไบโอม",WAIT_ROTATE)) end
- end
- local huntArea=#areasNeeded>0 and areasNeeded[((S.huntIdx-1)%#areasNeeded)+1] or nil
- local hub,hubLabel
- if huntArea then
-  hub,hubLabel=biomeHubPos(huntArea)
-  if not hub then hub,hubLabel=proxyPosFromSnapshot(byUid,huntArea,root.Position) end
- end
- local tip
- if nameHit>0 then tip=string.format("ชื่อตรง=%d แต่ไม่มีพิกัด/Carried=%d",nameHit,nameNoPos)
- elseif huntArea then tip="ไม่มีในฟิลด์ → "..huntArea
- else tip="ไม่มีใน Snapshot ตอนนี้"
- end
- if hub and S.run then
-  local d=flatDist(hub,root.Position)
-  if d<=140 then
-   if not S.waitSince then S.waitSince=now end
-   if not quiet and (not S.lastCatSay or now-(S.lastCatSay or 0)>=20) then
-    S.lastCatSay=now
-    local nCat,cats=areaCats(huntArea)
-    say(string.format("โซน %s มี %d ชนิดตอนนี้: %s",tostring(huntArea),nCat,cats~="" and cats or "(ว่าง/ไม่เข้า AreaId)"))
-   end
-   if not quiet and (not S.lastWaitSay or now-(S.lastWaitSay or 0)>=8) then
-    S.lastWaitSay=now
-    say(string.format("ยืนรอที่ %s (dXZ=%.0f) — สแกนไข่เรื่อยๆ",tostring(hubLabel or huntArea),d))
-   end
-   return {uid=nil,need="WAIT",pos=hub,d=d,hunt=true,wait=true,area=huntArea,label=hubLabel}
-  end
-  S.waitSince=nil
-  if not quiet and (not S.lastMiss or now-(S.lastMiss or 0)>=6) then
-   S.lastMiss=now
-   say(string.format("ยังไม่เจอ: %s | snap=%d | ไป %s dXZ=%.0f",table.concat(need,", "),total,tostring(hubLabel or huntArea),d))
-  end
-  return {uid=nil,need="HUNT",pos=hub,d=d,hunt=true,area=huntArea,label=hubLabel}
- end
- if not quiet and (not S.lastMiss or now-(S.lastMiss or 0)>=6) then
-  S.lastMiss=now
-  say(string.format("ยังไม่เจอ: %s | snap=%d | %s",table.concat(need,", "),total,tip))
- end
 end
 prompts=function() local o={}; for _,x in ipairs(workspace:GetDescendants()) do if x:IsA("ProximityPrompt") and x.Enabled and tostring(x.ActionText):lower():find("steal",1,true) then local q=x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart",true)); if q then o[#o+1]={p=x,pos=q.Position} end end end; return o end
 local function stop(label)
@@ -366,18 +428,11 @@ local function waitPlaced()
 end
 local function refreshTarget(t)
  if not t.uid then return true end
- local rf=net("AskFieldEggSnapshot"); if not rf or not rf:IsA("RemoteFunction") then return false end
- local ok,a=pcall(function() return rf:InvokeServer() end); local rec=ok and (a.Records or a.records or a)
- if typeof(rec)~="table" then return false end
- local uid=tostring(t.uid)
- for id,row in pairs(rec) do
-  if typeof(row)=="table" and tostring(row.Uid or id)==uid and tostring(row.State or "")~="Carried" then
-   local p=pos(row) or (S.live[uid] and S.live[uid].pos)
-   if p then t.pos=p; return true end
-  end
+ refreshSnapshot()
+ local e=S.eggDB[tostring(t.uid)]
+ if e and e.state~="Carried" and e.pos then
+  t.pos=nearestStealPos(e.pos) or e.pos; t.eggPos=e.pos; return true
  end
- local live=S.live[uid]
- if live and live.pos then t.pos=live.pos; return true end
  return false
 end
 -- เลือก Steal ที่ใกล้พิกัดไข่ (UID) ที่สุด — ไม่บังคับ gap กับไข่ข้างๆ
@@ -469,12 +524,12 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.21 — CLIP ON"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.22 — eggDB EPS"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;setClip(false);gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — ถึงไบโอมแล้วหยุดนิ่งสแกน") task.spawn(function() while S.run do local t=target(); if t and t.hunt and t.wait then if not S.stood then S.stood=true; stop("หยุดนิ่ง — รอไข่สปอว์น") end; task.wait(.7) elseif t and t.hunt then S.stood=false; if not S.huntAt or os.clock()-S.huntAt>12 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s dXZ=%.0f",tostring(t.area),t.d or -1)) end; walk(t.pos,60,2.4) elseif t then S.stood=false; one(t);task.wait(.4) else S.stood=false; task.wait(.8) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.21 ===\n"..table.concat(lines,"\n"))end end)
+attachCarry(); attachEggFeed(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — eggDB แบบ EPS เจอสปอว์นทันที"); refreshSnapshot(); task.spawn(function() while S.run do local t=target(); if t and t.hunt and t.wait then if not S.stood then S.stood=true; stop("หยุดนิ่ง — รอไข่สปอว์น") end; task.wait(.5) elseif t and t.hunt then S.stood=false; if not S.huntAt or os.clock()-S.huntAt>12 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s dXZ=%.0f",tostring(t.area),t.d or -1)) end; walk(t.pos,60,2.4) elseif t then S.stood=false; one(t);task.wait(.4) else S.stood=false; task.wait(.8) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.22 ===\n"..table.concat(lines,"\n"))end end)
 setClip(true)
-say("v1.21: Mythic ช้า — หมุนไบโอมทุก 75s + โชว์ชนิดในโซน")
+say("v1.22: eggDB แบบ SizeEPS — Snapshot+Shifted+Batch+Gone")
