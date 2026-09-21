@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.2 -- Abyss auto + ออก/กลับเครื่องวิ่ง (TreadmillBottom)
+-- Egg01 Experiment Farm v2.3 -- DroneVisual+HP only | LEAD=25 | tread+Abyss
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -6,7 +6,7 @@ end
 local Players=game:GetService("Players")
 local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
-local LEAD=60
+local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเกินไป)
 local FARM_WINDOW=300
 local FALLBACK=Vector3.new(1371.0,90.0,-357.0)
 local S={run=false,gui=nil,lines={},point=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
@@ -225,13 +225,9 @@ local function isExperiment(m)
     if not m or underClientEggs(m) then return false end
     if m:IsDescendantOf(LP.Character or Instance.new("Folder")) then return false end
     local name=m.Name:lower()
-    if name:find("dronevisual",1,true) or name:find("scramble",1,true) then return true end
-    for _,x in ipairs(m:GetDescendants()) do
-        if x:IsA("TextLabel") or x:IsA("TextButton") then
-            local t=tostring(x.Text):lower()
-            if t:find("dr. scramble",1,true) or t:find("dr scramble",1,true) then return true end
-        end
-    end
+    -- ห้าม: DrScrambleEvent = มาร์กเกอร์อีเวนต์ ไม่ใช่หุ่นตีได้
+    if name:find("event",1,true) and not name:find("dronevisual",1,true) then return false end
+    if name:find("dronevisual",1,true) then return true end
     return false
 end
 local function hpOf(m)
@@ -251,8 +247,9 @@ local function robots()
             local p=rootPart(x)
             if p then
                 local hp,_,label=hpOf(x)
-                local center=x:GetPivot().Position
-                if not hp or hp>0 then
+                -- ต้องมี HP จริง (ตัด prop/มาร์กเกอร์)
+                if hp and hp>0 then
+                    local center=x:GetPivot().Position
                     out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude}
                 end
             end
@@ -349,7 +346,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.2 — tread+Abyss"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.3 — DroneVisual";title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -379,7 +376,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.2 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.3 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
