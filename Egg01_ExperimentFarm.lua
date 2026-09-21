@@ -1,9 +1,10 @@
--- Egg01 Experiment Farm v1.3 -- กรอง DroneVisual และเลือกตัวใกล้สุด
+-- Egg01 Experiment Farm v1.4 -- กรอง DroneVisual + เบรกตาม MOTION_BRAKE
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
 end
 local Players=game:GetService("Players")
+local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local S={run=false,gui=nil,lines={},searchOrigin=nil,searchIndex=0}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
@@ -14,6 +15,38 @@ local function say(m)
 end
 local function char()
     local c=LP.Character; return c,c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart")
+end
+local function stop(label)
+    local _,h,r=char(); if not h or not r then return end
+    h:MoveTo(r.Position); h:Move(Vector3.zero)
+    for _=1,3 do
+        if not r.Parent then break end
+        r.AssemblyLinearVelocity=Vector3.zero; r.AssemblyAngularVelocity=Vector3.zero
+        RunS.Heartbeat:Wait()
+    end
+    if label then say(label) end
+end
+local function walk(p,rad,lim,slowNear)
+    local t=os.clock(); local moveHum,oldSpeed,lastBand
+    local function restore()
+        if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
+    end
+    while S.run and os.clock()-t<lim do
+        local _,h,r=char(); if not h or not r or h.Health<=0 then restore(); return false end
+        local g=Vector3.new(p.X,r.Position.Y,p.Z); local d=(g-r.Position).Magnitude
+        if d<=rad then restore(); stop(); return true end
+        if slowNear then
+            if not moveHum then moveHum=h; oldSpeed=h.WalkSpeed end
+            local band,cap
+            if d<=18 then band,cap="ละเอียด",35 elseif d<=slowNear then band,cap="ชะลอ",90 else band,cap="ปกติ",oldSpeed end
+            h.WalkSpeed=math.min(oldSpeed,cap)
+            if band~=lastBand and band~="ปกติ" then say(band.."ก่อนถึงเป้า — เหลือ "..math.floor(d).." studs") end
+            lastBand=band
+        end
+        h:MoveTo(g); task.wait(.04)
+    end
+    restore()
+    return false
 end
 local function norm(s) return tostring(s or ""):lower():gsub("[^%w]","") end
 local function rootPart(m)
@@ -79,23 +112,12 @@ local function searchStep()
     S.searchIndex=(S.searchIndex % #offsets)+1
     local goal=S.searchOrigin+offsets[S.searchIndex]
     say(string.format("ไม่พบหุ่น — เดินค้นหาจุด %d/%d",S.searchIndex,#offsets))
-    walkTo(goal,14,12)
+    walk(goal,14,12,55)
 end
-local walkTo
 local function scan()
     local all=robots(); say("พบหุ่น="..#all)
     for i=1,math.min(#all,6) do local x=all[i]; say(string.format("#%d %s hp=%s d=%.0f",i,x.m.Name,x.label or "?",x.d)) end
     return all
-end
-walkTo=function(point,range,limit)
-    local began=os.clock()
-    while S.run and os.clock()-began<limit do
-        local _,h,r=char(); if not h or not r or h.Health<=0 then return false end
-        local goal=Vector3.new(point.X,r.Position.Y,point.Z)
-        if (goal-r.Position).Magnitude<=range then h:MoveTo(r.Position); return true end
-        h:MoveTo(goal); task.wait(.15)
-    end
-    return false
 end
 local function bat()
     local c,h=char(); if not c or not h then return end
@@ -104,7 +126,7 @@ local function bat()
     return t
 end
 local function hit(robot)
-    if not walkTo(robot.pos,10,70) then say("ไปไม่ถึง "..robot.m.Name); return end
+    if not walk(robot.pos,10,70,55) then say("ไปไม่ถึง "..robot.m.Name); return end
     local tool=bat(); if not tool then say("ไม่พบไม้/Tool") return end
     say("ตี "..robot.m.Name.." | "..(robot.label or "HP ?"))
     local began=os.clock(); local lastHP=robot.hp
@@ -131,7 +153,7 @@ end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm";gui.ResetOnSpawn=false;gui.DisplayOrder=1022
 pcall(function()gui.Parent=(gethui and gethui()) or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,385,0,220);f.Position=UDim2.new(0,12,.42,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.3 — CLOSEST";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.4 — CLOSEST";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 72,0,30);b.Position=UDim2.new(0,x,0,38);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=11;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
 end
@@ -144,7 +166,7 @@ start.MouseButton1Click:Connect(function()
     local _,_,r=char();S.searchOrigin=r and r.Position or nil;S.searchIndex=0
     task.spawn(function() while S.run do local all=robots();if #all==0 then searchStep();task.wait(.4) else hit(all[1]);task.wait(.4) end end;start.Text="AUTO" end)
 end)
-stopB.MouseButton1Click:Connect(function()S.run=false;local _,h,r=char();if h and r then h:MoveTo(r.Position);h:Move(Vector3.zero)end;say("STOP")end)
-copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.3 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
+stopB.MouseButton1Click:Connect(function()S.run=false;stop("STOP")end)
+copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Experiment Farm v1.4 ===\n"..table.concat(S.lines,"\n"));copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end end)
 close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_EXPERIMENT_FARM=nil end)
 say("SCAN → ตรวจหุ่น | AUTO → ไล่ตีด้วยไม้ปกติ")
