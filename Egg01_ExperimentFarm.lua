@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.7 -- รันแล้ว AUTO ทันที | นอกอีเวนต์ → เครื่องวิ่งรอ
+-- Egg01 Experiment Farm v2.8 -- เปิดสคริปต์แล้วทำงานเอง ไม่ต้องกด START
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -382,14 +382,14 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.7 — AUTO"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.8 — AUTO ON"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
     b.Text=text; b.TextColor3=Color3.new(1,1,1); b.BackgroundColor3=color; b.BorderSizePixel=0
     b.Font=Enum.Font.GothamBold; b.TextSize=11; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5); return b
 end
-local startB=button("START",10,Color3.fromRGB(35,145,75))
+local startB=button("AUTO",10,Color3.fromRGB(35,145,75))
 local stopB=button("STOP",88,Color3.fromRGB(165,50,55))
 local copyB=button("COPY",166,Color3.fromRGB(75,75,80),52)
 local closeB=button("X",244,Color3.fromRGB(145,50,65),28)
@@ -403,22 +403,37 @@ local function beginAuto()
     resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO — ในอีเวนต์=ไปตี | นอก=ขึ้นเครื่องวิ่งรอ")
-    task.spawn(function() loop(); startB.Text="START" end)
+    say("AUTO ON — ไม่ต้องกดปุ่ม | นอกอีเวนต์=เครื่องวิ่งรอ")
+    task.spawn(function()
+        loop()
+        if S.gui and S.gui.Parent then startB.Text="AUTO" end
+    end)
+end
+local function boot()
+    setClip(true)
+    local c=LP.Character or LP.CharacterAdded:Wait()
+    if c then c:WaitForChild("HumanoidRootPart",8) end
+    task.wait(0.4)
+    if S.gui and S.gui.Parent then beginAuto() end
 end
 startB.MouseButton1Click:Connect(beginAuto)
 stopB.MouseButton1Click:Connect(function()
-    S.run=false; stop("STOP"); startB.Text="START"
+    S.run=false; stop("STOP"); startB.Text="AUTO"
 end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.7 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.8 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("CLIP ON — รันแล้ว AUTO ทันที")
-setClip(true)
-task.defer(beginAuto)
+LP.CharacterAdded:Connect(function()
+    if not S.gui or not S.gui.Parent then return end
+    task.wait(0.6)
+    setClip(true)
+    if not S.run then beginAuto() end
+end)
+say("เปิดสคริปต์ = ทำงานเอง")
+task.spawn(boot)
