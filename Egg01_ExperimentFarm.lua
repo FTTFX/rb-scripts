@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.12.1 — ตีแบบ 2.12 + path บังคับ ขั้น1 Rift → ขั้น2 วาฬ → ถึงวาฬ
+-- Egg01 Experiment Farm v2.12.2 — path เดินปกติ MoveTo (ไม่บิน) + ตีแบบ 2.12
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -153,20 +153,19 @@ local function walk(p,rad,lim,slowNear)
     restore()
     return false
 end
--- เดินไกล (Rift/วาฬ): ใกล้=MoveTo | ไกล/น้ำ=CFrame ท่อนสั้น — ให้ถึงจริง
+-- เดินไกลแบบปกติ (MoveTo เท่านั้น — ไม่บิน/ไม่ดัน CFrame)
 local function walkFar(p,rad,lim,slowNear)
     local t=os.clock(); local moveHum,oldSpeed,lastBand
-    local lastPos,lastProg=nil,os.clock()
     local lastLog=0
     local function restore()
         if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
     end
     while busy() and os.clock()-t<lim do
         local _,h,r=char(); if not h or not r or h.Health<=0 then restore(); return false end
-        local flat=Vector3.new(p.X,r.Position.Y,p.Z)
-        local d=(flat-r.Position).Magnitude
+        local g=Vector3.new(p.X,r.Position.Y,p.Z)
+        local d=(g-r.Position).Magnitude
         if d<=rad then restore(); stop(); return true end
-        if d>200 and (lastLog==0 or lastLog-d>=250) then
+        if d>200 and (lastLog==0 or lastLog-d>=300) then
             say(string.format("…เหลือ %.0f studs",d)); lastLog=d
         end
         if slowNear then
@@ -177,50 +176,25 @@ local function walkFar(p,rad,lim,slowNear)
             if band~=lastBand and band~="ปกติ" then say(band.." — เหลือ "..math.floor(d).." studs") end
             lastBand=band
         end
-        local dir=Vector3.new(p.X-r.Position.X,0,p.Z-r.Position.Z)
-        if dir.Magnitude<0.1 then dir=r.CFrame.LookVector else dir=dir.Unit end
-        local swimming=false
-        pcall(function()
-            local st=h:GetState()
-            swimming=st==Enum.HumanoidStateType.Swimming or st==Enum.HumanoidStateType.Freefall
-        end)
-        if swimming or d>80 then
-            local step=math.min(55,math.max(10,d-rad))
-            r.CFrame=CFrame.new(r.Position+dir*step+Vector3.new(0,swimming and 6 or 2,0))
-            r.AssemblyLinearVelocity=Vector3.zero
-        else
-            h:MoveTo(flat)
-        end
-        if lastPos then
-            local moved=(r.Position-lastPos).Magnitude
-            if moved<2 and (os.clock()-lastProg)>=0.8 then
-                r.CFrame=CFrame.new(r.Position+dir*22+Vector3.new(0,12,0))
-                lastPos=r.Position; lastProg=os.clock()
-            elseif moved>=2 then
-                lastPos=r.Position; lastProg=os.clock()
-            end
-        else
-            lastPos=r.Position; lastProg=os.clock()
-        end
-        task.wait(.05)
+        h:MoveTo(g); task.wait(.04)
     end
     restore()
     return false
 end
--- บังคับเสมอ: ขั้น1 → Rift แล้ว ขั้น2 → วาฬ / ถึงวาฬ
+-- บังคับเสมอ: ขั้น1 → Rift แล้ว ขั้น2 → วาฬ / ถึงวาฬ (เดินปกติ)
 local function goPoint()
     local rift=resolveRift()
     local whale=resolvePoint()
     local _,_,r=char(); if not r then say("ไม่มี HRP — ข้าม path"); return false end
     local d1=(Vector3.new(rift.X,r.Position.Y,rift.Z)-r.Position).Magnitude
     say(string.format("ขั้น1 → Rift @%.0f,%.0f,%.0f  d=%.0f",rift.X,rift.Y,rift.Z,d1))
-    local ok1=walkFar(rift,22,math.clamp(d1/12+40,50,300),55)
+    local ok1=walkFar(rift,22,math.clamp(d1/16+50,60,400),55)
     if not busy() then return false end
     say(ok1 and "ถึง Rift แล้ว → ขั้น2 วาฬ" or "Rift ไม่สุด → ไปวาฬต่อ")
     local _,_,r2=char(); r2=r2 or r
     local d2=(Vector3.new(whale.X,r2.Position.Y,whale.Z)-r2.Position).Magnitude
     say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f  d=%.0f",whale.X,whale.Y,whale.Z,d2))
-    local ok2=walkFar(whale,20,math.clamp(d2/10+60,80,420),55)
+    local ok2=walkFar(whale,20,math.clamp(d2/14+80,90,500),55)
     if ok2 then
         say("ถึงวาฬแล้ว ✓ — เริ่มตี")
     else
@@ -483,7 +457,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.12.1 — ขั้น1 Rift→ขั้น2 วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.12.2 — เดินปกติ Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -535,7 +509,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.12.1 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.12.2 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -556,5 +530,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.12.1 | AUTO | PATH=ทดสอบ ขั้น1 Rift→ขั้น2 วาฬ")
+say("v2.12.2 | PATH=เดินปกติ Rift→วาฬ (ไม่บิน)")
 task.spawn(boot)
