@@ -1,4 +1,4 @@
--- Egg01 Target Farm v3.9.5 (กู้แล้ววิ่งต่อ + หา Carry RE จริง)
+-- Egg01 Target Farm v3.9.6 (UID แน่น — ไม่ visual / ผิดฟอง=ทิ้งแล้วลอง ไม่ข้าม)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -34,7 +34,7 @@ for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 7, 100, 30, 6, 12, -8
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 7, 100, 10, 6, 12, -8
 local BRAKE_SECS = 0.12
 local FALLBACK_RIFT = Vector3.new(534.0, 71.0, -340.0)
 local lines = {}
@@ -134,6 +134,39 @@ local function tryAskCarry(uid)
     return ok
 end
 
+-- ทิ้งไข่ที่ถือผิดฟอง (ไม่ข้ามเป้า)
+local function tryDropHeld()
+    local rf = findNet("AskFieldEggDrop", "RemoteFunction")
+        or findNet("AskFieldEggDrop")
+    if rf then
+        if rf:IsA("RemoteFunction") then
+            pcall(function() rf:InvokeServer({}) end)
+        elseif rf:IsA("RemoteEvent") or rf:IsA("UnreliableRemoteEvent") then
+            pcall(function() rf:FireServer({}) end)
+        end
+    end
+    local g = PG:FindFirstChild("DropHeldEgg")
+    local b = g and g:FindFirstChildWhichIsA("GuiButton", true)
+    if b then
+        pcall(function()
+            if getconnections then
+                for _, sig in ipairs({ b.Activated, b.MouseButton1Click }) do
+                    for _, c in ipairs(getconnections(sig)) do
+                        pcall(function() if c.Function then c.Function() end end)
+                    end
+                end
+            end
+            if firesignal then firesignal(b.Activated) end
+        end)
+    end
+    S.carrying = false
+    S.carryVerified = false
+    S.carryMismatchUid = nil
+    S.returnPaused = false
+    S.droppedPos = nil
+    task.wait(0.45)
+end
+
 local function lookingLikeCarry()
     local c = LP.Character
     if not c then return false end
@@ -179,7 +212,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.9.5 (กู้แล้ววิ่งต่อ)"
+title.Text = "Egg01 Target Farm v3.9.6 (UID แน่น)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -629,31 +662,38 @@ local function fireSteal(prompt)
     return ok
 end
 
--- รอยืนยันถือไข่: Carry RE / visual (ตรวจ prompt หายทำที่ recover/farm)
+-- รอยืนยันถือไข่: มี Carry RE → ต้อง UID ตรงเท่านั้น (ห้าม visual)
 local function waitCarryConfirm(secs, target, dropPos)
     local t = os.clock()
-    local lim = secs or 2.0
+    local lim = secs or 2.5
     while S.run and os.clock() - t < lim do
-        if S.carrying then return true, "carry" end
-        if lookingLikeCarry() then
-            S.carrying = true
-            return true, "visual"
+        if S.carryMismatchUid then return false, "uid-ผิด" end
+        if S.carryAvailable then
+            if S.carryVerified and S.carrying then return true, "carry-uid" end
+        else
+            if S.carrying then return true, "carry" end
+            if lookingLikeCarry() then
+                S.carrying = true
+                return true, "visual"
+            end
         end
         task.wait(0.08)
+    end
+    if S.carryMismatchUid then return false, "uid-ผิด" end
+    if S.carryAvailable then
+        if S.carryVerified and S.carrying then return true, "carry-uid" end
+        return false, "รอ-uid"
     end
     if S.carrying then return true, "carry" end
     if lookingLikeCarry() then S.carrying = true; return true, "visual" end
     if target then
-        local still = select(1, promptAtTarget(target, 25, false))
+        local still = select(1, promptAtTarget(target, 12, false))
         if still then return false, "prompt-ยังอยู่" end
-        S.carrying = true
-        return true, "prompt-หาย"
+        return false, "prompt-หายแต่ไม่มี-Carry"
     end
-    -- dropPos: ไม่เช็ค prompt ที่นี่ (stealAtPosition ประกาศทีหลัง) — ให้ caller เช็ค
     if dropPos and not S.carryAvailable then
         return false, "รอ-เช็ค-prompt"
     end
-    if not S.carryAvailable then return false, "ไม่มี-CarryRE" end
     return false, "timeout"
 end
 
@@ -666,18 +706,27 @@ local function markHolding(why)
     say("ถือไข่แล้ว (" .. tostring(why or "?") .. ") — วิ่งต่อ")
 end
 
+-- เลือก Steal ใกล้พิกัด Snapshot ของ UID เป้า (กันไข่ข้างๆ)
 local function promptAtTarget(target, matchRadius, requireNearby)
     local _, root = humRoot()
-    if not root then return nil end
-    local best, bestD
+    if not root or not target or not target.pos then return nil end
+    local rad = matchRadius or PROMPT_EXACT_R
+    local cands = {}
     for _, p in ipairs(getPrompts()) do
         local eggMatch = (p.pos - target.pos).Magnitude
         local playerDist = (p.pos - root.Position).Magnitude
-        if eggMatch <= (matchRadius or 60) and (not requireNearby or playerDist <= STEAL_R) and (not bestD or eggMatch < bestD) then
-            best, bestD = p.pp, eggMatch
+        if eggMatch <= rad and (not requireNearby or playerDist <= STEAL_R) then
+            cands[#cands + 1] = { pp = p.pp, pos = p.pos, d = eggMatch, pd = playerDist }
         end
     end
-    return best, bestD
+    table.sort(cands, function(a, b) return a.d < b.d end)
+    local a, b = cands[1], cands[2]
+    if not a then return nil end
+    -- ไข่สองฟองใกล้กันมาก: ต้องชัดว่าใกล้เป้ามากกว่าใบข้าง
+    if b and (b.d - a.d) < 1.2 and a.d > 4 then
+        return nil, a.d, "ไข่ซ้อนกัน gap=" .. string.format("%.1f", b.d - a.d)
+    end
+    return a.pp, a.d
 end
 
 local function nearestSteal(maxDist)
@@ -949,7 +998,8 @@ local function returnHome()
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
         if S.carryMismatchUid then
-            say("หยุดกลับบ้าน: ได้ UID คนละฟอง")
+            say("หยุดกลับบ้าน: ได้ UID คนละฟอง — ทิ้ง (ไม่ข้ามเป้า)")
+            tryDropHeld()
             return false
         end
         if not S.carryAvailable and os.clock() - S.lastCarryScan >= 1 then
@@ -1052,97 +1102,132 @@ local function farmTarget(target)
     stopMove()
     if not S.run then return end
 
-    local prompt, matchD
-    for _ = 1, 4 do
-        prompt, matchD = promptAtTarget(target, PROMPT_EXACT_R, false)
+    -- ยืนตรงพิกัด Snapshot ของ UID ก่อน กันไข่ข้าง (Cerberus ซ้อน)
+    say(string.format("ยืนตรงพิกัด UID %s…", tostring(target.uid):sub(1, 8)))
+    walkSlow(target.pos, 3.2, 14, 25)
+    stopMove()
+
+    local prompt, matchD, whyP
+    for _ = 1, 5 do
+        prompt, matchD, whyP = promptAtTarget(target, PROMPT_EXACT_R, false)
         if prompt then break end
-        task.wait(0.35)
+        if whyP then say("Prompt: " .. tostring(whyP) .. " — ขยับเข้าเป้า") end
+        walkSlow(target.pos, 2.5, 6, 18)
+        stopMove()
+        task.wait(0.2)
     end
     if not prompt then
-        local other, otherD = promptAtTarget(target, 120, false)
-        if other then
-            say(string.format("เจอ Prompt อื่น match=%.1f แต่ไม่ใช่ %s — ข้าม", otherD, target.cat))
-            skipTarget(target, 15, "Prompt ไม่ตรง")
-        else
-            say("ถึงจุด Snapshot แล้ว แต่ไม่พบ Prompt — ข้าม")
-            skipTarget(target, 8, "ไม่พบ Prompt")
-        end
+        prompt, matchD = promptAtTarget(target, 16, false)
+    end
+    if not prompt then
+        say("ถึงจุด Snapshot แล้ว แต่ไม่พบ Prompt ของ UID นี้ — รอรอบหน้า (ไม่ข้าม)")
         return
     end
 
     target.pp = prompt
     local ppPart = prompt.Parent and (prompt.Parent:IsA("BasePart") and prompt.Parent or prompt.Parent:FindFirstChildWhichIsA("BasePart", true))
     if ppPart then
-        say(string.format("Prompt ของ %s match=%.1f — เข้าใกล้", target.cat, matchD))
-        local reachedPrompt = walkTo(ppPart.Position, APPROACH_R, 12, 14)
+        say(string.format("Prompt ของ %s match=%.1f — เข้าใกล้แน่น", target.cat, matchD or -1))
+        local reachedPrompt = walkSlow(ppPart.Position, 3.5, 12, 14)
         if not reachedPrompt then
-            say("เข้า Prompt ไม่สำเร็จ")
+            say("เข้า Prompt ไม่สำเร็จ — รอรอบหน้า (ไม่ข้าม)")
             return
         end
         stopMove()
         prompt = select(1, promptAtTarget(target, PROMPT_EXACT_R, true))
+            or select(1, promptAtTarget(target, 14, true))
         if not prompt then
-            say("Prompt หายระหว่างเข้าใกล้")
-            skipTarget(target, 10, "Prompt หาย")
+            say("Prompt หายระหว่างเข้าใกล้ — รอรอบหน้า (ไม่ข้าม)")
             return
         end
         target.pp = prompt
     end
     if not S.run then return end
 
-    -- ห้ามวิ่งกลับก่อนยืนยันถือไข่ (เคยเชื่อ fireSteal แล้วมือว่าง)
+    -- ต้องได้ UID เป้าจาก Carry RE เท่านั้น ก่อนวิ่งกลับ
     attachCarryListener()
     S.expectedUid, S.carryVerified, S.carryMismatchUid = target.uid, false, nil
     S.carrying = false
     local got, why = false, "none"
-    for attempt = 1, 5 do
+    for attempt = 1, 6 do
         if not S.run then return end
         if S.carryMismatchUid then
-            say("ได้ UID คนละฟอง — ข้าม")
-            skipTarget(target, 20, "UID ผิด")
-            return
+            say("ถือไข่คนละฟอง — ทิ้ง แล้วยิง UID เป้าอีก (ไม่ข้าม)")
+            tryDropHeld()
+            S.expectedUid = target.uid
+            S.carryVerified = false
+            walkSlow(target.pos, 3, 8, 20)
+            stopMove()
         end
         attachCarryListener()
         tryAskCarry(target.uid)
+        -- รอ RF ติดก่อน
+        do
+            local t0 = os.clock()
+            while S.run and os.clock() - t0 < 1.0 do
+                if S.carryVerified and S.carrying then got, why = true, "rf-uid"; break end
+                if S.carryMismatchUid then break end
+                task.wait(0.05)
+            end
+        end
+        if got then break end
+        if S.carryMismatchUid then
+            say("RF ได้คนละฟอง — ทิ้งแล้วลองใหม่")
+            tryDropHeld()
+            S.expectedUid = target.uid
+        end
         local pnow = select(1, promptAtTarget(target, PROMPT_EXACT_R, true))
-            or select(1, promptAtTarget(target, 40, true))
+            or select(1, promptAtTarget(target, 14, true))
             or target.pp
         if not pnow then
-            say(string.format("Steal ครั้ง%d — ไม่เจอ Prompt", attempt))
+            say(string.format("Steal ครั้ง%d — ไม่เจอ Prompt เป้า", attempt))
+            walkSlow(target.pos, 2.8, 6, 16)
         else
             local _, r = humRoot()
-            local ppPart = pnow.Parent and (pnow.Parent:IsA("BasePart") and pnow.Parent or pnow.Parent:FindFirstChildWhichIsA("BasePart", true))
-            if ppPart and r and (ppPart.Position - r.Position).Magnitude > 6 then
-                walkSlow(ppPart.Position, 4, 10, 20)
+            local part = pnow.Parent and (pnow.Parent:IsA("BasePart") and pnow.Parent or pnow.Parent:FindFirstChildWhichIsA("BasePart", true))
+            if part and r and (part.Position - r.Position).Magnitude > 5 then
+                walkSlow(part.Position, 3.2, 8, 16)
                 stopMove()
             end
-            say(string.format("ยิง Steal ครั้ง%d — รอถือไข่", attempt))
+            say(string.format("ยิง Steal ครั้ง%d — รอ UID เป้า", attempt))
             fireSteal(pnow)
-            got, why = waitCarryConfirm(2.2, target)
+            got, why = waitCarryConfirm(2.8, target)
             if got then break end
-            tryAskCarry(target.uid)
-            got, why = waitCarryConfirm(1.2, target)
-            if got then break end
+            if why == "uid-ผิด" then
+                say("Steal ได้คนละฟอง — ทิ้งแล้วยิงเป้าเดิม")
+                tryDropHeld()
+                S.expectedUid = target.uid
+            else
+                tryAskCarry(target.uid)
+                got, why = waitCarryConfirm(1.5, target)
+                if got then break end
+            end
         end
-        say(string.format("ยังไม่ถือไข่ (%s) — ลองใหม่", tostring(why)))
+        say(string.format("ยังไม่ถือ UID เป้า (%s) — ลองใหม่", tostring(why)))
         task.wait(0.25)
     end
-    if not got then
-        say("ขโมยไม่สำเร็จ — ไม่วิ่งกลับมือว่าง")
-        skipTarget(target, 12, "Steal ไม่ติด")
+    if not got or (S.carryAvailable and not S.carryVerified) then
+        say("ยังไม่ได้ไข่ UID เป้า — ไม่ข้าม ไม่วิ่งกลับมือว่าง/ผิดฟอง")
+        if S.carrying or S.carryMismatchUid then tryDropHeld() end
         S.expectedUid = nil
         return
     end
-    say("ถือไข่แล้ว (" .. tostring(why) .. ") — วิ่งกลับ HOME")
+    say("ถือไข่ UID เป้าแล้ว (" .. tostring(why) .. ") — วิ่งกลับ HOME")
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
     S.stealGraceUntil = os.clock() + 2.5
     S.carrying = true
     if returnHome() then
         say("ถึง HOME — รอรอบถัดไป")
     elseif S.run then
-        say("กลับบ้านไม่สำเร็จ — scan ใหม่")
+        if S.carryMismatchUid then
+            say("ระหว่างทางได้คนละฟอง — ทิ้ง รอรอบหน้า (ไม่ข้าม)")
+            tryDropHeld()
+        else
+            say("กลับบ้านไม่สำเร็จ — scan ใหม่")
+        end
     end
     S.returning, S.carriedUid, S.expectedUid, S.droppedPos, S.returnPaused, S.dropBrakeUsed = false, nil, nil, nil, false, false
+    S.carryMismatchUid, S.carryVerified = nil, false
 end
 
 local function runOne()
@@ -1279,7 +1364,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.5 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.6 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1297,4 +1382,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.9.5 | กู้แล้ววิ่งต่อ | grace กัน Dropped ค้าง | Carry RE จริง")
+say("v3.9.6 | รอ UID เป้าเท่านั้น | ผิดฟอง=ทิ้งแล้วลอง | ไม่ข้าม")
