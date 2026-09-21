@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.13 — เช็คเวลา 0–5/30–35 ตลอด | บนลู่วิ่ง/ไม่เจอหุ่น → กระโดด→Rift→วาฬ
+-- Egg01 Experiment Farm v2.14 — อีเวนต์กระโดดทุก 1s ออกลู่วิ่ง | บนลู่วิ่ง/ไม่เจอหุ่น → Rift→วาฬ
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -12,7 +12,7 @@ local LEAD=25
 local FARM_WINDOW=300 -- :00–:05 และ :30–:35 (วินาทีในครึ่งชั่วโมง)
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,lastJumpAt=0}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -240,6 +240,33 @@ local function onTreadPad()
     if b and d and d<=14 then S.tread=b; return true,b,d end
     return false,b,d
 end
+local function doJump()
+    local _,h=char()
+    if not h then return end
+    h.Sit=false
+    h.PlatformStand=false
+    h.Jump=true
+    pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
+    S.lastJumpAt=os.clock()
+end
+-- กระโดดทุก ~1s ตอนอีเวนต์ (ช่วยออกลู่วิ่ง + โดดตี)
+local function jumpTick(force)
+    if not busy() then return end
+    if not force and not inFarmWindow() then return end
+    if not force and (os.clock()-(S.lastJumpAt or 0))<1 then return end
+    doJump()
+end
+local function leaveDir(bottom,r)
+    local rift=S.rift
+    if not rift then rift=select(1,findRift()) end
+    if rift then
+        local flat=Vector3.new(rift.X-r.Position.X,0,rift.Z-r.Position.Z)
+        if flat.Magnitude>=1 then return flat.Unit end
+    end
+    local away=Vector3.new(r.Position.X-bottom.Position.X,0,r.Position.Z-bottom.Position.Z)
+    if away.Magnitude>=1 then return away.Unit end
+    return r.CFrame.LookVector
+end
 local function leaveTreadmill()
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run=false end
     local on,bottom,d=onTreadPad()
@@ -253,36 +280,36 @@ local function leaveTreadmill()
         d=r and (bottom.Position-r.Position).Magnitude or 99
     end
     S.tread=bottom
-    say(string.format("กระโดดออกจากเครื่องวิ่ง d=%.0f",d or -1))
-    for _=1,3 do
+    say(string.format("กระโดดออกจากเครื่องวิ่ง (ทุก 1s) d=%.0f",d or -1))
+    -- สูงสุด ~8 วิ: กระโดดทุก 1s + วิ่งไปทาง Rift จนพ้นลู่
+    for i=1,8 do
         if not busy() then break end
-        local _,h=char()
-        if h then
-            h.Jump=true
-            pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
+        if not onTreadPad() then break end
+        doJump()
+        local _,h,r=char()
+        if h and r and bottom and bottom.Parent then
+            local dir=leaveDir(bottom,r)
+            h:MoveTo(r.Position+dir*30)
+            pcall(function() h:Move(dir,false) end)
         end
-        task.wait(0.22)
-    end
-    local _,h,r=char()
-    if h and r and bottom and bottom.Parent then
-        local dir=Vector3.new(r.Position.X-bottom.Position.X,0,r.Position.Z-bottom.Position.Z)
-        if dir.Magnitude<1 then dir=r.CFrame.RightVector else dir=dir.Unit end
-        walk(r.Position+dir*22,3,8,nil)
+        task.wait(1)
     end
     stop()
     if onTreadPad() then
-        say("ยังติดลู่วิ่ง — กระโดดซ้ำ+ถอย")
+        say("ยังติดลู่วิ่ง — กระโดด+ถอยเพิ่ม")
+        doJump()
+        task.wait(0.2)
         local _,h2,r2=char()
-        if h2 then h2.Jump=true; pcall(function() h2:ChangeState(Enum.HumanoidStateType.Jumping) end) end
-        task.wait(0.25)
         if h2 and r2 and bottom and bottom.Parent then
-            local dir=Vector3.new(r2.Position.X-bottom.Position.X,0,r2.Position.Z-bottom.Position.Z)
-            if dir.Magnitude<1 then dir=r2.CFrame.LookVector else dir=dir.Unit end
-            walk(r2.Position+dir*28,3,10,nil)
+            local dir=leaveDir(bottom,r2)
+            walk(r2.Position+dir*32,3,10,nil)
         end
         stop()
+        doJump()
     end
-    return not onTreadPad()
+    local ok=not onTreadPad()
+    say(ok and "ออกจากลู่วิ่งแล้ว" or "ยังบนลู่วิ่ง — จะกระโดดต่อทุก 1s")
+    return ok
 end
 local function returnTreadmill()
     local bottom=S.tread
@@ -383,6 +410,7 @@ local function hit(robot)
     say("ตี "..robot.m.Name.." | "..(robot.label or "?"))
     local began=os.clock(); local lastHP=robot.hp
     while busy() and os.clock()-began<10 do
+        jumpTick(true) -- โดดตีทุก ~1s
         local latest=robots()[1]
         local currentPart=rootPart(robot.m)
         local _,_,me2=char()
@@ -445,17 +473,18 @@ local function waitEvent()
 end
 local function farm5min()
     local hub=S.point or FALLBACK
-    say(string.format("SCAN/ตี — เช็คเวลาตลอด เหลือ ~%ds",windowLeft()))
+    say(string.format("SCAN/ตี — กระโดดทุก 1s | เหลือ ~%ds",windowLeft()))
     while S.run do
         local t=serverNow()
         if not inFarmWindow(t) then
             say(string.format("จบหน้าต่างอีเวนต์ %s — กลับลู่วิ่ง",fmtHMS(t)))
             break
         end
+        jumpTick(true)
         local left=windowLeft(t)
         -- สำคัญสุด: ยังบนลู่วิ่งตอนอีเวนต์ = ผิด → กระโดด→Rift→วาฬ
         if onTreadPad() then
-            forceEventPath(string.format("ยังบนลู่วิ่งตอนอีเวนต์ (เหลือ %ds) — กระโดด→Rift→วาฬ",left))
+            forceEventPath(string.format("ยังบนลู่วิ่งตอนอีเวนต์ (เหลือ %ds) — กระโดดทุก1s→Rift→วาฬ",left))
             hub=S.point or FALLBACK
             if not S.run then break end
         elseif S.repath then
@@ -479,10 +508,12 @@ local function farm5min()
                     forceEventPath(string.format("อีเวนต์เปิด ไม่เจอหุ่น dHub=%.0f — Rift→วาฬ",dHub))
                     hub=S.point or FALLBACK
                 else
+                    jumpTick(true)
                     walk(hub,25,40,55)
                 end
             else
                 if left%30==0 then say(string.format("โซนวาฬแล้ว ไม่มีหุ่น — รอสปอน | เหลือ %ds",left)) end
+                jumpTick(true)
                 walk(hub,20,25,55)
             end
             task.wait(0.5)
@@ -513,7 +544,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.13 — เวลา 0-5/30-35 → Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.14 — กระโดด1s ออกลู่วิ่ง → Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -536,7 +567,7 @@ local function beginAuto()
     resolveRift(); resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO ON — เช็คเวลา 0–5/30–35 | บนลู่วิ่ง/ไม่เจอหุ่น → Rift→วาฬ")
+    say("AUTO ON — อีเวนต์กระโดดทุก 1s ออกลู่วิ่ง | Rift→วาฬ | โดดตี")
     task.spawn(function()
         local ok,err=pcall(loop)
         if not ok then say("ERROR: "..tostring(err)) end
@@ -565,7 +596,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.13 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.14 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -586,5 +617,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.13 | เวลา 0–5/30–35 เช็คตลอด | บนลู่วิ่ง/ไม่เจอหุ่น → กระโดด→Rift→วาฬ")
+say("v2.14 | อีเวนต์กระโดดทุก 1s ออกลู่วิ่ง | โดดตี | Rift→วาฬ")
 task.spawn(boot)
