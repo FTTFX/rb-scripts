@@ -1,7 +1,7 @@
--- Egg01 Rift Farm v1.24 -- หาจุดแบบ EPS (eggDB+UID) | วิ่ง/noclip แบบเดิม
+-- Egg01 Rift Farm v1.25 -- สแกนครบ 3 เป้า / ชื่อหลวม 3-4 ตัว / ผิดหรือหนัก=ข้าม ไม่หยุด AUTO
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function setClip(on)
@@ -30,17 +30,31 @@ local function attachCarry()
  S.carryConn=e.OnClientEvent:Connect(function(row)
   if typeof(row)~="table" or row.IsCarrying==nil then return end
   S.carrying=row.IsCarrying==true
+  if row.SpeedMultiplier~=nil then S.carrySpeed=tonumber(row.SpeedMultiplier) end
   if S.carrying and S.expectedUid then
    if row.Uid and tostring(row.Uid)==tostring(S.expectedUid) then
     S.carryVerified=true
    elseif row.Uid then
-    S.carryMismatch=true; say("ถือ UID อื่น: "..tostring(row.Uid).." — หยุด AUTO")
-    S.run=false
+    S.carryMismatch=true
+    say("ถือ UID อื่น: "..tostring(row.Uid).." — ข้ามไปเป้าอื่น")
    else
     say("ถือไข่แล้ว แต่ server ไม่ส่ง UID — ยังไม่ยืนยันเป้า")
    end
   end
  end); return true
+end
+local function skipUid(uid,sec)
+ if not uid then return end
+ S.skip[tostring(uid)]=os.clock()+(sec or 90)
+end
+local function isSkipped(uid)
+ local t=S.skip[tostring(uid or "")]
+ return t and os.clock()<t
+end
+local function tryDrop()
+ local rf=net("AskFieldEggDrop")
+ if rf and rf:IsA("RemoteFunction") then pcall(function() rf:InvokeServer({}) end); task.wait(0.35); return end
+ if rf and rf:IsA("RemoteEvent") then pcall(function() rf:FireServer({}) end); task.wait(0.35) end
 end
 local function pos(r) for _,k in ipairs({"BottomCFrame","BoundsCFrame","CFrame","Position"}) do local v=r[k]; if typeof(v)=="CFrame" then return v.Position elseif typeof(v)=="Vector3" then return v end end end
 local function upsert(row, uidHint)
@@ -139,13 +153,12 @@ local function lcsLen(a,b)
  end
  return best
 end
--- ตรงเป๊ะ / สลับคำได้ / อักษรติดกันยาวพอ (≥5 และ ≥80% ของชื่อสั้นกว่า) — กัน Bladehide≈Blade Head
+-- ตรงเป๊ะ / สลับคำ / อักษรติดกัน ≥4 (หรือ ≥3 ถ้าชื่อสั้น) — สแกนครบ 3 เป้า
 local function matchScore(need,cand)
  local wa,ka=wordsOf(need)
  local wb,kb=wordsOf(cand)
  if ka=="" or kb=="" then return 0 end
  if ka==kb or nameKey(need)==nameKey(cand) then return 100 end
- -- คำครบชุดเดียวกัน (สลับลำดับ)
  if #wa>0 and #wa==#wb then
   local ok=true
   for i=1,#wa do if wa[i]~=wb[i] then ok=false break end end
@@ -153,9 +166,13 @@ local function matchScore(need,cand)
  end
  local na,nb=nameKey(need),nameKey(cand)
  local c=math.max(lcsLen(ka,kb), lcsLen(na,nb))
- local short=math.min(#ka,#kb,#na,#nb)
+ local short=math.min(#na,#nb)
  if short<=0 then short=math.min(#ka,#kb) end
- if c>=5 and short>0 and c/short>=0.80 then return 50+c end
+ if c>=4 then return 40+c end
+ if c>=3 and short<=6 then return 35+c end
+ -- ชิ้นคำ ≥4 ตัวอยู่ในอีกฝั่ง
+ for _,w in ipairs(wa) do if #w>=4 and nb:find(w,1,true) then return 55 end end
+ for _,w in ipairs(wb) do if #w>=4 and na:find(w,1,true) then return 55 end end
  return 0
 end
 local function amountNeeds(a)
@@ -209,7 +226,7 @@ local function wanted()
  return out
 end
 local biomeForNeed, flatDist, biomeHubPos, proxyPosFromSnapshot
-local WAIT_ROTATE=75
+local WAIT_ROTATE=28
 local NEED_BIOME={
  spideron="Titan Temple",bladehide="Titan Temple",crustacia="Titan Temple",mantaris="Titan Temple",
  rhinotaur="Titan Temple",mutantshark="Titan Temple",gorillaking="Titan Temple",nightflame="Titan Temple",
@@ -264,7 +281,7 @@ local function eggMatchesNeed(e,needList)
   if nameKey(e.cat)==nameKey(n) then return n,100,e.cat end
   local s=matchScore(n,e.cat)
   if e.name then s=math.max(s,matchScore(n,e.name)) end
-  if s>=80 then return n,s,e.cat end
+  if s>=40 then return n,s,e.cat end
  end
 end
 local function nearestStealPos(eggPos)
@@ -322,15 +339,17 @@ local function target(quiet)
  for uid,e in pairs(S.eggDB) do
   total=total+1
   if e.pos then withPos=withPos+1 end
-  local wantedName,score,via=eggMatchesNeed(e,need)
-  if wantedName then
-   nameHit=nameHit+1
-   if not e.pos or e.state=="Carried" then nameNoPos=nameNoPos+1
-   else
-    local walkPos=nearestStealPos(e.pos) or e.pos
-    local d=(walkPos-root.Position).Magnitude
-    if not best or score>best.score or (score==best.score and d<best.d) then
-     best={uid=uid,cat=tostring(e.cat or "?"),need=wantedName,pos=walkPos,eggPos=e.pos,d=d,score=score,via=via}
+  if not isSkipped(uid) then
+   local wantedName,score,via=eggMatchesNeed(e,need)
+   if wantedName then
+    nameHit=nameHit+1
+    if not e.pos or e.state=="Carried" then nameNoPos=nameNoPos+1
+    else
+     local walkPos=nearestStealPos(e.pos) or e.pos
+     local d=(walkPos-root.Position).Magnitude
+     if not best or d<best.d or (math.abs(d-best.d)<40 and score>best.score) then
+      best={uid=uid,cat=tostring(e.cat or "?"),need=wantedName,pos=walkPos,eggPos=e.pos,d=d,score=score,via=via}
+     end
     end
    end
   end
@@ -340,6 +359,18 @@ local function target(quiet)
   local loose=(best.score or 100)<100 and ("≈"..tostring(best.via or best.cat).." ") or ""
   if not quiet then say(string.format("RIFT NEED %s %sUID=%s d=%.0f @%.0f,%.0f,%.0f",best.need,loose,tostring(best.uid),best.d,best.pos.X,best.pos.Y,best.pos.Z)) end
   return best
+ end
+ if not quiet and (not S.lastScanSay or os.clock()-(S.lastScanSay or 0)>=10) then
+  S.lastScanSay=os.clock()
+  local found={}
+  for _,n in ipairs(need) do
+   local hit=false
+   for uid,e in pairs(S.eggDB) do
+    if not isSkipped(uid) and e.pos and e.state~="Carried" and eggMatchesNeed(e,{n}) then hit=true break end
+   end
+   found[#found+1]=(hit and "Y:" or "N:")..n
+  end
+  say("สแกน 3 เป้า: "..table.concat(found," | "))
  end
  local now=os.clock()
  S.huntIdx=S.huntIdx or 1
@@ -481,26 +512,24 @@ local function fireSteal(pick)
  end)
 end
 local function one(t)
- if not refreshTarget(t) then say("UID เป้าหมายหาย/เปลี่ยน — ไม่หยิบ") return end
+ if not refreshTarget(t) then say("UID หาย — ข้าม"); skipUid(t.uid,45); return end
  local _,me=hr(); local dist=me and (t.pos-me.Position).Magnitude or (t.d or 200)
  local lim=math.clamp(dist/12+40,50,280)
  local ok,why=walk(t.pos,5,lim,55,t.uid)
  if why=="switch" then return end
- if not ok then say("ไป Rift egg ไม่สำเร็จ") return end
- if not refreshTarget(t) then say("UID เป้าหมายหายหลังเดินถึง — ไม่หยิบ") return end
- if not attachCarry() then say("ไม่พบ FieldEggCarry — ยังตรวจ UID หลังหยิบไม่ได้") return end
- S.expectedUid=t.uid; S.carrying=false; S.carryVerified=false; S.carryMismatch=false
+ if not ok then say("ไปไข่ไม่สำเร็จ — ข้าม"); skipUid(t.uid,45); return end
+ if not refreshTarget(t) then say("UID หายหลังถึง — ข้าม"); skipUid(t.uid,45); return end
+ if not attachCarry() then say("ไม่พบ FieldEggCarry"); return end
+ S.expectedUid=t.uid; S.carrying=false; S.carryVerified=false; S.carryMismatch=false; S.carrySpeed=nil
 
- -- 1) ลอง RF ด้วย Uid ตรงๆ (ยืนใกล้พอ server มักรับ)
  say("ลอง RF AskFieldEggCarry Uid="..tostring(t.uid))
- local okRf=select(1,tryCarryUid(t.uid))
+ select(1,tryCarryUid(t.uid))
  local untilRf=os.clock()+1.2
  while S.run and os.clock()<untilRf and not S.carryVerified and not S.carryMismatch do task.wait(.05) end
- if S.carryMismatch then S.expectedUid=nil; return end
- if S.carryVerified then
-  say("RF Uid สำเร็จ — ถือไข่เป้าแล้ว")
- else
-  -- 2) fallback: fireproximityprompt ใกล้พิกัดไข่ (ไม่สน gap กับไข่ข้าง)
+ if S.carryMismatch then
+  skipUid(t.uid,90); S.expectedUid=nil; tryDrop(); S.carryMismatch=false; say("ข้าม UID นี้ ไปสแกนเป้าอื่น"); return
+ end
+ if not S.carryVerified then
   local pick,md,gap,detail=choosePrompt(t)
   if not pick then
    for _,off in ipairs({Vector3.new(3,0,0),Vector3.new(-3,0,0),Vector3.new(0,0,3),Vector3.new(0,0,-3)}) do
@@ -510,7 +539,7 @@ local function one(t)
   if pick then
    local part=pick.Parent and (pick.Parent:IsA("BasePart") and pick.Parent or pick.Parent:FindFirstChildWhichIsA("BasePart",true))
    if part then walk(part.Position,3.2,6,14) end
-   if not refreshTarget(t) then S.expectedUid=nil; say("UID หายก่อนยิง Prompt — ไม่หยิบ"); return end
+   if not refreshTarget(t) then S.expectedUid=nil; skipUid(t.uid,45); return end
    pick,md,gap,detail=choosePrompt(t)
    if pick then
     say(string.format("fp Steal ใกล้ไข่ pd=%.2f gap=%.2f",md or -1,gap or -1))
@@ -518,32 +547,55 @@ local function one(t)
     local untilT=os.clock()+2
     while S.run and os.clock()<untilT and not S.carryVerified and not S.carryMismatch do task.wait(.05) end
    else
-    say("ไม่เจอ Prompt ใกล้ไข่ ("..tostring(detail)..") — ไม่หยิบ")
+    say("ไม่เจอ Prompt ("..tostring(detail)..") — ข้าม"); skipUid(t.uid,45)
    end
   else
-   say("RF ไม่ติด + ไม่เจอ Prompt ("..tostring(detail)..") — ไม่หยิบ")
+   say("RF ไม่ติด + ไม่เจอ Prompt — ข้าม"); skipUid(t.uid,45)
   end
  end
  S.expectedUid=nil
- if S.carryMismatch then return end
- if not S.carryVerified then say("ยังไม่ยืนยันถือ UID เป้าหมาย — ไม่วิ่งกลับ") return end
+ if S.carryMismatch then
+  skipUid(t.uid,90); tryDrop(); S.carryMismatch=false; say("ข้าม (UID ผิด) — หาใบอื่น"); return
+ end
+ if not S.carryVerified then say("ยังไม่ถือเป้า — ข้าม"); skipUid(t.uid,45); return end
+ -- ไข่หนักมาก (speed ต่ำ) → ทิ้ง หาใบอื่นที่หิ้วกลับได้
+ if S.carrySpeed and S.carrySpeed<0.55 then
+  say(string.format("ไข่หนักเกินไป speed=%.2f — ทิ้งแล้วข้าม",S.carrySpeed))
+  skipUid(t.uid,120); tryDrop(); return
+ end
  if S.home then
-  local _,r=hr(); local d=r and (r.Position-S.home).Magnitude or -1
-  say(string.format("ถือไข่แล้ว — กลับ HOME d=%.0f",d))
-  local ok=walk(S.home,60,120)
-  if ok then say("ถึง HOME — รอให้ไข่วาง/ฟัก"); waitPlaced() else say("กลับ HOME ไม่สำเร็จ") end
+  local _,r=hr(); local d0=r and (r.Position-S.home).Magnitude or -1
+  say(string.format("ถือไข่แล้ว — กลับ HOME d=%.0f",d0))
+  local homeLim=math.clamp((d0>0 and d0/10 or 80)+50,80,220)
+  local tHome=os.clock(); local lastD=d0; local stuck=0
+  local okHome=false
+  while S.run and os.clock()-tHome<homeLim do
+   local h,rr=hr(); if not h or not rr then break end
+   if not S.carrying then say("ไข่หล่นระหว่างทาง — ไม่ไล่เก็บ ไปเป้าอื่น"); skipUid(t.uid,60); return end
+   local d=(rr.Position-S.home).Magnitude
+   if d<=60 then okHome=true; stop(); break end
+   if lastD>0 and lastD-d<8 then stuck=stuck+1 else stuck=0 end
+   lastD=d
+   if stuck>=8 then
+    say("กลับบ้านช้า/หนัก — ทิ้งไข่ ข้ามไปใบอื่น")
+    skipUid(t.uid,120); tryDrop(); return
+   end
+   walk(S.home,60,3.5)
+  end
+  if okHome then say("ถึง HOME — รอวาง/ฟัก"); waitPlaced()
+  else say("กลับ HOME ไม่ทัน — ทิ้งแล้วข้าม"); skipUid(t.uid,90); tryDrop() end
  else
   say("เก็บแล้ว — ไม่มี HOME จึงหยุด")
  end
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.24 — จุด EPS"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.25 — SCAN3 SKIP"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;setClip(false);gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachEggFeed(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(function() task.spawn(function() local n=refreshSnapshot(); say("SCAN eggDB="..tostring(n)); target() end) end); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — เปิดหน้า Rift ไว้"); task.spawn(function() local n=refreshSnapshot(); say("eggDB โหลด "..tostring(n).." รายการ"); while S.run do local ok,t=pcall(target); if not ok then say("target err: "..tostring(t)); task.wait(1) elseif t and t.hunt and t.wait then if not S.stood then S.stood=true; stop("หยุดนิ่ง — รอไข่สปอว์น") end; task.wait(.5) elseif t and t.hunt then S.stood=false; if not S.huntAt or os.clock()-S.huntAt>12 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s dXZ=%.0f",tostring(t.area),t.d or -1)) end; walk(t.pos,60,2.4) elseif t then S.stood=false; one(t);task.wait(.4) else task.wait(.8) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.24 ===\n"..table.concat(lines,"\n"))end end)
+attachCarry(); attachEggFeed(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(function() task.spawn(function() local n=refreshSnapshot(); say("SCAN eggDB="..tostring(n)); target() end) end); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — สแกน 3 เป้า | ผิด/หนัก=ข้าม"); task.spawn(function() local n=refreshSnapshot(); say("eggDB โหลด "..tostring(n).." รายการ"); while S.run do local ok,t=pcall(target); if not ok then say("target err: "..tostring(t)); task.wait(1) elseif t and t.hunt and t.wait then if not S.stood then S.stood=true; stop("หยุดนิ่งสั้นๆ — สแกนทั่วแผนที่") end; task.wait(.45) elseif t and t.hunt then S.stood=false; if not S.huntAt or os.clock()-S.huntAt>8 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s dXZ=%.0f",tostring(t.area),t.d or -1)) end; walk(t.pos,60,2.4) elseif t then S.stood=false; one(t);task.wait(.35) else task.wait(.6) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.25 ===\n"..table.concat(lines,"\n"))end end)
 setClip(true)
-say("v1.24: หาจุดแบบ EPS | วิ่ง+CLIP เดิม — แก้ nil biomeForNeed")
+say("v1.25: สแกนครบ 3 | ชื่อหลวม 3-4 ตัว | ผิด/หนักข้าม ไม่หยุด")
