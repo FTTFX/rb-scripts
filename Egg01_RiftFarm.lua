@@ -234,6 +234,8 @@ local NEED_BIOME={
  snowyowl="Cherry Blossom",koi="Cherry Blossom",stag="Cherry Blossom",onitiger="Cherry Blossom",kitsune="Cherry Blossom",
  dodo="Prehistoric",pterodactyl="Prehistoric",ankylosaurus="Prehistoric",triceratops="Prehistoric",
  bronto="Prehistoric",trex="Prehistoric",mosasaurus="Prehistoric",tralaledon="Prehistoric",
+ lavagecko="Volcano",lavafrog="Volcano",flamingbull="Volcano",lavaiguana="Volcano",
+ orca="Abyss Ocean",shark="Abyss Ocean",swordfish="Abyss Ocean",parrotfish="Abyss Ocean",
 }
 flatDist=function(a,b)
  if not a or not b then return math.huge end
