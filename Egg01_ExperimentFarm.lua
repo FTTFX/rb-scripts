@@ -439,10 +439,11 @@ logBox.TextYAlignment=Enum.TextYAlignment.Top; logBox.TextWrapped=true; logBox.C
 local function beginAuto()
     if S.run then return end
     S.run=true; startB.Text="ON"
+    resolveRift()
     resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO ON — ไม่ต้องกดปุ่ม | นอกอีเวนต์=เครื่องวิ่งรอ")
+    say("AUTO ON — ขั้นอีเวนต์: RIFT → วาฬ | นอก=เครื่องวิ่งรอ")
     task.spawn(function()
         loop()
         if S.gui and S.gui.Parent then startB.Text="AUTO" end
