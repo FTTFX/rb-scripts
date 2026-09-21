@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v1.6 -- DOCK default + SCHED :00/:30 + BossFight watch + CLIP
+-- Egg01 Experiment Farm v1.7 -- ZONE fish/egg + DroneVisual only + SCHED + CLIP corridor
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -8,11 +8,15 @@ local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local LEAD=60
 local FARM_WINDOW=600
-local DEFAULT_DOCK=Vector3.new(2686.4,70.8,-374.9)
-local S={run=false,mode=nil,gui=nil,lines={},searchOrigin=nil,searchIndex=0,dock=DEFAULT_DOCK,clockSkew=0,clip=false,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local DEFAULT_DOCK=Vector3.new(2194.0,70.8,-364.1)
+local ZONE_KEYS={
+    fish=3,ocean=3,sea=3,water=2,coral=2,aquatic=3,catfish=3,
+    egg=2,eggs=2,hatch=1,biome=1,area=1,swamp=2,lake=2,reef=3,
+}
+local S={run=false,mode=nil,gui=nil,lines={},searchOrigin=nil,searchIndex=0,dock=DEFAULT_DOCK,fish=nil,clockSkew=0,clip=false,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
-    S.lines[#S.lines+1]=tostring(m); if #S.lines>14 then table.remove(S.lines,1) end
+    S.lines[#S.lines+1]=tostring(m); if #S.lines>16 then table.remove(S.lines,1) end
     if logBox then logBox.Text=table.concat(S.lines,"\n") end
     warn("[ExperimentFarm] "..tostring(m))
 end
@@ -51,10 +55,7 @@ local function setClip(on)
     if not c then return end
     S.clipParts={}
     for _,p in ipairs(c:GetDescendants()) do
-        if p:IsA("BasePart") then
-            S.clipParts[p]=p.CanCollide
-            p.CanCollide=false
-        end
+        if p:IsA("BasePart") then S.clipParts[p]=p.CanCollide; p.CanCollide=false end
     end
     if S.clipConn then pcall(function() S.clipConn:Disconnect() end) end
     S.clipConn=RunS.Stepped:Connect(function()
@@ -77,6 +78,10 @@ local function stop(label)
         RunS.Heartbeat:Wait()
     end
     if label then say(label) end
+end
+local function walkBudget(from,to)
+    local d=(from-to).Magnitude
+    return math.clamp(d/18+25,45,200)
 end
 local function walk(p,rad,lim,slowNear)
     local t=os.clock(); local moveHum,oldSpeed,lastBand
@@ -106,12 +111,6 @@ local function rootPart(m)
     if m:IsA("BasePart") then return m end
     return m.PrimaryPart or m:FindFirstChild("HumanoidRootPart",true) or m:FindFirstChildWhichIsA("BasePart",true)
 end
-local function modelOf(x)
-    while x and x~=workspace do
-        if x:IsA("Model") then return x end
-        x=x.Parent
-    end
-end
 local function hpOf(m)
     local found
     for _,x in ipairs(m:GetDescendants()) do
@@ -123,14 +122,24 @@ local function hpOf(m)
     end
     return nil,nil,found
 end
+local function underClientEggs(m)
+    local p=m
+    while p and p~=workspace do
+        local n=p.Name:lower()
+        if n:find("clientrendered",1,true) or n=="eggs" or n:find("fieldegg",1,true) then return true end
+        p=p.Parent
+    end
+    return false
+end
 local function isExperiment(m)
-    if not m or m:IsDescendantOf(LP.Character or Instance.new("Folder")) then return false end
-    local name=norm(m.Name)
-    if name:find("dronevisual",1,true) or name:find("scramble",1,true) or name:find("experiment",1,true) then return true end
+    if not m or underClientEggs(m) then return false end
+    if m:IsDescendantOf(LP.Character or Instance.new("Folder")) then return false end
+    local name=m.Name:lower()
+    if name:find("dronevisual",1,true) or name:find("scramble",1,true) then return true end
     for _,x in ipairs(m:GetDescendants()) do
         if x:IsA("TextLabel") or x:IsA("TextButton") then
-            local s=norm(x.Text)
-            if s:find("drscramble",1,true) or s:find("experiment",1,true) then return true end
+            local t=tostring(x.Text):lower()
+            if t:find("dr. scramble",1,true) or t:find("dr scramble",1,true) then return true end
         end
     end
     return false
@@ -139,31 +148,131 @@ local function robots()
     local _,_,r=char(); if not r then return {} end
     local out,seen={},{}
     for _,x in ipairs(workspace:GetDescendants()) do
-        if x:IsA("TextLabel") or x:IsA("TextButton") then
-            local s=norm(x.Text)
-            if s:find("drscramble",1,true) or s:find("experiment",1,true) or tostring(x.Text):match("%d+%s*/%s*%d+") then
-                local m=modelOf(x); local p=rootPart(m)
-                if m and p and not seen[m] and isExperiment(m) then
-                    seen[m]=true; local hp,max,label=hpOf(m)
-                    local center=m:GetPivot().Position
-                    if not hp or hp>0 then out[#out+1]={m=m,p=p,pos=center,hp=hp,max=max,label=label,d=(center-r.Position).Magnitude} end
+        if x:IsA("Model") and not seen[x] and isExperiment(x) then
+            seen[x]=true
+            local p=rootPart(x)
+            if p then
+                local hp,max,label=hpOf(x)
+                local center=x:GetPivot().Position
+                if not hp or hp>0 then
+                    out[#out+1]={m=x,p=p,pos=center,hp=hp,max=max,label=label,d=(center-r.Position).Magnitude}
                 end
             end
         end
     end
     table.sort(out,function(a,b) return a.d<b.d end); return out
 end
+local function zoneScore(name)
+    local n=name:lower(); local score,tag=0,nil
+    for k,w in pairs(ZONE_KEYS) do
+        if n:find(k,1,true) and w>score then score=w; tag=k end
+    end
+    return score,tag
+end
+local function instPos(d)
+    if d:IsA("BasePart") then return d.Position end
+    if d:IsA("Model") then
+        local ok,pv=pcall(function() return d:GetPivot().Position end)
+        if ok and pv then return pv end
+    end
+    local p=d:FindFirstChildWhichIsA("BasePart",true)
+    return p and p.Position
+end
+local function shortPath(d)
+    local ok,v=pcall(function() return d:GetFullName() end)
+    return ok and v:gsub("^Workspace%.","WS."):gsub("^Workspace","WS") or d.Name
+end
+local function scanZones()
+    local _,_,r=char(); if not r then say("ไม่มีตัวละคร"); return {} end
+    local hits,seen={},{}
+    local function add(d,bonus)
+        if seen[d] then return end
+        local score,tag=zoneScore(d.Name)
+        score=score+(bonus or 0)
+        if score<=0 then return end
+        local pos=instPos(d); if not pos then return end
+        local dd=(pos-r.Position).Magnitude
+        if dd>4500 then return end
+        seen[d]=true
+        hits[#hits+1]={d=d,pos=pos,dist=dd,score=score,tag=tag or "?",name=d.Name,path=shortPath(d)}
+    end
+    local objs=workspace:FindFirstChild("__OBJECTS")
+    local areas=objs and objs:FindFirstChild("Areas")
+    if areas then
+        for _,ch in ipairs(areas:GetDescendants()) do
+            if ch:IsA("BasePart") or ch:IsA("Model") or ch:IsA("Folder") then add(ch,2) end
+        end
+    end
+    for _,d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("BasePart") or d:IsA("Model") or d:IsA("Folder") then add(d,0) end
+    end
+    table.sort(hits,function(a,b)
+        if a.score~=b.score then return a.score>b.score end
+        return a.dist<b.dist
+    end)
+    say(string.format("ZONE hits=%d me=%.0f,%.0f,%.0f",#hits,r.Position.X,r.Position.Y,r.Position.Z))
+    for i=1,math.min(#hits,8) do
+        local h=hits[i]
+        say(string.format("#%d [%s/%d] %s d=%.0f @%.0f,%.0f,%.0f",i,h.tag,h.score,h.name,h.dist,h.pos.X,h.pos.Y,h.pos.Z))
+    end
+    if #hits==0 then say("ไม่เจอชื่อโซน fish/ocean/egg — ลอง MARK FISH เองที่โซนปลา") end
+    return hits
+end
+local function pickFishZone(hits)
+    hits=hits or scanZones()
+    if #hits==0 then return nil end
+    local origin=S.dock or select(3,char()) and select(3,char()).Position
+    local best
+    for _,h in ipairs(hits) do
+        local tag=h.tag
+        local fishy=tag=="fish" or tag=="ocean" or tag=="sea" or tag=="coral" or tag=="reef" or tag=="aquatic" or tag=="catfish" or tag=="egg" or tag=="eggs"
+        if fishy then
+            local ahead=0
+            if origin then
+                -- ทางเดินแนว X เป็นหลัก: ชอบจุดที่ห่างจาก dock ไปข้างหน้า
+                ahead=(h.pos-origin).Magnitude
+            end
+            local rank=h.score*1000+ahead
+            if not best or rank>best.rank then best={h=h,rank=rank} end
+        end
+    end
+    if not best then best={h=hits[1],rank=0} end
+    return best.h
+end
+local function goTo(pos,label,useClip,rad)
+    rad=rad or 18
+    local _,_,r=char(); if not r or not pos then return false end
+    local lim=walkBudget(r.Position,pos)
+    local used=false
+    if useClip then setClip(true); used=true; say("CLIP ON — "..label) end
+    say(string.format("%s → %.0f,%.0f,%.0f lim=%ds",label,pos.X,pos.Y,pos.Z,lim))
+    local ok=walk(pos,rad,lim,55)
+    if used then setClip(false); say("CLIP OFF") end
+    say(ok and ("ถึง "..label) or (label.." ไม่ถึง/timeout"))
+    return ok
+end
+local function goDock(useClip)
+    if not S.dock then say("ยังไม่มี DOCK"); return false end
+    return goTo(S.dock,"DOCK",useClip,12)
+end
+local function goFish(useClip)
+    if S.fish then return goTo(S.fish,"FISH",useClip~=false,20) end
+    local z=pickFishZone()
+    if not z then say("ยังไม่มีจุด FISH — กด ZONE หรือยืนโซนปลาแล้วกด FISH"); return false end
+    S.fish=z.pos
+    say(string.format("เลือก FISH จากโมเดล %s [%s] @%.0f,%.0f,%.0f",z.name,z.tag,z.pos.X,z.pos.Y,z.pos.Z))
+    return goTo(S.fish,"FISH",useClip~=false,20)
+end
 local function searchStep()
     local _,_,r=char(); if not r then return end
-    S.searchOrigin=S.searchOrigin or r.Position
-    local offsets={Vector3.new(110,0,0),Vector3.new(110,0,110),Vector3.new(0,0,110),Vector3.new(-110,0,110),Vector3.new(-110,0,0),Vector3.new(-110,0,-110),Vector3.new(0,0,-110),Vector3.new(110,0,-110)}
+    local origin=S.fish or S.dock or r.Position
+    S.searchOrigin=S.searchOrigin or origin
+    local offsets={Vector3.new(80,0,0),Vector3.new(80,0,80),Vector3.new(0,0,80),Vector3.new(-80,0,80),Vector3.new(-80,0,0),Vector3.new(-80,0,-80),Vector3.new(0,0,-80),Vector3.new(80,0,-80)}
     S.searchIndex=(S.searchIndex % #offsets)+1
-    local goal=S.searchOrigin+offsets[S.searchIndex]
-    say(string.format("ไม่พบหุ่น — เดินค้นหาจุด %d/%d",S.searchIndex,#offsets))
-    walk(goal,14,12,55)
+    walk(S.searchOrigin+offsets[S.searchIndex],14,20,55)
 end
 local function scan()
-    local all=robots(); say("พบหุ่น="..#all)
+    local all=robots(); say("พบ DroneVisual="..#all)
     for i=1,math.min(#all,6) do local x=all[i]; say(string.format("#%d %s hp=%s d=%.0f",i,x.m.Name,x.label or "?",x.d)) end
     return all
 end
@@ -197,22 +306,13 @@ local function hit(robot)
     end
     say("เปลี่ยนเป้าถัดไป")
 end
-local function goDock(useClip)
-    if not S.dock then say("ยังไม่มี DOCK — ยืนอู่เชียนแล้วกด DOCK"); return false end
-    local usedClip=false
-    if useClip then setClip(true); usedClip=true; say("CLIP ON — เดินไป DOCK") end
-    local ok=walk(S.dock,12,90,55)
-    if usedClip then setClip(false); say("CLIP OFF") end
-    if ok then say("ถึง DOCK") else say("ไป DOCK ไม่ทัน/ไม่ถึง") end
-    return ok
-end
 local function waitForLead()
     while S.run do
         local t=serverNow()
         local rem=secsToBoundary(t)
         local boss=bossTimerText()
         if rem<=LEAD then
-            say(string.format("ใกล้รอบ %s — เหลือ %ds ≤ LEAD %d — ไป DOCK (boss=%s)",fmtHMS(t),rem,LEAD,tostring(boss or "-")))
+            say(string.format("ใกล้รอบ %s — เหลือ %ds — ไป DOCK→FISH (boss=%s)",fmtHMS(t),rem,tostring(boss or "-")))
             return true
         end
         if rem%30==0 or rem==LEAD+1 then
@@ -224,16 +324,15 @@ local function waitForLead()
 end
 local function farmWindow()
     local deadline=os.clock()+FARM_WINDOW
-    local _,_,r=char(); S.searchOrigin=(S.dock) or (r and r.Position) or nil; S.searchIndex=0
-    say(string.format("FARM หน้าต่าง %ds",FARM_WINDOW))
+    local _,_,r=char()
+    S.searchOrigin=S.fish or S.dock or (r and r.Position) or nil; S.searchIndex=0
+    say(string.format("FARM หน้าต่าง %ds รอบ FISH/DOCK",FARM_WINDOW))
     while S.run and os.clock()<deadline do
         local all=robots()
         if #all==0 then
-            -- ใน SCHED ไม่สไปรอลไกล: สแกนรอบ dock สั้น ๆ
-            if S.dock then
-                local _,_,me=char()
-                if me and (me.Position-S.dock).Magnitude>40 then walk(S.dock,12,40,55) end
-            end
+            local hub=S.fish or S.dock
+            local _,_,me=char()
+            if hub and me and (me.Position-hub).Magnitude>50 then walk(hub,18,40,55) end
             task.wait(.8)
         else
             hit(all[1]); task.wait(.35)
@@ -243,52 +342,68 @@ local function farmWindow()
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm";gui.ResetOnSpawn=false;gui.DisplayOrder=1022
 pcall(function()gui.Parent=(gethui and gethui()) or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end;S.gui=gui
-local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,460,0,248);f.Position=UDim2.new(0,12,.40,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,28);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.6 — SCHED";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
+local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,500,0,268);f.Position=UDim2.new(0,12,.38,0);f.BackgroundColor3=Color3.fromRGB(18,43,46);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-80,0,26);title.Position=UDim2.new(0,10,0,2);title.BackgroundTransparency=1;title.Text="Egg01 Experiment Farm v1.7 — ZONE";title.TextColor3=Color3.fromRGB(145,245,230);title.Font=Enum.Font.GothamBold;title.TextSize=13;title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,y,color,w)
-    local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 68,0,28);b.Position=UDim2.new(0,x,0,y);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=11;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
+    local b=Instance.new("TextButton",f);b.Size=UDim2.new(0,w or 62,0,26);b.Position=UDim2.new(0,x,0,y);b.Text=text;b.TextColor3=Color3.new(1,1,1);b.BackgroundColor3=color;b.BorderSizePixel=0;b.Font=Enum.Font.GothamBold;b.TextSize=10;Instance.new("UICorner",b).CornerRadius=UDim.new(0,5);return b
 end
-local scanB=button("SCAN",10,34,Color3.fromRGB(45,105,165))
-local start=button("AUTO",84,34,Color3.fromRGB(35,145,75))
-local schedB=button("SCHED",158,34,Color3.fromRGB(35,120,160))
-local dockB=button("DOCK",232,34,Color3.fromRGB(90,110,55))
-local clipB=button("CLIP",306,34,Color3.fromRGB(120,90,40))
-local stopB=button("STOP",380,34,Color3.fromRGB(165,50,55),52)
-local copy=button("COPY",10,66,Color3.fromRGB(75,75,80),68)
-local goDockB=button("→DOCK",84,66,Color3.fromRGB(70,100,130),68)
-local fold=button("−",380,66,Color3.fromRGB(75,65,105),24)
-local close=button("X",408,66,Color3.fromRGB(145,50,65),24)
-logBox=Instance.new("TextLabel",f);logBox.Size=UDim2.new(1,-16,0,148);logBox.Position=UDim2.new(0,8,0,100);logBox.BackgroundColor3=Color3.new(0,0,0);logBox.BackgroundTransparency=.2;logBox.TextColor3=Color3.fromRGB(180,245,190);logBox.Font=Enum.Font.Code;logBox.TextSize=10;logBox.TextXAlignment=Enum.TextXAlignment.Left;logBox.TextYAlignment=Enum.TextYAlignment.Top;logBox.TextWrapped=true;logBox.ClipsDescendants=true
-local row2={scanB,start,schedB,dockB,clipB,stopB,copy,goDockB,logBox}
+local scanB=button("SCAN",10,32,Color3.fromRGB(45,105,165))
+local zoneB=button("ZONE",78,32,Color3.fromRGB(40,90,130))
+local start=button("AUTO",146,32,Color3.fromRGB(35,145,75))
+local schedB=button("SCHED",214,32,Color3.fromRGB(35,120,160))
+local dockB=button("DOCK",282,32,Color3.fromRGB(90,110,55))
+local fishB=button("FISH",350,32,Color3.fromRGB(50,120,100))
+local clipB=button("CLIP",418,32,Color3.fromRGB(120,90,40),52)
+local stopB=button("STOP",10,62,Color3.fromRGB(165,50,55),62)
+local copy=button("COPY",78,62,Color3.fromRGB(75,75,80),62)
+local goDockB=button("→DOCK",146,62,Color3.fromRGB(70,100,130),62)
+local goFishB=button("→FISH",214,62,Color3.fromRGB(40,130,120),62)
+local fold=button("−",418,62,Color3.fromRGB(75,65,105),24)
+local close=button("X",446,62,Color3.fromRGB(145,50,65),24)
+logBox=Instance.new("TextLabel",f);logBox.Size=UDim2.new(1,-16,0,168);logBox.Position=UDim2.new(0,8,0,94);logBox.BackgroundColor3=Color3.new(0,0,0);logBox.BackgroundTransparency=.2;logBox.TextColor3=Color3.fromRGB(180,245,190);logBox.Font=Enum.Font.Code;logBox.TextSize=10;logBox.TextXAlignment=Enum.TextXAlignment.Left;logBox.TextYAlignment=Enum.TextYAlignment.Top;logBox.TextWrapped=true;logBox.ClipsDescendants=true
+local row2={scanB,zoneB,start,schedB,dockB,fishB,clipB,stopB,copy,goDockB,goFishB,logBox}
 local folded=false
 fold.MouseButton1Click:Connect(function()
-    folded=not folded;f.Size=UDim2.new(0,460,0,folded and 34 or 248)
+    folded=not folded;f.Size=UDim2.new(0,500,0,folded and 32 or 268)
     for _,x in ipairs(row2) do x.Visible=not folded end
     fold.Text=folded and "+" or "−"
 end)
 scanB.MouseButton1Click:Connect(scan)
+zoneB.MouseButton1Click:Connect(function()
+    local hits=scanZones()
+    local z=pickFishZone(hits)
+    if z then
+        S.fish=z.pos
+        say(string.format("FISH auto=%s [%s] %.0f,%.0f,%.0f",z.name,z.tag,z.pos.X,z.pos.Y,z.pos.Z))
+    end
+end)
 dockB.MouseButton1Click:Connect(function()
     local _,_,r=char(); if not r then say("ไม่มีตัวละคร"); return end
     S.dock=r.Position
     say(string.format("DOCK ตั้งแล้ว %.1f,%.1f,%.1f",S.dock.X,S.dock.Y,S.dock.Z))
 end)
+fishB.MouseButton1Click:Connect(function()
+    local _,_,r=char(); if not r then say("ไม่มีตัวละคร"); return end
+    S.fish=r.Position
+    say(string.format("FISH MARK %.1f,%.1f,%.1f",S.fish.X,S.fish.Y,S.fish.Z))
+end)
 clipB.MouseButton1Click:Connect(function()
     if S.clip then setClip(false); clipB.Text="CLIP"; say("CLIP OFF")
-    else setClip(true); clipB.Text="CLIP✓"; say("CLIP ON — ทดสอบหนูขลิบ (กดอีกทีปิด)") end
+    else setClip(true); clipB.Text="CLIP✓"; say("CLIP ON") end
 end)
 goDockB.MouseButton1Click:Connect(function()
     if S.run then return end
-    if not S.dock then say("กด DOCK ที่อู่เชียนก่อน"); return end
     S.run=true; S.mode="testdock"
-    task.spawn(function()
-        say("ทดสอบ →DOCK"..(S.clip and " +CLIP" or ""))
-        goDock(S.clip)
-        S.run=false; S.mode=nil
-    end)
+    task.spawn(function() goDock(true); S.run=false; S.mode=nil end)
+end)
+goFishB.MouseButton1Click:Connect(function()
+    if S.run then return end
+    S.run=true; S.mode="testfish"
+    task.spawn(function() goFish(true); S.run=false; S.mode=nil end)
 end)
 start.MouseButton1Click:Connect(function()
-    if S.run then return end;S.run=true;S.mode="auto";start.Text="ON";say("AUTO ON — ไล่ตีใกล้สุด")
-    local _,_,r=char();S.searchOrigin=r and r.Position or nil;S.searchIndex=0
+    if S.run then return end;S.run=true;S.mode="auto";start.Text="ON";say("AUTO ON — DroneVisual ใกล้สุด")
+    local _,_,r=char();S.searchOrigin=S.fish or S.dock or (r and r.Position);S.searchIndex=0
     task.spawn(function()
         while S.run and S.mode=="auto" do
             local all=robots()
@@ -299,13 +414,15 @@ start.MouseButton1Click:Connect(function()
 end)
 schedB.MouseButton1Click:Connect(function()
     if S.run then return end
-    if not S.dock then say("ยังไม่ได้ตั้ง DOCK — ยืนอู่เชียนแล้วกด DOCK ก่อน SCHED"); return end
+    if not S.dock then say("ตั้ง DOCK ก่อน"); return end
     S.run=true; S.mode="sched"; schedB.Text="ON"
-    say(string.format("SCHED ON — LEAD=%ds FARM=%ds server=%s",LEAD,FARM_WINDOW,fmtHMS(serverNow())))
+    say(string.format("SCHED ON — DOCK→FISH(CLIP)→FARM | LEAD=%d server=%s",LEAD,fmtHMS(serverNow())))
     task.spawn(function()
         while S.run and S.mode=="sched" do
             if not waitForLead() then break end
-            goDock(false)
+            goDock(true)
+            if not S.run then break end
+            goFish(true)
             if not S.run then break end
             farmWindow()
         end
@@ -318,10 +435,12 @@ stopB.MouseButton1Click:Connect(function()
 end)
 copy.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
-    local extra=S.dock and string.format("\nDOCK=%.1f,%.1f,%.1f",S.dock.X,S.dock.Y,S.dock.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v1.6 ===\n"..table.concat(S.lines,"\n")..extra);copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end
+    local extra=""
+    if S.dock then extra=extra..string.format("\nDOCK=%.1f,%.1f,%.1f",S.dock.X,S.dock.Y,S.dock.Z) end
+    if S.fish then extra=extra..string.format("\nFISH=%.1f,%.1f,%.1f",S.fish.X,S.fish.Y,S.fish.Z) end
+    if c then pcall(c,"=== Egg01 Experiment Farm v1.7 ===\n"..table.concat(S.lines,"\n")..extra);copy.Text="OK";task.delay(1,function()if copy.Parent then copy.Text="COPY"end end)end
 end)
 close.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say(string.format("DOCK default %.0f,%.0f,%.0f — SCHED รอ server :00/:30 | CLIP/→DOCK ทดสอบ | AUTO ไล่ตี",DEFAULT_DOCK.X,DEFAULT_DOCK.Y,DEFAULT_DOCK.Z))
+say("v1.7: ZONE หาโมเดล fish/ocean/egg → →FISH วิ่ง CLIP | SCAN เหลือแค่ DroneVisual | SCHED=DOCK→FISH→FARM")
