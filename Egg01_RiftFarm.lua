@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.12 -- เบรก velocity แม่น + รอวาง/ฟักที่ HOME ก่อนรอบใหม่
+-- Egg01 Rift Farm v1.13 -- ใกล้ UID แล้วยิง Steal (ไม่บังคับแยก Prompt gap) + RF Uid fallback
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,expectedUid=nil,carryVerified=false,carryMismatch=false}; _G.EGG01_RIFT_FARM=S; local lines={}
@@ -120,45 +120,77 @@ local function refreshTarget(t)
  end
  return false
 end
+-- เลือก Steal ที่ใกล้พิกัดไข่ (UID) ที่สุด — ไม่บังคับ gap กับไข่ข้างๆ
 local function choosePrompt(t)
  local _,me=hr(); if not me then return end
  local candidates={}
  for _,v in ipairs(prompts()) do
   local d=(v.pos-t.pos).Magnitude
-  if d<=30 then candidates[#candidates+1]={p=v.p,pos=v.pos,d=d} end
+  if d<=18 then candidates[#candidates+1]={p=v.p,pos=v.pos,d=d} end
  end
  table.sort(candidates,function(a,b)return a.d<b.d end)
  local a,b=candidates[1],candidates[2]
- -- TargetFarm เลือก Prompt ใกล้พิกัดไข่ที่สุดใน 30 studs; Rift เพิ่ม gap กันไข่ข้างเคียง
- if a and (not b or b.d-a.d>=1) and (a.pos-me.Position).Magnitude<=16 then
-  return a.p,a.d,b and b.d-a.d or math.huge
+ if a and (a.pos-me.Position).Magnitude<=16 then
+  return a.p,a.d,b and (b.d-a.d) or math.huge
  end
- local detail=a and string.format("pd=%.2f gap=%s player=%.1f",a.d,b and string.format("%.2f",b.d-a.d) or "-",(a.pos-me.Position).Magnitude) or "ไม่มี Prompt ใน 30"
+ local detail=a and string.format("pd=%.2f gap=%s player=%.1f",a.d,b and string.format("%.2f",b.d-a.d) or "-",(a.pos-me.Position).Magnitude) or "ไม่มี Prompt ใน 18"
  return nil,nil,nil,detail
+end
+local function tryCarryUid(uid)
+ local rf=net("AskFieldEggCarry")
+ if not rf or not rf:IsA("RemoteFunction") then return false,"no-RF" end
+ local ok,res=pcall(function() return rf:InvokeServer({Uid=tostring(uid)}) end)
+ return ok,res
+end
+local function fireSteal(pick)
+ if not pick or not fp then return false end
+ return pcall(function()
+  local old=pick.HoldDuration
+  pick.HoldDuration=0
+  fp(pick)
+  pick.HoldDuration=old
+ end)
 end
 local function one(t)
  if not refreshTarget(t) then say("UID เป้าหมายหาย/เปลี่ยน — ไม่หยิบ") return end
- if not walk(t.pos,6,90,55) then say("ไป Rift egg ไม่สำเร็จ") return end
+ if not walk(t.pos,5,90,55) then say("ไป Rift egg ไม่สำเร็จ") return end
  if not refreshTarget(t) then say("UID เป้าหมายหายหลังเดินถึง — ไม่หยิบ") return end
- local pick,md,gap,detail=choosePrompt(t)
- -- บางไข่เปิด Prompt เมื่อยืนคนละด้าน: เดิน probe รอบตำแหน่ง UID ระยะสั้นเท่านั้น
- if not pick then
-  for _,off in ipairs({Vector3.new(4,0,0),Vector3.new(-4,0,0),Vector3.new(0,0,4),Vector3.new(0,0,-4)}) do
-   if walk(t.pos+off,2,2,12) then pick,md,gap,detail=choosePrompt(t); if pick then break end end
-  end
- end
- if not pick then say("Prompt ของ "..t.need.." ยังแยกไม่ชัด ("..tostring(detail)..") — ไม่หยิบ") return end
- local part=pick.Parent and (pick.Parent:IsA("BasePart") and pick.Parent or pick.Parent:FindFirstChildWhichIsA("BasePart",true))
- if not part or not walk(part.Position,3.5,8,18) then say("เข้า Prompt ของ "..t.need.." ไม่สำเร็จ") return end
- if not refreshTarget(t) then say("UID เป้าหมายหายระหว่างเข้า Prompt — ไม่หยิบ") return end
- pick,md,gap,detail=choosePrompt(t)
- if not pick then say("Prompt ของ "..t.need.." เปลี่ยนระหว่างเข้าใกล้ ("..tostring(detail)..") — ไม่หยิบ") return end
  if not attachCarry() then say("ไม่พบ FieldEggCarry — ยังตรวจ UID หลังหยิบไม่ได้") return end
  S.expectedUid=t.uid; S.carrying=false; S.carryVerified=false; S.carryMismatch=false
- say(string.format("Prompt ตรง UID=%s pd=%.2f gap=%.2f — Steal",tostring(t.uid),md,gap))
- local fired=pcall(function() local old=pick.HoldDuration; pick.HoldDuration=0; fp(pick); pick.HoldDuration=old end)
- if not fired then S.expectedUid=nil; say("ยิง Steal ไม่สำเร็จ") return end
- local untilT=os.clock()+2; while S.run and os.clock()<untilT and not S.carryVerified and not S.carryMismatch do task.wait(.05) end
+
+ -- 1) ลอง RF ด้วย Uid ตรงๆ (ยืนใกล้พอ server มักรับ)
+ say("ลอง RF AskFieldEggCarry Uid="..tostring(t.uid))
+ local okRf=select(1,tryCarryUid(t.uid))
+ local untilRf=os.clock()+1.2
+ while S.run and os.clock()<untilRf and not S.carryVerified and not S.carryMismatch do task.wait(.05) end
+ if S.carryMismatch then S.expectedUid=nil; return end
+ if S.carryVerified then
+  say("RF Uid สำเร็จ — ถือไข่เป้าแล้ว")
+ else
+  -- 2) fallback: fireproximityprompt ใกล้พิกัดไข่ (ไม่สน gap กับไข่ข้าง)
+  local pick,md,gap,detail=choosePrompt(t)
+  if not pick then
+   for _,off in ipairs({Vector3.new(3,0,0),Vector3.new(-3,0,0),Vector3.new(0,0,3),Vector3.new(0,0,-3)}) do
+    if walk(t.pos+off,2,2.5,10) then pick,md,gap,detail=choosePrompt(t); if pick then break end end
+   end
+  end
+  if pick then
+   local part=pick.Parent and (pick.Parent:IsA("BasePart") and pick.Parent or pick.Parent:FindFirstChildWhichIsA("BasePart",true))
+   if part then walk(part.Position,3.2,6,14) end
+   if not refreshTarget(t) then S.expectedUid=nil; say("UID หายก่อนยิง Prompt — ไม่หยิบ"); return end
+   pick,md,gap,detail=choosePrompt(t)
+   if pick then
+    say(string.format("fp Steal ใกล้ไข่ pd=%.2f gap=%.2f",md or -1,gap or -1))
+    fireSteal(pick)
+    local untilT=os.clock()+2
+    while S.run and os.clock()<untilT and not S.carryVerified and not S.carryMismatch do task.wait(.05) end
+   else
+    say("ไม่เจอ Prompt ใกล้ไข่ ("..tostring(detail)..") — ไม่หยิบ")
+   end
+  else
+   say("RF ไม่ติด + ไม่เจอ Prompt ("..tostring(detail)..") — ไม่หยิบ")
+  end
+ end
  S.expectedUid=nil
  if S.carryMismatch then return end
  if not S.carryVerified then say("ยังไม่ยืนยันถือ UID เป้าหมาย — ไม่วิ่งกลับ") return end
@@ -173,11 +205,11 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.12 — PRECISION"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.13 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not fp then say("ไม่มี fireproximityprompt") return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — จับ Prompt ตามพิกัด UID") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.12 ===\n"..table.concat(lines,"\n"))end end)
-say("เปิด Rift → HOME → START | เก็บเฉพาะ 3 ตัวที่ Rift ขอ")
+attachCarry(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — RF Uid แล้วค่อย fp ใกล้ไข่") task.spawn(function() while S.run do local t=target(); if t then one(t);task.wait(1) else task.wait(2) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.13 ===\n"..table.concat(lines,"\n"))end end)
+say("v1.13: ใกล้ UID → RF Carry / fp Steal | ไม่บังคับแยก Prompt")
