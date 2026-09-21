@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.22 — ลู่เรทสูงสุด (+/step) | LOCK | ฆ่าตัวตาย1ม | PATHหลอก0-5
+-- Egg01 Experiment Farm v2.23 — ลู่ถูก=ก้าว/Speed ขึ้น | ผิด=เปลี่ยนลู่ | LOCK | PATHหลอก0-5
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -15,7 +15,7 @@ local TREAD_CLEAR_R=32  -- พ้นลู่
 local TREAD_PICK_R=120  -- เลือกลู่เรทสูงสุดในรัศมีนี้ (กันไปยืน +1000 ทั้งที่มี +2000 ข้างๆ)
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,lockedTread=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,lockedTread=nil,badTreads={},progAt=0,progBase=nil,progName=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -227,8 +227,12 @@ local function goPoint()
 end
 local function nearestTreadmill()
     local _,_,r=char(); if not r then return nil end
-    -- ล็อกไว้แล้ว → ใช้ตัวนั้น
-    if S.lockedTread and S.lockedTread.Parent then
+    local now=os.clock()
+    -- ล้างแบล็คลิสต์หมดอายุ
+    for k,untilT in pairs(S.badTreads) do
+        if not untilT or untilT<now or not k.Parent then S.badTreads[k]=nil end
+    end
+    if S.lockedTread and S.lockedTread.Parent and not S.badTreads[S.lockedTread] then
         return S.lockedTread,(S.lockedTread.Position-r.Position).Magnitude
     end
     local function stepRate(bottom)
@@ -253,7 +257,7 @@ local function nearestTreadmill()
     local ok,desc=pcall(function() return workspace:GetDescendants() end)
     if not ok or not desc then return nil end
     for _,item in ipairs(desc) do
-        if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
+        if item:IsA("BasePart") and item.Name=="TreadmillBottom" and not S.badTreads[item] then
             local d=(item.Position-r.Position).Magnitude
             if d<=TREAD_PICK_R then
                 local rate=stepRate(item)
@@ -265,16 +269,75 @@ local function nearestTreadmill()
             end
         end
     end
-    -- ไม่มีในรัศมี → ใกล้สุดทั้งแมพ
     if not best then
         for _,item in ipairs(desc) do
-            if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
+            if item:IsA("BasePart") and item.Name=="TreadmillBottom" and not S.badTreads[item] then
                 local d=(item.Position-r.Position).Magnitude
                 if not bestD or d<bestD then best,bestD,bestRate=item,d,0 end
             end
         end
     end
     return best,bestD,bestRate or 0
+end
+-- ค่าที่ขึ้นเมื่อยืนลู่ถูก (Speed / Steps)
+local function readStepProgress()
+    local stats=LP:FindFirstChild("leaderstats")
+    if stats then
+        for _,name in ipairs({"Speed","Steps","Step","Miles","Distance","Studs"}) do
+            local v=stats:FindFirstChild(name)
+            if v~=nil then
+                local n=tonumber(v.Value)
+                if n then return n,name end
+            end
+        end
+        for _,c in ipairs(stats:GetChildren()) do
+            if c:IsA("NumberValue") or c:IsA("IntValue") or c:IsA("StringValue") then
+                local n=tonumber(c.Value)
+                if n then return n,c.Name end
+            end
+        end
+    end
+    local pd=LP:FindFirstChild("PlayerData") or LP:FindFirstChild("Data")
+    if pd then
+        for _,name in ipairs({"Speed","Steps","Step"}) do
+            local v=pd:FindFirstChild(name,true)
+            if v and (v:IsA("NumberValue") or v:IsA("IntValue")) then
+                return tonumber(v.Value),name
+            end
+        end
+    end
+    return nil,nil
+end
+local function beginProgCheck()
+    local n,name=readStepProgress()
+    S.progAt=os.clock()
+    S.progBase=n
+    S.progName=name or "?"
+end
+-- วิ่งบนลู่แล้วค่าไม่ขึ้น = ลู่ผิด → แบล็คลิสต์แล้วหาลู่อื่น
+local function verifyTreadProgress(secs)
+    secs=secs or 10
+    if (S.progAt or 0)<=0 then beginProgCheck(); return nil end
+    if os.clock()-(S.progAt or 0)<secs then return nil end
+    local now,name=readStepProgress()
+    local base=S.progBase
+    S.progAt=0
+    if base==nil or now==nil then
+        say("เช็คก้าวไม่ได้ ("..tostring(S.progName)..") — คงลู่นี้ไว้")
+        return true
+    end
+    if now>base+0.05 then
+        say(string.format("ลู่ถูก — %s %.0f→%.0f",name or S.progName,base,now))
+        if S.tread then S.lockedTread=S.tread end
+        return true
+    end
+    say(string.format("ลู่ผิด — %s ไม่ขึ้น (%.0f) — เปลี่ยนลู่",name or S.progName,now))
+    if S.tread then
+        S.badTreads[S.tread]=os.clock()+600
+        if S.lockedTread==S.tread then S.lockedTread=nil end
+        S.tread=nil
+    end
+    return false
 end
 local function treadStandPos(bottom)
     if not bottom then return nil end
@@ -436,7 +499,8 @@ local function returnTreadmill()
         S.lockedTread==bottom and " (LOCK)" or ""))
     walk(target,5,lim,55)
     if onTreadPad() then
-        say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
+        say("อยู่เครื่องวิ่งแล้ว — เช็คก้าว 10s")
+        beginProgCheck()
         return true
     end
     say("ยังไม่ถึงลู่จริง")
@@ -641,13 +705,22 @@ local function waitEvent()
         end
         if onTreadPad() then
             missSince=nil
-            n=jogTreadTick(n)
-            if rem%60==0 and os.clock()-lastWaitSay>=5 then
-                say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem))
-                lastWaitSay=os.clock()
+            if (S.progAt or 0)<=0 then beginProgCheck() end
+            local okProg=verifyTreadProgress(10)
+            if okProg==false then
+                returnTreadmill()
+                task.wait(0.5)
+            else
+                n=jogTreadTick(n)
+                if rem%60==0 and os.clock()-lastWaitSay>=5 then
+                    say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem))
+                    lastWaitSay=os.clock()
+                end
+                task.wait(0.18)
             end
-            task.wait(0.18)
         else
+            S.progAt=0
+            S.progBase=nil
             if not missSince then missSince=os.clock() end
             local missFor=os.clock()-missSince
             if missFor>=60 then
@@ -737,7 +810,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.22 — ลู่เรทสูงสุด | LOCK"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.23 — ลู่ถูก=ก้าวขึ้น"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 52,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -818,7 +891,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.22 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.23 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -839,5 +912,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.22 | ลู่=เรทสูงสุดใน120studs | LOCK=จำลู่ | ไม่เจอ1ม=ฆ่าตัวตาย")
+say("v2.23 | วิ่งบนลู่ 10s แล้วก้าว/Speed ต้องขึ้น | ไม่ขึ้น=เปลี่ยนลู่")
 task.spawn(boot)
