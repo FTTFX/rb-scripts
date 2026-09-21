@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.14 — อีเวนต์กระโดดทุก 1s ออกลู่วิ่ง | บนลู่วิ่ง/ไม่เจอหุ่น → Rift→วาฬ
+-- Egg01 Experiment Farm v2.15 — ออกลู่วิ่งต้องไกลจริง (>40) | กระโดด+walk ไป Rift
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -10,9 +10,11 @@ local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local LEAD=25
 local FARM_WINDOW=300 -- :00–:05 และ :30–:35 (วินาทีในครึ่งชั่วโมง)
+local TREAD_ON_R=22      -- ถือว่ายังบนลู่ (เดิม 14 → d=15 หลอกว่าออกแล้ว)
+local TREAD_CLEAR_R=42  -- ต้องห่างขนาดนี้ถึงนับว่าออกจริง
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,lastJumpAt=0}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,lastJumpAt=0,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -148,6 +150,7 @@ local function walk(p,rad,lim,slowNear)
         if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
     end
     while busy() and os.clock()-t<lim do
+        if S.stuckAbort then restore(); return false end
         local _,h,r=char(); if not h or not r or h.Health<=0 then restore(); return false end
         local g=Vector3.new(p.X,r.Position.Y,p.Z); local d=(g-r.Position).Magnitude
         if d<=rad then restore(); stop(); return true end
@@ -172,6 +175,7 @@ local function walkFar(p,rad,lim,slowNear)
         if moveHum and moveHum.Parent then moveHum.WalkSpeed=oldSpeed end
     end
     while busy() and os.clock()-t<lim do
+        if S.stuckAbort then restore(); return false end
         local _,h,r=char(); if not h or not r or h.Health<=0 then restore(); return false end
         local g=Vector3.new(p.X,r.Position.Y,p.Z)
         local d=(g-r.Position).Magnitude
@@ -234,17 +238,32 @@ local function onTreadPad()
     local _,_,r=char(); if not r then return false end
     if S.tread and S.tread.Parent then
         local d=(S.tread.Position-r.Position).Magnitude
-        if d<=14 then return true,S.tread,d end
+        if d<=TREAD_ON_R then return true,S.tread,d end
     end
     local b,d=nearestTreadmill()
-    if b and d and d<=14 then S.tread=b; return true,b,d end
+    if b and d and d<=TREAD_ON_R then S.tread=b; return true,b,d end
     return false,b,d
+end
+local function treadDist(bottom)
+    local _,_,r=char()
+    if not r or not bottom or not bottom.Parent then return 999 end
+    return (bottom.Position-r.Position).Magnitude
+end
+local function isClearOfTread(bottom)
+    bottom=bottom or S.tread
+    if not bottom or not bottom.Parent then
+        local b,d=nearestTreadmill()
+        return not b or not d or d>=TREAD_CLEAR_R,d or 999,b
+    end
+    local d=treadDist(bottom)
+    return d>=TREAD_CLEAR_R,d,bottom
 end
 local function doJump()
     local _,h=char()
     if not h then return end
     h.Sit=false
     h.PlatformStand=false
+    if h.WalkSpeed<16 then h.WalkSpeed=16 end
     h.Jump=true
     pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
     S.lastJumpAt=os.clock()
@@ -267,49 +286,67 @@ local function leaveDir(bottom,r)
     if away.Magnitude>=1 then return away.Unit end
     return r.CFrame.LookVector
 end
+local function dashOffTread(bottom,secs)
+    local deadline=os.clock()+(secs or 3.5)
+    local lastJump=0
+    while busy() and os.clock()<deadline do
+        if S.stuckAbort then break end
+        local clear,d=isClearOfTread(bottom)
+        if clear then return true,d end
+        local _,h,r=char()
+        if not h or not r or not bottom or not bottom.Parent then return false,d end
+        if os.clock()-lastJump>=0.85 then doJump(); lastJump=os.clock() end
+        h.Sit=false; h.PlatformStand=false
+        if h.WalkSpeed<28 then h.WalkSpeed=28 end
+        local dir=leaveDir(bottom,r)
+        local goal=r.Position+dir*55
+        local rift=S.rift or select(1,findRift())
+        if rift then
+            local toR=Vector3.new(rift.X-r.Position.X,0,rift.Z-r.Position.Z)
+            if toR.Magnitude>5 then goal=r.Position+toR.Unit*math.min(70,toR.Magnitude) end
+        end
+        h:MoveTo(Vector3.new(goal.X,r.Position.Y,goal.Z))
+        pcall(function() h:Move(dir,false) end)
+        task.wait(0.08)
+    end
+    local clear,d=isClearOfTread(bottom)
+    return clear,d
+end
 local function leaveTreadmill()
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run=false end
+    S.leaving=true
     local on,bottom,d=onTreadPad()
-    if not on then
+    if not bottom or not bottom.Parent then
         bottom=S.tread
-        if not bottom or not bottom.Parent then
-            say("ไม่ได้อยู่บนเครื่องวิ่ง — ไป Rift→วาฬเลย")
-            return false
-        end
-        local _,_,r=char()
-        d=r and (bottom.Position-r.Position).Magnitude or 99
+        if not bottom or not bottom.Parent then bottom=select(1,nearestTreadmill()) end
+    end
+    if not bottom then
+        say("ไม่พบเครื่องวิ่ง — ไป Rift→วาฬเลย")
+        S.leaving=false
+        return true
     end
     S.tread=bottom
-    say(string.format("กระโดดออกจากเครื่องวิ่ง (ทุก 1s) d=%.0f",d or -1))
-    -- สูงสุด ~8 วิ: กระโดดทุก 1s + วิ่งไปทาง Rift จนพ้นลู่
-    for i=1,8 do
+    local clear0,d0=isClearOfTread(bottom)
+    if clear0 then
+        say(string.format("พ้นลู่วิ่งแล้ว d=%.0f",d0 or -1))
+        S.leaving=false
+        return true
+    end
+    say(string.format("บังคับออกลู่วิ่ง (ห่าง>%d) d=%.0f",TREAD_CLEAR_R,d0 or d or -1))
+    local ok,dd=false,d0
+    for round=1,3 do
         if not busy() then break end
-        if not onTreadPad() then break end
-        doJump()
-        local _,h,r=char()
-        if h and r and bottom and bottom.Parent then
-            local dir=leaveDir(bottom,r)
-            h:MoveTo(r.Position+dir*30)
-            pcall(function() h:Move(dir,false) end)
-        end
-        task.wait(1)
+        ok,dd=dashOffTread(bottom,3.5)
+        say(string.format("ออกลู่ รอบ%d d=%.0f %s",round,dd or -1,ok and "✓" or "ยังใกล้"))
+        if ok then break end
+        local _,_,r=char()
+        local rift=S.rift or select(1,findRift())
+        if r and rift then doJump(); walk(rift,22,8,nil) end
     end
-    stop()
-    if onTreadPad() then
-        say("ยังติดลู่วิ่ง — กระโดด+ถอยเพิ่ม")
-        doJump()
-        task.wait(0.2)
-        local _,h2,r2=char()
-        if h2 and r2 and bottom and bottom.Parent then
-            local dir=leaveDir(bottom,r2)
-            walk(r2.Position+dir*32,3,10,nil)
-        end
-        stop()
-        doJump()
-    end
-    local ok=not onTreadPad()
-    say(ok and "ออกจากลู่วิ่งแล้ว" or "ยังบนลู่วิ่ง — จะกระโดดต่อทุก 1s")
-    return ok
+    local clear,df=isClearOfTread(bottom)
+    say(clear and string.format("ออกจากลู่วิ่งแล้ว d=%.0f",df or -1) or string.format("ยังติดลู่ d=%.0f — ฝืนไป Rift",df or -1))
+    S.leaving=false
+    return clear
 end
 local function returnTreadmill()
     local bottom=S.tread
@@ -336,11 +373,58 @@ end
 -- บังคับ path ที่ถูกตอนอีเวนต์: ออกลู่วิ่ง → Rift → วาฬ
 local function forceEventPath(why)
     say(why or "บังคับ Rift → วาฬ")
+    S.stuckAbort=false
+    S.watchPos=nil
     leaveTreadmill()
+    if not busy() then return false end
+    if onTreadPad() or not select(1,isClearOfTread(S.tread)) then
+        say("ยังไม่พ้นลู่ — ลองอีกรอบ")
+        leaveTreadmill()
+    end
     if not busy() then return false end
     goPoint()
     S.lastForceAt=os.clock()
+    S.watchPos=nil
     return true
+end
+-- ทุก 5 วิ: ตำแหน่งไม่ขยับ → เริ่มใหม่ (Rift→วาฬ)
+local function startStuckWatch()
+    task.spawn(function()
+        while S.run do
+            task.wait(5)
+            if not S.run then break end
+            if S.leaving or not inFarmWindow() then
+                S.watchPos=nil
+            else
+                local _,_,r=char()
+                if not r then
+                    S.watchPos=nil
+                else
+                    local p=r.Position
+                    if S.watchPos then
+                        local moved=Vector3.new(p.X-S.watchPos.X,0,p.Z-S.watchPos.Z).Magnitude
+                        if moved<8 then
+                            local hub=S.point or FALLBACK
+                            local nearHub=(Vector3.new(p.X-hub.X,0,p.Z-hub.Z).Magnitude)<=90
+                            -- โซนวาฬแล้วยืนตี ไม่รีสตาร์ท — บนลู่/ระหว่างทางค้าง = เริ่มใหม่
+                            if onTreadPad() or not nearHub then
+                                say(string.format("ค้างตำแหน่ง %.0f studs/5s — เริ่มใหม่ Rift→วาฬ",moved))
+                                S.stuckAbort=true
+                                S.repath=true
+                                S.watchPos=nil
+                            else
+                                S.watchPos=p
+                            end
+                        else
+                            S.watchPos=p
+                        end
+                    else
+                        S.watchPos=p
+                    end
+                end
+            end
+        end
+    end)
 end
 local function rootPart(m)
     if not m then return end
@@ -410,6 +494,7 @@ local function hit(robot)
     say("ตี "..robot.m.Name.." | "..(robot.label or "?"))
     local began=os.clock(); local lastHP=robot.hp
     while busy() and os.clock()-began<10 do
+        if S.stuckAbort then return end
         jumpTick(true) -- โดดตีทุก ~1s
         local latest=robots()[1]
         local currentPart=rootPart(robot.m)
@@ -473,7 +558,7 @@ local function waitEvent()
 end
 local function farm5min()
     local hub=S.point or FALLBACK
-    say(string.format("SCAN/ตี — กระโดดทุก 1s | เหลือ ~%ds",windowLeft()))
+    say(string.format("SCAN/ตี — ค้าง5s=เริ่มใหม่ | เหลือ ~%ds",windowLeft()))
     while S.run do
         local t=serverNow()
         if not inFarmWindow(t) then
@@ -482,14 +567,14 @@ local function farm5min()
         end
         jumpTick(true)
         local left=windowLeft(t)
-        -- สำคัญสุด: ยังบนลู่วิ่งตอนอีเวนต์ = ผิด → กระโดด→Rift→วาฬ
-        if onTreadPad() then
-            forceEventPath(string.format("ยังบนลู่วิ่งตอนอีเวนต์ (เหลือ %ds) — กระโดดทุก1s→Rift→วาฬ",left))
+        if S.stuckAbort or S.repath then
+            S.stuckAbort=false
+            S.repath=false
+            forceEventPath(string.format("เริ่มใหม่ (ค้าง/repath) เหลือ %ds — Rift→วาฬ",left))
             hub=S.point or FALLBACK
             if not S.run then break end
-        elseif S.repath then
-            S.repath=false
-            forceEventPath("เกิดใหม่ — RiftMachine → วาฬ อีกครั้ง")
+        elseif onTreadPad() then
+            forceEventPath(string.format("ยังบนลู่วิ่งตอนอีเวนต์ (เหลือ %ds) — ออกลู่→Rift→วาฬ",left))
             hub=S.point or FALLBACK
             if not S.run then break end
         end
@@ -501,7 +586,6 @@ local function farm5min()
         if #near==0 then
             local _,_,me=char()
             local dHub=me and (me.Position-hub).Magnitude or 9999
-            -- ไม่เจอหุ่น + ยังไกลวาฬ = ต้อง Rift→วาฬ (คูลดาวน์กันวนซ้ำ)
             if dHub>80 then
                 local cool=(os.clock()-(S.lastForceAt or 0))>=18
                 if cool then
@@ -526,10 +610,11 @@ end
 local function loop()
     while S.run do
         if not waitEvent() then break end
-        -- ทุกครั้งที่เข้าหน้าต่าง: กระโดดออก → Rift → วาฬ เท่านั้น
+        startStuckWatch()
         forceEventPath("เข้าอีเวนต์ — กระโดดลู่วิ่ง→Rift→วาฬ")
         if not S.run then break end
         S.repath=false
+        S.stuckAbort=false
         farm5min()
         if not S.run then break end
         returnTreadmill()
@@ -544,7 +629,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.14 — กระโดด1s ออกลู่วิ่ง → Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.15 — ค้าง5s=เริ่มใหม่ | Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -567,7 +652,7 @@ local function beginAuto()
     resolveRift(); resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO ON — อีเวนต์กระโดดทุก 1s ออกลู่วิ่ง | Rift→วาฬ | โดดตี")
+    say("AUTO ON — ค้าง5s=เริ่มใหม่ | ออกลู่→Rift→วาฬ")
     task.spawn(function()
         local ok,err=pcall(loop)
         if not ok then say("ERROR: "..tostring(err)) end
@@ -596,7 +681,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.14 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.15 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -617,5 +702,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.14 | อีเวนต์กระโดดทุก 1s ออกลู่วิ่ง | โดดตี | Rift→วาฬ")
+say("v2.15 | ค้างตำแหน่ง 5s = เริ่มใหม่ Rift→วาฬ | ออกลู่ห่าง>42")
 task.spawn(boot)
