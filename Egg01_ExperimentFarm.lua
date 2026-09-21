@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.16 — ไม่กระโดด | ค้าง5s=เริ่มใหม่ | ออกลู่→Rift→วาฬ
+-- Egg01 Experiment Farm v2.17 — ออกลู่ค้าง=กระโดด 1→2 ครั้ง | ค้าง5s=เริ่มใหม่
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -269,6 +269,21 @@ local function leaveDir(bottom,r)
     if away.Magnitude>=1 then return away.Unit end
     return r.CFrame.LookVector
 end
+-- กระโดดเฉพาะตอนออกลู่ค้าง (ไม่กระโดดตลอดอีเวนต์)
+local function leaveJump(times)
+    times=times or 1
+    for i=1,times do
+        if not busy() then break end
+        local _,h=char()
+        if h then
+            h.Sit=false
+            h.PlatformStand=false
+            h.Jump=true
+            pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
+        end
+        task.wait(0.28)
+    end
+end
 local function dashOffTread(bottom,secs)
     local deadline=os.clock()+(secs or 3.5)
     while busy() and os.clock()<deadline do
@@ -317,6 +332,14 @@ local function leaveTreadmill()
     local ok,dd=false,d0
     for round=1,3 do
         if not busy() then break end
+        -- รอบ1 ยังใกล้ → กระโดด 1 ครั้ง | รอบ2+ ยังใกล้ → กระโดด 2 ครั้ง
+        if round==1 then
+            say("ออกลู่ รอบ1 ยังใกล้ — กระโดด 1 ครั้ง")
+            leaveJump(1)
+        else
+            say(string.format("ออกลู่ รอบ%d ยังใกล้ — กระโดด 2 ครั้ง",round))
+            leaveJump(2)
+        end
         ok,dd=dashOffTread(bottom,3.5)
         say(string.format("ออกลู่ รอบ%d d=%.0f %s",round,dd or -1,ok and "✓" or "ยังใกล้"))
         if ok then break end
@@ -606,7 +629,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.16 — ไม่กระโดด | ค้าง5s=เริ่มใหม่"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.17 — ออกลู่ค้าง=กระโดด1→2 | ค้าง5s"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -658,7 +681,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.16 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.17 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -679,5 +702,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.16 | ไม่กระโดด | ค้างตำแหน่ง 5s = เริ่มใหม่ Rift→วาฬ")
+say("v2.17 | ออกลู่ค้าง: กระโดด1→2 ครั้ง | ค้าง5s=เริ่มใหม่ | ไม่โดดตี")
 task.spawn(boot)
