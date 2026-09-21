@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.3 -- DroneVisual+HP only | LEAD=25 | tread+Abyss
+-- Egg01 Experiment Farm v2.4 -- 5 นาทีแรกหลัง :00/:30 ไปตีทันที + tread/Abyss
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -284,18 +284,27 @@ local function hit(robot)
         task.wait(.62)
     end
 end
+local function secsIntoHalf(t)
+    return math.floor(t)%1800
+end
 local function waitEvent()
     local n=0
-    -- ถ้ายังไม่มี tread แต่ยืนใกล้เครื่อง — จำไว้ตอนรอ
     do
         local b,d=nearestTreadmill()
         if b and d and d<=14 then S.tread=b end
     end
     while S.run do
         local t=serverNow()
-        local rem=secsToBoundary(t)
+        local into=secsIntoHalf(t)
+        local rem=1800-into
+        if rem==1800 then rem=0; into=0 end
+        -- อยู่ใน 5 นาทีแรกหลัง :00/:30 = อีเวนต์กำลังเปิด → ไปตีเลย
+        if into<FARM_WINDOW then
+            say(string.format("อีเวนต์กำลังเปิด %s — เข้าไปแล้ว %ds / เหลือ ~%ds",fmtHMS(t),into,FARM_WINDOW-into))
+            return true
+        end
         if rem<=LEAD then
-            say(string.format("ถึงเวลา %s — อีก %ds → ออกเครื่องวิ่ง",fmtHMS(t),rem))
+            say(string.format("ใกล้รอบ %s — อีก %ds → ออกเครื่องวิ่ง",fmtHMS(t),rem))
             return true
         end
         if S.tread and S.tread.Parent then
@@ -310,9 +319,13 @@ local function waitEvent()
     return false
 end
 local function farm5min()
-    local deadline=os.clock()+FARM_WINDOW
+    local t=serverNow()
+    local into=secsIntoHalf(t)
+    local left=FARM_WINDOW
+    if into<FARM_WINDOW then left=math.max(45,FARM_WINDOW-into) end
+    local deadline=os.clock()+left
     local hub=S.point or FALLBACK
-    say("SCAN/ตี — จบใน 5 นาที")
+    say(string.format("SCAN/ตี — เหลือหน้าต่าง %ds",left))
     while S.run and os.clock()<deadline do
         local all=robots()
         if #all==0 then
@@ -346,7 +359,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.3 — DroneVisual";title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.4 — event window"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -367,7 +380,7 @@ startB.MouseButton1Click:Connect(function()
     resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("START — รอบนเครื่อง → ออก → Abyss 5 นาที → กลับเครื่อง")
+    say("START — ถ้าอีเวนต์เปิดอยู่จะไปตีทันที")
     task.spawn(function() loop(); startB.Text="START" end)
 end)
 stopB.MouseButton1Click:Connect(function()
@@ -376,10 +389,10 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.3 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.4 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("START = อยู่เครื่องวิ่งได้ | ถึงเวลา→กระโดดออก→Abyss→กลับเครื่องเดิม")
+say("START = 5 นาทีแรกหลัง :00/:30 ไปตีเลย | นอกนั้นรอบนเครื่องวิ่ง")
