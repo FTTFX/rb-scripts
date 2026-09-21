@@ -1,5 +1,5 @@
--- Egg01 Target Farm v3.2
--- ติ๊ก Rarity → สแกน; เจอไข่: HOME→Rift→Steal→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ | noclip ตลอด
+-- Egg01 Target Farm v3.3
+-- ติ๊ก Rarity → สแกน; เจอไข่: HOME→Rift→Steal→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ (เบรกขึ้นเครื่อง) | noclip ตลอด
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.2"
+title.Text = "Egg01 Target Farm v3.3"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -408,22 +408,66 @@ end
 
 local function stopMove()
     local h, r = humRoot()
-    if h and r then
-        h:MoveTo(r.Position)
-        h:Move(Vector3.zero)
+    if not h or not r then return end
+    h:MoveTo(r.Position)
+    h:Move(Vector3.zero)
+    for _ = 1, 3 do
+        if not r.Parent then break end
+        pcall(function()
+            r.AssemblyLinearVelocity = Vector3.zero
+            r.AssemblyAngularVelocity = Vector3.zero
+        end)
+        RunS.Heartbeat:Wait()
     end
 end
 
+-- เดินเข้าเป้าแบบชะลอ+เบรก (ขึ้นลู่วิ่ง / จุดละเอียด) — ห้าม CFrame
+local function walkSlow(pos, radius, limit, slowNear)
+    local started = os.clock()
+    local moveHum, oldSpeed, lastBand
+    local function restore()
+        if moveHum and moveHum.Parent then moveHum.WalkSpeed = oldSpeed end
+    end
+    while S.run and os.clock() - started < limit do
+        local h, r = humRoot()
+        if not h or not r or h.Health <= 0 then restore(); return false end
+        local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
+        local d = (goal - r.Position).Magnitude
+        if d <= radius then
+            restore()
+            stopMove()
+            return true
+        end
+        if slowNear then
+            if not moveHum then moveHum = h; oldSpeed = h.WalkSpeed end
+            local band, cap
+            if d <= 18 then band, cap = "ละเอียด", 35
+            elseif d <= slowNear then band, cap = "ชะลอ", 90
+            else band, cap = "ปกติ", oldSpeed end
+            h.WalkSpeed = math.min(oldSpeed, cap)
+            if band ~= lastBand and band ~= "ปกติ" then
+                say(band .. " — เหลือ " .. math.floor(d) .. " studs")
+            end
+            lastBand = band
+        end
+        h:MoveTo(goal)
+        task.wait(0.04)
+    end
+    restore()
+    return false
+end
+
 -- ===== ลู่วิ่งรอไข่ (MoveTo เท่านั้น — ห้าม CFrame) =====
-local function nearestTreadmill()
+local function nearestTreadmill(refPos)
     local _, r = humRoot()
-    if not r then return nil end
+    local ref = refPos or S.home or (r and r.Position)
+    if not ref then return nil end
     local best, bestD
     local ok, desc = pcall(function() return workspace:GetDescendants() end)
     if not ok or not desc then return nil end
     for _, item in ipairs(desc) do
         if item:IsA("BasePart") and item.Name == "TreadmillBottom" then
-            local d = (item.Position - r.Position).Magnitude
+            local d = (item.Position - ref).Magnitude
             if not bestD or d < bestD then best, bestD = item, d end
         end
     end
@@ -436,13 +480,21 @@ local function treadStandPos(bottom)
 end
 
 local function onTreadmill()
-    local b, d = nearestTreadmill()
-    if b and d and d <= 14 then S.tread = b; return true end
+    local _, r = humRoot()
+    if not r then return false end
+    local bottom = S.tread
+    if bottom and bottom.Parent then
+        local d = (bottom.Position - r.Position).Magnitude
+        if d <= 12 then return true end
+    end
+    local b, d = nearestTreadmill(r.Position)
+    if b and d and d <= 12 then S.tread = b; return true end
     return false
 end
 
 local function leaveTreadmill()
-    local bottom, d = nearestTreadmill()
+    local _, r0 = humRoot()
+    local bottom, d = nearestTreadmill(r0 and r0.Position or nil)
     if not bottom or not d or d > 14 then return end
     S.tread = bottom
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
@@ -471,18 +523,37 @@ local function leaveTreadmill()
 end
 
 local function returnTreadmill()
-    local bottom = S.tread
-    if not bottom or not bottom.Parent then bottom = select(1, nearestTreadmill()) end
+    -- เลือกเครื่องใกล้ HOME ก่อน (หลังฟาร์มมักยืนที่ฐาน)
+    local bottom = select(1, nearestTreadmill(S.home))
+    if not bottom or not bottom.Parent then
+        bottom = select(1, nearestTreadmill())
+    end
     if not bottom then say("ไม่พบเครื่องวิ่ง"); return false end
     S.tread = bottom
     local target = treadStandPos(bottom)
     if not target then return false end
     local _, r = humRoot()
-    local lim = r and math.clamp((target - r.Position).Magnitude / 18 + 25, 45, 200) or 90
-    say("ไม่มีเป้าที่ติ๊ก — กลับลู่วิ่งรอ")
-    local ok = walkTo(target, 5, lim)
-    if ok then say("อยู่ลู่วิ่งแล้ว — สแกนรอไข่ " .. rarityText()) end
-    return ok
+    if not r then return false end
+    local dist = (Vector3.new(target.X, r.Position.Y, target.Z) - r.Position).Magnitude
+    local lim = math.clamp(dist / 14 + 35, 50, 220)
+    say(string.format("ไม่มีเป้าที่ติ๊ก — กลับลู่วิ่งรอ d=%.0f", dist))
+    stopMove()
+    -- ชะลอ+เบรก velocity ให้หยุดบนเครื่อง ไม่ไถลเลย
+    local ok = walkSlow(target, 3.5, lim, 55)
+    if not ok then
+        say("ขึ้นลู่วิ่งไม่สุด — ลองชิดอีกครั้ง")
+        ok = walkSlow(target, 4, 25, 40)
+    end
+    stopMove()
+    local _, r2 = humRoot()
+    local onPad = r2 and bottom.Parent and (bottom.Position - r2.Position).Magnitude <= 12
+    if onPad then
+        S.tread = bottom
+        say("อยู่ลู่วิ่งแล้ว — สแกนรอไข่ " .. rarityText())
+        return true
+    end
+    say("ยังไม่ขึ้นลู่วิ่งได้ — จะลองใหม่")
+    return false
 end
 
 local function jogTreadTick(n)
@@ -498,7 +569,7 @@ end
 
 -- สแกนเงียบบนลู่วิ่งจนกว่าจะเจอไข่ตามที่ติ๊ก
 local function waitEggOnTread()
-    local n, lastSay = 0, 0
+    local n, lastSay, lastMount = 0, 0, 0
     if not onTreadmill() then
         returnTreadmill()
     end
@@ -508,10 +579,7 @@ local function waitEggOnTread()
             say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
             return target
         end
-        local bottom = S.tread
-        local h, r = humRoot()
-        local onPad = bottom and bottom.Parent and r and (bottom.Position - r.Position).Magnitude <= 14
-        if onPad then
+        if onTreadmill() then
             n = jogTreadTick(n)
             if os.clock() - lastSay >= 20 then
                 say("ลู่วิ่งรอไข่ | " .. rarityText() .. " sc>=" .. tostring(MIN_SCALE) .. " zone=" .. tostring(ZONE))
@@ -519,17 +587,10 @@ local function waitEggOnTread()
             end
             task.wait(0.45)
         else
-            local b, d = nearestTreadmill()
-            if b and (not d or d > 14) then
-                say("หลุดลู่วิ่ง — วิ่งกลับรอ")
+            if os.clock() - lastMount >= 3 then
+                say("ยังไม่บนลู่วิ่ง — วิ่งขึ้นใหม่ (เบรก)")
                 returnTreadmill()
-            elseif b and d and d <= 14 then
-                S.tread = b
-            else
-                if os.clock() - lastSay >= 20 then
-                    say("ยังไม่พบลู่วิ่ง — สแกนไข่ต่อ")
-                    lastSay = os.clock()
-                end
+                lastMount = os.clock()
             end
             task.wait(1)
         end
