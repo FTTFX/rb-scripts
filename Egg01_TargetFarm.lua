@@ -1,4 +1,4 @@
--- Egg01 Target Farm v3.9.3 (Rift หยุดก่อนเส้น)
+-- Egg01 Target Farm v3.9.4 (กู้ไข่รอยืนยัน server)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.9.3 (Rift ก่อนเส้น)"
+title.Text = "Egg01 Target Farm v3.9.4 (กู้ไข่ยืนยัน)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -568,6 +568,17 @@ local function fireSteal(prompt)
     return ok
 end
 
+-- รอ server ยืนยันถือไข่ (FieldEggCarry) — อย่าเชื่อแค่ fireSteal
+local function waitCarryConfirm(secs)
+    local t = os.clock()
+    local lim = secs or 1.6
+    while S.run and os.clock() - t < lim do
+        if S.carrying then return true end
+        task.wait(0.08)
+    end
+    return S.carrying == true
+end
+
 local function promptAtTarget(target, matchRadius, requireNearby)
     local _, root = humRoot()
     if not root then return nil end
@@ -750,9 +761,12 @@ end
 
 local function recoverDroppedEgg(dropPos)
     stopMove()
-    local egg, d = dropPos and stealAtPosition(dropPos, 40, false) or nearestSteal(RECOVER_R)
+    local egg = dropPos and stealAtPosition(dropPos, 40, false) or nearestSteal(RECOVER_R)
     if not egg and dropPos then
-        walkTo(dropPos, 5, 25, 55)
+        if not walkSlow(dropPos, 5, 28, 55) then
+            say("วิ่งไปจุดหลุดไม่ถึง")
+            return false
+        end
         egg = stealAtPosition(dropPos, 40, false) or nearestSteal(STEAL_R)
     end
     if not egg then
@@ -760,17 +774,61 @@ local function recoverDroppedEgg(dropPos)
         return false
     end
     local _, root = humRoot()
-    local backD = root and (egg.pos - root.Position).Magnitude or d
-    say(string.format("ไข่หลุดมือ — กลับไปเก็บ d=%.0f", backD or 0))
-    if not walkTo(egg.pos, APPROACH_R, math.max(12, (backD or 20) / 10 + 10), 55) then
-        return false
+    local backD = root and (egg.pos - root.Position).Magnitude or 0
+    say(string.format("ไข่หลุดมือ — กลับไปเก็บ d=%.0f", backD))
+
+    -- เข้าใกล้จริง (≤5) แล้วยิง Steal หลายรอบ จน server ยืนยันถือ
+    for attempt = 1, 5 do
+        if not S.run then return false end
+        if S.carrying then
+            S.droppedPos, S.returnPaused, S.dropBrakeUsed = nil, false, false
+            say("ถือไข่แล้ว (server) — วิ่งต่อ")
+            return true
+        end
+        local goal = dropPos or egg.pos
+        egg = (dropPos and stealAtPosition(dropPos, 40, false)) or nearestSteal(STEAL_R) or egg
+        if not egg then
+            say("Prompt หาย — รอสปอนรอบถัดไป")
+            task.wait(0.35)
+        else
+            local _, r2 = humRoot()
+            local pd = r2 and (egg.pos - r2.Position).Magnitude or 99
+            if pd > 5 then
+                say(string.format("เข้าใกล้ไข่ d=%.0f (ครั้ง%d)", pd, attempt))
+                if not walkSlow(egg.pos, 4, math.max(10, pd / 8 + 8), 40) then
+                    say("เข้าใกล้ไม่สุด — ยิงต่อ")
+                end
+            end
+            stopMove()
+            egg = (dropPos and stealAtPosition(dropPos, 25, true))
+                or (dropPos and stealAtPosition(dropPos, 40, false))
+                or nearestSteal(STEAL_R)
+                or egg
+            if egg and egg.pp then
+                say(string.format("ยิง Steal กู้ไข่ ครั้ง%d", attempt))
+                fireSteal(egg.pp)
+                if waitCarryConfirm(1.8) then
+                    S.droppedPos, S.returnPaused, S.dropBrakeUsed = nil, false, false
+                    say("เก็บไข่ยืนยันจาก server แล้ว — วิ่งต่อ")
+                    return true
+                end
+                -- ยิงซ้ำติดๆ อีกครั้งถ้ายังยืนใกล้
+                fireSteal(egg.pp)
+                if waitCarryConfirm(1.2) then
+                    S.droppedPos, S.returnPaused, S.dropBrakeUsed = nil, false, false
+                    say("เก็บไข่ยืนยันจาก server แล้ว — วิ่งต่อ")
+                    return true
+                end
+            end
+        end
+        -- ถ้า shift ส่งพิกัดใหม่ระหว่างกู้ ใช้พิกัดล่าสุด
+        if S.droppedPos then dropPos = S.droppedPos end
+        task.wait(0.2)
     end
-    egg = dropPos and stealAtPosition(dropPos, 40, true) or nearestSteal(STEAL_R) or egg
-    if not egg then say("Prompt UID เดิมหาย") return false end
-    if not fireSteal(egg.pp) then say("เก็บไข่คืนไม่สำเร็จ") return false end
-    S.droppedPos, S.carrying, S.returnPaused, S.dropBrakeUsed = nil, true, false, false
-    say("เก็บไข่ UID เดิมแล้ว — วิ่งต่อ")
-    return true
+    say("เก็บไข่ไม่ขึ้น — server ยังไม่ยืนยันถือ (จะลองใหม่)")
+    S.carrying = false
+    S.returnPaused = true
+    return false
 end
 
 -- กลับพร้อมไข่: ไข่ → Rift → HOME (แบบ v3.3)
@@ -804,7 +862,13 @@ local function returnHome()
             task.wait(0.05)
         else
             if dropPos then
-                if not recoverDroppedEgg(dropPos) then return false end
+                -- กู้ไม่สำเร็จ → ไม่ abort ทั้งทริป เก็บพิกัดไว้ลองใหม่
+                if not recoverDroppedEgg(dropPos) then
+                    if not S.droppedPos then S.droppedPos = dropPos end
+                    S.carrying = false
+                    S.returnPaused = true
+                    task.wait(0.35)
+                end
             elseif not S.carrying then
                 if S.shiftConn then
                     if os.clock() - (S.carryLostAt or os.clock()) >= 2 then
@@ -812,9 +876,14 @@ local function returnHome()
                         return false
                     end
                 elseif not recoverDroppedEgg(nil) then
-                    return false
+                    S.carrying = false
+                    S.returnPaused = true
+                    task.wait(0.35)
                 end
             end
+            if not S.carrying then
+                task.wait(0.05)
+            else
             h, r = humRoot()
             if not h or not r then return false end
             local dHome = dist2(r.Position, S.home)
@@ -843,6 +912,7 @@ local function returnHome()
                     lastReport = os.clock()
                 end
                 task.wait(0.15)
+            end
             end
         end
     end
@@ -1041,7 +1111,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.3 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.4 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1059,4 +1129,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.9.3 | กด HOME → START | Rift ก่อนเส้น (-8) | HOME→Rift→ไข่→HOME")
+say("v3.9.4 | กู้ไข่รอยืนยัน server | ไม่ขึ้น=ลองใหม่ | HOME→Rift→ไข่")
