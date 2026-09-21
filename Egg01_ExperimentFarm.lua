@@ -1,6 +1,7 @@
--- Egg01 Experiment Farm v2.5 -- จุด = GuardAreas.Abyss Ocean.Guard (~2283)
+-- Egg01 Experiment Farm v2.6 -- noclip ตลอดจนกว่าจะปิด GUI
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
+    pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
 end
 local Players=game:GetService("Players")
@@ -86,7 +87,6 @@ local function resolvePoint()
     return pos
 end
 local function setClip(on)
-    local c=LP.Character
     if not on then
         if S.clipConn then pcall(function() S.clipConn:Disconnect() end); S.clipConn=nil end
         for part,was in pairs(S.clipParts) do
@@ -94,21 +94,18 @@ local function setClip(on)
         end
         S.clipParts={}; return
     end
-    if not c then return end
-    S.clipParts={}
-    for _,p in ipairs(c:GetDescendants()) do
-        if p:IsA("BasePart") then S.clipParts[p]=p.CanCollide; p.CanCollide=false end
-    end
-    if S.clipConn then pcall(function() S.clipConn:Disconnect() end) end
-    S.clipConn=RunS.Stepped:Connect(function()
-        local ch=LP.Character; if not ch then return end
+    if S.clipConn then return end
+    local function apply(ch)
+        if not ch then return end
         for _,p in ipairs(ch:GetDescendants()) do
-            if p:IsA("BasePart") and p.CanCollide then
-                if S.clipParts[p]==nil then S.clipParts[p]=true end
+            if p:IsA("BasePart") then
+                if S.clipParts[p]==nil then S.clipParts[p]=p.CanCollide end
                 p.CanCollide=false
             end
         end
-    end)
+    end
+    apply(LP.Character)
+    S.clipConn=RunS.Stepped:Connect(function() apply(LP.Character) end)
 end
 local function stop(label)
     local _,h,r=char(); if not h or not r then return end
@@ -147,9 +144,8 @@ local function goPoint()
     local _,_,r=char(); if not r then return false end
     local d=(pos-r.Position).Magnitude
     local lim=math.clamp(d/18+25,45,200)
-    setClip(true); say(string.format("วิ่ง @%.0f,%.0f,%.0f",pos.X,pos.Y,pos.Z))
+    say(string.format("วิ่ง @%.0f,%.0f,%.0f",pos.X,pos.Y,pos.Z))
     local ok=walk(pos,20,lim,55)
-    setClip(false)
     say(ok and "ถึงจุดแล้ว" or "ไปจุดไม่ทัน")
     return ok
 end
@@ -200,10 +196,8 @@ local function returnTreadmill()
     if not target then return end
     local _,_,r=char()
     local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
-    setClip(true)
     say("กลับเครื่องวิ่งเดิม")
     walk(target,5,lim,55)
-    setClip(false)
     say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
 end
 local function jogTreadTick(n)
@@ -367,7 +361,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.5 — Guard Abyss"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.6 — CLIP ON"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -392,15 +386,16 @@ startB.MouseButton1Click:Connect(function()
     task.spawn(function() loop(); startB.Text="START" end)
 end)
 stopB.MouseButton1Click:Connect(function()
-    S.run=false; setClip(false); stop("STOP"); startB.Text="START"
+    S.run=false; stop("STOP"); startB.Text="START"
 end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.5 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.6 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("START = 5 นาทีแรกหลัง :00/:30 ไปตีเลย | นอกนั้นรอบนเครื่องวิ่ง")
+say("CLIP ON ตลอด — ปิดเมื่อกด X")
+setClip(true)
