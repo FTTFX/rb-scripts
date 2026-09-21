@@ -865,12 +865,6 @@ local function rebuildMenu(menu, choices, onPick)
     end
 end
 
-local function rarityText()
-    local out = {}
-    for _, rarity in ipairs(RARITY_ORDER) do if selectedRarities[rarity] then out[#out + 1] = RARITY_SHORT[rarity] end end
-    return #out == #RARITY_ORDER and "ALL" or (#out > 0 and table.concat(out, ",") or "NONE")
-end
-
 local function rebuildRarityMenu()
     rarityMenu:ClearAllChildren()
     rarityMenu.Size = UDim2.new(0, 130, 0, (#RARITY_ORDER + 1) * 23)
