@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.17 — CFrame เดินทาง (น้ำ) + อยู่โซนวาฬแล้วเข้าฟาร์มเลย
+-- Egg01 Experiment Farm v2.18 — walk แบบ 1.12 + Rift→วาฬ (ไม่สแกนแมพค้าง)
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -85,7 +85,8 @@ local function findAbyss()
     return FALLBACK,"fallback-guard"
 end
 local function findRift()
-    -- Spy: WS.__OBJECTS.Machines.RiftMachine.Rift @540,65,-333
+    -- ห้าม GetDescendants ทั้งแมพ — ค้างจนดูเหมือนไม่ยอมวิ่ง
+    if S.rift then return S.rift,"cache-rift" end
     local objs=workspace:FindFirstChild("__OBJECTS")
     local machines=objs and objs:FindFirstChild("Machines")
     local rm=machines and machines:FindFirstChild("RiftMachine")
@@ -94,22 +95,6 @@ local function findRift()
         local p=instPos(rift) or instPos(rm)
         if p then return Vector3.new(p.X,math.max(p.Y,70),p.Z),"RiftMachine" end
     end
-    local best,bestScore,bestSrc
-    local function consider(inst,score,src)
-        local p=instPos(inst)
-        if not p then return end
-        if not best or score>bestScore then best,bestScore,bestSrc=p,score,src end
-    end
-    for _,d in ipairs(workspace:GetDescendants()) do
-        local n=d.Name:lower()
-        if n=="riftmachine" then consider(d,90,"RiftMachine")
-        elseif n=="rift" and not n:find("trade",1,true) then consider(d,70,"Rift")
-        elseif n:find("rift",1,true) and not n:find("trade",1,true) and not n:find("gui",1,true)
-            and not n:find("farm",1,true) and not n:find("input",1,true) then
-            consider(d,20,"rift~")
-        end
-    end
-    if best then return Vector3.new(best.X,math.max(best.Y,70),best.Z),bestSrc end
     return FALLBACK_RIFT,"fallback-rift"
 end
 local function resolvePoint()
@@ -178,12 +163,7 @@ local function walk(p,rad,lim,slowNear)
     restore()
     return false
 end
--- วิ่งทางไกล/ในน้ำ: CFrame ทีละท่อน (MoveTo ว่ายน้ำมักค้าง)
-local CHUNK=70
-local STUCK_MIN=2.5
-local STUCK_SEC=0.7
-local LIFT=16
-local NUDGE=22
+-- เดินแบบ 1.12 (MoveTo+เบรก) + ไกล/น้ำใช้ CFrame ท่อนสั้น — ไม่สแกนแมพ
 local function walkOpen(p,rad,lim,slowNear)
     local t=os.clock(); local moveHum,oldSpeed,lastBand
     local lastPos,lastProg=nil,os.clock()
@@ -196,8 +176,8 @@ local function walkOpen(p,rad,lim,slowNear)
         local flat=Vector3.new(p.X,r.Position.Y,p.Z)
         local d=(flat-r.Position).Magnitude
         if d<=rad then restore(); stop(); return true end
-        if d>200 and (lastDistLog==0 or lastDistLog-d>=250) then
-            say(string.format("เดินทางเหลือ %.0f studs",d)); lastDistLog=d
+        if d>250 and (lastDistLog==0 or lastDistLog-d>=300) then
+            say(string.format("เดินทางเหลือ %.0f",d)); lastDistLog=d
         end
         if slowNear then
             if not moveHum then moveHum=h; oldSpeed=h.WalkSpeed end
@@ -209,79 +189,85 @@ local function walkOpen(p,rad,lim,slowNear)
         end
         local dir=Vector3.new(p.X-r.Position.X,0,p.Z-r.Position.Z)
         if dir.Magnitude<0.1 then dir=r.CFrame.LookVector else dir=dir.Unit end
-        local step=math.min(CHUNK,math.max(8,d-rad))
         local swimming=false
         pcall(function()
             local st=h:GetState()
             swimming=st==Enum.HumanoidStateType.Swimming or st==Enum.HumanoidStateType.Freefall
         end)
-        -- น้ำ / ไกล: ดัน CFrame (noclip) — พื้นใกล้: MoveTo เสริม
-        if swimming or d>120 then
-            local liftY=(swimming and 8 or 3)
-            r.CFrame=CFrame.new(r.Position+dir*step+Vector3.new(0,liftY,0))
+        if swimming or d>80 then
+            local step=math.min(55,math.max(10,d-rad))
+            r.CFrame=CFrame.new(r.Position+dir*step+Vector3.new(0,swimming and 6 or 2,0))
             r.AssemblyLinearVelocity=Vector3.zero
         else
-            local goal=r.Position+dir*math.min(CHUNK,d)
-            goal=Vector3.new(goal.X,r.Position.Y,goal.Z)
-            h:MoveTo(goal)
+            h:MoveTo(flat)
         end
         if lastPos then
             local moved=(r.Position-lastPos).Magnitude
-            if moved<STUCK_MIN and (os.clock()-lastProg)>=STUCK_SEC then
-                local lift=r.Position+Vector3.new(0,LIFT,0)+dir*NUDGE
-                say(string.format("ดันพ้นกำแพง → %.0f,%.0f,%.0f",lift.X,lift.Y,lift.Z))
-                r.CFrame=CFrame.new(lift)
-                r.AssemblyLinearVelocity=Vector3.zero
+            if moved<2 and (os.clock()-lastProg)>=0.8 then
+                r.CFrame=CFrame.new(r.Position+dir*20+Vector3.new(0,12,0))
                 lastPos=r.Position; lastProg=os.clock()
-            elseif moved>=STUCK_MIN then
+            elseif moved>=2 then
                 lastPos=r.Position; lastProg=os.clock()
             end
         else
             lastPos=r.Position; lastProg=os.clock()
         end
-        task.wait(swimming and .06 or .04)
+        task.wait(.05)
     end
     restore()
     return false
 end
--- ขั้น1 RiftMachine → ขั้น2 วาฬ (ถ้าอยู่โซนวาฬแล้วข้าม)
+-- ขั้น1 Rift → ขั้น2 วาฬ (พิกัดจากแคช/FALLBACK — ไม่สแกน)
 local function goPoint()
     stopTreadScripts()
-    say("เริ่ม path → เช็กตำแหน่ง")
-    local rift=resolveRift()
-    local whale=resolvePoint()
+    say("เริ่ม path Rift→วาฬ")
+    local rift=S.rift or FALLBACK_RIFT
+    local whale=S.point or FALLBACK
+    if not S.rift then rift=resolveRift() end
+    if not S.point then whale=resolvePoint() end
     local _,_,r=char()
     if not r then
-        say("ยังไม่มี HRP — รอเกิด"); task.wait(1)
+        say("รอ HRP..."); task.wait(1.2)
         _,_,r=char()
-        if not r then say("ไม่มีตัวละคร — ข้าม path"); return false end
+        if not r then say("ไม่มีตัว — ข้าม path"); return false end
     end
     local dWhale=(Vector3.new(whale.X,r.Position.Y,whale.Z)-r.Position).Magnitude
     if dWhale<=NEAR_WHALE then
-        say(string.format("อยู่โซนวาฬแล้ว d=%.0f — ข้าม Rift เข้าฟาร์ม",dWhale))
+        say(string.format("อยู่โซนวาฬ d=%.0f — เข้าฟาร์มเลย",dWhale))
         return true
     end
     local d1=(Vector3.new(rift.X,r.Position.Y,rift.Z)-r.Position).Magnitude
-    local lim1=math.clamp(d1/14+40,50,280)
-    say(string.format("ขั้น1 → RiftMachine @%.0f,%.0f,%.0f d=%.0f",rift.X,rift.Y,rift.Z,d1))
-    local ok1=walkOpen(rift,22,lim1,55)
+    say(string.format("ขั้น1 → Rift @%.0f,%.0f,%.0f d=%.0f",rift.X,rift.Y,rift.Z,d1))
+    local ok1=walkOpen(rift,22,math.clamp(d1/12+40,40,300),55)
     if not S.run then return false end
-    say(ok1 and "ถึง RiftMachine แล้ว → ไปวาฬ" or "ใกล้ RiftMachine ไม่สุด — ไปวาฬต่อ")
+    say(ok1 and "ถึง Rift → ไปวาฬ" or "Rift ไม่สุด → ไปวาฬต่อ")
     local _,_,r2=char(); r2=r2 or r
     local d2=(Vector3.new(whale.X,r2.Position.Y,whale.Z)-r2.Position).Magnitude
-    local lim2=math.clamp(d2/10+60,80,420)
-    say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f ระยะ~%.0f",whale.X,whale.Y,whale.Z,d2))
-    local ok2=walkOpen(whale,20,lim2,55)
-    say(ok2 and "ถึงจุดวาฬแล้ว" or "ไปวาฬไม่ทัน")
+    say(string.format("ขั้น2 → วาฬ @%.0f,%.0f,%.0f d=%.0f",whale.X,whale.Y,whale.Z,d2))
+    local ok2=walkOpen(whale,20,math.clamp(d2/10+50,60,420),55)
+    say(ok2 and "ถึงวาฬแล้ว" or "วาฬไม่ทัน")
     return ok2
 end
 local function nearestTreadmill()
     local _,_,r=char(); if not r then return nil end
     local best,bestD
-    for _,item in ipairs(workspace:GetDescendants()) do
-        if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
-            local d=(item.Position-r.Position).Magnitude
-            if not bestD or d<bestD then best,bestD=item,d end
+    local function scan(root)
+        if not root then return end
+        for _,item in ipairs(root:GetDescendants()) do
+            if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
+                local d=(item.Position-r.Position).Magnitude
+                if not bestD or d<bestD then best,bestD=item,d end
+            end
+        end
+    end
+    local objs=workspace:FindFirstChild("__OBJECTS")
+    scan(objs)
+    if not best then
+        -- fallback แคบ: ลูกโดยตรงของ workspace ที่มีชื่อเกี่ยว treadmill
+        for _,ch in ipairs(workspace:GetChildren()) do
+            if ch.Name:lower():find("tread",1,true) or ch.Name:lower():find("machine",1,true) then
+                scan(ch)
+            end
         end
     end
     return best,bestD
@@ -385,22 +371,29 @@ local function robots(hub,maxD)
     hub=hub or S.point or FALLBACK
     maxD=maxD or HUNT_RAD
     local out,seen={},{}
-    for _,x in ipairs(workspace:GetDescendants()) do
-        if x:IsA("Model") and not seen[x] and isExperiment(x) then
-            seen[x]=true
-            local p=rootPart(x)
-            if p then
-                local hp,_,label=hpOf(x)
-                if hp and hp>0 then
-                    local center=x:GetPivot().Position
-                    local fromHub=(center-hub).Magnitude
-                    if fromHub<=maxD then
-                        out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude,hubD=fromHub}
-                    end
-                end
-            end
+    local function consider(x)
+        if not x or seen[x] or not x:IsA("Model") or not isExperiment(x) then return end
+        seen[x]=true
+        local p=rootPart(x)
+        if not p then return end
+        local hp,_,label=hpOf(x)
+        if not hp or hp<=0 then return end
+        local center=x:GetPivot().Position
+        local fromHub=(center-hub).Magnitude
+        if fromHub<=maxD then
+            out[#out+1]={m=x,p=p,pos=center,hp=hp,label=label,d=(center-r.Position).Magnitude,hubD=fromHub}
         end
     end
+    local abyss=findAbyssFolder()
+    if abyss then
+        for _,x in ipairs(abyss:GetDescendants()) do consider(x) end
+    end
+    pcall(function()
+        for _,x in ipairs(workspace:GetPartBoundsInRadius(hub,maxD)) do
+            local m=x:FindFirstAncestorOfClass("Model")
+            if m then consider(m) end
+        end
+    end)
     table.sort(out,function(a,b) return a.d<b.d end)
     return out
 end
@@ -565,7 +558,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.17 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.18 — Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -607,7 +600,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.17 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.18 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
