@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.10 -- วิ่งตามขั้น: RIFT → วาฬ (Abyss) ไม่ใช้ L
+-- Egg01 Experiment Farm v2.11 -- วิ่งตามขั้น: RIFT → วาฬ (Abyss) ไม่ใช้ L
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -10,7 +10,7 @@ local LP=Players.LocalPlayer
 local LEAD=25 -- ออกใกล้ :00/:30 (เดิม 60 เร็วเกินไป)
 local FARM_WINDOW=300
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0) -- Guard Abyss Ocean จาก ModelSpy
-local FALLBACK_RIFT=Vector3.new(2686.0,71.0,-375.0) -- ใกล้ฐาน/DOCK — หาโมเดล RIFT ไม่เจอใช้ตัวนี้
+local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0) -- RiftSpy MARK / RiftMachine
 local S={run=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
@@ -82,24 +82,31 @@ local function findAbyss()
     return FALLBACK,"fallback-guard"
 end
 local function findRift()
-    local best,bestScore
-    local function consider(inst,score)
+    -- Spy: WS.__OBJECTS.Machines.RiftMachine.Rift @540,65,-333
+    local objs=workspace:FindFirstChild("__OBJECTS")
+    local machines=objs and objs:FindFirstChild("Machines")
+    local rm=machines and machines:FindFirstChild("RiftMachine")
+    if rm then
+        local rift=rm:FindFirstChild("Rift")
+        local p=instPos(rift) or instPos(rm)
+        if p then return Vector3.new(p.X,math.max(p.Y,70),p.Z),"RiftMachine" end
+    end
+    local best,bestScore,bestSrc
+    local function consider(inst,score,src)
         local p=instPos(inst)
         if not p then return end
-        if not best or score>bestScore then best,bestScore=p,score end
+        if not best or score>bestScore then best,bestScore,bestSrc=p,score,src end
     end
     for _,d in ipairs(workspace:GetDescendants()) do
         local n=d.Name:lower()
-        if n=="rift" then consider(d,50)
+        if n=="riftmachine" then consider(d,90,"RiftMachine")
+        elseif n=="rift" and not n:find("trade",1,true) then consider(d,70,"Rift")
         elseif n:find("rift",1,true) and not n:find("trade",1,true) and not n:find("gui",1,true)
             and not n:find("farm",1,true) and not n:find("input",1,true) then
-            consider(d,20)
-        end
-        if (d:IsA("TextLabel") or d:IsA("TextButton")) and tostring(d.Text):upper():gsub("%s+","")=="RIFT" then
-            consider(d.Adornee or d.Parent,40)
+            consider(d,20,"rift~")
         end
     end
-    if best then return best,"RIFT" end
+    if best then return Vector3.new(best.X,math.max(best.Y,70),best.Z),bestSrc end
     return FALLBACK_RIFT,"fallback-rift"
 end
 local function resolvePoint()
@@ -421,7 +428,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.10 — RIFT→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.11 — RIFT→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -463,7 +470,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.10 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.11 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
