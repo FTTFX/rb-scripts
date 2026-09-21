@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.1 -- หา Abyss Ocean เอง → ตี 5 นาที → รอ +30
+-- Egg01 Experiment Farm v2.2 -- Abyss auto + ออก/กลับเครื่องวิ่ง (TreadmillBottom)
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -9,7 +9,7 @@ local LP=Players.LocalPlayer
 local LEAD=60
 local FARM_WINDOW=300
 local FALLBACK=Vector3.new(1371.0,90.0,-357.0)
-local S={run=false,gui=nil,lines={},point=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,gui=nil,lines={},point=nil,tread=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -145,6 +145,68 @@ local function goPoint()
     say(ok and "ถึงจุดแล้ว" or "ไปจุดไม่ทัน")
     return ok
 end
+local function nearestTreadmill()
+    local _,_,r=char(); if not r then return nil end
+    local best,bestD
+    for _,item in ipairs(workspace:GetDescendants()) do
+        if item:IsA("BasePart") and item.Name=="TreadmillBottom" then
+            local d=(item.Position-r.Position).Magnitude
+            if not bestD or d<bestD then best,bestD=item,d end
+        end
+    end
+    return best,bestD
+end
+local function treadStandPos(bottom)
+    if not bottom then return nil end
+    return bottom.CFrame:PointToWorldSpace(Vector3.new(0,bottom.Size.Y*0.5+2.5,0))
+end
+local function leaveTreadmill()
+    local bottom,d=nearestTreadmill()
+    if not bottom or not d or d>14 then
+        say("ไม่ได้อยู่บนเครื่องวิ่ง — ไปอีเวนต์เลย")
+        return
+    end
+    S.tread=bottom
+    if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run=false end
+    local _,h,r=char()
+    say(string.format("กระโดดออกจากเครื่องวิ่ง d=%.0f",d))
+    if h then
+        h.Jump=true
+        pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
+    end
+    task.wait(0.25)
+    if h and r then
+        local dir=Vector3.new(r.Position.X-bottom.Position.X,0,r.Position.Z-bottom.Position.Z)
+        if dir.Magnitude<1 then dir=r.CFrame.RightVector else dir=dir.Unit end
+        local goal=r.Position+dir*16
+        walk(goal,3,6,nil)
+    end
+    stop()
+end
+local function returnTreadmill()
+    local bottom=S.tread
+    if not bottom or not bottom.Parent then bottom=select(1,nearestTreadmill()) end
+    if not bottom then say("ไม่พบเครื่องวิ่งเดิม"); return end
+    S.tread=bottom
+    local target=treadStandPos(bottom)
+    if not target then return end
+    local _,_,r=char()
+    local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
+    setClip(true)
+    say("กลับเครื่องวิ่งเดิม")
+    walk(target,5,lim,55)
+    setClip(false)
+    say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
+end
+local function jogTreadTick(n)
+    local bottom=S.tread
+    if not bottom or not bottom.Parent then return n end
+    local _,h,r=char(); if not h or not r then return n end
+    local offset=Vector3.new(math.sin(n)*1.2,bottom.Size.Y*0.5+2.5,math.cos(n)*1.2)
+    local step=bottom.CFrame:PointToWorldSpace(offset)
+    h:MoveTo(Vector3.new(step.X,r.Position.Y,step.Z))
+    return n+math.pi*0.5
+end
 local function rootPart(m)
     if not m then return end
     if m:IsA("BasePart") then return m end
@@ -226,15 +288,27 @@ local function hit(robot)
     end
 end
 local function waitEvent()
+    local n=0
+    -- ถ้ายังไม่มี tread แต่ยืนใกล้เครื่อง — จำไว้ตอนรอ
+    do
+        local b,d=nearestTreadmill()
+        if b and d and d<=14 then S.tread=b end
+    end
     while S.run do
         local t=serverNow()
         local rem=secsToBoundary(t)
         if rem<=LEAD then
-            say(string.format("ถึงเวลา %s — อีก %ds → วิ่งจุด",fmtHMS(t),rem))
+            say(string.format("ถึงเวลา %s — อีก %ds → ออกเครื่องวิ่ง",fmtHMS(t),rem))
             return true
         end
-        if rem%60==0 then say(string.format("รอ :00/:30 | %s | อีก %ds",fmtHMS(t),rem)) end
-        task.wait(1)
+        if S.tread and S.tread.Parent then
+            n=jogTreadTick(n)
+            if rem%60==0 then say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem)) end
+            task.wait(0.18)
+        else
+            if rem%60==0 then say(string.format("รอ :00/:30 | %s | อีก %ds",fmtHMS(t),rem)) end
+            task.wait(1)
+        end
     end
     return false
 end
@@ -253,26 +327,30 @@ local function farm5min()
             hit(all[1]); task.wait(.3)
         end
     end
-    say("จบอีเวนต์ — รอ +30 นาที")
+    say("จบอีเวนต์ — กลับเครื่องวิ่ง")
 end
 local function loop()
     while S.run do
         if not waitEvent() then break end
+        leaveTreadmill()
+        if not S.run then break end
         goPoint()
         if not S.run then break end
         farm5min()
+        if not S.run then break end
+        returnTreadmill()
     end
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm"; gui.ResetOnSpawn=false; gui.DisplayOrder=1022
 pcall(function() gui.Parent=(gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end
 S.gui=gui
-local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,280,0,200); f.Position=UDim2.new(0,12,.45,0)
+local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDim2.new(0,12,.45,0)
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.1 — auto Abyss"; title.TextColor3=Color3.fromRGB(145,245,230)
-title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.2 — tread+Abyss"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
     b.Text=text; b.TextColor3=Color3.new(1,1,1); b.BackgroundColor3=color; b.BorderSizePixel=0
@@ -281,7 +359,7 @@ end
 local startB=button("START",10,Color3.fromRGB(35,145,75))
 local stopB=button("STOP",88,Color3.fromRGB(165,50,55))
 local copyB=button("COPY",166,Color3.fromRGB(75,75,80),52)
-local closeB=button("X",224,Color3.fromRGB(145,50,65),28)
+local closeB=button("X",244,Color3.fromRGB(145,50,65),28)
 logBox=Instance.new("TextLabel",f); logBox.Size=UDim2.new(1,-16,0,128); logBox.Position=UDim2.new(0,8,0,66)
 logBox.BackgroundColor3=Color3.new(0,0,0); logBox.BackgroundTransparency=.2; logBox.TextColor3=Color3.fromRGB(180,245,190)
 logBox.Font=Enum.Font.Code; logBox.TextSize=10; logBox.TextXAlignment=Enum.TextXAlignment.Left
@@ -290,7 +368,9 @@ startB.MouseButton1Click:Connect(function()
     if S.run then return end
     S.run=true; startB.Text="ON"
     resolvePoint()
-    say("START — หา Abyss → ตี 5 นาที → รอ +30")
+    local b,d=nearestTreadmill()
+    if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
+    say("START — รอบนเครื่อง → ออก → Abyss 5 นาที → กลับเครื่อง")
     task.spawn(function() loop(); startB.Text="START" end)
 end)
 stopB.MouseButton1Click:Connect(function()
@@ -299,10 +379,10 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.1 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.2 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("START = หา Abyss Ocean เอง → รอ :00/:30 → วิ่ง → ตี 5 นาที → +30")
+say("START = อยู่เครื่องวิ่งได้ | ถึงเวลา→กระโดดออก→Abyss→กลับเครื่องเดิม")
