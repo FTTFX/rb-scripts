@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.15 -- ถ้า Snapshot ไม่มีชนิด → วิ่งไปไบโอม (Titan/Cherry) รอสปอว์น
+-- Egg01 Rift Farm v1.16 -- จับชื่อหลวม: สลับคำได้ + อักษรเหมือน ≥5 + ไม่สน rarity
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,live={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
@@ -25,14 +25,50 @@ local function attachCarry()
 end
 local function pos(r) for _,k in ipairs({"BottomCFrame","BoundsCFrame","CFrame","Position"}) do local v=r[k]; if typeof(v)=="CFrame" then return v.Position elseif typeof(v)=="Vector3" then return v end end end
 -- ไม่มีตัวกรอง Rarity: Rift ต้องการชื่อใดก็หาได้หมด แม้เป็น Common/Rare
+local RAR={common=true,uncommon=true,rare=true,epic=true,legendary=true,mythic=true,cosmic=true,secret=true,eternal=true,divine=true}
 local function norm(s) return tostring(s or ""):lower():gsub("[^%w]", "") end
-local function nameKey(s) local k=norm(s); return (k:gsub("egg$","")) end
-local function namesEqual(a,b)
- local ka,kb=nameKey(a),nameKey(b)
- if ka=="" or kb=="" then return false end
- if ka==kb then return true end
- -- ตรงกันแบบเต็มหลัง norm (กันชื่อสั้นชนกันโดยไม่ตั้งใจ)
- return norm(a)==norm(b)
+local function nameKey(s) local k=norm(s); return (k:gsub("eggs?$","")) end
+local function wordsOf(s)
+ local words={}
+ for w in tostring(s or ""):lower():gmatch("%a+") do
+  w=w:gsub("eggs?$","")
+  if #w>=2 and not RAR[w] then words[#words+1]=w end
+ end
+ table.sort(words)
+ return words,table.concat(words)
+end
+local function lcs(a,b)
+ local n,m=#a,#b
+ if n==0 or m==0 or n>48 or m>48 then return 0 end
+ local prev={}; for j=0,m do prev[j]=0 end
+ local best=0
+ for i=1,n do
+  local cur={[0]=0}
+  local ai=a:sub(i,i)
+  for j=1,m do
+   if ai==b:sub(j,j) then cur[j]=(prev[j-1] or 0)+1; if cur[j]>best then best=cur[j] end
+   else cur[j]=0 end
+  end
+  prev=cur
+ end
+ return best
+end
+-- คะแนน: 100 ตรง, ≥45 = หลวม (คำสลับ / อักษรติดกัน ≥5) ไม่สนระดับ
+local function matchScore(need,cand)
+ local wa,ka=wordsOf(need)
+ local wb,kb=wordsOf(cand)
+ if ka=="" or kb=="" then return 0 end
+ if ka==kb or nameKey(need)==nameKey(cand) then return 100 end
+ local score=0
+ for _,w in ipairs(wa) do
+  if #w>=4 and (kb:find(w,1,true) or nameKey(cand):find(w,1,true)) then score=math.max(score,60+#w) end
+ end
+ for _,w in ipairs(wb) do
+  if #w>=4 and (ka:find(w,1,true) or nameKey(need):find(w,1,true)) then score=math.max(score,60+#w) end
+ end
+ local c=math.max(lcs(ka,kb), lcs(nameKey(need), nameKey(cand)))
+ if c>=5 then score=math.max(score,40+c) end
+ return score
 end
 local function amountNeeds(a)
  if not a then return false end
@@ -49,11 +85,14 @@ local function rowNames(row)
  return out
 end
 local function rowMatchesNeed(row,needList)
+ local bestN,bestS,bestC=nil,0,nil
  for _,n in ipairs(needList) do
   for _,candidate in ipairs(rowNames(row)) do
-   if namesEqual(candidate,n) then return n end
+   local s=matchScore(n,candidate)
+   if s>bestS then bestN,bestS,bestC=n,s,candidate end
   end
  end
+ if bestS>=45 then return bestN,bestS,bestC end
 end
 local function findLabel(box,name)
  if not box then return end
@@ -156,20 +195,23 @@ local function target()
    local live=S.live[tostring(row.Uid or id)]
    local p=pos(row) or (live and live.pos)
    if p then withPos=withPos+1 end
-   local wantedName=rowMatchesNeed(row,need)
+   local wantedName,score,via=rowMatchesNeed(row,need)
    if wantedName then
     nameHit=nameHit+1
     if not p or tostring(row.State or "")=="Carried" then nameNoPos=nameNoPos+1
     else
      local d=(p-root.Position).Magnitude
-     if not best or d<best.d then best={uid=row.Uid or id,cat=tostring(row.AssetCategory or "?"),need=wantedName,pos=p,d=d} end
+     if not best or score>best.score or (score==best.score and d<best.d) then
+      best={uid=row.Uid or id,cat=tostring(row.AssetCategory or "?"),need=wantedName,pos=p,d=d,score=score,via=via}
+     end
     end
    end
   end
  end
  if best then
   S.lastMiss=nil; S.hunt=nil
-  say(string.format("RIFT NEED %s UID=%s d=%.0f",best.need,tostring(best.uid),best.d))
+  local loose=(best.score or 100)<100 and ("≈"..tostring(best.via or best.cat).." ") or ""
+  say(string.format("RIFT NEED %s %sUID=%s d=%.0f",best.need,loose,tostring(best.uid),best.d))
   return best
  end
  -- ไม่มีชนิดในฟิลด์ → ไปไบโอมที่ไข่เกิด แล้วรอสปอว์น
@@ -350,11 +392,11 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.15 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.16 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — ไม่เจอชนิด → ไปไบโอมรอสปอว์น") task.spawn(function() while S.run do local t=target(); if t and t.hunt then huntBiome(t); task.wait(.5) elseif t then one(t);task.wait(1) else task.wait(2.5) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.15 ===\n"..table.concat(lines,"\n"))end end)
-say("v1.15: Snapshot ไม่มีชนิด → ไป Titan/Cherry รอสปอว์น")
+attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — ไม่เจอชนิด → ไปไบโอมรอสปอว์น") task.spawn(function() while S.run do local t=target(); if t and t.hunt then huntBiome(t); task.wait(.5) elseif t then one(t);task.wait(1) else task.wait(2.5) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.16 ===\n"..table.concat(lines,"\n"))end end)
+say("v1.16: ชื่อหลวม — สลับคำ / อักษร≥5 / ไม่สน rarity")
