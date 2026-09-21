@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.18 — ออกลู่: วิ่งก่อนแล้วค่อยกระโดดขณะวิ่ง | ค้าง5s=เริ่มใหม่
+-- Egg01 Experiment Farm v2.19 — PATH หลอกเวลา 0–5 | วิ่งก่อน+กระโดดขณะวิ่ง | ค้าง5s
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -14,7 +14,7 @@ local TREAD_ON_R=22      -- ถือว่ายังบนลู่
 local TREAD_CLEAR_R=32  -- พ้นลู่ (เดิม 42 สูงเกิน — d=31–35 ออกแล้วแต่ยังไม่ผ่าน)
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0,fakeUntil=0,fakeInto=30}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -27,7 +27,14 @@ local function char()
 end
 local function serverNow()
     local ok,t=pcall(function() return workspace:GetServerTimeNow() end)
-    return ok and t or os.time()
+    local real=ok and t or os.time()
+    -- PATH: หลอกว่าอยู่ในช่วง :00–:05 (secsIntoHalf = fakeInto)
+    if (S.fakeUntil or 0)>os.clock() then
+        local into=math.floor(real)%1800
+        local want=math.clamp(tonumber(S.fakeInto) or 30,0,FARM_WINDOW-1)
+        return real-into+want
+    end
+    return real
 end
 local function fmtHMS(t)
     t=math.floor(t%86400)
@@ -653,7 +660,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.18 — วิ่งก่อน+กระโดดขณะวิ่ง | ค้าง5s"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.19 — PATH=หลอกเวลา0-5 | ค้าง5s"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -687,25 +694,35 @@ end
 local function runPathTest()
     if S.test then return end
     if S.run then S.run=false; stop("STOP AUTO"); task.wait(0.15) end
-    S.test=true; pathB.Text="..."
+    S.test=true; pathB.Text="0-5"
     setClip(true)
+    -- หลอกเวลาอยู่ในช่วง :00–:05 นาน 5 นาทีจริง (ทดลอง path อีเวนต์)
+    S.fakeInto=30
+    S.fakeUntil=os.clock()+FARM_WINDOW
+    resolveRift(); resolvePoint()
+    local b,d=nearestTreadmill()
+    if b and d and d<=TREAD_ON_R then S.tread=b end
+    say(string.format("PATH — หลอกเวลาช่วง 0–5 (เหลืออีเวนต์จำลอง ~%ds) | ออกลู่→Rift→วาฬ",windowLeft()))
     task.spawn(function()
-        local ok,err=pcall(goPoint)
+        local ok,err=pcall(function()
+            forceEventPath("PATH ทดสอบ (เวลาหลอก 0–5) — ออกลู่→Rift→วาฬ")
+        end)
         if not ok then say("PATH ERR: "..tostring(err)) end
         S.test=false
         if pathB and pathB.Parent then pathB.Text="PATH" end
+        say(string.format("PATH จบ — ยังหลอกเวลาอีก ~%.0fs (หรือกด STOP เคลียร์)",math.max(0,(S.fakeUntil or 0)-os.clock())))
     end)
 end
 
 startB.MouseButton1Click:Connect(beginAuto)
 stopB.MouseButton1Click:Connect(function()
-    S.run=false; S.test=false; stop("STOP"); startB.Text="AUTO"; pathB.Text="PATH"
+    S.run=false; S.test=false; S.fakeUntil=0; stop("STOP"); startB.Text="AUTO"; pathB.Text="PATH"
 end)
 pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.18 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.19 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -726,5 +743,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.18 | ออกลู่: วิ่งก่อน → กระโดดขณะวิ่ง | clear>32 | ค้าง5s=เริ่มใหม่")
+say("v2.19 | PATH=หลอกเวลาช่วง 0–5 (ทดลอง) | วิ่งก่อน+กระโดด | ค้าง5s")
 task.spawn(boot)
