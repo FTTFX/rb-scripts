@@ -1,4 +1,4 @@
--- Egg01 Experiment Model Spy v1.0 — สแกนโมเดลใกล้ตัวหาจุดอีเวนต์/หุ่น/วาฬ
+-- Egg01 Experiment Model Spy v1.1 — GuardAreas / Guard / Nest (ข้ามตัวละครตัวเอง)
 if _G.EGG01_EXPERIMENT_MODEL_SPY then
     pcall(function() _G.EGG01_EXPERIMENT_MODEL_SPY.gui:Destroy() end)
 end
@@ -42,7 +42,7 @@ local function labelsOf(m,maxN)
     end
     return out
 end
-local KEYS={"drone","scramble","experiment","whale","abyss","ocean","fish","boss","event","sleep","zzz"}
+local KEYS={"drone","scramble","experiment","whale","abyss","ocean","fish","boss","event","sleep","zzz","guard","nest"}
 local function interesting(name)
     local n=name:lower()
     for _,k in ipairs(KEYS) do
@@ -53,28 +53,43 @@ end
 local function scanNear(rad)
     rad=rad or 120
     local _,_,r=char(); if not r then log("ไม่มีตัวละคร"); return {} end
+    local meChar=LP.Character
     local hits,seen={},{}
     for _,d in ipairs(workspace:GetDescendants()) do
         if (d:IsA("Model") or d:IsA("BasePart")) and not seen[d] then
-            local pos=posOf(d)
-            if pos then
-                local dist=(pos-r.Position).Magnitude
-                if dist<=rad then
-                    local ok,tag=interesting(d.Name)
-                    local force=d:IsA("Model") and dist<=40
-                    if ok or force then
-                        seen[d]=true
-                        local labs=d:IsA("Model") and labelsOf(d) or {}
-                        hits[#hits+1]={
-                            inst=d,name=d.Name,class=d.ClassName,pos=pos,dist=dist,
-                            tag=tag or (force and "near" or "?"),path=short(d),labs=labs
-                        }
+            if meChar and (d==meChar or d:IsDescendantOf(meChar)) then
+                -- skip self
+            else
+                local pos=posOf(d)
+                if pos then
+                    local dist=(pos-r.Position).Magnitude
+                    if dist<=rad then
+                        local ok,tag=interesting(d.Name)
+                        local path=short(d)
+                        local inAbyss=path:lower():find("abyss",1,true) or path:lower():find("guardareas",1,true)
+                        local force=d:IsA("Model") and dist<=40 and inAbyss
+                        if ok or force or inAbyss then
+                            seen[d]=true
+                            local labs=d:IsA("Model") and labelsOf(d) or {}
+                            local score=0
+                            if tag=="guard" or d.Name=="Guard" then score=50 end
+                            if tag=="drone" or (d.Name:lower():find("dronevisual",1,true)) then score=40 end
+                            if inAbyss then score=score+10 end
+                            if d.Name=="NestModel" then score=score+5 end
+                            hits[#hits+1]={
+                                inst=d,name=d.Name,class=d.ClassName,pos=pos,dist=dist,score=score,
+                                tag=tag or (inAbyss and "abyss" or "near"),path=path,labs=labs
+                            }
+                        end
                     end
                 end
             end
         end
     end
-    table.sort(hits,function(a,b) return a.dist<b.dist end)
+    table.sort(hits,function(a,b)
+        if (a.score or 0)~=(b.score or 0) then return (a.score or 0)>(b.score or 0) end
+        return a.dist<b.dist
+    end)
     return hits,r.Position
 end
 local function dumpHit(h,i)
@@ -139,7 +154,7 @@ box.Font=Enum.Font.Code; box.TextSize=10; box.TextEditable=false; box.MultiLine=
 box.TextWrapped=false; box.TextXAlignment=Enum.TextXAlignment.Left; box.TextYAlignment=Enum.TextYAlignment.Top; box.Text=""
 scanB.MouseButton1Click:Connect(function() scan(120) end)
 nearB.MouseButton1Click:Connect(function() scan(40) end)
-whaleB.MouseButton1Click:Connect(function() pickClosestKeyword({"whale","orca","sperm","fish","abyss"}) end)
+whaleB.MouseButton1Click:Connect(function() pickClosestKeyword({"guard","whale","orca","nest"}) end)
 droneB.MouseButton1Click:Connect(function() pickClosestKeyword({"dronevisual","drone","scramble"}) end)
 clearB.MouseButton1Click:Connect(function() S.lines={}; if box then box.Text="" end end)
 copyB.MouseButton1Click:Connect(function()
