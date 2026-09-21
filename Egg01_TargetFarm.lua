@@ -1,5 +1,5 @@
--- Egg01 Target Farm v3.3
--- ติ๊ก Rarity → สแกน; เจอไข่: HOME→Rift→Steal→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ (เบรกขึ้นเครื่อง) | noclip ตลอด
+-- Egg01 Target Farm v3.4
+-- ฐาน=ลู่วิ่ง | ไป: ลู่วิ่ง→Rift→ไข่ | กลับ: ไข่→Rift→ลู่วิ่ง | เปิดมาขึ้นลู่วิ่งเลย | noclip ตลอด
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
@@ -20,7 +20,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {} }
+local S = { gui = nil, conns = {}, run = false, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {} }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -34,7 +34,7 @@ for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R = 60, 16, 7, 100, 30, 25
+local STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R = 16, 7, 100, 30, 25, 12
 local BRAKE_SECS, BRAKE_LEAD = 0.12, 20
 local FALLBACK_RIFT = Vector3.new(534.0, 71.0, -340.0)
 local lines = {}
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.3"
+title.Text = "Egg01 Target Farm v3.4"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -134,11 +134,10 @@ local function button(text, x, y, w, color)
     return b
 end
 
-local bHome = button("HOME", 10, 35, 58, Color3.fromRGB(50, 100, 180))
-local bScan = button("SCAN", 75, 35, 58, Color3.fromRGB(55, 105, 165))
-local bStart = button("START", 140, 35, 58, Color3.fromRGB(35, 145, 75))
-local bStop = button("STOP", 205, 35, 52, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 264, 35, 58, Color3.fromRGB(70, 70, 75))
+local bScan = button("SCAN", 10, 35, 58, Color3.fromRGB(55, 105, 165))
+local bStart = button("START", 75, 35, 58, Color3.fromRGB(35, 145, 75))
+local bStop = button("STOP", 140, 35, 52, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 200, 35, 58, Color3.fromRGB(70, 70, 75))
 local bClose = button("X", 296, 4, 30, Color3.fromRGB(125, 45, 45))
 
 local scaleLabel = Instance.new("TextLabel", panel)
@@ -198,7 +197,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่ง"
+status.Text = "ลู่วิ่ง→Rift→ไข่→Rift→ลู่วิ่ง | เปิด=ขึ้นลู่วิ่ง"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -460,7 +459,9 @@ end
 -- ===== ลู่วิ่งรอไข่ (MoveTo เท่านั้น — ห้าม CFrame) =====
 local function nearestTreadmill(refPos)
     local _, r = humRoot()
-    local ref = refPos or S.home or (r and r.Position)
+    local ref = refPos
+    if not ref and S.tread and S.tread.Parent then ref = S.tread.Position end
+    if not ref and r then ref = r.Position end
     if not ref then return nil end
     local best, bestD
     local ok, desc = pcall(function() return workspace:GetDescendants() end)
@@ -485,10 +486,10 @@ local function onTreadmill()
     local bottom = S.tread
     if bottom and bottom.Parent then
         local d = (bottom.Position - r.Position).Magnitude
-        if d <= 12 then return true end
+        if d <= TREAD_R then return true end
     end
     local b, d = nearestTreadmill(r.Position)
-    if b and d and d <= 12 then S.tread = b; return true end
+    if b and d and d <= TREAD_R then S.tread = b; return true end
     return false
 end
 
@@ -523,10 +524,10 @@ local function leaveTreadmill()
 end
 
 local function returnTreadmill()
-    -- เลือกเครื่องใกล้ HOME ก่อน (หลังฟาร์มมักยืนที่ฐาน)
-    local bottom = select(1, nearestTreadmill(S.home))
+    local bottom = S.tread
     if not bottom or not bottom.Parent then
-        bottom = select(1, nearestTreadmill())
+        local _, r = humRoot()
+        bottom = select(1, nearestTreadmill(r and r.Position or nil))
     end
     if not bottom then say("ไม่พบเครื่องวิ่ง"); return false end
     S.tread = bottom
@@ -536,9 +537,8 @@ local function returnTreadmill()
     if not r then return false end
     local dist = (Vector3.new(target.X, r.Position.Y, target.Z) - r.Position).Magnitude
     local lim = math.clamp(dist / 14 + 35, 50, 220)
-    say(string.format("ไม่มีเป้าที่ติ๊ก — กลับลู่วิ่งรอ d=%.0f", dist))
+    say(string.format("กลับลู่วิ่งรอ d=%.0f", dist))
     stopMove()
-    -- ชะลอ+เบรก velocity ให้หยุดบนเครื่อง ไม่ไถลเลย
     local ok = walkSlow(target, 3.5, lim, 55)
     if not ok then
         say("ขึ้นลู่วิ่งไม่สุด — ลองชิดอีกครั้ง")
@@ -546,7 +546,7 @@ local function returnTreadmill()
     end
     stopMove()
     local _, r2 = humRoot()
-    local onPad = r2 and bottom.Parent and (bottom.Position - r2.Position).Magnitude <= 12
+    local onPad = r2 and bottom.Parent and (bottom.Position - r2.Position).Magnitude <= TREAD_R
     if onPad then
         S.tread = bottom
         say("อยู่ลู่วิ่งแล้ว — สแกนรอไข่ " .. rarityText())
@@ -671,33 +671,31 @@ brakePulse = function(h, r, reason)
     return true
 end
 
--- กันอาการโดนตีเฉพาะตอนแบกกลับบ้าน: กระเด้งหนึ่งครั้ง แล้วรอบถัดไปกลับไป MoveTo ปกติ
-local function impactHopTowardHome(h, r, homeDistance)
-    if S.impactHopUsed or not S.home then return false end
+-- กันโดนตีตอนแบกกลับลู่วิ่ง: เบรกแล้ว MoveTo เป้า (ห้าม CFrame)
+local function impactHopToward(h, r, goal, arriveR, curDist)
+    if S.impactHopUsed or not goal then return false end
     local state = h:GetState()
     local disrupted = h.PlatformStand
         or state == Enum.HumanoidStateType.Ragdoll
         or state == Enum.HumanoidStateType.FallingDown
         or state == Enum.HumanoidStateType.Physics
         or state == Enum.HumanoidStateType.PlatformStanding
-    -- กรณีโดนผลักจนถอยจากบ้านอย่างชัดเจน แม้ State จะยังเป็น Running
-    local pushedBack = S.lastReturnDist and homeDistance >= S.lastReturnDist + 12
+    local pushedBack = S.lastReturnDist and curDist >= S.lastReturnDist + 12
     if not disrupted and not pushedBack then return false end
-
-    local flat = Vector3.new(S.home.X - r.Position.X, 0, S.home.Z - r.Position.Z)
-    if flat.Magnitude <= HOME_R then return false end
+    local flat = Vector3.new(goal.X - r.Position.X, 0, goal.Z - r.Position.Z)
+    if flat.Magnitude <= (arriveR or TREAD_R) then return false end
     local reason = disrupted and ("state=" .. state.Name) or "ถูกผลักถอย"
     S.impactHopUsed = true
     brakePulse(h, r, "รับแรงกระแทก")
     h.PlatformStand = false
     h.Sit = false
     h:ChangeState(Enum.HumanoidStateType.Running)
-    local step = math.min(14, flat.Magnitude - HOME_R)
+    local step = math.min(14, flat.Magnitude - (arriveR or TREAD_R))
     local dest = r.Position + flat.Unit * step
-    r.CFrame = CFrame.new(dest.X, r.Position.Y, dest.Z) * (r.CFrame - r.CFrame.Position)
+    h:MoveTo(Vector3.new(dest.X, r.Position.Y, dest.Z))
     task.wait(0.10)
     stopMove()
-    say("โดนตี/กระแทก (" .. reason .. ") — HOP กู้ครั้งเดียว แล้ววิ่งต่อ")
+    say("โดนตี/กระแทก (" .. reason .. ") — กู้ครั้งเดียว แล้ววิ่งต่อ")
     return true
 end
 
@@ -819,28 +817,28 @@ local function recoverDroppedEgg(dropPos)
     return true
 end
 
-local function returnHome()
+-- กลับพร้อมไข่: ไข่ → Rift → ลู่วิ่ง
+local function returnToTread()
     local deadline, lastReport = os.clock() + 180, 0
     S.impactHopUsed, S.lastReturnDist = false, nil
     resolveRift(true)
-    local phase = "rift" -- กลับผ่าน Rift ก่อน แล้วค่อย HOME
+    local phase = "rift"
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
-        if not h or not r or not S.home then return false end
+        if not h or not r then return false end
         if S.carryMismatchUid then
-            say("หยุดกลับบ้าน: ได้ UID คนละฟอง")
+            say("หยุดกลับลู่วิ่ง: ได้ UID คนละฟอง")
             return false
         end
         if not S.carryAvailable and os.clock() - S.lastCarryScan >= 1 then
             S.lastCarryScan = os.clock()
-            attachCarryListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
+            attachCarryListener()
         end
         if not S.shiftConn and os.clock() - S.lastShiftScan >= 1 then
             S.lastShiftScan = os.clock()
-            attachShiftListener() -- ไม่หยุดวิ่งระหว่างค้นหา event
+            attachShiftListener()
         end
         local dropPos = S.droppedPos
-        -- Carry=false มาก่อน Shift ได้: ยืนรอ UID โดยไม่ออก MoveTo ไป HOME
         if S.returnPaused and not dropPos and S.shiftConn then
             stopMove()
             if os.clock() - (S.carryLostAt or os.clock()) >= 2 then
@@ -852,7 +850,6 @@ local function returnHome()
             if dropPos then
                 if not recoverDroppedEgg(dropPos) then return false end
             elseif not S.carrying then
-            -- ถ้ามี Shift listener ให้รอพิกัด UID เดิมก่อน: ห้ามหยิบไข่ใกล้ตัวแบบสุ่ม
                 if S.shiftConn then
                     if os.clock() - (S.carryLostAt or os.clock()) >= 2 then
                         say("ไข่หลุด แต่ไม่ได้พิกัด UID เดิม — ไม่หยิบไข่อื่น")
@@ -864,14 +861,16 @@ local function returnHome()
             end
             h, r = humRoot()
             if not h or not r then return false end
-            local dHome = dist2(r.Position, S.home)
-            if dHome <= HOME_R then stopMove(); return true end
+            if onTreadmill() then
+                stopMove()
+                return true
+            end
             local rift = S.rift or resolveRift(true)
             if phase == "rift" and rift then
                 local dR = dist2(r.Position, rift)
                 if dR <= RIFT_R then
-                    phase = "home"
-                    say("ถึง Rift แล้ว → วิ่งกลับ HOME")
+                    phase = "tread"
+                    say("ถึง Rift แล้ว → กลับลู่วิ่ง")
                 else
                     S.lastReturnDist = dR
                     h:MoveTo(Vector3.new(rift.X, r.Position.Y, rift.Z))
@@ -882,14 +881,9 @@ local function returnHome()
                     task.wait(0.15)
                 end
             else
-                impactHopTowardHome(h, r, dHome)
-                S.lastReturnDist = dHome
-                h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
-                if os.clock() - lastReport >= 1 then
-                    say(string.format("วิ่งกลับ HOME d=%.0f", dHome))
-                    lastReport = os.clock()
-                end
-                task.wait(0.15)
+                -- เข้าใกล้เครื่องแล้วใช้ walkSlow+เบรก
+                if returnTreadmill() then return true end
+                task.wait(0.5)
             end
         end
     end
@@ -899,8 +893,8 @@ end
 -- ทำหนึ่งรอบโดยไม่ปิด S.run: ตัว loop ด้านล่างจะเลือกไข่ใหม่เอง
 local function farmTarget(target)
     S.carrying, S.eggArea, S.hopUsed = false, target.area, false
-    say("ไปหา " .. target.cat .. " ผ่าน Rift")
-    -- HOME/ลู่วิ่ง → Rift → ไข่ (เข้ากลาง Snapshot ให้ Prompt สตรีม)
+    say("ไปหา " .. target.cat .. " | ลู่วิ่ง→Rift→ไข่")
+    -- ลู่วิ่ง → Rift → ไข่
     local reachedTarget, targetBraked = goViaRift(target.pos, 3, 120, target.cat)
     if not reachedTarget then
         say("ไปถึงไข่ไม่สำเร็จ")
@@ -968,10 +962,10 @@ local function farmTarget(target)
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
     -- event อาจตอบทันทีใน fireSteal; อย่าเขียนทับผล UID ไม่ตรง
     if not S.carryMismatchUid then S.carrying = true end
-    if returnHome() then
-        say("ถึง HOME — รอรอบถัดไป")
+    if returnToTread() then
+        say("ถึงลู่วิ่งแล้ว — รอรอบถัดไป")
     elseif S.run then
-        say("กลับบ้านไม่สำเร็จ — scan ใหม่")
+        say("กลับลู่วิ่งไม่สำเร็จ — scan ใหม่")
     end
     S.returning, S.carriedUid, S.expectedUid, S.droppedPos, S.returnPaused, S.dropBrakeUsed = false, nil, nil, nil, false, false
 end
@@ -979,15 +973,15 @@ end
 local function runOne()
     if S.run then return end
     if not fp then say("executor ไม่มี fireproximityprompt") return end
-    if not S.home then
-        say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน START")
-        return
-    end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — HOME→Rift→ไข่→Rift→HOME | ไม่มีเป้า=ลู่วิ่งรอ")
+    say("AUTO ON — ลู่วิ่ง→Rift→ไข่→Rift→ลู่วิ่ง")
     resolveRift()
     task.spawn(function()
+        if not onTreadmill() then
+            say("เปิดมา — ขึ้นลู่วิ่งก่อน")
+            returnTreadmill()
+        end
         while S.run do
             local target = chooseTarget(true)
             if not target then
@@ -1088,10 +1082,6 @@ if not attachShiftListener() then
     lines[#lines + 1] = "ไม่พบ FieldEggShifted — Return Guard รอระหว่างวิ่งกลับ"
 end
 
-bHome.MouseButton1Click:Connect(function()
-    local _, r = humRoot()
-    if r then S.home = r.Position; say("HOME ตั้งแล้ว (ตำแหน่งฐาน)") else say("ไม่มีตัวละคร") end
-end)
 bScan.MouseButton1Click:Connect(chooseTarget)
 bStart.MouseButton1Click:Connect(runOne)
 bStop.MouseButton1Click:Connect(function()
@@ -1102,7 +1092,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.2 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.4 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1112,5 +1102,18 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
+LP.CharacterAdded:Connect(function(ch)
+    if not S.gui or not S.gui.Parent then return end
+    task.wait(0.5)
+    pcall(function() ch:WaitForChild("HumanoidRootPart", 8) end)
+    setClip(true)
+end)
+
 setClip(true)
-say("กด HOME → ติ๊ก Rarity → START | path: HOME→Rift→ไข่→Rift→HOME | noclip ON")
+say("v3.4 | ฐาน=ลู่วิ่ง | path: ลู่วิ่ง→Rift→ไข่→Rift→ลู่วิ่ง | เปิด=AUTO")
+task.spawn(function()
+    local c = LP.Character or LP.CharacterAdded:Wait()
+    if c then pcall(function() c:WaitForChild("HumanoidRootPart", 8) end) end
+    task.wait(0.4)
+    if S.gui and S.gui.Parent then runOne() end
+end)
