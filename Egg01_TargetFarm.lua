@@ -1,5 +1,5 @@
--- Egg01 Target Farm v3.7
--- ฐาน=ลู่วิ่ง | ลู่วิ่ง→Rift(ทะลุ+30ไปไข่)→ไข่ | Move()+MoveTo กันค้าง | ไข่หลุด=เก็บทันที
+-- Egg01 Target Farm v3.8
+-- ฐาน=ลู่วิ่ง | ลู่วิ่ง→Rift(ทะลุ)→ไข่ | เดินแบบ Heartbeat+velocity ถ้า MoveTo ค้าง | ห้าม CFrame
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.7"
+title.Text = "Egg01 Target Farm v3.8"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -197,7 +197,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "ลู่วิ่ง→Rift(ทะลุ+30)→ไข่ | Move กันค้าง"
+status.Text = "ลู่วิ่ง→Rift→ไข่ | velocity กันยืนนิ่ง"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -335,48 +335,7 @@ local function chooseTarget(quiet)
 end
 
 local function walkTo(pos, radius, limit)
-    local started = os.clock()
-    local lastSay, lastD, stuckSince = 0, nil, nil
-    while S.run and os.clock() - started < limit do
-        local h, r = humRoot()
-        if not h or not r or h.Health <= 0 then return false end
-        if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
-        if h.Sit then h.Sit = false end
-        if h.PlatformStand then h.PlatformStand = false end
-        pcall(function() if r.Anchored then r.Anchored = false end end)
-        if h.WalkSpeed < 20 then h.WalkSpeed = 20 end
-        local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
-        local flat = Vector3.new(goal.X - r.Position.X, 0, goal.Z - r.Position.Z)
-        local d = flat.Magnitude
-        if d <= radius then
-            h:Move(Vector3.zero)
-            stopMove()
-            return true
-        end
-        -- ค้างไม่ขยับ >2.5s → เลิกขั้นนี้ (ไปไข่ต่อ)
-        if lastD and d >= lastD - 1 then
-            stuckSince = stuckSince or os.clock()
-            if os.clock() - stuckSince >= 2.5 then
-                h:Move(Vector3.zero)
-                say(string.format("เดินค้าง d=%.0f — ข้ามไปขั้นถัดไป", d))
-                return false
-            end
-        else
-            stuckSince = nil
-        end
-        lastD = d
-        if os.clock() - lastSay >= 1.5 then
-            say(string.format("…เดิน d=%.0f", d))
-            lastSay = os.clock()
-        end
-        -- MoveTo อย่างเดียวบางทีไม่ขยับบนลู่วิ่ง/noclip → ใส่ Move ทิศทางด้วย
-        h:Move(flat.Unit, false)
-        h:MoveTo(goal)
-        task.wait(0.06)
-    end
-    local h = select(1, humRoot())
-    if h then h:Move(Vector3.zero) end
-    return false
+    return walkDrive(pos, radius, limit, nil)
 end
 
 local function instPos(inst)
@@ -409,7 +368,7 @@ local function resolveRift(quiet)
     return pos
 end
 
--- ทะลุ Rift ไปทางไข่ +RIFT_DEPTH (ไม่ถอยหลัง)
+-- ทะลุ Rift ไปทางไข่ +RIFT_DEPTH
 local function riftDeepTarget(fromPos, towardPos)
     local rift = resolveRift(true)
     local aim = towardPos or fromPos
@@ -424,16 +383,29 @@ local function riftDeepTarget(fromPos, towardPos)
     return deep, rift
 end
 
+local function clearMoveLocks(r)
+    if not r then return end
+    for _, c in ipairs(r:GetChildren()) do
+        if c:IsA("BodyVelocity") or c:IsA("BodyPosition") or c:IsA("BodyGyro")
+            or c:IsA("LinearVelocity") or c:IsA("AlignPosition") then
+            pcall(function() c:Destroy() end)
+        end
+    end
+    pcall(function() if r.Anchored then r.Anchored = false end end)
+end
+
 local function readyRun(label)
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
     local h, r = humRoot()
     if not h or not r then return false end
+    clearMoveLocks(r)
     h.Sit = false
     h.PlatformStand = false
-    pcall(function() if r.Anchored then r.Anchored = false end end)
+    h.AutoRotate = true
     pcall(function() h:ChangeState(Enum.HumanoidStateType.GettingUp) end)
     pcall(function() h:ChangeState(Enum.HumanoidStateType.Running) end)
-    if h.WalkSpeed < 20 then h.WalkSpeed = 20 end
+    -- ใช้ความเร็วเกม ถ้าต่ำเกินบังคับขั้นต่ำ
+    if h.WalkSpeed < 16 then h.WalkSpeed = 28 end
     if label then say(label) end
     return true
 end
@@ -453,23 +425,28 @@ local function stopMove()
     end
 end
 
--- เดินเข้าเป้าแบบชะลอ+เบรก + Move ทิศ (Egg01_MOTION_BRAKE) — ห้าม CFrame
-local function walkSlow(pos, radius, limit, slowNear)
+-- เดินหลัก: MoveTo ทุกเฟรม + ถ้าไม่ขยับให้ดัน AssemblyLinearVelocity (ไม่ใช่ CFrame)
+local function walkDrive(pos, radius, limit, slowNear)
+    if not pos then return false end
+    readyRun()
     local started = os.clock()
-    local moveHum, oldSpeed, lastBand
-    local lastD, stuckSince = nil, nil
+    local moveHum, oldSpeed, lastBand, lastSay
+    local lastPos, noMoveSince = nil, nil
+    local pushed = false
     local function restore()
-        if moveHum and moveHum.Parent then moveHum.WalkSpeed = math.max(oldSpeed or 16, 16) end
         local h = select(1, humRoot())
+        if moveHum and moveHum.Parent then
+            moveHum.WalkSpeed = math.max(oldSpeed or 16, 16)
+        end
         if h then h:Move(Vector3.zero) end
     end
     while S.run and os.clock() - started < limit do
         local h, r = humRoot()
         if not h or not r or h.Health <= 0 then restore(); return false end
         if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
+        clearMoveLocks(r)
         if h.Sit then h.Sit = false end
         if h.PlatformStand then h.PlatformStand = false end
-        pcall(function() if r.Anchored then r.Anchored = false end end)
         local goal = Vector3.new(pos.X, r.Position.Y, pos.Z)
         local flat = Vector3.new(goal.X - r.Position.X, 0, goal.Z - r.Position.Z)
         local d = flat.Magnitude
@@ -478,64 +455,98 @@ local function walkSlow(pos, radius, limit, slowNear)
             stopMove()
             return true
         end
-        if lastD and d >= lastD - 1 then
-            stuckSince = stuckSince or os.clock()
-            if os.clock() - stuckSince >= 3 then
-                say(string.format("walkSlow ค้าง d=%.0f — หยุดขั้นนี้", d))
-                restore()
-                return false
-            end
-        else
-            stuckSince = nil
+        if not moveHum then
+            moveHum = h
+            oldSpeed = math.max(h.WalkSpeed, 28)
         end
-        lastD = d
-        if not moveHum then moveHum = h; oldSpeed = math.max(h.WalkSpeed, 20) end
         if slowNear then
             local band, cap
             if d <= 18 then band, cap = "ละเอียด", 35
             elseif d <= slowNear then band, cap = "ชะลอ", 90
             else band, cap = "ปกติ", oldSpeed end
-            h.WalkSpeed = math.max(16, math.min(oldSpeed, cap))
+            -- อย่าเหลือ 0; ถ้าเกมเร็วมากให้ใช้ค่าเดิมตอนไกล
+            if band == "ปกติ" then
+                h.WalkSpeed = math.max(oldSpeed, 28)
+            else
+                h.WalkSpeed = math.max(20, math.min(math.max(oldSpeed, 28), cap))
+            end
             if band ~= lastBand and band ~= "ปกติ" then
                 say(band .. " — เหลือ " .. math.floor(d) .. " studs")
             end
             lastBand = band
-        elseif h.WalkSpeed < 20 then
-            h.WalkSpeed = 20
+        else
+            if h.WalkSpeed < 20 then h.WalkSpeed = 28 end
         end
-        h:Move(flat.Unit, false)
+        -- ตรวจยืนนิ่ง
+        if lastPos then
+            local moved = (r.Position - lastPos).Magnitude
+            if moved < 0.35 then
+                noMoveSince = noMoveSince or os.clock()
+            else
+                noMoveSince = nil
+                pushed = false
+            end
+        end
+        lastPos = r.Position
+        local dir = flat.Unit
         h:MoveTo(goal)
-        task.wait(0.05)
+        h:Move(dir, false)
+        -- ค้าง 0.7s → ดัน velocity แนวนอน (ยังไม่ใช่ CFrame)
+        if noMoveSince and os.clock() - noMoveSince >= 0.7 then
+            local spd = math.clamp(h.WalkSpeed, 28, 75)
+            pcall(function()
+                r.AssemblyLinearVelocity = Vector3.new(dir.X * spd, r.AssemblyLinearVelocity.Y, dir.Z * spd)
+            end)
+            if not pushed then
+                say(string.format("MoveTo ไม่ขยับ — ดัน velocity d=%.0f", d))
+                pushed = true
+            end
+            -- ค้างรวม >2s หลังดันแล้วยังไม่ขยับ → เลิกขั้นนี้
+            if os.clock() - noMoveSince >= 2.2 then
+                say(string.format("ยังยืนนิ่ง d=%.0f — ข้ามขั้น", d))
+                restore()
+                return false
+            end
+        end
+        if os.clock() - (lastSay or 0) >= 1.2 then
+            say(string.format("…เดิน d=%.0f%s", d, pushed and " (velocity)" or ""))
+            lastSay = os.clock()
+        end
+        RunS.Heartbeat:Wait()
     end
     restore()
     return false
 end
 
--- ขั้น1 ทะลุ Rift ไปทางไข่ แล้วขั้น2 → ไข่ (ค้างขั้น1 ไม่เกิน ~2.5s)
+local function walkSlow(pos, radius, limit, slowNear)
+    return walkDrive(pos, radius, limit, slowNear or 55)
+end
+
+-- ขั้น1 ทะลุ Rift สั้นๆ (สูงสุด ~3s) แล้วไปไข่ทันที — ไม่ค้าง Rift นาน
 local function goViaRift(dest, radius, limit, destLabel)
     if not dest then return false end
     readyRun()
     local _, r = humRoot()
     if not r then return false end
-    local deep, rift = riftDeepTarget(r.Position, dest)
-    local dDeep = dist2(r.Position, deep)
+    local deep = select(1, riftDeepTarget(r.Position, dest))
     local dEgg = dist2(r.Position, dest)
-    -- ถ้ายืนใกล้ไข่กว่าจุด Rift แล้ว ข้ามขั้น Rift
-    if dEgg < 120 then
-        say("ใกล้ไข่แล้ว — ข้าม Rift ไปเก็บเลย")
-    elseif dDeep > RIFT_R then
-        say(string.format("ขั้น1 → ทะลุ Rift +%d @%.0f,%.0f,%.0f d=%.0f", RIFT_DEPTH, deep.X, deep.Y, deep.Z, dDeep))
-        local lim1 = math.min(25, math.clamp(dDeep / 16 + 20, 15, 40))
-        local okR = walkTo(deep, RIFT_R, lim1)
-        if not S.run then return false end
-        say(okR and ("ทะลุ Rift แล้ว → " .. (destLabel or "เป้า")) or ("Rift ไม่สุด/ค้าง → ไป" .. (destLabel or "ไข่") .. "ต่อ"))
+    if dEgg < 100 then
+        say("ใกล้ไข่ — เก็บเลย")
+    else
+        local dDeep = dist2(r.Position, deep)
+        if dDeep > RIFT_R then
+            say(string.format("ขั้น1 → ทะลุ Rift +%d @%.0f,%.0f,%.0f d=%.0f (สูงสุด 3s)", RIFT_DEPTH, deep.X, deep.Y, deep.Z, dDeep))
+            walkDrive(deep, RIFT_R, 3, nil)
+            if not S.run then return false end
+            say("ขั้น1 จบ → ไป" .. (destLabel or "ไข่"))
+        end
     end
     readyRun()
     local _, r2 = humRoot()
     local d2 = r2 and dist2(r2.Position, dest) or 9999
-    say(string.format("ขั้น2 → %s d=%.0f (เบรกเข้าไข่)", destLabel or "เป้า", d2))
-    local lim2 = limit or math.clamp(d2 / 14 + 60, 60, 400)
-    return walkSlow(dest, radius or APPROACH_R, lim2, 55)
+    say(string.format("ขั้น2 → %s d=%.0f", destLabel or "เป้า", d2))
+    local lim2 = limit or math.clamp(d2 / 12 + 80, 90, 500)
+    return walkDrive(dest, radius or APPROACH_R, lim2, 55)
 end
 
 -- ===== ลู่วิ่งรอไข่ (MoveTo เท่านั้น — ห้าม CFrame) =====
@@ -1070,7 +1081,7 @@ local function runOne()
     if not fp then say("executor ไม่มี fireproximityprompt") return end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — ลู่วิ่ง→Rift(ทะลุ+30)→ไข่ | Moveกันค้าง | หลุด=เก็บทันที")
+    say("AUTO ON — ลู่วิ่ง→Rift→ไข่ | velocity กันยืนนิ่ง | หลุด=เก็บทันที")
     resolveRift()
     task.spawn(function()
         if not onTreadmill() then
@@ -1192,7 +1203,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.7 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.8 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1210,7 +1221,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.7 | Rift ทะลุ+30 ไปทางไข่ | Move+MoveTo กันค้าง | ข้ามขั้นถ้าค้าง 2.5s")
+say("v3.8 | เดิน Heartbeat + ดัน velocity ถ้ายืนนิ่ง | Rift สูงสุด 3s แล้วไปไข่")
 task.spawn(function()
     local c = LP.Character or LP.CharacterAdded:Wait()
     if c then pcall(function() c:WaitForChild("HumanoidRootPart", 8) end) end
