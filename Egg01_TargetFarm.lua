@@ -34,7 +34,7 @@ for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
     selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
 end
-local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R = 60, 16, 7, 100, 30, 25, 12
+local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 7, 100, 30, 25, 12, -30
 local BRAKE_SECS = 0.12
 local FALLBACK_RIFT = Vector3.new(534.0, 71.0, -340.0)
 local lines = {}
@@ -118,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.9 (คืน v3.3)"
+title.Text = "Egg01 Target Farm v3.9.1 (Rift-30)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -421,19 +421,30 @@ local function resolveRift(quiet)
     return pos
 end
 
--- HOME/ลู่วิ่ง → Rift → เป้า (แบบ v3.3)
+-- จุด Rift ลึก RIFT_DEPTH (-30 = ทิศตรงข้ามเป้า)
+local function riftDeepTarget(towardPos)
+    local rift = resolveRift(true)
+    local dir = Vector3.new(1, 0, 0)
+    if towardPos then
+        local flat = Vector3.new(towardPos.X - rift.X, 0, towardPos.Z - rift.Z)
+        if flat.Magnitude >= 1 then dir = flat.Unit end
+    end
+    return Vector3.new(rift.X + dir.X * RIFT_DEPTH, math.max(rift.Y, 70), rift.Z + dir.Z * RIFT_DEPTH), rift
+end
+
+-- HOME/ลู่วิ่ง → Rift ลึก-30 → เป้า
 local function goViaRift(dest, radius, limit, destLabel)
     if not dest then return false end
-    local rift = resolveRift(true)
+    local deep = select(1, riftDeepTarget(dest))
     local _, r = humRoot()
     if not r then return false end
-    local dR = dist2(r.Position, rift)
+    local dR = dist2(r.Position, deep)
     if dR > RIFT_R then
-        say(string.format("ขั้น1 → Rift @%.0f,%.0f,%.0f d=%.0f", rift.X, rift.Y, rift.Z, dR))
+        say(string.format("ขั้น1 → Rift ลึก%+d @%.0f,%.0f,%.0f d=%.0f", RIFT_DEPTH, deep.X, deep.Y, deep.Z, dR))
         local lim1 = math.clamp(dR / 16 + 40, 50, 320)
-        local okR = walkTo(rift, RIFT_R, lim1, 55)
+        local okR = walkTo(deep, RIFT_R, lim1, 55)
         if not S.run then return false end
-        say(okR and ("ถึง Rift แล้ว → " .. (destLabel or "เป้า")) or ("Rift ไม่สุด → ไปต่อ"))
+        say(okR and ("ถึง Rift ลึกแล้ว → " .. (destLabel or "เป้า")) or ("Rift ไม่สุด → ไปต่อ"))
     end
     local _, r2 = humRoot()
     local d2 = r2 and dist2(r2.Position, dest) or 9999
@@ -808,17 +819,17 @@ local function returnHome()
             if not h or not r then return false end
             local dHome = dist2(r.Position, S.home)
             if dHome <= HOME_R then stopMove(); return true end
-            local rift = S.rift or resolveRift(true)
-            if phase == "rift" and rift then
-                local dR = dist2(r.Position, rift)
+            local deep = select(1, riftDeepTarget(S.home))
+            if phase == "rift" and deep then
+                local dR = dist2(r.Position, deep)
                 if dR <= RIFT_R then
                     phase = "home"
-                    say("ถึง Rift แล้ว → วิ่งกลับ HOME")
+                    say("ถึง Rift ลึกแล้ว → วิ่งกลับ HOME")
                 else
                     S.lastReturnDist = dR
-                    h:MoveTo(Vector3.new(rift.X, r.Position.Y, rift.Z))
+                    h:MoveTo(Vector3.new(deep.X, r.Position.Y, deep.Z))
                     if os.clock() - lastReport >= 1 then
-                        say(string.format("วิ่งกลับผ่าน Rift d=%.0f", dR))
+                        say(string.format("วิ่งกลับผ่าน Rift ลึก%+d d=%.0f", RIFT_DEPTH, dR))
                         lastReport = os.clock()
                     end
                     task.wait(0.15)
@@ -1030,7 +1041,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.9 (คืน v3.3) ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.1 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1048,4 +1059,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.9 คืนฐาน v3.3 | กด HOME ที่ฐาน → START | HOME→Rift→ไข่→HOME")
+say("v3.9.1 | กด HOME → START | Rift ลึก-30 | HOME→Rift→ไข่→HOME")
