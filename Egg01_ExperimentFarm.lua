@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.11 -- วิ่งตามขั้น: RIFT → วาฬ (Abyss) ไม่ใช้ L
+-- Egg01 Experiment Farm v2.12 — ขั้นเดียว: RiftMachine → วาฬ (ไม่มีเส้น L)
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.clipConn:Disconnect() end)
@@ -174,17 +174,17 @@ local function walk(p,rad,lim,slowNear)
     restore()
     return false
 end
--- ขั้นที่ 1 ไป RIFT → ขั้นที่ 2 ไปวาฬ (เส้นทางตามจุด ไม่ใช่เส้นตรงทะลุกำแพง)
+-- ขั้น1 RiftMachine → ขั้น2 วาฬ (ไม่มีมุม L / waypoint อื่น)
 local function goPoint()
     local rift=resolveRift()
     local whale=resolvePoint()
     local _,_,r=char(); if not r then return false end
     local d1=(rift-r.Position).Magnitude
     local lim1=math.clamp(d1/18+30,40,200)
-    say(string.format("ขั้น1 → RIFT @%.0f,%.0f,%.0f",rift.X,rift.Y,rift.Z))
-    local ok1=walk(rift,28,lim1,55)
+    say(string.format("ขั้น1 → RiftMachine @%.0f,%.0f,%.0f",rift.X,rift.Y,rift.Z))
+    local ok1=walk(rift,22,lim1,55)
     if not S.run then return false end
-    say(ok1 and "ถึง RIFT แล้ว → ไปวาฬ" or "ใกล้ RIFT ไม่สุด — ไปวาฬต่อ")
+    say(ok1 and "ถึง RiftMachine แล้ว → ไปวาฬ" or "ใกล้ RiftMachine ไม่สุด — ไปวาฬต่อ")
     local _,_,r2=char(); r2=r2 or r
     local d2=(whale-r2.Position).Magnitude
     local lim2=math.clamp(d2/18+30,40,200)
@@ -428,7 +428,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,300,0,200); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.11 — RIFT→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.12 — RiftMachine→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -450,7 +450,7 @@ local function beginAuto()
     resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=14 then S.tread=b; say(string.format("จำเครื่องวิ่ง d=%.0f",d)) end
-    say("AUTO ON — ขั้นอีเวนต์: RIFT → วาฬ | นอก=เครื่องวิ่งรอ")
+    say("AUTO ON — อีเวนต์: RiftMachine → วาฬ | นอก=เครื่องวิ่งรอ")
     task.spawn(function()
         loop()
         if S.gui and S.gui.Parent then startB.Text="AUTO" end
@@ -470,7 +470,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.11 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.12 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -482,5 +482,5 @@ LP.CharacterAdded:Connect(function()
     setClip(true)
     if not S.run then beginAuto() end
 end)
-say("เปิดสคริปต์ = AUTO | ขั้น1 RIFT → ขั้น2 วาฬ")
+say("เปิดสคริปต์ = AUTO | ขั้น1 RiftMachine → ขั้น2 วาฬ")
 task.spawn(boot)
