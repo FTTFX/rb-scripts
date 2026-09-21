@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.19 — PATH หลอกเวลา 0–5 | วิ่งก่อน+กระโดดขณะวิ่ง | ค้าง5s
+-- Egg01 Experiment Farm v2.20 — ลู่ใกล้ตัว | ไม่เจอ1นาที=รีเซ็ต | PATHหลอก0-5
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -243,12 +243,12 @@ local function treadStandPos(bottom)
 end
 local function onTreadPad()
     local _,_,r=char(); if not r then return false end
-    if S.tread and S.tread.Parent then
-        local d=(S.tread.Position-r.Position).Magnitude
-        if d<=TREAD_ON_R then return true,S.tread,d end
-    end
+    -- เสมอเช็คใกล้ตัวก่อน (ไม่เชื่อ S.tread เก่าที่อาจผิดตัว)
     local b,d=nearestTreadmill()
-    if b and d and d<=TREAD_ON_R then S.tread=b; return true,b,d end
+    if b and d and d<=TREAD_ON_R then
+        S.tread=b
+        return true,b,d
+    end
     return false,b,d
 end
 local function treadDist(bottom)
@@ -384,21 +384,35 @@ local function leaveTreadmill()
     return clear
 end
 local function returnTreadmill()
-    local bottom=S.tread
-    if not bottom or not bottom.Parent then bottom=select(1,nearestTreadmill()) end
-    if not bottom then say("ไม่พบเครื่องวิ่งเดิม"); return end
+    -- เสมอเลือกใกล้ตัว (กันจำเครื่องวิ่งผิด)
+    local bottom=select(1,nearestTreadmill())
+    if not bottom then say("ไม่พบเครื่องวิ่ง"); return false end
     S.tread=bottom
     local target=treadStandPos(bottom)
-    if not target then return end
+    if not target then return false end
     local _,_,r=char()
     local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
-    say("กลับเครื่องวิ่งเดิม")
+    say(string.format("กลับเครื่องวิ่งใกล้สุด d=%.0f",r and (bottom.Position-r.Position).Magnitude or -1))
     walk(target,5,lim,55)
-    say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
+    if onTreadPad() then
+        say("อยู่เครื่องวิ่งแล้ว — รอรอบถัดไป")
+        return true
+    end
+    say("ยังไม่ถึงลู่จริง")
+    return false
+end
+local function resetTreadmill(why)
+    say(why or "รีเซ็ตเครื่องวิ่ง — ล้างจำแล้วหาใหม่")
+    S.tread=nil
+    return returnTreadmill()
 end
 local function jogTreadTick(n)
     local bottom=S.tread
-    if not bottom or not bottom.Parent then return n end
+    if not bottom or not bottom.Parent then
+        local b=select(1,nearestTreadmill())
+        if not b then return n end
+        bottom=b; S.tread=b
+    end
     local _,h,r=char(); if not h or not r then return n end
     local offset=Vector3.new(math.sin(n)*1.2,bottom.Size.Y*0.5+2.5,math.cos(n)*1.2)
     local step=bottom.CFrame:PointToWorldSpace(offset)
@@ -546,6 +560,8 @@ local function hit(robot)
 end
 local function waitEvent()
     local n=0
+    local missSince=nil
+    local lastWaitSay=0
     do
         local on,b=onTreadPad()
         if on then S.tread=b end
@@ -568,7 +584,6 @@ local function waitEvent()
         local into=secsIntoHalf(t)
         local rem=1800-into
         if rem==1800 then rem=0; into=0 end
-        -- หน้าต่าง 0–5 / 30–35 เปิดแล้ว → ออกไป Rift→วาฬ
         if inFarmWindow(t) then
             say(string.format("อีเวนต์เปิด %s — เข้าแล้ว %ds / เหลือ ~%ds → ออกลู่วิ่ง",fmtHMS(t),into,windowLeft(t)))
             return true
@@ -578,14 +593,29 @@ local function waitEvent()
             return true
         end
         if onTreadPad() then
+            missSince=nil
             n=jogTreadTick(n)
-            if rem%60==0 then say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem)) end
+            if rem%60==0 and os.clock()-lastWaitSay>=5 then
+                say(string.format("รอบนเครื่องวิ่ง | %s | อีก %ds",fmtHMS(t),rem))
+                lastWaitSay=os.clock()
+            end
             task.wait(0.18)
         else
-            say("หลุดเครื่องวิ่ง — วิ่งกลับไปรอ")
-            returnTreadmill()
-            if rem%60==0 then say(string.format("รอ :00/:30 | %s | อีก %ds",fmtHMS(t),rem)) end
-            task.wait(1)
+            if not missSince then missSince=os.clock() end
+            local missFor=os.clock()-missSince
+            if missFor>=60 then
+                say("ไม่เจอลู่วิ่งจริงครบ 1 นาที — รีเซ็ตจำเครื่องวิ่ง")
+                missSince=nil
+                resetTreadmill()
+                task.wait(0.5)
+            else
+                if os.clock()-lastWaitSay>=8 then
+                    say(string.format("หลุดลู่ — กลับไปรอ (ยังไม่เจอ %.0fs/60s)",missFor))
+                    lastWaitSay=os.clock()
+                end
+                returnTreadmill()
+                task.wait(1)
+            end
         end
     end
     return false
@@ -660,7 +690,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.19 — PATH=หลอกเวลา0-5 | ค้าง5s"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.20 — ลู่ใกล้ตัว|ไม่เจอ1ม=รีเซ็ต"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -722,7 +752,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.19 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.20 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -743,5 +773,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.19 | PATH=หลอกเวลาช่วง 0–5 (ทดลอง) | วิ่งก่อน+กระโดด | ค้าง5s")
+say("v2.20 | ลู่=ใกล้ตัวเสมอ | ไม่เจอ1นาที=รีเซ็ต | PATH=หลอก0-5")
 task.spawn(boot)
