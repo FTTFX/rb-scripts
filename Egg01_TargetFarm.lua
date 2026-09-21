@@ -1,5 +1,5 @@
 -- Egg01 Target Farm v3.0
--- เลือก MinScale + Zone -> เดินไป Steal -> Drop/เก็บกลับ HOME (หนึ่งไข่ต่อรอบ)
+-- ติ๊ก Rarity → สแกนตลอด; เจอไข่=กระโดดลู่วิ่ง→Steal→HOME; ไม่เจอ=วิ่งลู่วิ่งรอ (แบบ ExperimentFarm)
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
@@ -16,7 +16,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -170,7 +170,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "RARITY FIRST + Big Scale → START"
+status.Text = "ติ๊ก Rarity → AUTO | ไม่เจอไข่=ลู่วิ่งรอ"
 
 local function say(message)
     lines[#lines + 1] = tostring(message)
@@ -247,21 +247,24 @@ local function getPrompts()
     return out
 end
 
--- Event egg ไม่ควรถูกพลาดเพราะยังไม่มี rarity config หรือ scale ต่ำกว่า filter
-local function isRiftEgg(row)
-    if typeof(row) ~= "table" then return false end
-    for _, key in ipairs({ "AssetCategory", "AssetId", "AssetName", "Name", "EggType", "Type" }) do
-        if tostring(row[key] or ""):lower():find("rift", 1, true) then return true end
-    end
-    return false
+local function rarityText()
+    local out = {}
+    for _, rarity in ipairs(RARITY_ORDER) do if selectedRarities[rarity] then out[#out + 1] = RARITY_SHORT[rarity] end end
+    return #out == #RARITY_ORDER and "ALL" or (#out > 0 and table.concat(out, ",") or "NONE")
 end
 
-local function chooseTarget()
+local function chooseTarget(quiet)
     readConfig()
     local rf = findNet("AskFieldEggSnapshot", "RemoteFunction")
-    if not rf then say("ไม่พบ AskFieldEggSnapshot") return nil end
+    if not rf then
+        if not quiet then say("ไม่พบ AskFieldEggSnapshot") end
+        return nil
+    end
     local ok, result = pcall(function() return rf:InvokeServer() end)
-    if not ok or typeof(result) ~= "table" then say("Snapshot error: " .. tostring(result)) return nil end
+    if not ok or typeof(result) ~= "table" then
+        if not quiet then say("Snapshot error: " .. tostring(result)) end
+        return nil
+    end
     local records = result.Records or result.records or result
     local _, root = humRoot()
     if typeof(records) ~= "table" or not root then return nil end
@@ -272,21 +275,18 @@ local function chooseTarget()
         if typeof(row) == "table" then
             local pos, scale, area = posOf(row), tonumber(row.AssetScale), row.AreaId
             if area then foundZones[tostring(area)] = true end
-            local riftEgg = isRiftEgg(row)
             local rarity = rarityMap[tostring(row.AssetCategory or "")]
             local targetKey = tostring(row.Uid or key)
             local blockedUntil = S.skipped[targetKey]
             if blockedUntil and blockedUntil <= os.clock() then S.skipped[targetKey] = nil; blockedUntil = nil end
-            local normalPass = scale and scale >= MIN_SCALE and zoneAllowed(area) and rarity and selectedRarities[rarity]
-            if pos and scale and row.State ~= "Carried" and (riftEgg or normalPass) and not blockedUntil then
+            if pos and scale and scale >= MIN_SCALE and row.State ~= "Carried" and zoneAllowed(area) and rarity and selectedRarities[rarity] and not blockedUntil then
                 eligible = eligible + 1
                 local dist = (pos - root.Position).Magnitude
-                -- Rift ที่เจอใน snapshot มี priority สูงสุด; ไข่ปกติใช้ rarity + scale เช่นเดิม
-                local rarityScore = riftEgg and 1000000000000 or (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
+                local rarityScore = (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
                 local scaleScore = scale * scale * SCALE_SQUARED_POINTS
                 local score = rarityScore + scaleScore - math.min(dist, 99999)
                 if not best or score > best.score or (score == best.score and dist < best.dist) then
-                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or row.AssetName or "?", rar = riftEgg and "RIFT" or rarity, isRift = riftEgg, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
+                    best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
                 end
             elseif pos and scale and blockedUntil then
                 skipped = skipped + 1
@@ -298,8 +298,10 @@ local function chooseTarget()
     for area in pairs(foundZones) do if area ~= "ALL" then ZONE_CHOICES[#ZONE_CHOICES + 1] = area end end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
     if best then
-        say(string.format("%s %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.isRift and "RIFT TARGET" or "TARGET", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
-    else
+        if not quiet then
+            say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
+        end
+    elseif not quiet then
         say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE))
     end
     return best
@@ -331,6 +333,129 @@ local function stopMove()
         h:MoveTo(r.Position)
         h:Move(Vector3.zero)
     end
+end
+
+-- ===== ลู่วิ่งรอไข่ (MoveTo เท่านั้น — ห้าม CFrame) =====
+local function nearestTreadmill()
+    local _, r = humRoot()
+    if not r then return nil end
+    local best, bestD
+    local ok, desc = pcall(function() return workspace:GetDescendants() end)
+    if not ok or not desc then return nil end
+    for _, item in ipairs(desc) do
+        if item:IsA("BasePart") and item.Name == "TreadmillBottom" then
+            local d = (item.Position - r.Position).Magnitude
+            if not bestD or d < bestD then best, bestD = item, d end
+        end
+    end
+    return best, bestD
+end
+
+local function treadStandPos(bottom)
+    if not bottom then return nil end
+    return bottom.CFrame:PointToWorldSpace(Vector3.new(0, bottom.Size.Y * 0.5 + 2.5, 0))
+end
+
+local function onTreadmill()
+    local b, d = nearestTreadmill()
+    if b and d and d <= 14 then S.tread = b; return true end
+    return false
+end
+
+local function leaveTreadmill()
+    local bottom, d = nearestTreadmill()
+    if not bottom or not d or d > 14 then return end
+    S.tread = bottom
+    if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
+    local h, r = humRoot()
+    say(string.format("เจอไข่ — กระโดดออกจากลู่วิ่ง d=%.0f", d))
+    if h then
+        h.Jump = true
+        pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
+    end
+    task.wait(0.25)
+    if h and r then
+        local dir = Vector3.new(r.Position.X - bottom.Position.X, 0, r.Position.Z - bottom.Position.Z)
+        if dir.Magnitude < 1 then dir = r.CFrame.RightVector else dir = dir.Unit end
+        local dest = r.Position + dir * 16
+        local t0 = os.clock()
+        while S.run and os.clock() - t0 < 6 do
+            local hh, rr = humRoot()
+            if not hh or not rr then break end
+            local g = Vector3.new(dest.X, rr.Position.Y, dest.Z)
+            if (g - rr.Position).Magnitude <= 3 then break end
+            hh:MoveTo(g)
+            task.wait(0.08)
+        end
+    end
+    stopMove()
+end
+
+local function returnTreadmill()
+    local bottom = S.tread
+    if not bottom or not bottom.Parent then bottom = select(1, nearestTreadmill()) end
+    if not bottom then say("ไม่พบเครื่องวิ่ง"); return false end
+    S.tread = bottom
+    local target = treadStandPos(bottom)
+    if not target then return false end
+    local _, r = humRoot()
+    local lim = r and math.clamp((target - r.Position).Magnitude / 18 + 25, 45, 200) or 90
+    say("ไม่มีเป้าที่ติ๊ก — กลับลู่วิ่งรอ")
+    local ok = walkTo(target, 5, lim)
+    if ok then say("อยู่ลู่วิ่งแล้ว — สแกนรอไข่ " .. rarityText()) end
+    return ok
+end
+
+local function jogTreadTick(n)
+    local bottom = S.tread
+    if not bottom or not bottom.Parent then return n end
+    local h, r = humRoot()
+    if not h or not r then return n end
+    local offset = Vector3.new(math.sin(n) * 1.2, bottom.Size.Y * 0.5 + 2.5, math.cos(n) * 1.2)
+    local step = bottom.CFrame:PointToWorldSpace(offset)
+    h:MoveTo(Vector3.new(step.X, r.Position.Y, step.Z))
+    return n + math.pi * 0.5
+end
+
+-- สแกนเงียบบนลู่วิ่งจนกว่าจะเจอไข่ตามที่ติ๊ก
+local function waitEggOnTread()
+    local n, lastSay = 0, 0
+    if not onTreadmill() then
+        returnTreadmill()
+    end
+    while S.run do
+        local target = chooseTarget(true)
+        if target then
+            say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
+            return target
+        end
+        local bottom = S.tread
+        local h, r = humRoot()
+        local onPad = bottom and bottom.Parent and r and (bottom.Position - r.Position).Magnitude <= 14
+        if onPad then
+            n = jogTreadTick(n)
+            if os.clock() - lastSay >= 20 then
+                say("ลู่วิ่งรอไข่ | " .. rarityText() .. " sc>=" .. tostring(MIN_SCALE) .. " zone=" .. tostring(ZONE))
+                lastSay = os.clock()
+            end
+            task.wait(0.45)
+        else
+            local b, d = nearestTreadmill()
+            if b and (not d or d > 14) then
+                say("หลุดลู่วิ่ง — วิ่งกลับรอ")
+                returnTreadmill()
+            elseif b and d and d <= 14 then
+                S.tread = b
+            else
+                if os.clock() - lastSay >= 20 then
+                    say("ยังไม่พบลู่วิ่ง — สแกนไข่ต่อ")
+                    lastSay = os.clock()
+                end
+            end
+            task.wait(1)
+        end
+    end
+    return nil
 end
 
 local function fireSteal(prompt)
@@ -703,17 +828,18 @@ local function runOne()
     end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — scan → เก็บ → กลับบ้าน → รอไข่รี (STOP เพื่อหยุด)")
+    say("AUTO ON — สแกนตาม Rarity | มีไข่=เก็บ→HOME | ไม่มี=ลู่วิ่งรอ")
     task.spawn(function()
         while S.run do
-            local target = chooseTarget() -- RF Snapshot ใหม่ทุกครั้ง จึงเห็นไข่ที่เพิ่งรี
-            if target then
-                farmTarget(target)
-                if S.run then task.wait(1) end
-            else
-                say("ไม่มีเป้า — รอไข่รี แล้ว scan ใหม่")
-                task.wait(2)
+            local target = chooseTarget(true)
+            if not target then
+                target = waitEggOnTread()
             end
+            if not S.run or not target then break end
+            leaveTreadmill()
+            if not S.run then break end
+            farmTarget(target)
+            if S.run then task.wait(1) end
         end
         bStart.Text = "START"
         say("AUTO OFF")
@@ -833,4 +959,4 @@ bClose.MouseButton1Click:Connect(function()
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("RIFT EVENT FIRST | กด HOME ที่ฐานก่อน START | ไข่หลุด=Fly เบรก 0.12s รอ UID")
+say("กด HOME ที่ฐาน → ติ๊ก Rarity → START | ไม่เจอไข่=ลู่วิ่งรอ สแกนตลอด")
