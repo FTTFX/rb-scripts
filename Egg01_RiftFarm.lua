@@ -1,9 +1,28 @@
--- Egg01 Rift Farm v1.18 -- สแกนระหว่างเดิน เป้าเปลี่ยนแล้วสลับทันที ไม่ต้อง STOP
-if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
+-- Egg01 Rift Farm v1.19 -- noclip ตลอดจนกว่าจะปิด GUI
+if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,live={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,shiftConn=nil,clipConn=nil,clipParts={},live={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
+local function setClip(on)
+ if not on then
+  if S.clipConn then pcall(function() S.clipConn:Disconnect() end); S.clipConn=nil end
+  for part,was in pairs(S.clipParts) do if part and part.Parent then pcall(function() part.CanCollide=was end) end end
+  S.clipParts={}; return
+ end
+ if S.clipConn then return end
+ local function apply(ch)
+  if not ch then return end
+  for _,p in ipairs(ch:GetDescendants()) do
+   if p:IsA("BasePart") then
+    if S.clipParts[p]==nil then S.clipParts[p]=p.CanCollide end
+    p.CanCollide=false
+   end
+  end
+ end
+ apply(LP.Character)
+ S.clipConn=RunS.Stepped:Connect(function() apply(LP.Character) end)
+end
 local function net(n) for _,x in ipairs(RS:GetDescendants()) do if x.Name:find(n,1,true) then return x end end end
 local function attachCarry()
  if S.carryConn then return true end
@@ -398,11 +417,12 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.18 — UID STEAL"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.19 — CLIP ON"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local copy=b("COPY",282,Color3.fromRGB(75,75,80))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
-local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — สแกนระหว่างเดิน เป้าเปลี่ยนสลับเอง") task.spawn(function() while S.run do local t=target(); if t and t.hunt and not t.wait then if not S.huntAt or os.clock()-S.huntAt>12 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s d=%.0f — สแกนระหว่างทาง",tostring(t.area),t.d or -1)) end; walk(t.pos,50,2.4) elseif t and t.hunt then task.wait(.6) elseif t then one(t);task.wait(.4) else task.wait(.8) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.18 ===\n"..table.concat(lines,"\n"))end end)
-say("v1.18: เดินเป็นท่อน + สแกนตลอด เป้าเปลี่ยนแล้วไปต่อ ไม่ต้อง STOP")
+local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,copy,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;setClip(false);gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
+attachCarry(); attachShift(); home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position;say("HOME ตั้งแล้ว (ฐาน)")end end); scan.MouseButton1Click:Connect(target); start.MouseButton1Click:Connect(function() if S.run then return end; if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end; S.run=true; start.Text="AUTO"; say("RIFT AUTO ON — สแกนระหว่างเดิน เป้าเปลี่ยนสลับเอง") task.spawn(function() while S.run do local t=target(); if t and t.hunt and not t.wait then if not S.huntAt or os.clock()-S.huntAt>12 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s d=%.0f — สแกนระหว่างทาง",tostring(t.area),t.d or -1)) end; walk(t.pos,50,2.4) elseif t and t.hunt then task.wait(.6) elseif t then one(t);task.wait(.4) else task.wait(.8) end end; start.Text="START" end) end); halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end); copy.MouseButton1Click:Connect(function()local c=setclipboard or toclipboard;if c then pcall(c,"=== Egg01 Rift Farm v1.19 ===\n"..table.concat(lines,"\n"))end end)
+setClip(true)
+say("v1.19: CLIP ON ตลอด — ปิดเมื่อกด X")
