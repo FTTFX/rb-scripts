@@ -1,9 +1,12 @@
--- Egg01 Target Farm v3.1
--- ติ๊ก Rarity → สแกน; เจอไข่: HOME→Rift→Steal→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ
+-- Egg01 Target Farm v3.2
+-- ติ๊ก Rarity → สแกน; เจอไข่: HOME→Rift→Steal→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ | noclip ตลอด
 -- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
+    pcall(function()
+        if _G.EGG01_TARGET_FARM.clipConn then _G.EGG01_TARGET_FARM.clipConn:Disconnect() end
+    end)
     pcall(function() _G.EGG01_TARGET_FARM.gui:Destroy() end)
     if _G.EGG01_TARGET_FARM.conns then
         for _, c in ipairs(_G.EGG01_TARGET_FARM.conns) do pcall(function() c:Disconnect() end) end
@@ -12,11 +15,12 @@ end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
+local RunS = game:GetService("RunService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {} }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -39,6 +43,29 @@ local brakePulse
 local function humRoot()
     local c = LP.Character
     return c and c:FindFirstChildOfClass("Humanoid"), c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function setClip(on)
+    if not on then
+        if S.clipConn then pcall(function() S.clipConn:Disconnect() end); S.clipConn = nil end
+        for part, was in pairs(S.clipParts) do
+            if part and part.Parent then pcall(function() part.CanCollide = was end) end
+        end
+        S.clipParts = {}
+        return
+    end
+    if S.clipConn then return end
+    local function apply(ch)
+        if not ch then return end
+        for _, p in ipairs(ch:GetDescendants()) do
+            if p:IsA("BasePart") then
+                if S.clipParts[p] == nil then S.clipParts[p] = p.CanCollide end
+                p.CanCollide = false
+            end
+        end
+    end
+    apply(LP.Character)
+    S.clipConn = RunS.Stepped:Connect(function() apply(LP.Character) end)
 end
 
 local function dist2(a, b)
@@ -91,7 +118,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.1"
+title.Text = "Egg01 Target Farm v3.2"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -1014,13 +1041,15 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.1 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.2 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
     S.run = false
+    setClip(false)
     for _, c in ipairs(S.conns) do pcall(function() c:Disconnect() end) end
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
-say("กด HOME → ติ๊ก Rarity → START | path: HOME→Rift→ไข่→Rift→HOME")
+setClip(true)
+say("กด HOME → ติ๊ก Rarity → START | path: HOME→Rift→ไข่→Rift→HOME | noclip ON")
