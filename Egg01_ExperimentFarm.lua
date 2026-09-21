@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.0 -- ถึงเวลา → วิ่ง Abyss → ตี 5 นาที → รอ +30
+-- Egg01 Experiment Farm v2.1 -- หา Abyss Ocean เอง → ตี 5 นาที → รอ +30
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     pcall(function() _G.EGG01_EXPERIMENT_FARM.gui:Destroy() end)
@@ -7,9 +7,9 @@ local Players=game:GetService("Players")
 local RunS=game:GetService("RunService")
 local LP=Players.LocalPlayer
 local LEAD=60
-local FARM_WINDOW=300 -- 5 นาที
-local POINT=Vector3.new(1371.0,90.0,-357.0) -- Abyss Ocean
-local S={run=false,gui=nil,lines={},point=POINT,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
+local FARM_WINDOW=300
+local FALLBACK=Vector3.new(1371.0,90.0,-357.0)
+local S={run=false,gui=nil,lines={},point=nil,clipConn=nil,clipParts={}}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -32,6 +32,50 @@ local function secsToBoundary(t)
     local rem=1800-sec
     if rem==1800 then rem=0 end
     return rem
+end
+local function instPos(d)
+    if d:IsA("BasePart") then return d.Position end
+    if d:IsA("Model") then
+        local ok,pv=pcall(function() return d:GetPivot().Position end)
+        if ok and pv then return pv end
+    end
+    local p=d:FindFirstChildWhichIsA("BasePart",true)
+    return p and p.Position
+end
+local function findAbyss()
+    local best,bestScore
+    for _,d in ipairs(workspace:GetDescendants()) do
+        if d:IsA("Model") or d:IsA("Folder") or d:IsA("BasePart") then
+            local n=d.Name:lower()
+            if n:find("eggfit",1,true) or n:find("eggspot",1,true) or n:find("bounds",1,true) then
+                -- skip
+            else
+                local score=0
+                if n:find("abyss",1,true) and n:find("ocean",1,true) then score=100
+                elseif n=="abyss ocean" then score=100
+                elseif n:find("abyss",1,true) then score=80
+                elseif n:find("ocean",1,true) and not n:find("egg",1,true) then score=50
+                end
+                if score>0 then
+                    local pos=instPos(d)
+                    if pos and (not bestScore or score>bestScore) then
+                        best,bestScore=pos,score
+                        if score>=100 then
+                            return pos,d.Name
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if best then return best,"ocean" end
+    return FALLBACK,"fallback"
+end
+local function resolvePoint()
+    local pos,src=findAbyss()
+    S.point=pos
+    say(string.format("จุด=%s @%.0f,%.0f,%.0f",tostring(src),pos.X,pos.Y,pos.Z))
+    return pos
 end
 local function setClip(on)
     local c=LP.Character
@@ -91,11 +135,12 @@ local function walk(p,rad,lim,slowNear)
     return false
 end
 local function goPoint()
+    local pos=resolvePoint()
     local _,_,r=char(); if not r then return false end
-    local d=(S.point-r.Position).Magnitude
+    local d=(pos-r.Position).Magnitude
     local lim=math.clamp(d/18+25,45,200)
-    setClip(true); say(string.format("วิ่งจุด Abyss @%.0f,%.0f,%.0f",S.point.X,S.point.Y,S.point.Z))
-    local ok=walk(S.point,20,lim,55)
+    setClip(true); say(string.format("วิ่ง @%.0f,%.0f,%.0f",pos.X,pos.Y,pos.Z))
+    local ok=walk(pos,20,lim,55)
     setClip(false)
     say(ok and "ถึงจุดแล้ว" or "ไปจุดไม่ทัน")
     return ok
@@ -195,12 +240,13 @@ local function waitEvent()
 end
 local function farm5min()
     local deadline=os.clock()+FARM_WINDOW
+    local hub=S.point or FALLBACK
     say("SCAN/ตี — จบใน 5 นาที")
     while S.run and os.clock()<deadline do
         local all=robots()
         if #all==0 then
             local _,_,me=char()
-            if me and (me.Position-S.point).Magnitude>40 then walk(S.point,20,30,55) end
+            if me and (me.Position-hub).Magnitude>40 then walk(hub,20,30,55) end
             task.wait(.6)
         else
             say(string.format("พบ %d ตัว — ตีใกล้สุด d=%.0f",#all,all[1].d))
@@ -221,11 +267,11 @@ local gui=Instance.new("ScreenGui"); gui.Name="Egg01_ExperimentFarm"; gui.ResetO
 pcall(function() gui.Parent=(gethui and gethui()) or game:GetService("CoreGui") end)
 if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end
 S.gui=gui
-local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,340,0,200); f.Position=UDim2.new(0,12,.45,0)
+local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,280,0,200); f.Position=UDim2.new(0,12,.45,0)
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.0 — 5min / +30"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.1 — auto Abyss"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 72,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -233,10 +279,9 @@ local function button(text,x,color,w)
     b.Font=Enum.Font.GothamBold; b.TextSize=11; Instance.new("UICorner",b).CornerRadius=UDim.new(0,5); return b
 end
 local startB=button("START",10,Color3.fromRGB(35,145,75))
-local markB=button("MARK",88,Color3.fromRGB(90,110,55))
-local stopB=button("STOP",166,Color3.fromRGB(165,50,55))
-local copyB=button("COPY",244,Color3.fromRGB(75,75,80),52)
-local closeB=button("X",300,Color3.fromRGB(145,50,65),28)
+local stopB=button("STOP",88,Color3.fromRGB(165,50,55))
+local copyB=button("COPY",166,Color3.fromRGB(75,75,80),52)
+local closeB=button("X",224,Color3.fromRGB(145,50,65),28)
 logBox=Instance.new("TextLabel",f); logBox.Size=UDim2.new(1,-16,0,128); logBox.Position=UDim2.new(0,8,0,66)
 logBox.BackgroundColor3=Color3.new(0,0,0); logBox.BackgroundTransparency=.2; logBox.TextColor3=Color3.fromRGB(180,245,190)
 logBox.Font=Enum.Font.Code; logBox.TextSize=10; logBox.TextXAlignment=Enum.TextXAlignment.Left
@@ -244,24 +289,20 @@ logBox.TextYAlignment=Enum.TextYAlignment.Top; logBox.TextWrapped=true; logBox.C
 startB.MouseButton1Click:Connect(function()
     if S.run then return end
     S.run=true; startB.Text="ON"
-    say(string.format("START — จุด %.0f,%.0f,%.0f | ตี 5 นาที | ลูป +30",S.point.X,S.point.Y,S.point.Z))
+    resolvePoint()
+    say("START — หา Abyss → ตี 5 นาที → รอ +30")
     task.spawn(function() loop(); startB.Text="START" end)
-end)
-markB.MouseButton1Click:Connect(function()
-    local _,_,r=char(); if not r then return end
-    S.point=r.Position
-    say(string.format("MARK จุด %.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z))
 end)
 stopB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); stop("STOP"); startB.Text="START"
 end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
-    local extra=string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z)
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.0 ===\n"..table.concat(S.lines,"\n")..extra)
+    local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.1 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
     S.run=false; setClip(false); gui:Destroy(); _G.EGG01_EXPERIMENT_FARM=nil
 end)
-say("START = รอ :00/:30 → วิ่ง Abyss → ตี 5 นาที → รอ +30 | MARK เปลี่ยนจุด")
+say("START = หา Abyss Ocean เอง → รอ :00/:30 → วิ่ง → ตี 5 นาที → +30")
