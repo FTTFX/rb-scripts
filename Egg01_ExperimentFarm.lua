@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.15 — ออกลู่วิ่งต้องไกลจริง (>40) | กระโดด+walk ไป Rift
+-- Egg01 Experiment Farm v2.16 — ไม่กระโดด | ค้าง5s=เริ่มใหม่ | ออกลู่→Rift→วาฬ
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -14,7 +14,7 @@ local TREAD_ON_R=22      -- ถือว่ายังบนลู่ (เด�
 local TREAD_CLEAR_R=42  -- ต้องห่างขนาดนี้ถึงนับว่าออกจริง
 local FALLBACK=Vector3.new(2283.0,74.0,-312.0)
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,lastJumpAt=0,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0}; _G.EGG01_EXPERIMENT_FARM=S
+local S={run=false,test=false,gui=nil,lines={},point=nil,rift=nil,tread=nil,clipConn=nil,clipParts={},repath=false,leaving=false,stuckAbort=false,watchPos=nil,watchAt=0}; _G.EGG01_EXPERIMENT_FARM=S
 local logBox
 local function say(m)
     S.lines[#S.lines+1]=tostring(m); if #S.lines>12 then table.remove(S.lines,1) end
@@ -258,23 +258,6 @@ local function isClearOfTread(bottom)
     local d=treadDist(bottom)
     return d>=TREAD_CLEAR_R,d,bottom
 end
-local function doJump()
-    local _,h=char()
-    if not h then return end
-    h.Sit=false
-    h.PlatformStand=false
-    if h.WalkSpeed<16 then h.WalkSpeed=16 end
-    h.Jump=true
-    pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
-    S.lastJumpAt=os.clock()
-end
--- กระโดดทุก ~1s ตอนอีเวนต์ (ช่วยออกลู่วิ่ง + โดดตี)
-local function jumpTick(force)
-    if not busy() then return end
-    if not force and not inFarmWindow() then return end
-    if not force and (os.clock()-(S.lastJumpAt or 0))<1 then return end
-    doJump()
-end
 local function leaveDir(bottom,r)
     local rift=S.rift
     if not rift then rift=select(1,findRift()) end
@@ -288,14 +271,12 @@ local function leaveDir(bottom,r)
 end
 local function dashOffTread(bottom,secs)
     local deadline=os.clock()+(secs or 3.5)
-    local lastJump=0
     while busy() and os.clock()<deadline do
         if S.stuckAbort then break end
         local clear,d=isClearOfTread(bottom)
         if clear then return true,d end
         local _,h,r=char()
         if not h or not r or not bottom or not bottom.Parent then return false,d end
-        if os.clock()-lastJump>=0.85 then doJump(); lastJump=os.clock() end
         h.Sit=false; h.PlatformStand=false
         if h.WalkSpeed<28 then h.WalkSpeed=28 end
         local dir=leaveDir(bottom,r)
@@ -341,7 +322,7 @@ local function leaveTreadmill()
         if ok then break end
         local _,_,r=char()
         local rift=S.rift or select(1,findRift())
-        if r and rift then doJump(); walk(rift,22,8,nil) end
+        if r and rift then walk(rift,22,8,nil) end
     end
     local clear,df=isClearOfTread(bottom)
     say(clear and string.format("ออกจากลู่วิ่งแล้ว d=%.0f",df or -1) or string.format("ยังติดลู่ d=%.0f — ฝืนไป Rift",df or -1))
@@ -495,7 +476,6 @@ local function hit(robot)
     local began=os.clock(); local lastHP=robot.hp
     while busy() and os.clock()-began<10 do
         if S.stuckAbort then return end
-        jumpTick(true) -- โดดตีทุก ~1s
         local latest=robots()[1]
         local currentPart=rootPart(robot.m)
         local _,_,me2=char()
@@ -565,7 +545,6 @@ local function farm5min()
             say(string.format("จบหน้าต่างอีเวนต์ %s — กลับลู่วิ่ง",fmtHMS(t)))
             break
         end
-        jumpTick(true)
         local left=windowLeft(t)
         if S.stuckAbort or S.repath then
             S.stuckAbort=false
@@ -592,12 +571,10 @@ local function farm5min()
                     forceEventPath(string.format("อีเวนต์เปิด ไม่เจอหุ่น dHub=%.0f — Rift→วาฬ",dHub))
                     hub=S.point or FALLBACK
                 else
-                    jumpTick(true)
                     walk(hub,25,40,55)
                 end
             else
                 if left%30==0 then say(string.format("โซนวาฬแล้ว ไม่มีหุ่น — รอสปอน | เหลือ %ds",left)) end
-                jumpTick(true)
                 walk(hub,20,25,55)
             end
             task.wait(0.5)
@@ -611,7 +588,7 @@ local function loop()
     while S.run do
         if not waitEvent() then break end
         startStuckWatch()
-        forceEventPath("เข้าอีเวนต์ — กระโดดลู่วิ่ง→Rift→วาฬ")
+        forceEventPath("เข้าอีเวนต์ — ออกลู่วิ่ง→Rift→วาฬ")
         if not S.run then break end
         S.repath=false
         S.stuckAbort=false
@@ -629,7 +606,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,320,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.15 — ค้าง5s=เริ่มใหม่ | Rift→วาฬ"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.16 — ไม่กระโดด | ค้าง5s=เริ่มใหม่"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 58,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -681,7 +658,7 @@ pathB.MouseButton1Click:Connect(runPathTest)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.15 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.16 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -702,5 +679,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.15 | ค้างตำแหน่ง 5s = เริ่มใหม่ Rift→วาฬ | ออกลู่ห่าง>42")
+say("v2.16 | ไม่กระโดด | ค้างตำแหน่ง 5s = เริ่มใหม่ Rift→วาฬ")
 task.spawn(boot)
