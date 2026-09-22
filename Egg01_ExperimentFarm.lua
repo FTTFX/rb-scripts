@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.24 — ออกลู่=กระโดด+เดินหน้าพร้อมกัน | ลู่ถูก=ก้าวขึ้น | PATHหลอก0-5
+-- Egg01 Experiment Farm v2.25 — โซนวาฬไม่ย้อน Rift | กระโดด+เดินหน้า | ก้าวขึ้น
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -204,11 +204,33 @@ local function walkFar(p,rad,lim,slowNear)
     restore()
     return false
 end
--- บังคับเสมอ: ขั้น1 → Rift แล้ว ขั้น2 → วาฬ / ถึงวาฬ (เดินปกติ)
+-- ถึงวาฬแล้วไม่ย้อน Rift — ไกล/ยังใกล้ลู่ค่อย Rift→วาฬ
+local NEAR_WHALE_R=280
+local function nearWhale(pos)
+    local hub=S.point or FALLBACK
+    local p=pos
+    if not p then
+        local _,_,r=char(); if not r then return false end
+        p=r.Position
+    end
+    return Vector3.new(p.X-hub.X,0,p.Z-hub.Z).Magnitude<=NEAR_WHALE_R
+end
+-- บังคับเสมอ: ขั้น1 → Rift แล้ว ขั้น2 → วาฬ / ถ้าอยู่ใกล้วาฬแล้วข้าม Rift
 local function goPoint()
-    local rift=resolveRift()
     local whale=resolvePoint()
     local _,_,r=char(); if not r then say("ไม่มี HRP — ข้าม path"); return false end
+    local dWhale=(Vector3.new(whale.X,r.Position.Y,whale.Z)-r.Position).Magnitude
+    if dWhale<=NEAR_WHALE_R then
+        say(string.format("อยู่โซนวาฬแล้ว d=%.0f — ไม่ย้อน Rift",dWhale))
+        if dWhale>25 then
+            local ok=walkFar(whale,20,math.clamp(dWhale/14+40,40,180),55)
+            say(ok and "ถึงวาฬแล้ว ✓ — เริ่มตี" or "ฟาร์มต่อจากจุดนี้")
+            return ok
+        end
+        say("ถึงวาฬแล้ว ✓ — เริ่มตี")
+        return true
+    end
+    local rift=resolveRift()
     local d1=(Vector3.new(rift.X,r.Position.Y,rift.Z)-r.Position).Magnitude
     say(string.format("ขั้น1 → Rift @%.0f,%.0f,%.0f  d=%.0f",rift.X,rift.Y,rift.Z,d1))
     local ok1=walkFar(rift,22,math.clamp(d1/16+50,60,400),55)
@@ -224,6 +246,15 @@ local function goPoint()
         say("ยังไม่ถึงวาฬ — ฟาร์มต่อจากจุดนี้")
     end
     return ok2
+end
+-- แค่กลับจุดวาฬ (ไม่ผ่าน Rift)
+local function goWhaleOnly(why)
+    if why then say(why) end
+    local whale=S.point or resolvePoint()
+    local _,_,r=char(); if not r then return false end
+    local d=(Vector3.new(whale.X,r.Position.Y,whale.Z)-r.Position).Magnitude
+    if d<=25 then return true end
+    return walkFar(whale,20,math.clamp(d/14+40,40,200),55)
 end
 local function nearestTreadmill()
     local _,_,r=char(); if not r then return nil end
@@ -547,9 +578,9 @@ local function jogTreadTick(n)
     h:MoveTo(Vector3.new(step.X,r.Position.Y,step.Z))
     return n+math.pi*0.5
 end
--- บังคับ path ที่ถูกตอนอีเวนต์: ออกลู่วิ่ง → Rift → วาฬ
+-- บังคับ path ตอนอีเวนต์: ออกลู่ → (ใกล้วาฬ=ตรงวาฬ / ไกล=Rift→วาฬ)
 local function forceEventPath(why)
-    say(why or "บังคับ Rift → วาฬ")
+    say(why or "บังคับไปวาฬ")
     S.stuckAbort=false
     S.watchPos=nil
     leaveTreadmill()
@@ -559,17 +590,24 @@ local function forceEventPath(why)
         leaveTreadmill()
     end
     if not busy() then return false end
-    goPoint()
+    if nearWhale() then
+        goWhaleOnly("โซนวาฬแล้ว — ไม่ย้อน Rift")
+    else
+        goPoint()
+    end
     S.lastForceAt=os.clock()
     S.watchPos=nil
     return true
 end
--- ทุก 5 วิ: ตำแหน่งไม่ขยับ → เริ่มใหม่ (Rift→วาฬ)
+-- ทุก 5 วิ: ค้างระหว่างทาง/บนลู่ → ไปวาฬ (ไม่ย้อน Rift ถ้าอยู่โซนแล้ว)
+-- ยืนตีในโซนวาฬ = ไม่รีสตาร์ท
 local function startStuckWatch()
+    S.watchGen=(S.watchGen or 0)+1
+    local gen=S.watchGen
     task.spawn(function()
-        while S.run do
+        while S.run and S.watchGen==gen do
             task.wait(5)
-            if not S.run then break end
+            if not S.run or S.watchGen~=gen then break end
             if S.leaving or not inFarmWindow() then
                 S.watchPos=nil
             else
@@ -581,16 +619,14 @@ local function startStuckWatch()
                     if S.watchPos then
                         local moved=Vector3.new(p.X-S.watchPos.X,0,p.Z-S.watchPos.Z).Magnitude
                         if moved<8 then
-                            local hub=S.point or FALLBACK
-                            local nearHub=(Vector3.new(p.X-hub.X,0,p.Z-hub.Z).Magnitude)<=90
-                            -- โซนวาฬแล้วยืนตี ไม่รีสตาร์ท — บนลู่/ระหว่างทางค้าง = เริ่มใหม่
-                            if onTreadPad() or not nearHub then
-                                say(string.format("ค้างตำแหน่ง %.0f studs/5s — เริ่มใหม่ Rift→วาฬ",moved))
+                            if nearWhale(p) and not onTreadPad() then
+                                -- ยืนตี/รอสปอนในโซนวาฬ — ไม่ทำอะไร
+                                S.watchPos=p
+                            else
+                                say(string.format("ค้างตำแหน่ง %.0f studs/5s — ไปวาฬ (ไม่ย้อน Rift)",moved))
                                 S.stuckAbort=true
                                 S.repath=true
                                 S.watchPos=nil
-                            else
-                                S.watchPos=p
                             end
                         else
                             S.watchPos=p
@@ -780,11 +816,15 @@ local function farm5min()
         if S.stuckAbort or S.repath then
             S.stuckAbort=false
             S.repath=false
-            forceEventPath(string.format("เริ่มใหม่ (ค้าง/repath) เหลือ %ds — Rift→วาฬ",left))
+            if nearWhale() then
+                goWhaleOnly(string.format("ค้าง/repath โซนวาฬ — อยู่ต่อ ไม่ย้อน Rift | เหลือ %ds",left))
+            else
+                forceEventPath(string.format("เริ่มใหม่ (ค้าง/repath) เหลือ %ds",left))
+            end
             hub=S.point or FALLBACK
             if not S.run then break end
         elseif onTreadPad() then
-            forceEventPath(string.format("ยังบนลู่วิ่งตอนอีเวนต์ (เหลือ %ds) — ออกลู่→Rift→วาฬ",left))
+            forceEventPath(string.format("ยังบนลู่วิ่งตอนอีเวนต์ (เหลือ %ds) — ออกลู่→วาฬ",left))
             hub=S.point or FALLBACK
             if not S.run then break end
         end
@@ -797,9 +837,10 @@ local function farm5min()
             local _,_,me=char()
             local dHub=me and (me.Position-hub).Magnitude or 9999
             if dHub>80 then
-                local cool=(os.clock()-(S.lastForceAt or 0))>=18
-                if cool then
-                    forceEventPath(string.format("อีเวนต์เปิด ไม่เจอหุ่น dHub=%.0f — Rift→วาฬ",dHub))
+                -- ห้ามย้อน Rift — เดินตรงกลับ hub วาฬ
+                if (os.clock()-(S.lastForceAt or 0))>=12 then
+                    S.lastForceAt=os.clock()
+                    goWhaleOnly(string.format("ไม่เจอหุ่น dHub=%.0f — เดินกลับจุดวาฬ",dHub))
                     hub=S.point or FALLBACK
                 else
                     walk(hub,25,40,55)
@@ -837,7 +878,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.24 — กระโดด+เดินหน้า"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.25 — ไม่ย้อน Rift"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 52,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -864,7 +905,8 @@ local function beginAuto()
         S.tread=b
         say(string.format("จำลู่ +%s/step d=%.0f",tostring(rate and rate>0 and rate or "?"),d or -1))
     end
-    say("AUTO ON — ลู่เรทสูงสุดใน 120 | ค้าง5s=เริ่มใหม่")
+    say("v2.25 | โซนวาฬแล้วไม่ย้อน Rift | ยืนตีไม่รีสตาร์ท")
+    say("AUTO ON — ลู่เรทสูงสุดใน 120 | ค้างนอกโซน=ไปวาฬ")
     task.spawn(function()
         local ok,err=pcall(loop)
         if not ok then say("ERROR: "..tostring(err)) end
@@ -883,7 +925,7 @@ local function runPathTest()
     resolveRift(); resolvePoint()
     local b,d=nearestTreadmill()
     if b and d and d<=TREAD_ON_R then S.tread=b end
-    say(string.format("PATH — หลอกเวลาช่วง 0–5 (เหลืออีเวนต์จำลอง ~%ds) | ออกลู่→Rift→วาฬ",windowLeft()))
+    say(string.format("PATH — หลอกเวลาช่วง 0–5 (เหลืออีเวนต์จำลอง ~%ds) | ออกลู่→วาฬ",windowLeft()))
     task.spawn(function()
         local ok,err=pcall(function()
             forceEventPath("PATH ทดสอบ (เวลาหลอก 0–5) — ออกลู่→Rift→วาฬ")
@@ -918,7 +960,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.24 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.25 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -929,7 +971,7 @@ LP.CharacterAdded:Connect(function(ch)
     task.wait(0.5)
     pcall(function() ch:WaitForChild("HumanoidRootPart",8) end)
     setClip(true)
-    if S.run then S.repath=true; say("เกิดใหม่ — repath Rift→วาฬ") end
+    if S.run then S.repath=true; say("เกิดใหม่ — repath ไปวาฬ (ไม่ย้อน Rift ถ้าอยู่โซน)") end
 end)
 
 local function boot()
@@ -939,5 +981,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.24 | ออกลู่=กดกระโดด+เดินหน้าพร้อมกัน | ห้ามวิ่งพื้นบนลู่")
+say("v2.25 | โซนวาฬแล้วไม่ย้อน Rift | ยืนตีไม่รีสตาร์ท")
 task.spawn(boot)
