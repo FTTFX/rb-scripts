@@ -32,7 +32,7 @@ local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS = {}, 100000, 10000
 local selectedRarities = {}
 for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
-    selectedRarities[rarity] = rarity ~= "Common" and rarity ~= "Uncommon" and rarity ~= "Rare"
+    selectedRarities[rarity] = rarity == "Cosmic" or rarity == "Secret" or rarity == "Eternal" or rarity == "Divine"
 end
 local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 5, 100, 18, 6, 12, -8
 local BRAKE_SECS = 0.12
@@ -253,7 +253,7 @@ zoneLabel.Parent = panel
 
 local bScale = button("1.0 ▼", 10, 84, 74, Color3.fromRGB(40, 43, 49))
 local bZone = button("ALL ▼", 92, 84, 150, Color3.fromRGB(40, 43, 49))
-local bRarity = button("E+ ▼", 250, 84, 72, Color3.fromRGB(110, 70, 170))
+local bRarity = button("Cos,Sec,Ete,Div ▼", 250, 84, 72, Color3.fromRGB(110, 70, 170))
 
 local scaleMenu = Instance.new("Frame", gui)
 scaleMenu.Size = UDim2.new(0, 74, 0, 0)
@@ -1204,7 +1204,7 @@ local function rebuildRarityMenu()
             else
                 selectedRarities[rarity] = not selectedRarities[rarity]
             end
-            bRarity.Text = rarityText() .. " ▼"
+            bRarity.Text = rarityText() == "ALL" and "ALL ▼" or rarityText() .. " ▼"
             rebuildRarityMenu()
             say("Rarity = " .. rarityText())
         end)
