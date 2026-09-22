@@ -735,7 +735,7 @@ local function jogTreadTick(n)
 end
 
 local function waitEggOnTread()
-    local n, lastSay, lastMount, lastScan = 0, 0, 0, 0
+    local n, lastSay, lastMount, lastScan, staleRounds = 0, 0, 0, 0, 0
     if not onTreadmill() then returnTreadmill() end
     while S.run do
         -- ponytail: throttle สแกน 4s — AskFieldEggSnapshot คือ InvokeServer; egg feed จะบอกเมื่อไข่เกิดใหม่เช่นกัน
@@ -743,8 +743,19 @@ local function waitEggOnTread()
             lastScan = os.clock()
             local target = chooseTarget(true)
             if target then
+                staleRounds = 0
                 say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
                 return target
+            end
+            -- ไม่เจอ 2 รอบติด = ข้อมูลค้าง → ล้าง eggDB ทั้งก้อน ให้ snapshot/feed เติมใหม่
+            staleRounds = staleRounds + 1
+            if staleRounds >= 2 then
+                staleRounds = 0
+                local n0 = 0
+                for _ in pairs(S.eggDB) do n0 = n0 + 1 end
+                S.eggDB = {}
+                promptCacheAt = 0 -- บังคับ rescan Prompt ด้วย
+                say(string.format("ล้างข้อมูลไข่ค้าง %d ฟอง — รีเฟรชหาจริง", n0))
             end
         end
         if onTreadmill() then
@@ -1262,13 +1273,16 @@ local function farmTarget(target)
     local reachedTarget = goViaRift(target.pos, APPROACH_R, 120, target.cat)
     if not reachedTarget then
         say('ไปถึงไข่ไม่สำเร็จ')
+        S.eggDB[tostring(target.uid or "")] = nil -- ล้างเป้าเน่า ไม่ไล่ซ้ำ
         return
     end
     stopMove()
     if not S.run then return end
     if not stealEggLikeRift(target) then
-        say('ขโมยไม่สำเร็จ — รอรอบหน้า')
+        say('ขโมยไม่สำเร็จ — เป้านี้ค้าง/หาย ล้างแล้วรีสแกน')
         S.expectedUid = nil
+        S.eggDB[tostring(target.uid or "")] = nil
+        skipTarget(target, 45, "steal ไม่ติด")
         return
     end
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
