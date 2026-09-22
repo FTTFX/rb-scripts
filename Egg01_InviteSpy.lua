@@ -1,6 +1,5 @@
--- Egg01 Invite Spy v1.3
--- ดัก TeleportToPlaceInstance จากปุ่มเข้าร่วม → ได้ JobId
--- hook ต้อง defer log ห้าม JSONEncode ก่อน old (จะพัง Teleport)
+-- Egg01 Invite Spy v1.4
+-- กดเข้าร่วมบน toast → copy JobId+log ทันทีก่อน warp (defer ไม่ทัน)
 
 if _G.EGG01_INVITE_SPY then
     pcall(function() _G.EGG01_INVITE_SPY.gui:Destroy() end)
@@ -293,6 +292,39 @@ local function findToastCards()
     end
 end
 
+local function rawCopy(t)
+    -- ใช้ใน hook ก่อน warp — ห้าม HttpService/namecall
+    local c = setclipboard or toclipboard
+    if c then pcall(c, tostring(t)) end
+end
+
+local function persistServer(placeId, jobId, extra)
+    local place = tostring(placeId or game.PlaceId)
+    local job = tostring(jobId or "")
+    local lines = {
+        "=== Egg01 InviteSpy AUTO ===",
+        "time=" .. os.date("%Y-%m-%d %H:%M:%S"),
+        "PlaceId=" .. place,
+        "JobId=" .. job,
+        "link=https://www.roblox.com/games/start?placeId=" .. place .. "&gameInstanceId=" .. job,
+    }
+    if extra then table.insert(lines, tostring(extra)) end
+    -- แนบ log ล่าสุดด้วย (ถ้ายังอยู่)
+    if S.log and #S.log > 0 then
+        table.insert(lines, "--- log ---")
+        for i = 1, math.min(10, #S.log) do
+            table.insert(lines, S.log[i])
+        end
+    end
+    local blob = table.concat(lines, "\n")
+    rawCopy(blob)
+    _G.EGG01_LAST_SERVER = { placeId = place, jobId = job, text = blob, at = os.clock() }
+    if writefile then
+        pcall(writefile, "Egg01_LastServer.txt", blob)
+    end
+    return blob
+end
+
 local function installTeleportHook()
     if S._tpHook or not hookmetamethod or not getnamecallmethod then return end
     S._tpHook = true
@@ -303,8 +335,7 @@ local function installTeleportHook()
             harvestValue("arg" .. i, a, {})
             local s = tostring(a)
             if s:find("-") and #s > 20 then
-                say("TP JobId=" .. s)
-                copyText(s)
+                say("TP JobId=" .. s .. " (auto-copied)")
                 S.last = S.last or {}
                 S.last.jobId = s
                 if typeof(args[1]) == "number" then S.last.placeId = args[1] end
@@ -319,10 +350,26 @@ local function installTeleportHook()
     local wrapper = function(self, ...)
         local method = getnamecallmethod()
         local args = { ... }
-        -- ห้ามเรียก namecall อื่นก่อน old — จะทำให้ method เพี้ยนเป็น JSONEncode
+        -- copy ทันทีก่อน old/warp — ห้าม defer (ไม่งั้น GUI/log หาย)
         if typeof(self) == "Instance" and self == TeleportService then
             local m = tostring(method)
             if m:find("Teleport", 1, true) then
+                local place, job
+                for _, a in ipairs(args) do
+                    if typeof(a) == "number" and not place then place = a end
+                    local s = tostring(a)
+                    if #s > 20 and string.find(s, "-", 1, true) then
+                        job = s
+                    end
+                    if typeof(a) == "Instance" and a.ClassName == "TeleportOptions" then
+                        local sid
+                        pcall(function() sid = a.ServerInstanceId end)
+                        if sid and tostring(sid) ~= "" then job = tostring(sid) end
+                    end
+                end
+                if job then
+                    persistServer(place or args[1], job, "method=" .. m)
+                end
                 task.defer(onTp, m, args)
             end
         end
@@ -330,7 +377,7 @@ local function installTeleportHook()
     end
     if newcclosure then wrapper = newcclosure(wrapper) end
     old = hookmetamethod(game, "__namecall", wrapper)
-    say("Teleport hook ON (defer-safe)")
+    say("Teleport hook ON — กดเข้าร่วม = auto copy JobId+log ทันที")
 end
 
 -- GUI
@@ -355,7 +402,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -40, 0, 22)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Invite Spy v1.3 — JobId จาก toast OK"
+title.Text = "Invite Spy v1.4 — auto copy ก่อน warp"
 title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -472,5 +519,5 @@ task.spawn(function()
     end
 end)
 
-say("v1.3 — กดเข้าร่วมบน toast → จับ JobId (JOIN แก้แล้ว)")
-say("JobId ที่เคยจับได้: e37dfd64-b527-4295-b677-cf1d3f6251c3")
+say("v1.4 — กดเข้าร่วม = auto copy JobId+Place+log ก่อนวาร์ป")
+say("ไฟล์สำรอง: Egg01_LastServer.txt (ถ้า executor มี writefile)")
