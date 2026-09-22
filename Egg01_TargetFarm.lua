@@ -31,7 +31,7 @@ local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
-local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS, DIST_POINTS = {}, 100000, 10000, 80
+local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS, DIST_POINTS = {}, 100000, 10000, 10
 local selectedRarities = {}
 for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
@@ -528,7 +528,8 @@ local function chooseTarget(quiet)
                 local dist = (pos - root.Position).Magnitude
                 local rarityScore = (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
                 local scaleScore = scale * scale * SCALE_SQUARED_POINTS
-                local score = rarityScore + scaleScore - math.min(dist, 99999) * DIST_POINTS
+                -- rarity เท่ากัน: ไกลก่อน — แต้มระยะเป็นบวก (×10, สูงสุด ~55k < ช่องว่างระดับ 100k จึงไม่มีทางกลบ rarity)
+                local score = rarityScore + scaleScore + math.min(dist, 99999) * DIST_POINTS
                 -- rarity เท่ากัน: เอาไกลก่อน (ของใกล้ค่อยเก็บทีหลัง ได้ทั้งคู่ในเซสชันเดียว)
                 if not best or score > best.score or (score == best.score and dist > best.dist) then
                     best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
@@ -1161,7 +1162,23 @@ local function returnHome()
         end
         if not S.carrying then
             local dropPos = S.droppedPos
-            if dropPos and not recoveredOnce then
+            if not dropPos then
+                -- race: Carry หลุดมาก่อน Shifted ส่งพิกัด — รอสั้น ๆ แล้วค่อยเลิก (ไข่ d=66 กู้คุ้มกว่าเลิก)
+                local t0 = os.clock()
+                while S.run and os.clock() - t0 < 3 do
+                    if S.carrying then break end
+                    if S.droppedPos then break end
+                    task.wait(0.1)
+                end
+                dropPos = S.droppedPos
+                if S.carrying then
+                    -- กลับมือในช่วงรอ — ถือต่อ วิ่งต่อ
+                elseif not dropPos then
+                    say('ไข่หล่นระหว่างทาง — ไม่ไล่เก็บ (แบบ RiftFarm)')
+                    return false
+                end
+            end
+            if dropPos and not recoveredOnce and not S.carrying then
                 recoveredOnce = true
                 say('ไข่หลุด — ตรวจว่ายังอยู่จุดหลุด')
                 local ok, why = recoverDroppedEgg(dropPos)
@@ -1172,9 +1189,6 @@ local function returnHome()
                     say('กู้ไม่ได้ (' .. tostring(why) .. ') — ไม่ไล่ กลับ/สแกนใหม่')
                     return false
                 end
-            else
-                say('ไข่หล่นระหว่างทาง — ไม่ไล่เก็บ (แบบ RiftFarm)')
-                return false
             end
         end
         h, r = humRoot()
