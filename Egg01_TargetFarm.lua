@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.11 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- Egg01 Target Farm v3.12 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
--- v3.11: rarity เป็นหลัก — Div/Ete ชนะทุกเงื่อนไข ระยะเป็นรอง (DIST_POINTS=40)
+-- v3.12: rarity หลัก Div>Ete>Sec>Cos | ระดับเดียวกัน=ไกลก่อน (+dist×10) | กู้ไข่หลุด: eggDB+รอพิกัด 3 วิ+เว้นเพื่อน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -309,7 +309,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.11 (Rarity-first)"
+title.Text = "Egg01 Target Farm v3.12 (Rarity-first, far-first)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -1474,7 +1474,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.11 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.12 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1505,4 +1505,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.11 | rarity หลัก: Div ก่อนเสมอ ระยะเป็นรอง | กู้ไข่แม่น")
+say("v3.12 | Div>Ete>Sec>Cos ไกลก่อน | กู้ไข่หลุดแม่น (รอพิกัด 3 วิ)")
