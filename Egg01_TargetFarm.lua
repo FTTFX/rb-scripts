@@ -954,6 +954,7 @@ local function skipTarget(target, seconds, reason)
 end
 
 -- Networking บางรอบยังไม่ถูกสร้างตอน inject; เรียกซ้ำขณะวิ่งกลับได้
+-- หมายเหตุ: RE นี้ server แจ้งทุกคนถือไข่ ไม่ใช่ของเราอย่างเดียว — เช็ค expectedUid ของเราเท่านั้น
 local function attachCarryListener()
     if S.carryConn then return true end
     local carry = findCarryEvent()
@@ -963,23 +964,20 @@ local function attachCarryListener()
         if typeof(row) == "table" and row.IsCarrying ~= nil then
             S.carrying = row.IsCarrying == true
             S.carryLostAt = S.carrying and 0 or os.clock()
-            -- จำ UID ในมือตลอด — เป็นคีย์หลักว่าเรากำลังแบกฟองไหน
-            if S.carrying and row.Uid then
-                S.carriedUid = tostring(row.Uid)
-                if S.expectedUid and S.carriedUid ~= tostring(S.expectedUid) then
+            if row.AreaId then S.eggArea = row.AreaId end
+            if S.carrying then S.returnPaused, S.dropBrakeUsed = false, false end
+            if S.carrying and S.expectedUid and row.Uid then
+                if tostring(row.Uid) == tostring(S.expectedUid) then
+                    S.carryVerified = true
+                    say("server: ถือ UID เป้าหมายถูกต้อง")
+                else
                     S.carryMismatchUid = row.Uid
                     S.carrying = false
                     say("server: UID ที่ถือไม่ตรงเป้า — หยุด")
-                    return
                 end
-                S.carryVerified = true
-                if not S.expectedUid then say("server: ถือ " .. tostring(row.AssetCategory or S.carriedUid)) end
-            elseif not S.carrying then
-                S.carryVerified = false
-            end
-            if row.AreaId then S.eggArea = row.AreaId end
-            if S.carrying then S.returnPaused, S.dropBrakeUsed = false, false end
-            if not S.carrying then
+            elseif S.carrying then
+                say("server: ถือไข่แล้ว")
+            else
                 if S.returning then
                     S.returnPaused = true
                     if not S.dropBrakeUsed then
@@ -1284,7 +1282,7 @@ local function farmTarget(target)
         say('ขโมยไม่สำเร็จ — เป้านี้ค้าง/หาย ล้างแล้วรีสแกน')
         S.expectedUid = nil
         S.eggDB[tostring(target.uid or "")] = nil
-        skipTarget(target, 45, "steal ไม่ติด")
+        skipTarget(target, 15, "steal ไม่ติด")
         return
     end
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
