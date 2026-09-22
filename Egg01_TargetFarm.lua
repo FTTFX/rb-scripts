@@ -735,27 +735,22 @@ local function jogTreadTick(n)
 end
 
 local function waitEggOnTread()
-    local n, lastSay, lastMount, lastScan, staleRounds = 0, 0, 0, 0, 0
+    local n, lastSay, lastMount, lastScan, lastPurge = 0, 0, 0, 0, 0
     if not onTreadmill() then returnTreadmill() end
     while S.run do
-        -- ponytail: throttle สแกน 4s — AskFieldEggSnapshot คือ InvokeServer; egg feed จะบอกเมื่อไข่เกิดใหม่เช่นกัน
-        if os.clock() - lastScan >= 4 then
+        if os.clock() - lastScan >= 1 then
             lastScan = os.clock()
             local target = chooseTarget(true)
             if target then
-                staleRounds = 0
                 say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
                 return target
             end
-            -- ไม่เจอ 2 รอบติด = ข้อมูลค้าง → ล้าง eggDB ทั้งก้อน ให้ snapshot/feed เติมใหม่
-            staleRounds = staleRounds + 1
-            if staleRounds >= 2 then
-                staleRounds = 0
-                local n0 = 0
-                for _ in pairs(S.eggDB) do n0 = n0 + 1 end
-                S.eggDB = {}
-                promptCacheAt = 0 -- บังคับ rescan Prompt ด้วย
-                say(string.format("ล้างข้อมูลไข่ค้าง %d ฟอง — รีเฟรชหาจริง", n0))
+            -- สแกนเปล่า = ข้อมูลค้าง → ล้าง eggDB+Prompt ทันที (ข้อความ throttle กัน spam)
+            S.eggDB = {}
+            promptCacheAt = 0
+            if os.clock() - lastPurge >= 5 then
+                lastPurge = os.clock()
+                say("ไม่เจอเป้า — ล้างข้อมูล รีเฟรชหาจริงทุก 1 วิ")
             end
         end
         if onTreadmill() then
