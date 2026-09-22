@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.25 — โซนวาฬไม่ย้อน Rift | กระโดด+เดินหน้า | ก้าวขึ้น
+-- Egg01 Experiment Farm v2.26 — ขากลับผ่าน Rift | กระโดด+เดินหน้า | ก้าวขึ้น
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -889,7 +889,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.25 — ไม่ย้อน Rift"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.26 — กลับผ่าน Rift"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 52,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -916,7 +916,7 @@ local function beginAuto()
         S.tread=b
         say(string.format("จำลู่ +%s/step d=%.0f",tostring(rate and rate>0 and rate or "?"),d or -1))
     end
-    say("v2.25 | โซนวาฬแล้วไม่ย้อน Rift | ยืนตีไม่รีสตาร์ท")
+    say("v2.26 | ขากลับผ่าน Rift กันติดกำแพง | ยืนตีไม่รีสตาร์ท")
     say("AUTO ON — ลู่เรทสูงสุดใน 120 | ค้างนอกโซน=ไปวาฬ")
     task.spawn(function()
         local ok,err=pcall(loop)
@@ -971,7 +971,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.25 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.26 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -992,5 +992,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.25 | โซนวาฬแล้วไม่ย้อน Rift | ยืนตีไม่รีสตาร์ท")
+say("v2.26 | ขากลับผ่าน Rift กันติดกำแพง | ยืนตีไม่รีสตาร์ท")
 task.spawn(boot)
