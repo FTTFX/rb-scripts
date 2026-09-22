@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.9.7 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- Egg01 Target Farm v3.10 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
--- ยิง Steal แล้ววิ่งกลับทันที; Carry event ใช้ตรวจไข่หลุดเมื่อมี
+-- v3.10: กู้ไข่หลุดแบบแม่น — eggDB realtime + ตรวจ State/พิกัดก่อนกู้ + เว้นเพื่อนที่จุดไข่
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -11,6 +11,9 @@ if _G.EGG01_TARGET_FARM then
     if _G.EGG01_TARGET_FARM.conns then
         for _, c in ipairs(_G.EGG01_TARGET_FARM.conns) do pcall(function() c:Disconnect() end) end
     end
+    if _G.EGG01_TARGET_FARM.eggConns then
+        for _, c in ipairs(_G.EGG01_TARGET_FARM.eggConns) do pcall(function() c:Disconnect() end) end
+    end
 end
 
 local Players = game:GetService("Players")
@@ -20,7 +23,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0 }
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {} }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -80,6 +83,7 @@ local function posOf(row)
         if typeof(v) == "Vector3" then return v end
     end
 end
+
 
 local function findNet(name, className)
     local packages = RS:FindFirstChild("Packages")
@@ -167,6 +171,95 @@ local function tryDropHeld()
     task.wait(0.45)
 end
 
+-- ===== eggDB realtime (แบบ RiftFarm) — รู้ตำแหน่ง/สถานะไข่ทุกฟอง =====
+local function upsertEgg(row, uidHint)
+    if typeof(row) ~= "table" then return false end
+    local uid = row.Uid or uidHint
+    if not uid then return false end
+    uid = tostring(uid)
+    local e = S.eggDB[uid] or { uid = uid }
+    if row.AssetCategory then e.cat = tostring(row.AssetCategory) end
+    if row.AreaId then e.area = tostring(row.AreaId) end
+    if row.State then e.state = tostring(row.State) end
+    local p = posOf(row)
+    if p then e.pos = p end
+    e.t = os.clock()
+    S.eggDB[uid] = e
+    return true
+end
+
+local function ingestEggs(value)
+    if typeof(value) ~= "table" then return 0 end
+    local n = 0
+    local records = value.Records or value.records
+    if typeof(records) == "table" then
+        for k, row in pairs(records) do
+            if upsertEgg(row, typeof(k) == "string" and k or nil) then n = n + 1 end
+        end
+        return n
+    end
+    if value[1] then
+        for _, row in ipairs(value) do
+            if typeof(row) == "table" and (row.Records or row.records) then n = n + ingestEggs(row)
+            elseif upsertEgg(row) then n = n + 1 end
+        end
+        return n
+    end
+    if upsertEgg(value) then return 1 end
+    for k, row in pairs(value) do
+        if upsertEgg(row, typeof(k) == "string" and k or nil) then n = n + 1 end
+    end
+    return n
+end
+
+local function attachEggFeed()
+    if #S.eggConns > 0 then return true end
+    local function bind(name, fn)
+        local e = findNet(name)
+        if e and (e:IsA("RemoteEvent") or e:IsA("UnreliableRemoteEvent")) then
+            local ok, conn = pcall(function() return e.OnClientEvent:Connect(fn) end)
+            if ok and conn then S.eggConns[#S.eggConns + 1] = conn; return true end
+        end
+        return false
+    end
+    bind("FieldEggShifted", function(row) upsertEgg(row) end)
+    bind("FieldEggBatchShifted", function(v) ingestEggs(v) end)
+    bind("FieldEggGone", function(row)
+        local uid = typeof(row) == "table" and row.Uid or row
+        if uid then S.eggDB[tostring(uid)] = nil end
+    end)
+    return #S.eggConns > 0
+end
+
+-- ไข่ยังอยู่จุดหลุดจริงไหม: มีใน DB + State=Dropped + พิกัดใกล้จุดหลุด
+local function eggStillDropped(uid, dropPos)
+    if not uid then return false, "ไม่มี UID" end
+    local e = S.eggDB[tostring(uid)]
+    if not e then return false, "หายจาก DB (ถูกเก็บ/หาย)" end
+    if e.state and e.state ~= "Dropped" then return false, "State=" .. e.state end
+    if dropPos and e.pos then
+        local d = dist2(e.pos, dropPos)
+        if d > 25 then return false, string.format("ย้ายไป %.0f studs", d) end
+    end
+    return true
+end
+
+-- ใครอยู่ใกล้จุดไข่ (กันแย่ง/กันเดินทับเพื่อน)
+local function nearestPlayerTo(pos, ignoreLP)
+    local best, bestD
+    for _, pl in ipairs(Players:GetPlayers()) do
+        if not ignoreLP or pl ~= LP then
+            local c = pl.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            if r then
+                local d = dist2(r.Position, pos)
+                if not bestD or d < bestD then best, bestD = pl, d end
+            end
+        end
+    end
+    return best, bestD
+end
+
 local function lookingLikeCarry()
     local c = LP.Character
     if not c then return false end
@@ -212,7 +305,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.9.7 (Rift steal flow)"
+title.Text = "Egg01 Target Farm v3.10 (Drop Guard)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -390,6 +483,9 @@ local function chooseTarget(quiet)
     local records = result.Records or result.records or result
     local _, root = humRoot()
     if typeof(records) ~= "table" or not root then return nil end
+    for key, row in pairs(records) do
+        if typeof(row) == "table" then upsertEgg(row, typeof(key) == "string" and key or nil) end
+    end
     local rarityMap, categoryCount = mapRarities(records)
     local best, eligible, positioned, skipped = nil, 0, 0, 0
     local foundZones = { ALL = true }
@@ -882,6 +978,8 @@ local function attachShiftListener()
     local shifted = findNet("FieldEggShifted")
     if not shifted or not (shifted:IsA("RemoteEvent") or shifted:IsA("UnreliableRemoteEvent")) then return false end
     S.shiftConn = shifted.OnClientEvent:Connect(function(row)
+        -- เก็บลง eggDB ก่อน (ใช้ร่วมกับ Return Guard)
+        upsertEgg(row)
         if typeof(row) ~= "table" or not S.returning or S.carriedUid == nil then return end
         -- เพิ่งกู้/steal สำเร็จ — อย่าให้ Dropped เก่ามาค้างวิ่ง
         if os.clock() < (S.stealGraceUntil or 0) then return end
@@ -905,21 +1003,52 @@ local function attachShiftListener()
     return true
 end
 
--- กู้ไข่หลุด: RF UID เดิม → Prompt ใกล้จุดหลุด → ต้อง carryVerified (แบบ RiftFarm)
+-- กู้ไข่หลุด v3.10: ตรวจ eggDB ก่อน — ไข่ยัง Dropped อยู่จุดเดิม + เว้นเพื่อนที่จุด → ค่อย RF/Prompt
 local function recoverDroppedEgg(dropPos)
     stopMove()
     attachCarryListener()
+    attachEggFeed()
     local uid = S.carriedUid or S.expectedUid
-    if not dropPos and not uid then return false end
-    local goal = dropPos
+    if not dropPos and not uid then return false, "ไม่มีพิกัด/UID" end
+    local still, why = eggStillDropped(uid, dropPos)
+    if not still then
+        say("กู้ไม่ก็ไข่หายแล้ว (" .. tostring(why) .. ") — ไม่ไล่")
+        return false, tostring(why)
+    end
+    -- เพื่อนอยู่ใกล้จุดไข่: รอให้ห่าง (จำกัด 2 รอบ รอรวม ~4 วิ)
+    local checkPos = dropPos or (uid and S.eggDB[tostring(uid)] and S.eggDB[tostring(uid)].pos)
+    for attempt = 1, 2 do
+        if not checkPos then break end
+        local pl, pd = nearestPlayerTo(checkPos, true)
+        if not pl or not pd or pd > 10 then break end
+        say(string.format("เพื่อน %s อยู่ใกล้จุดไข่ %.0f — รอ (%d/2)", pl.Name, pd, attempt))
+        local t0 = os.clock()
+        while S.run and os.clock() - t0 < 2 do
+            local p2, d2 = nearestPlayerTo(checkPos, true)
+            if not p2 or not d2 or d2 > 10 then break end
+            task.wait(0.1)
+        end
+        if not S.run then return false, "STOP" end
+        still, why = eggStillDropped(uid, dropPos)
+        if not still then say("ไข่หายระหว่างรอ (" .. tostring(why) .. ")"); return false, tostring(why) end
+    end
+    -- ใช้พิกัดสดจาก DB ถ้ามี (แม่นกว่าจุดหลุดเดิม)
+    local e = uid and S.eggDB[tostring(uid)]
+    local goal = (e and e.pos) or dropPos
     if goal then
         local np = nearestStealPos(goal)
         if np then goal = np end
         if not walkSlow(goal, 5, 28, 55) then
             say('วิ่งไปจุดหลุดไม่ถึง')
-            return false
+            return false, "เดินไม่ถึง"
         end
         stopMove()
+        -- ถึงแล้วเช็คอีกรอบ: อาจถูกเก็บระหว่างเดิน
+        still, why = eggStillDropped(uid, goal)
+        if not still then
+            say("ถึงจุดแล้วแต่ไข่หาย (" .. tostring(why) .. ") — เลิก")
+            return false, tostring(why)
+        end
     end
     S.expectedUid = uid
     S.carryVerified = false
@@ -931,17 +1060,18 @@ local function recoverDroppedEgg(dropPos)
         while S.run and os.clock() - t0 < 1.2 do
             if S.carryVerified and S.carrying then
                 markHolding('rf-กู้')
-                return true
+                return true, "carry-uid"
             end
             if S.carryMismatchUid then tryDropHeld(); S.expectedUid = uid; break end
             task.wait(0.05)
         end
     end
-    local fakeT = { pos = dropPos or goal, eggPos = dropPos or goal, uid = uid }
+    local fakeT = { pos = goal or dropPos, eggPos = goal or dropPos, uid = uid }
     local pick, md, gap, detail = choosePrompt(fakeT)
-    if not pick and dropPos then
+    if not pick and (dropPos or goal) then
+        local base = dropPos or goal
         for _, off in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0), Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-            if walkSlow(dropPos + off, 2, 2.5, 10) then
+            if walkSlow(base + off, 2, 2.5, 10) then
                 pick, md, gap, detail = choosePrompt(fakeT)
                 if pick then break end
             end
@@ -949,7 +1079,7 @@ local function recoverDroppedEgg(dropPos)
     end
     if not pick then
         say('กู้ไม่เจอ Prompt (' .. tostring(detail) .. ')')
-        return false
+        return false, "ไม่มี Prompt"
     end
     local part = pick.Parent and (pick.Parent:IsA('BasePart') and pick.Parent or pick.Parent:FindFirstChildWhichIsA('BasePart', true))
     if part then walkSlow(part.Position, 3.2, 6, 14); stopMove() end
@@ -960,14 +1090,15 @@ local function recoverDroppedEgg(dropPos)
     local ok, why = waitCarryConfirm(2.0, fakeT)
     if ok then markHolding(why); return true end
     if S.carryMismatchUid then tryDropHeld(); say('กู้ได้คนละฟอง — ทิ้ง') end
-    return false
+    return false, "steal ไม่ติด"
 end
 
--- กลับ HOME: ถือถึงวิ่ง | หล่น+มีพิกัด = กู้ครั้งเดียว | ไม่มีพิกัด = ไม่ไล่ (RiftFarm)
+-- กลับ HOME: ถือถึงวิ่ง | หล่น=ตรวจ eggDB ก่อน ไข่ยังอยู่=กู้ทันที | หาย/กู้ไม่ติด=สแกนเป้าใหม่ ไม่เดินเปล่า
 local function returnHome()
     local deadline, lastReport = os.clock() + 180, 0
     S.impactHopUsed, S.lastReturnDist = false, nil
     resolveRift(true)
+    attachEggFeed()
     local phase = 'rift'
     local recoveredOnce = false
     while S.run and os.clock() < deadline do
@@ -990,11 +1121,13 @@ local function returnHome()
             local dropPos = S.droppedPos
             if dropPos and not recoveredOnce then
                 recoveredOnce = true
-                say('ไข่หลุด มีพิกัด — กู้ครั้งเดียว')
-                if recoverDroppedEgg(dropPos) and S.carrying and (not S.carryAvailable or S.carryVerified) then
+                say('ไข่หลุด — ตรวจว่ายังอยู่จุดหลุด')
+                local ok, why = recoverDroppedEgg(dropPos)
+                if ok and S.carrying and (not S.carryAvailable or S.carryVerified) then
                     S.returnPaused = false
+                    say('กู้ได้แล้ว — วิ่งกลับต่อ')
                 else
-                    say('กู้ไม่สำเร็จ — ไม่ไล่เก็บต่อ')
+                    say('กู้ไม่ได้ (' .. tostring(why) .. ') — ไม่ไล่ กลับ/สแกนใหม่')
                     return false
                 end
             else
@@ -1038,6 +1171,7 @@ end
 -- ยิงไข่แบบ RiftFarm one() / Egg01_MOTION_BRAKE.md
 local function stealEggLikeRift(t)
     attachCarryListener()
+    attachEggFeed()
     local eggPos = t.pos
     local walkPos = nearestStealPos(eggPos) or eggPos
     say(string.format('เข้าไข่ UID (rad=5 slow=55) @%.0f,%.0f', walkPos.X, walkPos.Z))
@@ -1252,6 +1386,19 @@ end
 if not attachShiftListener() then
     lines[#lines + 1] = "ไม่พบ FieldEggShifted — Return Guard รอระหว่างวิ่งกลับ"
 end
+if not attachEggFeed() then
+    lines[#lines + 1] = "รอ eggDB feed (Shifted/Batch/Gone)…"
+    task.spawn(function()
+        for _ = 1, 20 do
+            if attachEggFeed() then
+                lines[#lines + 1] = "eggDB feed พร้อม"
+                return
+            end
+            task.wait(1)
+        end
+        lines[#lines + 1] = "ไม่พบ egg feed — Drop Guard ใช้ Snapshot เท่านั้น"
+    end)
+end
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = humRoot()
@@ -1267,13 +1414,14 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.9.7 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.10 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
     S.run = false
     setClip(false)
     for _, c in ipairs(S.conns) do pcall(function() c:Disconnect() end) end
+    for _, c in ipairs(S.eggConns) do pcall(function() c:Disconnect() end) end
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
@@ -1285,4 +1433,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.9.7 | ยิงไข่แบบ RiftFarm: RF→Prompt≤18→UID | หล่น=กู้1ครั้ง/ไม่ไล่")
+say("v3.10 | กู้ไข่หลุดแม่น: eggDB+ตรวจก่อนไล่+เว้นเพื่อน")
