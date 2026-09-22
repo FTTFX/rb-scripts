@@ -540,10 +540,21 @@ local function returnTreadmill()
     local target=treadStandPos(bottom)
     if not target then return false end
     local _,_,r=char()
-    local lim=r and math.clamp((target-r.Position).Magnitude/18+25,45,200) or 90
+    -- ขากลับผ่าน Rift ก่อน เหมือนขาไป — กันติดกำแพงตรงกลางแมพ
+    if r then
+        local rift=findRift()
+        local dR=(Vector3.new(rift.X,r.Position.Y,rift.Z)-r.Position).Magnitude
+        local dT=(Vector3.new(target.X,r.Position.Y,target.Z)-r.Position).Magnitude
+        if dR>25 and dR+150<dT then
+            say(string.format("กลับผ่าน Rift d=%.0f → ลู่ d≈%.0f (กันติดกำแพง)",dR,dT))
+            if not walkFar(rift,22,math.clamp(dR/16+50,60,400),55) and not busy() then return false end
+        end
+    end
+    local _,_,r2=char()
+    local lim=r2 and math.clamp((target-r2.Position).Magnitude/18+25,45,200) or 90
     say(string.format("ไปลู่เรทสูงสุด +%s/step d=%.0f%s",
         tostring(rate and rate>0 and rate or "?"),
-        d or (r and (bottom.Position-r.Position).Magnitude) or -1,
+        d or (r2 and (bottom.Position-r2.Position).Magnitude) or -1,
         S.lockedTread==bottom and " (LOCK)" or ""))
     walk(target,5,lim,55)
     if onTreadPad() then
