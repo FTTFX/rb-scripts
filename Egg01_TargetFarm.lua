@@ -85,7 +85,9 @@ local function posOf(row)
 end
 
 
+local netCache = {}
 local function findNet(name, className)
+    if netCache[name] then return netCache[name] end
     local packages = RS:FindFirstChild("Packages")
     local networking = packages and packages:FindFirstChild("Networking")
     local exact, fuzzy
@@ -110,7 +112,9 @@ local function findNet(name, className)
             end
         end
     end
-    return exact or fuzzy
+    local hit = exact or fuzzy
+    netCache[name] = hit -- ponytail: nil ก็แคช — remote ไม่หายไปกลางเซสชัน; ถ้าเกมสร้างช้า ให้ลบแคชตอน inject ช้า
+    return hit
 end
 
 -- FieldEggCarry ต้องเป็น RE (อย่าไปจับ AskFieldEggCarry RF)
@@ -421,7 +425,9 @@ local function rarityFromConfig(row)
     return cleanRarity(rarity)
 end
 
+local rarityCache = nil -- ponytail: แคช getgc scan — config rarity คงที่ทั้งเซสชัน; ล้างเมื่อไหร่ก็ได้ถ้าเกมอัปเดตกลางเซสชัน
 local function mapRarities(records)
+    if rarityCache then return rarityCache, rarityCache.n end
     local categories, found = {}, {}
     for _, row in pairs(records) do
         if typeof(row) == "table" and row.AssetCategory then categories[tostring(row.AssetCategory)] = true end
@@ -447,10 +453,15 @@ local function mapRarities(records)
     end
     local n = 0
     for _ in pairs(found) do n = n + 1 end
+    rarityCache = found; rarityCache.n = n
     return found, n
 end
 
+local promptCache, promptCacheAt = {}, 0
 local function getPrompts()
+    -- ponytail: แคช 0.5s — GetDescendants ทั้ง workspace ต่อครั้ง; ถ้าไข่เกิดใหม่เร็วกว่า ลดเวลา
+    local now = os.clock()
+    if now - promptCacheAt < 0.5 then return promptCache end
     local out = {}
     for _, item in ipairs(workspace:GetDescendants()) do
         if item:IsA("ProximityPrompt") and item.Enabled and tostring(item.ActionText):lower():find("steal", 1, true) then
@@ -459,6 +470,7 @@ local function getPrompts()
             if part then out[#out + 1] = { pp = item, pos = part.Position } end
         end
     end
+    promptCache, promptCacheAt = out, now
     return out
 end
 
@@ -723,13 +735,17 @@ local function jogTreadTick(n)
 end
 
 local function waitEggOnTread()
-    local n, lastSay, lastMount = 0, 0, 0
+    local n, lastSay, lastMount, lastScan = 0, 0, 0, 0
     if not onTreadmill() then returnTreadmill() end
     while S.run do
-        local target = chooseTarget(true)
-        if target then
-            say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
-            return target
+        -- ponytail: throttle สแกน 4s — AskFieldEggSnapshot คือ InvokeServer; egg feed จะบอกเมื่อไข่เกิดใหม่เช่นกัน
+        if os.clock() - lastScan >= 4 then
+            lastScan = os.clock()
+            local target = chooseTarget(true)
+            if target then
+                say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
+                return target
+            end
         end
         if onTreadmill() then
             n = jogTreadTick(n)
