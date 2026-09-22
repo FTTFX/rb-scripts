@@ -963,20 +963,23 @@ local function attachCarryListener()
         if typeof(row) == "table" and row.IsCarrying ~= nil then
             S.carrying = row.IsCarrying == true
             S.carryLostAt = S.carrying and 0 or os.clock()
-            if row.AreaId then S.eggArea = row.AreaId end
-            if S.carrying then S.returnPaused, S.dropBrakeUsed = false, false end
-            if S.carrying and S.expectedUid and row.Uid then
-                if tostring(row.Uid) == tostring(S.expectedUid) then
-                    S.carryVerified = true
-                    say("server: ถือ UID เป้าหมายถูกต้อง")
-                else
+            -- จำ UID ในมือตลอด — เป็นคีย์หลักว่าเรากำลังแบกฟองไหน
+            if S.carrying and row.Uid then
+                S.carriedUid = tostring(row.Uid)
+                if S.expectedUid and S.carriedUid ~= tostring(S.expectedUid) then
                     S.carryMismatchUid = row.Uid
                     S.carrying = false
                     say("server: UID ที่ถือไม่ตรงเป้า — หยุด")
+                    return
                 end
-            elseif S.carrying then
-                say("server: ถือไข่แล้ว")
-            else
+                S.carryVerified = true
+                if not S.expectedUid then say("server: ถือ " .. tostring(row.AssetCategory or S.carriedUid)) end
+            elseif not S.carrying then
+                S.carryVerified = false
+            end
+            if row.AreaId then S.eggArea = row.AreaId end
+            if S.carrying then S.returnPaused, S.dropBrakeUsed = false, false end
+            if not S.carrying then
                 if S.returning then
                     S.returnPaused = true
                     if not S.dropBrakeUsed then
@@ -1285,6 +1288,7 @@ local function farmTarget(target)
         return
     end
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
+    S.expectedUid = target.uid
     S.stealGraceUntil = os.clock() + 2.5
     S.carrying = true
     if returnHome() then
@@ -1459,6 +1463,18 @@ LP.CharacterAdded:Connect(function(ch)
     task.wait(0.5)
     pcall(function() ch:WaitForChild("HumanoidRootPart", 8) end)
     setClip(true)
+    -- respawn = ไข่ที่ถือหาย + event อาจล้าหลัง → รีเซ็ตสถานะถือ ให้ลูปตัดสินใหม่จากสถานะจริง
+    if S.carrying or S.carryVerified then
+        task.wait(0.5)
+        local toolOk = lookingLikeCarry()
+        if not toolOk then
+            S.carrying, S.carryVerified, S.carryMismatchUid = false, false, nil
+            S.returnPaused = true
+            say("respawn แล้วมือเปล่า — ยกเลิกถือ")
+        else
+            say("respawn แล้วยังถืออยู่ (เช็ค Tool)")
+        end
+    end
 end)
 
 setClip(true)
