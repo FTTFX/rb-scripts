@@ -532,7 +532,15 @@ local function chooseTarget(quiet)
             say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
         end
     elseif not quiet then
-        say(string.format("ไม่เจอเป้า | pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE))
+        local reason
+        if positioned == 0 then
+            reason = "snapshot ว่าง/ไม่มีพิกัด — รอไข่เกิด"
+        elseif eligible == 0 then
+            reason = string.format("มีไข่ %d ฟอง แต่กรองออกหมด (rarity/scale/zone/พัก)", positioned)
+        else
+            reason = string.format("pos=%d rarMap=%d ผ่าน=%d พัก=%d sc>=%.2f zone=%s", positioned, categoryCount, eligible, skipped, MIN_SCALE, ZONE)
+        end
+        say("ไม่เจอเป้า: " .. reason)
     end
     return best
 end
@@ -735,23 +743,19 @@ local function jogTreadTick(n)
 end
 
 local function waitEggOnTread()
-    local n, lastSay, lastMount, lastScan, lastPurge = 0, 0, 0, 0, 0
+    local n, lastSay, lastMount, lastScan, lastDiag = 0, 0, 0, 0, 0
     if not onTreadmill() then returnTreadmill() end
     while S.run do
-        if os.clock() - lastScan >= 1 then
+        -- สแกน 2 วิ/ครั้ง; ทุก 10 วิเปิดโหมดโวายเหตุผล (pos/rarMap/ผ่าน/snapshot error) จะได้เห็ว่าทำไมไม่เจอ
+        if os.clock() - lastScan >= 2 then
             lastScan = os.clock()
-            local target = chooseTarget(true)
+            local loud = os.clock() - lastDiag >= 10
+            local target = chooseTarget(not loud)
             if target then
                 say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
                 return target
             end
-            -- สแกนเปล่า = ข้อมูลค้าง → ล้าง eggDB+Prompt ทันที (ข้อความ throttle กัน spam)
-            S.eggDB = {}
-            promptCacheAt = 0
-            if os.clock() - lastPurge >= 5 then
-                lastPurge = os.clock()
-                say("ไม่เจอเป้า — ล้างข้อมูล รีเฟรชหาจริงทุก 1 วิ")
-            end
+            if loud then lastDiag = os.clock() end
         end
         if onTreadmill() then
             n = jogTreadTick(n)
