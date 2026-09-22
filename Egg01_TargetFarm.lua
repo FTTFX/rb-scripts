@@ -529,7 +529,8 @@ local function chooseTarget(quiet)
                 local rarityScore = (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
                 local scaleScore = scale * scale * SCALE_SQUARED_POINTS
                 local score = rarityScore + scaleScore - math.min(dist, 99999) * DIST_POINTS
-                if not best or score > best.score or (score == best.score and dist < best.dist) then
+                -- rarity เท่ากัน: เอาไกลก่อน (ของใกล้ค่อยเก็บทีหลัง ได้ทั้งคู่ในเซสชันเดียว)
+                if not best or score > best.score or (score == best.score and dist > best.dist) then
                     best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
                 end
             elseif pos and scale and blockedUntil then
