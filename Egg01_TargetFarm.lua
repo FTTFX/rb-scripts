@@ -31,7 +31,7 @@ local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
-local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS, DIST_POINTS = {}, 100000, 10000, 40
+local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS, DIST_POINTS = {}, 100000, 10000, 80
 local selectedRarities = {}
 for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
@@ -425,24 +425,35 @@ local function rarityFromConfig(row)
     return cleanRarity(rarity)
 end
 
-local rarityCache = nil -- ponytail: แคช getgc scan — config rarity คงที่ทั้งเซสชัน; ล้างเมื่อไหร่ก็ได้ถ้าเกมอัปเดตกลางเซสชัน
+local rarityCache = nil -- ponytail: แคช getgc — re-scan เฉพาะเมื่อมี category ใหม่ที่ยังไม่รู้ rarity; เติมต่อในแคชเดิม
 local function mapRarities(records)
-    if rarityCache then return rarityCache, rarityCache.n end
-    local categories, found = {}, {}
+    -- เก็บ categories ที่ยังไม่รู้ rarity จากแคช
+    local missing = {}
     for _, row in pairs(records) do
-        if typeof(row) == "table" and row.AssetCategory then categories[tostring(row.AssetCategory)] = true end
+        if typeof(row) == "table" and row.AssetCategory then
+            local cat = tostring(row.AssetCategory)
+            if not rarityCache or not rarityCache[cat] then missing[cat] = true end
+        end
     end
-    if type(getgc) ~= "function" then return found, 0 end
+    local anyMissing = false
+    for _ in pairs(missing) do anyMissing = true; break end
+    if rarityCache and not anyMissing then return rarityCache, rarityCache.n end
+
+    local found = rarityCache or {}
+    if type(getgc) ~= "function" then return found, found.n or 0 end
     local ok, objects = pcall(getgc, true)
-    if not ok or typeof(objects) ~= "table" then return found, 0 end
+    if not ok or typeof(objects) ~= "table" then return found, found.n or 0 end
     for _, obj in ipairs(objects) do
         if typeof(obj) == "table" then
             local cat = rawget(obj, "AssetCategory") or rawget(obj, "Category")
-            if cat and categories[tostring(cat)] then
-                local rarity = rarityFromConfig(obj)
-                if rarity then found[tostring(cat)] = rarity end
+            if cat then
+                local catS = tostring(cat)
+                if missing[catS] then
+                    local rarity = rarityFromConfig(obj)
+                    if rarity then found[catS] = rarity end
+                end
             end
-            for category in pairs(categories) do
+            for category in pairs(missing) do
                 if not found[category] then
                     local direct = rawget(obj, category)
                     local rarity = direct and rarityFromConfig(direct)
@@ -453,8 +464,11 @@ local function mapRarities(records)
     end
     local n = 0
     for _ in pairs(found) do n = n + 1 end
-    rarityCache = found; rarityCache.n = n
-    return found, n
+    found.n = nil
+    local n2 = n
+    found.n = n
+    rarityCache = found
+    return found, n2
 end
 
 local promptCache, promptCacheAt = {}, 0
