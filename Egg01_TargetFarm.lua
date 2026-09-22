@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.10 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- Egg01 Target Farm v3.11 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
--- v3.10: กู้ไข่หลุดแบบแม่น — eggDB realtime + ตรวจ State/พิกัดก่อนกู้ + เว้นเพื่อนที่จุดไข่
+-- v3.11: rarity เป็นหลัก — Div/Ete ชนะทุกเงื่อนไข ระยะเป็นรอง (DIST_POINTS=40)
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -31,7 +31,7 @@ local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
 local RARITY_SHORT = { Common = "Com", Uncommon = "Unc", Rare = "Rare", Epic = "Epi", Legendary = "Leg", Mythic = "Myt", Cosmic = "Cos", Secret = "Sec", Eternal = "Ete", Divine = "Div" }
-local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS = {}, 100000, 10000
+local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS, DIST_POINTS = {}, 100000, 10000, 40
 local selectedRarities = {}
 for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
@@ -305,7 +305,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.10 (Drop Guard)"
+title.Text = "Egg01 Target Farm v3.11 (Rarity-first)"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -502,7 +502,7 @@ local function chooseTarget(quiet)
                 local dist = (pos - root.Position).Magnitude
                 local rarityScore = (RARITY_VALUE[rarity] or 0) * RARITY_POINTS
                 local scaleScore = scale * scale * SCALE_SQUARED_POINTS
-                local score = rarityScore + scaleScore - math.min(dist, 99999)
+                local score = rarityScore + scaleScore - math.min(dist, 99999) * DIST_POINTS
                 if not best or score > best.score or (score == best.score and dist < best.dist) then
                     best = { uid = row.Uid or key, key = targetKey, cat = row.AssetCategory or "?", rar = rarity, scale = scale, area = area or "?", pos = pos, dist = dist, score = score, rarityScore = rarityScore, scaleScore = scaleScore }
                 end
@@ -1414,7 +1414,7 @@ bStop.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.10 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.11 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1433,4 +1433,4 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.10 | กู้ไข่หลุดแม่น: eggDB+ตรวจก่อนไล่+เว้นเพื่อน")
+say("v3.11 | rarity หลัก: Div ก่อนเสมอ ระยะเป็นรอง | กู้ไข่แม่น")
