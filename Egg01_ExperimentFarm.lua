@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.27 — ขากลับ respawn | กระโดด+เดินหน้า | ก้าวขึ้น
+-- Egg01 Experiment Farm v2.28 — ขากลับ respawn | แก้ walk ค้าง stuckAbort | ดันขึ้นลู่
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -534,12 +534,20 @@ local function leaveTreadmill()
     return clear
 end
 local function returnTreadmill()
+    -- ขากลับลู่: ล้าง stuckAbort ที่ค้างจากฟาร์มวาฬ (ไม่งั้น walk คืน false ทั้งที่ไม่เดิน)
+    S.stuckAbort=false
+    S.watchPos=nil
     local bottom,d,rate=nearestTreadmill()
     if not bottom then say("ไม่พบเครื่องวิ่ง"); return false end
     S.tread=bottom
     local target=treadStandPos(bottom)
     if not target then return false end
-    local _,_,r=char()
+    local _,h,r=char()
+    if h then
+        h.Sit=false
+        h.PlatformStand=false
+        pcall(function() h:ChangeState(Enum.HumanoidStateType.Running) end)
+    end
     -- ขากลับผ่าน Rift ก่อน เหมือนขาไป — กันติดกำแพงตรงกลางแมพ
     if r then
         local rift=findRift()
@@ -551,18 +559,32 @@ local function returnTreadmill()
         end
     end
     local _,_,r2=char()
-    local lim=r2 and math.clamp((target-r2.Position).Magnitude/18+25,45,200) or 90
+    local dNow=r2 and (bottom.Position-r2.Position).Magnitude or (d or 999)
+    local lim=math.clamp(dNow/14+30,40,200)
     say(string.format("ไปลู่เรทสูงสุด +%s/step d=%.0f%s",
         tostring(rate and rate>0 and rate or "?"),
-        d or (r2 and (bottom.Position-r2.Position).Magnitude) or -1,
+        dNow,
         S.lockedTread==bottom and " (LOCK)" or ""))
-    walk(target,5,lim,55)
+    -- rad=10 ให้ถึงแผ่นลู่จริง (เดิม 5 มักหยุดนอก TREAD_ON_R=22)
+    walk(target,10,lim,55)
+    if not onTreadPad() then
+        -- ใกล้แล้วแต่ยังไม่ติด: เดินตรงเข้า Bottom + กระโดดขึ้นแผ่น
+        local _,h2,r3=char()
+        if h2 and r3 and bottom.Parent then
+            say(string.format("ใกล้ลู่ d=%.0f — ดันเข้าแผ่น",treadDist(bottom)))
+            walk(bottom.Position,6,12,20)
+            h2.Jump=true
+            pcall(function() h2:ChangeState(Enum.HumanoidStateType.Jumping) end)
+            task.wait(0.35)
+            walk(treadStandPos(bottom) or bottom.Position,5,8,14)
+        end
+    end
     if onTreadPad() then
         say("อยู่เครื่องวิ่งแล้ว — เช็คก้าว 10s")
         beginProgCheck()
         return true
     end
-    say("ยังไม่ถึงลู่จริง")
+    say(string.format("ยังไม่ถึงลู่จริง d=%.0f",treadDist(bottom)))
     return false
 end
 -- ขากลับแบบ respawn: ฆ่าตัว → เกิดใหม่ที่ spawn ใกล้ลู่วิ่ง → เดินเข้าลู่ (เร็วกว่าเดิน 1700 studs)
@@ -914,7 +936,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.27 — กลับ respawn"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.28 — กลับลู่แก้ค้าง"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 52,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -941,7 +963,7 @@ local function beginAuto()
         S.tread=b
         say(string.format("จำลู่ +%s/step d=%.0f",tostring(rate and rate>0 and rate or "?"),d or -1))
     end
-    say("v2.27 | ขากลับ respawn เข้าลู่เร็ว | ยืนตีไม่รีสตาร์ท")
+    say("v2.28 | ขากลับ respawn + แก้ค้างลู่ | ยืนตีไม่รีสตาร์ท")
     say("AUTO ON — ลู่เรทสูงสุดใน 120 | ค้างนอกโซน=ไปวาฬ")
     task.spawn(function()
         local ok,err=pcall(loop)
@@ -996,7 +1018,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.27 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.28 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -1024,5 +1046,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.27 | ขากลับ respawn เข้าลู่เร็ว | ยืนตีไม่รีสตาร์ท")
+say("v2.28 | ขากลับ respawn + แก้ค้างลู่ | ยืนตีไม่รีสตาร์ท")
 task.spawn(boot)
