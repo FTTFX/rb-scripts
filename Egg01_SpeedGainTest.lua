@@ -1,5 +1,5 @@
 -- Egg01_SpeedGainTest v1.0
--- ทดสอบว่า WalkSpeed +10% ขณะยืนบนลู่วิ่งเพิ่มอัตราคะแนนวิ่งหรือไม่ (รอบ A/B ละ 10 วิ)
+-- ทดสอบว่า WalkSpeed +100% ขณะยืนบนลู่วิ่งเพิ่มอัตราคะแนนวิ่งหรือไม่ (รอบ A/B ละ 10 วิ)
 
 if _G.EGG01_SPEEDGAIN then
     pcall(function() _G.EGG01_SPEEDGAIN.gui:Destroy() end)
@@ -24,7 +24,7 @@ _G.EGG01_SPEEDGAIN = S
 
 -- ค่าคงที่
 local SAMPLE_SEC     = 10    -- วินาทีต่อรอบวัด (บังคับ)
-local SPEED_MULT     = 1.10  -- รอบ B = WalkSpeed * 1.10
+local SPEED_MULT     = 2.00  -- รอบ B = WalkSpeed * 2.00 (+100%)
 local POLL_HZ        = 0.05  -- ช่วงอ่านคะแนนระหว่างวัด (~20 Hz)
 local STATIONARY_EPS = 2.0   -- studs: เลื่อนเกินนี้ถือว่าหลุดจุดทดสอบ
 local ARRIVE_DIST    = 5     -- ถึงลู่เมื่อระยะ <= นี้
@@ -153,7 +153,7 @@ local bStop  = button("STOP", 118, Color3.fromRGB(185, 60, 60))
 local bX     = button("X", 300, Color3.fromRGB(185, 60, 60), 30)
 
 local bA     = button("วัดปกติ A", 10,      Color3.fromRGB(70, 130, 220))
-local bB     = button("วัด +10% B", 118,    Color3.fromRGB(235, 150, 60))
+local bB     = button("วัด +100% B", 118,   Color3.fromRGB(235, 150, 60))
 local bAuto  = button("A→B ออโต้", 226,    Color3.fromRGB(35, 145, 75))
 
 local status = Instance.new("TextLabel", panel)
@@ -200,7 +200,7 @@ local function setBusy(v, btnTexts)
     S.busy = v
     bGo.Text = btnTexts and btnTexts[1] or (v and "…" or "ไปลู่")
     bA.Text = btnTexts and btnTexts[2] or (v and "…" or "วัดปกติ A")
-    bB.Text = btnTexts and btnTexts[3] or (v and "…" or "วัด +10% B")
+    bB.Text = btnTexts and btnTexts[3] or (v and "…" or "วัด +100% B")
     bAuto.Text = btnTexts and btnTexts[4] or (v and "…" or "A→B ออโต้")
 end
 
@@ -363,7 +363,7 @@ local function runB()
     local hum = select(1, parts())
     if not hum then say("ไม่มี Humanoid"); setBusy(false); return end
     hum.WalkSpeed = S.baseWS * SPEED_MULT
-    say(string.format("ตั้ง WS=%.1f (x1.10) — วัด 10s", hum.WalkSpeed))
+    say(string.format("ตั้ง WS=%.1f (x%.2f) — วัด 10s", hum.WalkSpeed, SPEED_MULT))
     local res = runSample("B")
     if res then
         S.resultB = res
