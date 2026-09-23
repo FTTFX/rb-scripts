@@ -1,5 +1,5 @@
--- Egg01_SpeedGainTest v1.0
--- ทดสอบว่า WalkSpeed +100% ขณะยืนบนลู่วิ่งเพิ่มอัตราคะแนนวิ่งหรือไม่ (รอบ A/B ละ 10 วิ)
+-- Egg01_SpeedGainTest v1.1
+-- ทดสอบ WalkSpeed บนลู่ (ผลจริง: ×2 ≈ +3% ไม่มีนัย) — ชุดถัดไป: Egg01_TreadGainMatrix
 
 if _G.EGG01_SPEEDGAIN then
     pcall(function() _G.EGG01_SPEEDGAIN.gui:Destroy() end)
@@ -166,7 +166,7 @@ status.TextSize = 11
 status.TextWrapped = true
 status.TextXAlignment = Enum.TextXAlignment.Left
 status.TextYAlignment = Enum.TextYAlignment.Top
-status.Text = "พร้อม — กด A→B ออโต้ เพื่อเริ่มทดลอง"
+status.Text = "WS×2 ไม่ส่งผลจริง — กด A→B ยืนยันซ้ำ หรือใช้ TreadGainMatrix"
 
 local result = Instance.new("TextLabel", panel)
 result.Size = UDim2.new(1, -20, 0, 86)
@@ -444,5 +444,5 @@ bA.MouseButton1Click:Connect(runA)
 bB.MouseButton1Click:Connect(runB)
 bAuto.MouseButton1Click:Connect(runAuto)
 
-say("โหลดแล้ว — กด ไปลู่ (หรือยืนบนลู่) แล้วกด A→B ออโต้")
-print("[Egg01 SpeedGainTest] v1.0 ready — กด A→B ออโต้ ที่ UI")
+say("v1.1 — ไปลู่ → A→B ออโต้ | หาโหมดอื่นใช้ TreadGainMatrix")
+print("[Egg01 SpeedGainTest] v1.1 ready (WS ไม่เร่งลู่ — ดู TreadGainMatrix)")
