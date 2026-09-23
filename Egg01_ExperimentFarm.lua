@@ -1,4 +1,4 @@
--- Egg01 Experiment Farm v2.26 — ขากลับผ่าน Rift | กระโดด+เดินหน้า | ก้าวขึ้น
+-- Egg01 Experiment Farm v2.27 — ขากลับ respawn | กระโดด+เดินหน้า | ก้าวขึ้น
 if _G.EGG01_EXPERIMENT_FARM then
     _G.EGG01_EXPERIMENT_FARM.run=false
     _G.EGG01_EXPERIMENT_FARM.test=false
@@ -565,6 +565,27 @@ local function returnTreadmill()
     say("ยังไม่ถึงลู่จริง")
     return false
 end
+-- ขากลับแบบ respawn: ฆ่าตัว → เกิดใหม่ที่ spawn ใกล้ลู่วิ่ง → เดินเข้าลู่ (เร็วกว่าเดิน 1700 studs)
+local RETURN_RESPAWN = true
+local function returnViaRespawn()
+    say("จบอีเวนต์ — respawn กลับลู่วิ่ง (เร็วกว่าเดิน)")
+    S.comingHome=true
+    S.tread=nil
+    S.watchPos=nil
+    local _,h=char()
+    if h and h.Health>0 then
+        pcall(function() h.Health=0 end)
+    end
+    -- รอเกิดใหม่ แล้วเดินเข้าลู่ตามปกติ (CharacterAdded จะ set S.goingHome ไม่ใช่ repath)
+    local t0=os.clock()
+    while os.clock()-t0<10 do
+        local _,_,r=char()
+        if r and r.Parent then break end
+        task.wait(0.2)
+    end
+    task.wait(0.5)
+    return returnTreadmill()
+end
 local function resetTreadmill(why)
     say(why or "รีเซ็ต — ฆ่าตัวตาย เกิดใหม่")
     S.tread=nil
@@ -877,7 +898,11 @@ local function loop()
         S.stuckAbort=false
         farm5min()
         if not S.run then break end
-        returnTreadmill()
+        if RETURN_RESPAWN then
+            returnViaRespawn()
+        else
+            returnTreadmill()
+        end
     end
 end
 
@@ -889,7 +914,7 @@ local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,210); f.Position=UDi
 f.BackgroundColor3=Color3.fromRGB(18,43,46); f.BorderSizePixel=0; f.Active=true; f.Draggable=true
 Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
 local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-40,0,26); title.Position=UDim2.new(0,10,0,2)
-title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.26 — กลับผ่าน Rift"; title.TextColor3=Color3.fromRGB(145,245,230)
+title.BackgroundTransparency=1; title.Text="Egg01 Experiment v2.27 — กลับ respawn"; title.TextColor3=Color3.fromRGB(145,245,230)
 title.Font=Enum.Font.GothamBold; title.TextSize=12; title.TextXAlignment=Enum.TextXAlignment.Left
 local function button(text,x,color,w)
     local b=Instance.new("TextButton",f); b.Size=UDim2.new(0,w or 52,0,28); b.Position=UDim2.new(0,x,0,32)
@@ -916,7 +941,7 @@ local function beginAuto()
         S.tread=b
         say(string.format("จำลู่ +%s/step d=%.0f",tostring(rate and rate>0 and rate or "?"),d or -1))
     end
-    say("v2.26 | ขากลับผ่าน Rift กันติดกำแพง | ยืนตีไม่รีสตาร์ท")
+    say("v2.27 | ขากลับ respawn เข้าลู่เร็ว | ยืนตีไม่รีสตาร์ท")
     say("AUTO ON — ลู่เรทสูงสุดใน 120 | ค้างนอกโซน=ไปวาฬ")
     task.spawn(function()
         local ok,err=pcall(loop)
@@ -971,7 +996,7 @@ end)
 copyB.MouseButton1Click:Connect(function()
     local c=setclipboard or toclipboard
     local extra=S.point and string.format("\nPOINT=%.1f,%.1f,%.1f",S.point.X,S.point.Y,S.point.Z) or ""
-    if c then pcall(c,"=== Egg01 Experiment Farm v2.26 ===\n"..table.concat(S.lines,"\n")..extra)
+    if c then pcall(c,"=== Egg01 Experiment Farm v2.27 ===\n"..table.concat(S.lines,"\n")..extra)
         copyB.Text="OK"; task.delay(1,function() if copyB.Parent then copyB.Text="COPY" end end) end
 end)
 closeB.MouseButton1Click:Connect(function()
@@ -982,7 +1007,14 @@ LP.CharacterAdded:Connect(function(ch)
     task.wait(0.5)
     pcall(function() ch:WaitForChild("HumanoidRootPart",8) end)
     setClip(true)
-    if S.run then S.repath=true; say("เกิดใหม่ — repath ไปวาฬ (ไม่ย้อน Rift ถ้าอยู่โซน)") end
+    if S.run then
+        if S.comingHome then
+            S.comingHome=false
+            say("เกิดใหม่ที่ spawn — เดินเข้าลู่วิ่ง")
+        else
+            S.repath=true; say("เกิดใหม่ — repath ไปวาฬ (ไม่ย้อน Rift ถ้าอยู่โซน)")
+        end
+    end
 end)
 
 local function boot()
@@ -992,5 +1024,5 @@ local function boot()
     task.wait(0.4)
     if S.gui and S.gui.Parent then beginAuto() end
 end
-say("v2.26 | ขากลับผ่าน Rift กันติดกำแพง | ยืนตีไม่รีสตาร์ท")
+say("v2.27 | ขากลับ respawn เข้าลู่เร็ว | ยืนตีไม่รีสตาร์ท")
 task.spawn(boot)
