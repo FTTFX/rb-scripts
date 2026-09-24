@@ -1,8 +1,10 @@
--- Egg01 Rift Farm v1.29 -- สแกนครบ 3 / Rejoin ไม่ใส่ JobId / ถ้าได้เซิร์ฟเดิม→hop ใหม่
+-- Egg01 Rift Farm v1.30 -- สแกนครบ 3 / HOME→Rift→ไข่→Rift→HOME / Rejoin ไม่ใส่ JobId
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=70
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
+local RIFT_R,RIFT_DEPTH=6,-8
+local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil,rift=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function setClip(on)
@@ -538,6 +540,62 @@ local function walk(p,rad,lim,slowNear,watchUid)
  end
  restore()
 end
+local function instPos(inst)
+ if not inst then return end
+ if inst:IsA("BasePart") then return inst.Position end
+ local ok,piv=pcall(function() return inst:GetPivot() end)
+ if ok and piv then return piv.Position end
+ local p=inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart",true)
+ return p and p.Position
+end
+local function findRift()
+ local objs=workspace:FindFirstChild("__OBJECTS")
+ local machines=objs and objs:FindFirstChild("Machines")
+ local rm=machines and machines:FindFirstChild("RiftMachine")
+ if rm then
+  local rift=rm:FindFirstChild("Rift")
+  local p=instPos(rift) or instPos(rm)
+  if p then return Vector3.new(p.X,math.max(p.Y,70),p.Z),"RiftMachine" end
+ end
+ return FALLBACK_RIFT,"fallback-rift"
+end
+local function resolveRift(quiet)
+ local pos,src=findRift()
+ S.rift=pos
+ if not quiet then say(string.format("RIFT=%s @%.0f,%.0f,%.0f",tostring(src),pos.X,pos.Y,pos.Z)) end
+ return pos
+end
+local function riftDeepTarget(towardPos)
+ local rift=resolveRift(true)
+ local dir=Vector3.new(1,0,0)
+ if towardPos then
+  local flat=Vector3.new(towardPos.X-rift.X,0,towardPos.Z-rift.Z)
+  if flat.Magnitude>=1 then dir=flat.Unit end
+ end
+ return Vector3.new(rift.X+dir.X*RIFT_DEPTH,math.max(rift.Y,70),rift.Z+dir.Z*RIFT_DEPTH),rift
+end
+-- ใกล้เป้าแล้วไม่ย้อน Rift | ไกล=ขั้น1 Rift แล้วขั้น2 เป้า (เหมือน TargetFarm)
+local function goViaRift(dest,rad,lim,label,watchUid)
+ if not dest then return false end
+ local _,r=hr(); if not r then return false end
+ local dDirect=(Vector3.new(dest.X,r.Position.Y,dest.Z)-r.Position).Magnitude
+ if dDirect<=180 then
+  return walk(dest,rad or 5,lim or math.clamp(dDirect/12+40,50,280),55,watchUid)
+ end
+ local deep=select(1,riftDeepTarget(dest))
+ local dR=(Vector3.new(deep.X,r.Position.Y,deep.Z)-r.Position).Magnitude
+ if dR>RIFT_R then
+  say(string.format("ขั้น1 → Rift ลึก%+d d=%.0f → %s",RIFT_DEPTH,dR,tostring(label or "เป้า")))
+  local okR=walk(deep,RIFT_R,math.clamp(dR/16+40,50,320),55)
+  if not S.run then return false end
+  if watchUid and okR==false then return false,"switch" end
+  say(okR and ("ถึง Rift แล้ว → "..tostring(label or "เป้า")) or "Rift ไม่สุด → ไปต่อ")
+ end
+ local _,r2=hr()
+ local d2=r2 and (Vector3.new(dest.X,r2.Position.Y,dest.Z)-r2.Position).Magnitude or 9999
+ say(string.format("ขั้น2 → %s d=%.0f",tostring(label or "เป้า"),d2))
+ return walk(dest,rad or 5,lim or math.clamp(d2/14+60,60,400),55,watchUid)
+end
 local function waitPlaced()
  local deadline=os.clock()+12
  while S.run and S.carrying and os.clock()<deadline do task.wait(.10) end
@@ -589,7 +647,8 @@ local function one(t)
  if not refreshTarget(t) then say("UID หาย — ข้าม"); skipUid(t.uid,45); return end
  local _,me=hr(); local dist=me and (t.pos-me.Position).Magnitude or (t.d or 200)
  local lim=math.clamp(dist/12+40,50,280)
- local ok,why=walk(t.pos,5,lim,55,t.uid)
+ say(string.format("ไปหา %s — ผ่าน Rift",tostring(t.need or t.cat)))
+ local ok,why=goViaRift(t.pos,5,lim,tostring(t.need or "ไข่"),t.uid)
  if why=="switch" then return end
  if not ok then say("ไปไข่ไม่สำเร็จ — ข้าม"); skipUid(t.uid,45); return end
  if not refreshTarget(t) then say("UID หายหลังถึง — ข้าม"); skipUid(t.uid,45); return end
@@ -632,14 +691,31 @@ local function one(t)
   skipUid(t.uid,90); tryDrop(); S.carryMismatch=false; say("ข้าม (UID ผิด) — หาใบอื่น"); return
  end
  if not S.carryVerified then say("ยังไม่ถือเป้า — ข้าม"); skipUid(t.uid,45); return end
- -- ไข่หนักมาก (speed ต่ำ) → ทิ้ง หาใบอื่นที่หิ้วกลับได้
  if S.carrySpeed and S.carrySpeed<0.55 then
   say(string.format("ไข่หนักเกินไป speed=%.2f — ทิ้งแล้วข้าม",S.carrySpeed))
   skipUid(t.uid,120); tryDrop(); return
  end
  if S.home then
   local _,r=hr(); local d0=r and (r.Position-S.home).Magnitude or -1
-  say(string.format("ถือไข่แล้ว — กลับ HOME d=%.0f",d0))
+  say(string.format("ถือไข่แล้ว — กลับ HOME ผ่าน Rift d=%.0f",d0))
+  -- ขั้น1: ไป Rift ก่อน (ถ้าไกล)
+  local deep=select(1,riftDeepTarget(S.home))
+  if deep and r then
+   local dR=(Vector3.new(deep.X,r.Position.Y,deep.Z)-r.Position).Magnitude
+   if dR>RIFT_R+20 and d0>180 then
+    say(string.format("ขั้น1 → Rift ลึก%+d d=%.0f",RIFT_DEPTH,dR))
+    local tR=os.clock(); local limR=math.clamp(dR/16+40,50,220)
+    while S.run and S.carrying and os.clock()-tR<limR do
+     local h,rr=hr(); if not h or not rr then break end
+     if (rr.Position-deep).Magnitude<=RIFT_R then stop(); break end
+     if not S.carrying then say("ไข่หล่นระหว่างทาง — ไม่ไล่เก็บ ไปเป้าอื่น"); skipUid(t.uid,60); return end
+     walk(deep,RIFT_R,3.5)
+    end
+    if not S.carrying then return end
+    say("ถึง Rift แล้ว → HOME")
+   end
+  end
+  local _,r2=hr(); d0=r2 and (r2.Position-S.home).Magnitude or d0
   local homeLim=math.clamp((d0>0 and d0/10 or 80)+50,80,220)
   local tHome=os.clock(); local lastD=d0; local stuck=0
   local okHome=false
@@ -664,7 +740,7 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.29 — SCAN3 REJOIN"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.30 — VIA RIFT"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
@@ -680,8 +756,9 @@ start.MouseButton1Click:Connect(function()
  if S.run then return end
  if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end
  S.run=true; S.missSince=nil; S.hopping=false; start.Text="AUTO"
- say("RIFT AUTO ON — ไม่เจอ "..tostring(REJOIN_AFTER).."s → Rejoin")
+ say("RIFT AUTO ON — HOME→Rift→ไข่→Rift→HOME | ไม่เจอ "..tostring(REJOIN_AFTER).."s → Rejoin")
  task.spawn(function()
+  resolveRift()
   local n=refreshSnapshot(); say("eggDB โหลด "..tostring(n).." รายการ")
   while S.run do
    local ok,t=pcall(target)
@@ -694,8 +771,8 @@ start.MouseButton1Click:Connect(function()
      task.wait(.45)
     else
      S.stood=false
-     if not S.huntAt or os.clock()-S.huntAt>8 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s dXZ=%.0f",tostring(t.area),t.d or -1)) end
-     walk(t.pos,60,2.4)
+     if not S.huntAt or os.clock()-S.huntAt>8 or S.huntArea~=t.area then S.huntAt,S.huntArea=os.clock(),t.area; say(string.format("ไปไบโอม %s ผ่าน Rift dXZ=%.0f",tostring(t.area),t.d or -1)) end
+     goViaRift(t.pos,60,nil,tostring(t.area))
     end
    elseif t then
     S.missSince=nil; S.stood=false; one(t); task.wait(.35)
@@ -709,4 +786,4 @@ end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.29: Rejoin ไม่ใส่ JobId | ได้เซิร์ฟเดิม→hop ใหม่ | HOP")
+say("v1.30: HOME→Rift→ไข่→Rift→HOME | Rejoin กันเซิร์ฟเดิม | HOP")
