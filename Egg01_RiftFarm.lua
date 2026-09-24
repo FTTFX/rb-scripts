@@ -1,10 +1,10 @@
--- Egg01 Rift Farm v1.33 -- จับไข่แม่น(MOTION_BRAKE) / ไม่เจอ→hop เลย / ค้าง→กระโดดออก
+-- Egg01 Rift Farm v1.34 -- แก้ไม่ยิบ: กัน AskFieldEggCarry ปน + ไม่มี RE ก็ยิง Steal ต่อ
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local HS=game:GetService("HttpService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=0
 local RIFT_R,RIFT_DEPTH=6,-8
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil,rift=nil,hopJobs=nil,hopIdx=0}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil,rift=nil,hopJobs=nil,hopIdx=0,netCache={}}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function setClip(on)
@@ -26,10 +26,63 @@ local function setClip(on)
  apply(LP.Character)
  S.clipConn=RunS.Stepped:Connect(function() apply(LP.Character) end)
 end
-local function net(n) for _,x in ipairs(RS:GetDescendants()) do if x.Name:find(n,1,true) then return x end end end
+local function net(name, className)
+ if not className and S.netCache[name]~=nil then return S.netCache[name] end
+ local packages=RS:FindFirstChild("Packages")
+ local networking=packages and packages:FindFirstChild("Networking")
+ local exact,fuzzy
+ for _,root in ipairs({networking,RS}) do
+  if root then
+   for _,item in ipairs(root:GetDescendants()) do
+    if className and not item:IsA(className) then
+     -- skip
+    else
+     local n=item.Name
+     local isExact=(n==name) or (n:sub(-#name-1)=="/"..name)
+     local isFuzzy=(not isExact) and n:find(name,1,true)
+      and not n:find("Ask"..name,1,true)
+      and not (name=="FieldEggCarry" and n:find("Ask",1,true))
+     if isExact then exact=exact or item
+     elseif isFuzzy then fuzzy=fuzzy or item end
+    end
+   end
+  end
+ end
+ local hit=exact or fuzzy
+ if not className then S.netCache[name]=hit end
+ return hit
+end
+-- FieldEggCarry ต้องเป็น RE — ห้ามจับ AskFieldEggCarry (RF)
+local function findCarryEvent()
+ local packages=RS:FindFirstChild("Packages")
+ local networking=packages and packages:FindFirstChild("Networking")
+ if networking then
+  for _,item in ipairs(networking:GetDescendants()) do
+   if item:IsA("RemoteEvent") or item:IsA("UnreliableRemoteEvent") then
+    local n=item.Name
+    if n=="FieldEggCarry" or n:find("/FieldEggCarry",1,true)
+     or (n:find("FieldEggCarry",1,true) and not n:find("Ask",1,true)) then
+     return item
+    end
+   end
+  end
+ end
+ return net("FieldEggCarry","RemoteEvent") or net("FieldEggCarry","UnreliableRemoteEvent")
+end
+local function lookingLikeCarry()
+ local ch=LP.Character; if not ch then return false end
+ for _,x in ipairs(ch:GetDescendants()) do
+  local n=tostring(x.Name):lower()
+  if (x:IsA("Tool") or x:IsA("Model") or x:IsA("BasePart")) and (n:find("egg",1,true) or n:find("carry",1,true)) then
+   return true
+  end
+ end
+ return false
+end
 local function attachCarry()
  if S.carryConn then return true end
- local e=net("FieldEggCarry"); if not e or not (e:IsA("RemoteEvent") or e:IsA("UnreliableRemoteEvent")) then return false end
+ local e=findCarryEvent()
+ if not e then return false end
  S.carryConn=e.OnClientEvent:Connect(function(row)
   if typeof(row)~="table" or row.IsCarrying==nil then return end
   S.carrying=row.IsCarrying==true
@@ -41,10 +94,13 @@ local function attachCarry()
     S.carryMismatch=true
     say("ถือ UID อื่น: "..tostring(row.Uid).." — ข้ามไปเป้าอื่น")
    else
-    say("ถือไข่แล้ว แต่ server ไม่ส่ง UID — ยังไม่ยืนยันเป้า")
+    S.carryVerified=true
+    say("ถือไข่แล้ว (server ไม่ส่ง UID) — ถือว่าผ่าน")
    end
+  elseif S.carrying and not S.expectedUid then
+   S.carryVerified=true
   end
- end); return true
+ end); say("ฟัง FieldEggCarry ✅ "..tostring(e.Name)); return true
 end
 local function skipUid(uid,sec)
  if not uid then return end
@@ -753,7 +809,7 @@ local function choosePrompt(t)
  return nil,nil,nil,detail
 end
 local function tryCarryUid(uid)
- local rf=net("AskFieldEggCarry")
+ local rf=net("AskFieldEggCarry","RemoteFunction") or net("AskFieldEggCarry")
  if not rf or not rf:IsA("RemoteFunction") then return false,"no-RF" end
  local ok,res=pcall(function() return rf:InvokeServer({Uid=tostring(uid)}) end)
  return ok,res
@@ -787,7 +843,8 @@ local function one(t)
   if not ok2 then say("เข้าพิกัดไข่ไม่สุด — ลองยิงต่อ") end
  end
  stop()
- if not attachCarry() then say("ไม่พบ FieldEggCarry"); return end
+ local haveCarry=attachCarry()
+ if not haveCarry then say("ยังไม่มี FieldEggCarry RE — ยิง Steal/RF ต่อ แล้วดู visual") end
  S.expectedUid=t.uid; S.carrying=false; S.carryVerified=false; S.carryMismatch=false; S.carrySpeed=nil
 
  say("ลอง RF AskFieldEggCarry Uid="..tostring(t.uid))
@@ -815,13 +872,20 @@ local function one(t)
     fireSteal(pick)
     tryCarryUid(t.uid)
     local untilT=os.clock()+2
-    while S.run and os.clock()<untilT and not S.carryVerified and not S.carryMismatch do task.wait(.05) end
+    while S.run and os.clock()<untilT and not S.carryVerified and not S.carryMismatch do
+     if lookingLikeCarry() then S.carrying=true; S.carryVerified=true; break end
+     task.wait(.05)
+    end
    else
     say("ไม่เจอ Prompt ("..tostring(detail)..") — ข้าม"); skipUid(t.uid,45)
    end
   else
    say("RF ไม่ติด + ไม่เจอ Prompt — ข้าม"); skipUid(t.uid,45)
   end
+ end
+ -- ไม่มี RE: ยืนยันถือด้วย visual
+ if not S.carryVerified and lookingLikeCarry() then
+  S.carrying=true; S.carryVerified=true; say("ถือไข่แล้ว (visual) — วิ่งกลับ")
  end
  S.expectedUid=nil
  if S.carryMismatch then
@@ -876,7 +940,7 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.33 — STEAL+HOP"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.34 — STEAL FIX"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
@@ -932,7 +996,7 @@ start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.33: จับแม่น(MOTION_BRAKE) | ไม่เจอ→hop เลย | ค้าง→กระโดด")
+say("v1.34: แก้ไม่ยิบ — หา FieldEggCarry ถูกตัว + ไม่มี RE ก็ Steal ต่อ")
 -- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
 task.spawn(function()
  local t0=os.clock()
