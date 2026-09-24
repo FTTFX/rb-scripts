@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.15 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ 30s→hop | noclip
--- v3.15: default Sec+Ete+Div, MinScale 0.1 | v3.14 hop 30s
+-- Egg01 Target Farm v3.16 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- autoboot AUTO | ไม่เจอ 30s→hop | Sec+Ete+Div sc≥0.1
+-- v3.16: เปิดแล้ว AUTO เอง | v3.15 default filters | v3.14 hop 30s
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -315,7 +315,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.15 — Sec/Ete/Div"
+title.Text = "Egg01 Target Farm v3.16 — AUTOBOOT"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -1494,16 +1494,34 @@ local function farmTarget(target)
     S.carryMismatchUid, S.carryVerified = nil, false
 end
 
-local function runOne()
-    if S.run then return end
+local function ensureHome(forceHere)
+    local _, r = humRoot()
+    if forceHere and r then
+        S.home = r.Position
+        saveHomeSetting()
+        say(string.format("HOME auto @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
+        return true
+    end
+    if S.home then return true end
+    if r then
+        S.home = r.Position
+        saveHomeSetting()
+        say(string.format("HOME auto (จุดยืน) @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
+        return true
+    end
+    return false
+end
+
+local function runOne(reason)
+    if S.run or S.hopping then return end
     if not fp then say("executor ไม่มี fireproximityprompt") return end
-    if not S.home then
-        say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน START")
+    if not ensureHome(false) then
+        say("ยังไม่มีตัวละคร — รอแล้ว auto ใหม่")
         return
     end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — HOME→Rift→ไข่ | ไม่เจอ "..tostring(HOP_MISS_SEC).."s→hop")
+    say((reason or "AUTO") .. " — HOME→Rift→ไข่ | ไม่เจอ " .. tostring(HOP_MISS_SEC) .. "s→hop")
     resolveRift()
     task.spawn(function()
         while S.run do
@@ -1518,7 +1536,7 @@ local function runOne()
             if S.run then task.wait(1) end
         end
         bStart.Text = "START"
-        say("AUTO OFF")
+        if not S.hopping then say("AUTO OFF") end
     end)
 end
 
@@ -1628,17 +1646,10 @@ if not attachEggFeed() then
 end
 
 bHome.MouseButton1Click:Connect(function()
-    local _, r = humRoot()
-    if r then
-        S.home = r.Position
-        saveHomeSetting()
-        say("HOME ตั้งแล้ว (ตำแหน่งฐาน)")
-    else
-        say("ไม่มีตัวละคร")
-    end
+    ensureHome(true)
 end)
 bScan.MouseButton1Click:Connect(chooseTarget)
-bStart.MouseButton1Click:Connect(runOne)
+bStart.MouseButton1Click:Connect(function() runOne("กด START") end)
 bStop.MouseButton1Click:Connect(function()
     S.run = false
     stopMove()
@@ -1683,9 +1694,25 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.15 | default Sec+Ete+Div sc≥0.1 | hop "..tostring(HOP_MISS_SEC).."s")
+say("v3.16 | autoboot AUTO | Sec+Ete+Div sc≥0.1 | ไม่เจอ "..tostring(HOP_MISS_SEC).."s→hop")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
-rejectSameServerIfNeeded()
-say("JobId=" .. tostring(game.JobId):sub(1, 8) .. "…")
+if rejectSameServerIfNeeded() then
+    say("JobId=" .. tostring(game.JobId):sub(1, 8) .. "… (กำลัง hop ออก)")
+else
+    say("JobId=" .. tostring(game.JobId):sub(1, 8) .. "…")
+    task.spawn(function()
+        local t0 = os.clock()
+        while os.clock() - t0 < 15 do
+            if S.hopping then return end
+            local _, r = humRoot()
+            if r then break end
+            task.wait(0.25)
+        end
+        if S.hopping or S.run then return end
+        ensureHome(false)
+        task.wait(0.5)
+        if not S.hopping and not S.run then runOne("autoboot") end
+    end)
+end
