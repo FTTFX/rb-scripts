@@ -1,11 +1,14 @@
--- Egg01 Target Farm v3.12 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งใกล้ HOME | เดิน MoveTo ธรรมดา (ไม่ดัน velocity) | noclip
--- v3.12: rarity หลัก Div>Ete>Sec>Cos | ระดับเดียวกัน=ไกลก่อน (+dist×10) | กู้ไข่หลุด: eggDB+รอพิกัด 3 วิ+เว้นเพื่อน
+-- Egg01 Target Farm v3.13 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ→hop เซิร์ฟอื่น | noclip
+-- v3.13: hop JobId เลี่ยงเพื่อน (แบบ RiftFarm) | v3.12 rarity ไกลก่อน + กู้ไข่หลุด
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
     pcall(function()
         if _G.EGG01_TARGET_FARM.clipConn then _G.EGG01_TARGET_FARM.clipConn:Disconnect() end
+    end)
+    pcall(function()
+        if _G.EGG01_TARGET_FARM.tpFailConn then _G.EGG01_TARGET_FARM.tpFailConn:Disconnect() end
     end)
     pcall(function() _G.EGG01_TARGET_FARM.gui:Destroy() end)
     if _G.EGG01_TARGET_FARM.conns then
@@ -19,11 +22,14 @@ end
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local RunS = game:GetService("RunService")
+local TS = game:GetService("TeleportService")
+local HS = game:GetService("HttpService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {} }
+local HOP_MISS_SEC = 20
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {}, hopping = false, tpFailConn = nil, hopJobs = nil, hopIdx = 0 }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 1, "ALL"
@@ -309,7 +315,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.12 (Rarity-first, far-first)"
+title.Text = "Egg01 Target Farm v3.13 — HOP"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -325,11 +331,12 @@ local function button(text, x, y, w, color)
     return b
 end
 
-local bHome = button("HOME", 10, 35, 58, Color3.fromRGB(50, 100, 180))
-local bScan = button("SCAN", 75, 35, 58, Color3.fromRGB(55, 105, 165))
-local bStart = button("START", 140, 35, 58, Color3.fromRGB(35, 145, 75))
-local bStop = button("STOP", 205, 35, 52, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 264, 35, 58, Color3.fromRGB(70, 70, 75))
+local bHome = button("HOME", 10, 35, 52, Color3.fromRGB(50, 100, 180))
+local bScan = button("SCAN", 68, 35, 52, Color3.fromRGB(55, 105, 165))
+local bStart = button("START", 126, 35, 52, Color3.fromRGB(35, 145, 75))
+local bStop = button("STOP", 184, 35, 48, Color3.fromRGB(165, 50, 55))
+local bHop = button("HOP", 238, 35, 48, Color3.fromRGB(120, 70, 30))
+local bCopy = button("COPY", 292, 35, 48, Color3.fromRGB(70, 70, 75))
 local bClose = button("X", 296, 4, 30, Color3.fromRGB(125, 45, 45))
 
 local scaleLabel = Instance.new("TextLabel", panel)
@@ -395,6 +402,162 @@ local function say(message)
     lines[#lines + 1] = tostring(message)
     if #lines > 100 then table.remove(lines, 1) end
     status.Text = tostring(message)
+end
+
+-- ===== Server hop (แบบ Egg01_RiftFarm) — เลี่ยงเซิร์ฟเดิม/เพื่อน =====
+local function httpGet(url)
+    local ok, r = pcall(function() return game:HttpGet(url) end)
+    if ok and r then return r end
+    local req = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    if req then
+        local ok2, res = pcall(function() return req({ Url = url, Method = "GET" }) end)
+        if ok2 and typeof(res) == "table" then return res.Body or res.body end
+    end
+end
+local function saveHomeSetting()
+    if not S.home then return end
+    pcall(function() TS:SetTeleportSetting("Egg01_TargetHome", { S.home.X, S.home.Y, S.home.Z }) end)
+end
+local function loadHomeSetting()
+    local ok, h = pcall(function() return TS:GetTeleportSetting("Egg01_TargetHome") end)
+    if ok and typeof(h) == "table" and tonumber(h[1]) then
+        S.home = Vector3.new(tonumber(h[1]), tonumber(h[2]) or 0, tonumber(h[3]) or 0)
+        return true
+    end
+end
+local function loadBanJobs()
+    local ban = {}
+    local ok, raw = pcall(function() return TS:GetTeleportSetting("Egg01_TargetBanJobs") end)
+    if ok and typeof(raw) == "string" and raw ~= "" then
+        for id in string.gmatch(raw, "[^,]+") do if id ~= "" then ban[id] = true end end
+    end
+    local ok2, prev = pcall(function() return TS:GetTeleportSetting("Egg01_TargetPrevJob") end)
+    if ok2 and prev and prev ~= "" then ban[tostring(prev)] = true end
+    return ban
+end
+local function pushBanJob(jobId)
+    if not jobId or jobId == "" then return end
+    local ban = loadBanJobs()
+    ban[tostring(jobId)] = true
+    local list = {}
+    for id in pairs(ban) do list[#list + 1] = id end
+    while #list > 8 do table.remove(list, 1) end
+    pcall(function() TS:SetTeleportSetting("Egg01_TargetBanJobs", table.concat(list, ",")) end)
+end
+local function savePrevJob()
+    pushBanJob(game.JobId)
+    pcall(function() TS:SetTeleportSetting("Egg01_TargetPrevJob", tostring(game.JobId)) end)
+    local n = 0
+    pcall(function() n = tonumber(TS:GetTeleportSetting("Egg01_TargetHopN")) or 0 end)
+    pcall(function() TS:SetTeleportSetting("Egg01_TargetHopN", n + 1) end)
+end
+local function clearHopMark()
+    pcall(function() TS:SetTeleportSetting("Egg01_TargetPrevJob", "") end)
+    pcall(function() TS:SetTeleportSetting("Egg01_TargetHopN", 0) end)
+end
+local function hopAttemptN()
+    local ok, n = pcall(function() return tonumber(TS:GetTeleportSetting("Egg01_TargetHopN")) or 0 end)
+    return ok and n or 0
+end
+local function listOtherJobs()
+    local ban = loadBanJobs()
+    ban[tostring(game.JobId)] = true
+    local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId)
+    local raw = httpGet(url)
+    if not raw then return {} end
+    local ok, data = pcall(function() return HS:JSONDecode(raw) end)
+    if not ok or typeof(data) ~= "table" or typeof(data.data) ~= "table" then return {} end
+    local list = {}
+    for _, srv in ipairs(data.data) do
+        if typeof(srv) == "table" then
+            local id = tostring(srv.id or "")
+            if id ~= "" and not ban[id] then
+                local playing = tonumber(srv.playing) or 0
+                local maxp = tonumber(srv.maxPlayers) or 99
+                local free = maxp - playing
+                if playing > 0 and free >= 2 then
+                    list[#list + 1] = { id = id, playing = playing, free = free }
+                end
+            end
+        end
+    end
+    for i = #list, 2, -1 do
+        local j = math.random(i)
+        list[i], list[j] = list[j], list[i]
+    end
+    table.sort(list, function(a, b) return a.free > b.free end)
+    return list
+end
+local function tryTeleportJob(job)
+    if not job then return false end
+    say("ไปเซิร์ฟอื่น JobId=" .. job:sub(1, 8) .. "…")
+    local ok, err = pcall(function() TS:TeleportToPlaceInstance(game.PlaceId, job, LP) end)
+    if not ok then say("TP ล้ม: " .. tostring(err)); return false end
+    return true
+end
+local function hopNextJob()
+    if not S.hopJobs then return false end
+    while S.hopIdx < #S.hopJobs do
+        S.hopIdx = S.hopIdx + 1
+        local j = S.hopJobs[S.hopIdx]
+        if j and tryTeleportJob(j.id) then return true end
+    end
+    return false
+end
+local function ensureTpFailHandler()
+    if S.tpFailConn then return end
+    S.tpFailConn = TS.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+        if player ~= LP or not S.hopping then return end
+        say("TP fail: " .. tostring(teleportResult) .. " — ลองใบถัดไป")
+        task.defer(function()
+            if hopNextJob() then return end
+            task.wait(1.5)
+            S.hopJobs = listOtherJobs()
+            S.hopIdx = 0
+            if #S.hopJobs > 0 and hopNextJob() then return end
+            S.hopping = false
+            say("หาเซิร์ฟอื่นไม่ได้ตอนนี้")
+        end)
+    end)
+end
+local function rejoinServer(why)
+    if S.hopping or S.carrying then return false end
+    S.hopping = true
+    S.run = false
+    saveHomeSetting()
+    savePrevJob()
+    ensureTpFailHandler()
+    say((why or "ไม่เจอเป้า") .. " — hop ออกจากเซิร์ฟนี้")
+    task.spawn(function()
+        task.wait(0.35)
+        local jobs = listOtherJobs()
+        S.hopJobs, S.hopIdx = jobs, 0
+        if #jobs == 0 then
+            say("ไม่เจอเซิร์ฟว่างใน list")
+            S.hopping = false
+            return
+        end
+        say(string.format("มี %d เซิร์ฟว่าง — ลองทีละใบ", #jobs))
+        if not hopNextJob() then S.hopping = false end
+    end)
+    return true
+end
+local function rejectSameServerIfNeeded()
+    local n = hopAttemptN()
+    if n <= 0 then return false end
+    local ban = loadBanJobs()
+    if not ban[tostring(game.JobId)] then
+        clearHopMark()
+        return false
+    end
+    if n >= 6 then
+        say("ยังวนเซิร์ฟแบน " .. tostring(n) .. " ครั้ง — หยุด hop ชั่วคราว")
+        clearHopMark()
+        return false
+    end
+    say("ยังเป็นเซิร์ฟแบน — hop ใหม่ #" .. tostring(n))
+    task.delay(1.2, function() rejoinServer("กันเซิร์ฟเดิม/เพื่อน") end)
+    return true
 end
 
 local function readConfig()
@@ -759,9 +922,9 @@ end
 
 local function waitEggOnTread()
     local n, lastSay, lastMount, lastScan, lastDiag = 0, 0, 0, 0, 0
+    local missSince = os.clock()
     if not onTreadmill() then returnTreadmill() end
     while S.run do
-        -- สแกน 2 วิ/ครั้ง; ทุก 10 วิเปิดโหมดโวายเหตุผล (pos/rarMap/ผ่าน/snapshot error) จะได้เห็ว่าทำไมไม่เจอ
         if os.clock() - lastScan >= 2 then
             lastScan = os.clock()
             local loud = os.clock() - lastDiag >= 10
@@ -771,11 +934,16 @@ local function waitEggOnTread()
                 return target
             end
             if loud then lastDiag = os.clock() end
+            if os.clock() - missSince >= HOP_MISS_SEC then
+                rejoinServer("ลู่วิ่งไม่เจอเป้า " .. tostring(HOP_MISS_SEC) .. "s")
+                return nil
+            end
         end
         if onTreadmill() then
             n = jogTreadTick(n)
             if os.clock() - lastSay >= 20 then
-                say("ลู่วิ่งรอไข่ | " .. rarityText())
+                local left = math.max(0, HOP_MISS_SEC - (os.clock() - missSince))
+                say(string.format("ลู่วิ่งรอไข่ | hop ใน %.0fs | %s", left, rarityText()))
                 lastSay = os.clock()
             end
             task.wait(0.45)
@@ -1335,7 +1503,7 @@ local function runOne()
     end
     S.run = true
     bStart.Text = "AUTO"
-    say("AUTO ON — HOME→Rift→ไข่→Rift→HOME | ไม่มีเป้า=ลู่วิ่งรอ")
+    say("AUTO ON — HOME→Rift→ไข่ | ไม่เจอ "..tostring(HOP_MISS_SEC).."s→hop")
     resolveRift()
     task.spawn(function()
         while S.run do
@@ -1461,7 +1629,13 @@ end
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = humRoot()
-    if r then S.home = r.Position; say("HOME ตั้งแล้ว (ตำแหน่งฐาน)") else say("ไม่มีตัวละคร") end
+    if r then
+        S.home = r.Position
+        saveHomeSetting()
+        say("HOME ตั้งแล้ว (ตำแหน่งฐาน)")
+    else
+        say("ไม่มีตัวละคร")
+    end
 end)
 bScan.MouseButton1Click:Connect(chooseTarget)
 bStart.MouseButton1Click:Connect(runOne)
@@ -1471,9 +1645,13 @@ bStop.MouseButton1Click:Connect(function()
     bStart.Text = "START"
     say("STOP")
 end)
+bHop.MouseButton1Click:Connect(function()
+    if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end
+    rejoinServer("กด HOP")
+end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
-    if clip then pcall(clip, "=== Egg01 Target Farm v3.12 ===\n" .. table.concat(lines, "\n")) end
+    if clip then pcall(clip, "=== Egg01 Target Farm v3.13 ===\n" .. table.concat(lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -1481,6 +1659,7 @@ bClose.MouseButton1Click:Connect(function()
     setClip(false)
     for _, c in ipairs(S.conns) do pcall(function() c:Disconnect() end) end
     for _, c in ipairs(S.eggConns) do pcall(function() c:Disconnect() end) end
+    pcall(function() if S.tpFailConn then S.tpFailConn:Disconnect() end end)
     gui:Destroy(); _G.EGG01_TARGET_FARM = nil
 end)
 
@@ -1504,4 +1683,9 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.12 | Div>Ete>Sec>Cos ไกลก่อน | กู้ไข่หลุดแม่น (รอพิกัด 3 วิ)")
+say("v3.13 | hop เซิร์ฟ (เลี่ยงเพื่อน) | ลู่วิ่งไม่เจอ "..tostring(HOP_MISS_SEC).."s→hop | Div>Ete>Sec>Cos")
+if loadHomeSetting() then
+    say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
+end
+rejectSameServerIfNeeded()
+say("JobId=" .. tostring(game.JobId):sub(1, 8) .. "…")
