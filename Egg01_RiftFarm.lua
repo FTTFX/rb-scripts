@@ -1,10 +1,10 @@
--- Egg01 Rift Farm v1.31 -- autoboot HOME+START / HOME→Rift→ไข่→Rift→HOME / Rejoin
+-- Egg01 Rift Farm v1.32 -- autoboot / VIA RIFT / hop ชี้ JobId คนละเซิร์ฟ (เลี่ยงเซิร์ฟเพื่อน)
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
-local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
+local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local HS=game:GetService("HttpService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=70
 local RIFT_R,RIFT_DEPTH=6,-8
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
-local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil,rift=nil}; _G.EGG01_RIFT_FARM=S; local lines={}
+local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil,rift=nil,hopJobs=nil,hopIdx=0}; _G.EGG01_RIFT_FARM=S; local lines={}
 local function say(x) lines[#lines+1]=x; if #lines>12 then table.remove(lines,1) end; if log then log.Text=table.concat(lines,"\n") end; warn("[RiftFarm] "..x) end
 local function hr() local c=LP.Character; return c and c:FindFirstChildOfClass("Humanoid"),c and c:FindFirstChild("HumanoidRootPart") end
 local function setClip(on)
@@ -239,7 +239,35 @@ local function loadHomeSetting()
   return true
  end
 end
+local function httpGet(url)
+ local ok,r=pcall(function() return game:HttpGet(url) end); if ok and r then return r end
+ local req=request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+ if req then
+  local ok2,res=pcall(function() return req({Url=url,Method="GET"}) end)
+  if ok2 and typeof(res)=="table" then return res.Body or res.body end
+ end
+end
+local function loadBanJobs()
+ local ban={}
+ local ok,raw=pcall(function() return TS:GetTeleportSetting("Egg01_RiftBanJobs") end)
+ if ok and typeof(raw)=="string" and raw~="" then
+  for id in string.gmatch(raw,"[^,]+") do if id~="" then ban[id]=true end end
+ end
+ local ok2,prev=pcall(function() return TS:GetTeleportSetting("Egg01_RiftPrevJob") end)
+ if ok2 and prev and prev~="" then ban[tostring(prev)]=true end
+ return ban
+end
+local function pushBanJob(jobId)
+ if not jobId or jobId=="" then return end
+ local ban=loadBanJobs(); ban[tostring(jobId)]=true
+ local list={}
+ for id in pairs(ban) do list[#list+1]=id end
+ -- เก็บล่าสุดไม่เกิน 8 ห้อง
+ while #list>8 do table.remove(list,1) end
+ pcall(function() TS:SetTeleportSetting("Egg01_RiftBanJobs",table.concat(list,",")) end)
+end
 local function savePrevJob()
+ pushBanJob(game.JobId)
  pcall(function() TS:SetTeleportSetting("Egg01_RiftPrevJob",tostring(game.JobId)) end)
  local n=0
  pcall(function() n=tonumber(TS:GetTeleportSetting("Egg01_RiftHopN")) or 0 end)
@@ -249,24 +277,68 @@ local function clearHopMark()
  pcall(function() TS:SetTeleportSetting("Egg01_RiftPrevJob","") end)
  pcall(function() TS:SetTeleportSetting("Egg01_RiftHopN",0) end)
 end
-local function sameServerAsPrev()
- local ok,prev=pcall(function() return TS:GetTeleportSetting("Egg01_RiftPrevJob") end)
- if not ok or not prev or prev=="" then return false end
- return tostring(prev)==tostring(game.JobId)
-end
 local function hopAttemptN()
  local ok,n=pcall(function() return tonumber(TS:GetTeleportSetting("Egg01_RiftHopN")) or 0 end)
  return ok and n or 0
+end
+-- Teleport(place) มักโยนกลับเซิร์ฟเพื่อน → ต้องชี้ JobId คนละห้อง
+local function listOtherJobs()
+ local ban=loadBanJobs()
+ ban[tostring(game.JobId)]=true
+ local url=("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId)
+ local raw=httpGet(url); if not raw then return {} end
+ local ok,data=pcall(function() return HS:JSONDecode(raw) end)
+ if not ok or typeof(data)~="table" or typeof(data.data)~="table" then return {} end
+ local list={}
+ for _,srv in ipairs(data.data) do
+  if typeof(srv)=="table" then
+   local id=tostring(srv.id or "")
+   if id~="" and not ban[id] then
+    local playing=tonumber(srv.playing) or 0
+    local maxp=tonumber(srv.maxPlayers) or 99
+    local free=maxp-playing
+    if playing>0 and free>=2 then
+     list[#list+1]={id=id,playing=playing,free=free}
+    end
+   end
+  end
+ end
+ for i=#list,2,-1 do
+  local j=math.random(i)
+  list[i],list[j]=list[j],list[i]
+ end
+ table.sort(list,function(a,b) return a.free>b.free end)
+ return list
+end
+local function tryTeleportJob(job)
+ if not job then return false end
+ say("ไปเซิร์ฟอื่น JobId="..job:sub(1,8).."… (ตัดเซิร์ฟเดิม/แบนออก)")
+ local ok,err=pcall(function() TS:TeleportToPlaceInstance(game.PlaceId,job,LP) end)
+ if not ok then say("TP ล้ม: "..tostring(err)); return false end
+ return true
+end
+local function hopNextJob()
+ if not S.hopJobs then return false end
+ while S.hopIdx<#S.hopJobs do
+  S.hopIdx=S.hopIdx+1
+  local j=S.hopJobs[S.hopIdx]
+  if j and tryTeleportJob(j.id) then return true end
+ end
+ return false
 end
 local function ensureTpFailHandler()
  if S.tpFailConn then return end
  S.tpFailConn=TS.TeleportInitFailed:Connect(function(player,teleportResult,errorMessage)
   if player~=LP or not S.hopping then return end
-  say("TP fail: "..tostring(teleportResult).." | "..tostring(errorMessage or ""))
+  say("TP fail: "..tostring(teleportResult).." | "..tostring(errorMessage or "").." — ลองใบถัดไป")
   task.defer(function()
-   say("ลอง Teleport อีกครั้ง (เกมจับคู่เอง)")
-   pcall(function() TS:Teleport(game.PlaceId,LP) end)
-   task.wait(8); S.hopping=false
+   if hopNextJob() then return end
+   say("list หมด — รอแล้วดึง list ใหม่")
+   task.wait(1.5)
+   S.hopJobs=listOtherJobs(); S.hopIdx=0
+   if #S.hopJobs>0 and hopNextJob() then return end
+   S.hopping=false
+   say("หาเซิร์ฟอื่นไม่ได้ตอนนี้")
   end)
  end)
 end
@@ -276,27 +348,35 @@ local function rejoinServer(why)
  saveHomeSetting()
  savePrevJob()
  ensureTpFailHandler()
- say((why or "ไม่เจอเป้า").." — Rejoin (ห้ามเซิร์ฟเดิม JobId="..tostring(game.JobId):sub(1,8).."…)")
+ say((why or "ไม่เจอเป้า").." — hop ออกจากเซิร์ฟนี้ (กันเพื่อน/JobId เดิม)")
  task.spawn(function()
   task.wait(0.35)
-  local ok,err=pcall(function() TS:Teleport(game.PlaceId,LP) end)
-  if not ok then say("Teleport ล้ม: "..tostring(err)); S.hopping=false end
+  local jobs=listOtherJobs()
+  S.hopJobs=jobs; S.hopIdx=0
+  if #jobs==0 then
+   say("ไม่เจอเซิร์ฟว่างใน list — ลองใหม่ภายหลัง")
+   S.hopping=false
+   return
+  end
+  say(string.format("มี %d เซิร์ฟว่าง (ตัด JobId เดิมออก) — ลองทีละใบ",#jobs))
+  if not hopNextJob() then S.hopping=false end
  end)
  return true
 end
 local function rejectSameServerIfNeeded()
- if not sameServerAsPrev() then
-  if hopAttemptN()>0 then clearHopMark() end
-  return false
- end
  local n=hopAttemptN()
- if n>=4 then
-  say("ได้เซิร์ฟเดิมซ้ำ "..tostring(n).." ครั้ง — หยุด hop ชั่วคราว")
+ if n<=0 then return false end
+ local ban=loadBanJobs()
+ if not ban[tostring(game.JobId)] then
+  clearHopMark(); return false
+ end
+ if n>=6 then
+  say("ยังวนเซิร์ฟแบน "..tostring(n).." ครั้ง — หยุดชั่วคราว")
   clearHopMark()
   return false
  end
- say("ได้เซิร์ฟเดิม ("..tostring(game.JobId):sub(1,8).."…) — hop ใหม่ครั้งที่ "..tostring(n))
- task.delay(1.2,function() rejoinServer("กันเซิร์ฟเดิม") end)
+ say("ยังเป็นเซิร์ฟแบน ("..tostring(game.JobId):sub(1,8).."…) — hop ใหม่ #"..tostring(n))
+ task.delay(1.2,function() rejoinServer("กันเซิร์ฟเดิม/เพื่อน") end)
  return true
 end
 local biomeForNeed, flatDist, biomeHubPos, proxyPosFromSnapshot
@@ -740,7 +820,7 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.31 — AUTOBOOT"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.32 — HOP JOB"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
@@ -803,7 +883,7 @@ start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.31: เปิดแล้ว auto HOME+START | VIA RIFT | Rejoin")
+say("v1.32: hop ชี้ JobId คนละเซิร์ฟ (เลี่ยงเพื่อน) | autoboot | VIA RIFT")
 -- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
 task.spawn(function()
  local t0=os.clock()
