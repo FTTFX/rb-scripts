@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.20 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- autoboot AUTO | เจอเป้า→เสียงปลุก 60s กด HOP | ปุ่ม SND ปิดเสียงได้
--- v3.20: hold 60s บนลู่วิ่ง | v3.19 MUTE | v3.18 alert
+-- Egg01 Target Farm v3.23 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- autoboot AUTO | เจอเป้า→เสียง+ฟาร์มทันที | มือว่าง→กู้ทันที | hop กดมือ
+-- v3.23: returnHome เช็คมือ | v3.22 ไม่ hold | v3.19 MUTE
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -31,7 +31,6 @@ local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
 local ALERT_SOUND_ID = "rbxassetid://4590662766"
 local ALERT_COOLDOWN = 8
-local ALERT_HOLD_SEC = 60 -- บนลู่วิ่ง: ปลุกซ้ำ รอให้มากด HOP ก่อนค่อยฟาร์ม
 local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {}, hopping = false, tpFailConn = nil, hopJobs = nil, hopIdx = 0, alertAt = 0, alertOn = true }
 _G.EGG01_TARGET_FARM = S
 
@@ -318,7 +317,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.19 — AUTOBOOT"
+title.Text = "Egg01 Target Farm v3.23 — AUTOBOOT"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -429,7 +428,7 @@ local function playTargetAlert(info)
         end
     end)
     if info then
-        say(string.format("ALERT %s %s sc=%.2f — %.0fs กด HOP หรือรอฟาร์ม", info.rar or "?", info.cat or "?", info.scale or 0, ALERT_HOLD_SEC))
+        say(string.format("ALERT %s %s sc=%.2f — ฟาร์มเลย | กด HOP ได้", info.rar or "?", info.cat or "?", info.scale or 0))
     end
 end
 
@@ -970,30 +969,7 @@ local function waitEggOnTread()
             local loud = os.clock() - lastDiag >= 10
             local target = chooseTarget(not loud)
             if target then
-                -- ปลุกซ้ำ ~ALERT_HOLD_SEC ให้ทันมากด HOP ก่อนค่อยออกไปฟาร์ม
-                local holdUntil = os.clock() + ALERT_HOLD_SEC
                 playTargetAlert(target)
-                while S.run and not S.hopping and os.clock() < holdUntil do
-                    local left = math.max(0, holdUntil - os.clock())
-                    if os.clock() - (S.alertAt or 0) >= ALERT_COOLDOWN then
-                        playTargetAlert(target)
-                    end
-                    if onTreadmill() then
-                        n = jogTreadTick(n)
-                        if os.clock() - lastSay >= 5 then
-                            say(string.format("ALERT %s sc=%.2f | กด HOP หรือฟาร์มใน %.0fs", target.rar, target.scale, left))
-                            lastSay = os.clock()
-                        end
-                        task.wait(0.45)
-                    else
-                        if os.clock() - lastMount >= 3 then
-                            returnTreadmill()
-                            lastMount = os.clock()
-                        end
-                        task.wait(1)
-                    end
-                end
-                if not S.run or S.hopping then return nil end
                 say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
                 return target
             end
@@ -1362,14 +1338,13 @@ local function recoverDroppedEgg(dropPos)
     return false, "steal ไม่ติด"
 end
 
--- กลับ HOME: ถือถึงวิ่ง | หล่น=ตรวจ eggDB ก่อน ไข่ยังอยู่=กู้ทันที | หาย/กู้ไม่ติด=สแกนเป้าใหม่ ไม่เดินเปล่า
+-- กลับ HOME: เช็คมือทุกติ๊ก | ว่าง→กู้ทันที (eggDB/จุดยืน) | ถือค่อยวิ่งบ้าน
 local function returnHome()
     local deadline, lastReport = os.clock() + 180, 0
     S.impactHopUsed, S.lastReturnDist = false, nil
     resolveRift(true)
     attachEggFeed()
     local phase = 'rift'
-    local recoveredOnce = false
     while S.run and os.clock() < deadline do
         local h, r = humRoot()
         if not h or not r or not S.home then return false end
@@ -1386,65 +1361,77 @@ local function returnHome()
             S.lastShiftScan = os.clock()
             attachShiftListener()
         end
-        if not S.carrying then
+
+        local inHand = lookingLikeCarry()
+        if S.expectedUid and not inHand and os.clock() >= (S.stealGraceUntil or 0) then
+            if S.carrying then
+                stopMove()
+                say('มือว่าง — กู้ไข่ทันที')
+            end
+            S.carrying = false
+            if not S.droppedPos then
+                local e = S.eggDB[tostring(S.carriedUid or S.expectedUid)]
+                S.droppedPos = (e and e.pos) or r.Position
+            end
+        elseif inHand then
+            S.carrying = true
+            S.returnPaused = false
+        end
+
+        if not inHand and S.expectedUid and os.clock() >= (S.stealGraceUntil or 0) then
             local dropPos = S.droppedPos
             if not dropPos then
-                -- race: Carry หลุดมาก่อน Shifted ส่งพิกัด — รอสั้น ๆ แล้วค่อยเลิก (ไข่ d=66 กู้คุ้มกว่าเลิก)
-                local t0 = os.clock()
-                while S.run and os.clock() - t0 < 3 do
-                    if S.carrying then break end
-                    if S.droppedPos then break end
-                    task.wait(0.1)
-                end
-                dropPos = S.droppedPos
-                if S.carrying then
-                    -- กลับมือในช่วงรอ — ถือต่อ วิ่งต่อ
-                elseif not dropPos then
-                    say('ไข่หล่นระหว่างทาง — ไม่ไล่เก็บ (แบบ RiftFarm)')
-                    return false
-                end
+                local e = S.eggDB[tostring(S.carriedUid or S.expectedUid)]
+                dropPos = (e and e.pos) or r.Position
+                S.droppedPos = dropPos
             end
-            if dropPos and not recoveredOnce and not S.carrying then
-                recoveredOnce = true
-                say('ไข่หลุด — ตรวจว่ายังอยู่จุดหลุด')
-                local ok, why = recoverDroppedEgg(dropPos)
-                if ok and S.carrying and (not S.carryAvailable or S.carryVerified) then
-                    S.returnPaused = false
-                    say('กู้ได้แล้ว — วิ่งกลับต่อ')
-                else
-                    say('กู้ไม่ได้ (' .. tostring(why) .. ') — ไม่ไล่ กลับ/สแกนใหม่')
-                    return false
-                end
-            end
-        end
-        h, r = humRoot()
-        if not h or not r then return false end
-        local dHome = dist2(r.Position, S.home)
-        if dHome <= HOME_R then stopMove(); return true end
-        local deep = select(1, riftDeepTarget(S.home))
-        if phase == 'rift' and deep then
-            local dR = dist2(r.Position, deep)
-            if dR <= RIFT_R then
-                phase = 'home'
-                say('ถึง Rift ลึกแล้ว → วิ่งกลับ HOME')
+            say('ไข่หลุด — กู้ทันที')
+            local ok, why = recoverDroppedEgg(dropPos)
+            if ok and (S.carrying or lookingLikeCarry()) then
+                S.carrying = true
+                S.returnPaused = false
+                S.droppedPos = nil
+                say('กู้ได้แล้ว — วิ่งกลับต่อ')
             else
-                S.lastReturnDist = dR
-                h:MoveTo(Vector3.new(deep.X, r.Position.Y, deep.Z))
+                local gone = tostring(why or ""):find("หาย", 1, true) or tostring(why or ""):find("State=", 1, true)
+                if gone then
+                    say('กู้ไม่ได้ (' .. tostring(why) .. ') — สแกนใหม่')
+                    return false
+                end
+                say('กู้ไม่ติด (' .. tostring(why) .. ') — ลองใหม่')
+                task.wait(0.25)
+            end
+            -- ห้ามวิ่งบ้านตอนมือว่าง
+        else
+            h, r = humRoot()
+            if not h or not r then return false end
+            local dHome = dist2(r.Position, S.home)
+            if dHome <= HOME_R then stopMove(); return true end
+            local deep = select(1, riftDeepTarget(S.home))
+            if phase == 'rift' and deep then
+                local dR = dist2(r.Position, deep)
+                if dR <= RIFT_R then
+                    phase = 'home'
+                    say('ถึง Rift ลึกแล้ว → วิ่งกลับ HOME')
+                else
+                    S.lastReturnDist = dR
+                    h:MoveTo(Vector3.new(deep.X, r.Position.Y, deep.Z))
+                    if os.clock() - lastReport >= 1 then
+                        say(string.format('วิ่งกลับผ่าน Rift ลึก%+d d=%.0f', RIFT_DEPTH, dR))
+                        lastReport = os.clock()
+                    end
+                    task.wait(0.15)
+                end
+            else
+                impactHopToward(h, r, S.home, HOME_R, dHome)
+                S.lastReturnDist = dHome
+                h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
                 if os.clock() - lastReport >= 1 then
-                    say(string.format('วิ่งกลับผ่าน Rift ลึก%+d d=%.0f', RIFT_DEPTH, dR))
+                    say(string.format('วิ่งกลับ HOME d=%.0f', dHome))
                     lastReport = os.clock()
                 end
                 task.wait(0.15)
             end
-        else
-            impactHopToward(h, r, S.home, HOME_R, dHome)
-            S.lastReturnDist = dHome
-            h:MoveTo(Vector3.new(S.home.X, r.Position.Y, S.home.Z))
-            if os.clock() - lastReport >= 1 then
-                say(string.format('วิ่งกลับ HOME d=%.0f', dHome))
-                lastReport = os.clock()
-            end
-            task.wait(0.15)
         end
     end
     return false
@@ -1758,7 +1745,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.20 | เจอเป้า→ปลุก 60s กด HOP | Sec+Ete+Div | SND | hop กดมือ")
+say("v3.23 | มือว่าง→กู้ทันที | เสียง+ฟาร์มเลย | hop กดมือ")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
