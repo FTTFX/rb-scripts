@@ -1652,7 +1652,7 @@ end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, "=== Egg01 Target Farm v3.13 ===\n" .. table.concat(lines, "\n")) end
-    bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
+    bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "CPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
     S.run = false
