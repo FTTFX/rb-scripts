@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.26 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- ไปไข่ไกลไม่ timeout | ยิงแล้วต้องถือจริงค่อยวิ่ง | Claimed=เลิก
--- v3.26: limit+hold-check | v3.25 Slot/drop | v3.24 fire-and-go
+-- Egg01 Target Farm v3.27 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- เข้าไข่ชะลอ+offset | รอยืนยันก่อนวิ่ง (แบบ RiftFarm one)
+-- v3.27: steal แบบ Rift | v3.26 limit+hold | v3.25 drop/Slot
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -320,7 +320,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.26 — AUTOBOOT"
+title.Text = "Egg01 Target Farm v3.27 — AUTOBOOT"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -1436,33 +1436,24 @@ local function returnHome()
     return false
 end
 
--- ยิง RF/prompt เร็ว — แต่ต้องถือจริง (UID/มือ) ค่อยวิ่งกลับ
+-- เข้าไข่แบบ RiftFarm one(): ชะลอละเอียด → RF 1.2s → offset หา prompt → รอยืนยันก่อนวิ่ง
 local function stealEggLikeRift(t)
     attachCarryListener()
     attachEggFeed()
-    local eggPos = t.pos
-    local walkPos = nearestStealPos(eggPos) or eggPos
-    local _, r0 = humRoot()
-    if not (r0 and dist2(r0.Position, walkPos) <= 8) then
-        say(string.format('เข้าไข่ UID @%.0f,%.0f', walkPos.X, walkPos.Z))
-        if not walkSlow(walkPos, 5, 16, 55) then
-            say('เข้าพิกัดไข่ไม่สำเร็จ')
-            return false
-        end
-    else
-        say('ใกล้ไข่แล้ว — ยิงเลย')
+    t.eggPos = t.eggPos or t.pos
+    local walkPos = nearestStealPos(t.eggPos) or t.pos
+    say(string.format('เข้าไข่ละเอียด @%.0f,%.0f', walkPos.X, walkPos.Z))
+    if not walkSlow(walkPos, 5, 22, 55) then
+        say('เข้าพิกัดไข่ไม่สุด — ลองยิงต่อ')
     end
     stopMove()
     S.expectedUid, S.carryVerified, S.carryMismatchUid = t.uid, false, nil
     S.carrying = false
-    say('RF Uid=' .. tostring(t.uid))
+    say('ลอง RF AskFieldEggCarry Uid=' .. tostring(t.uid))
     tryAskCarry(t.uid)
-    local function heldOk()
-        return S.carryVerified or lookingLikeCarry()
-    end
-    local t0 = os.clock()
-    while S.run and os.clock() - t0 < 0.35 do
-        if heldOk() or S.carryMismatchUid then break end
+    local untilRf = os.clock() + 1.2
+    while S.run and os.clock() < untilRf and not S.carryVerified and not S.carryMismatchUid do
+        if lookingLikeCarry() then S.carrying = true; S.carryVerified = true; break end
         task.wait(0.05)
     end
     if S.carryMismatchUid then
@@ -1470,30 +1461,53 @@ local function stealEggLikeRift(t)
         tryDropHeld()
         return false
     end
-    if not heldOk() then
-        local pick = select(1, choosePrompt(t))
+    if not S.carryVerified then
+        local pick, md, gap, detail = choosePrompt(t)
+        if not pick then
+            local base = t.eggPos or t.pos
+            for _, off in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0), Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
+                if walkSlow(base + off, 2, 2.5, 10) then
+                    pick, md, gap, detail = choosePrompt(t)
+                    if pick then break end
+                end
+            end
+        end
         if pick then
-            say('fp Steal')
-            fireSteal(pick)
-            tryAskCarry(t.uid)
+            local part = pick.Parent and (pick.Parent:IsA('BasePart') and pick.Parent or pick.Parent:FindFirstChildWhichIsA('BasePart', true))
+            if part then walkSlow(part.Position, 3.2, 6, 14); stopMove() end
+            pick, md, gap, detail = choosePrompt(t)
+            if pick then
+                say(string.format('fp Steal ใกล้ไข่ pd=%.2f gap=%.2f', md or -1, gap or -1))
+                fireSteal(pick)
+                tryAskCarry(t.uid)
+                local untilT = os.clock() + 2
+                while S.run and os.clock() < untilT and not S.carryVerified and not S.carryMismatchUid do
+                    if lookingLikeCarry() then S.carrying = true; S.carryVerified = true; break end
+                    task.wait(0.05)
+                end
+            else
+                say('ไม่เจอ Prompt หลังเข้าใกล้ (' .. tostring(detail) .. ')')
+            end
+        else
+            say('RF ไม่ติด + ไม่เจอ Prompt (' .. tostring(detail) .. ')')
         end
-        t0 = os.clock()
-        while S.run and os.clock() - t0 < 0.7 do
-            if heldOk() or S.carryMismatchUid then break end
-            task.wait(0.05)
-        end
+    end
+    if not S.carryVerified and lookingLikeCarry() then
+        S.carrying = true
+        S.carryVerified = true
+        say('ถือไข่แล้ว (visual) — วิ่งกลับ')
     end
     if S.carryMismatchUid then
         say('UID ผิด — ทิ้ง')
         tryDropHeld()
         return false
     end
-    if not heldOk() then
-        say('ยังไม่ถือไข่ — ไม่วิ่งกลับเปล่า')
+    if not S.carryVerified then
+        say('ยังไม่ถือเป้า — ไม่วิ่งกลับ')
         return false
     end
     S.carrying = true
-    say('ถือแล้ว — วิ่งกลับ')
+    say('ถือไข่ UID เป้าแล้ว — วิ่งกลับ')
     return true
 end
 
@@ -1504,7 +1518,8 @@ local function farmTarget(target)
     local _, r = humRoot()
     local dEgg = (r and target.pos) and dist2(r.Position, target.pos) or 2000
     local lim = math.clamp(dEgg / 12 + 90, 120, 480)
-    local reachedTarget = goViaRift(target.pos, APPROACH_R, lim, target.cat)
+    -- เข้าใกล้ rad=5 แบบ Rift แล้วค่อย steal ละเอียด
+    local reachedTarget = goViaRift(target.pos, 5, lim, target.cat)
     if not reachedTarget then
         say('ไปถึงไข่ไม่สำเร็จ')
         S.eggDB[tostring(target.uid or "")] = nil
@@ -1737,7 +1752,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.26 | ไกลไม่ timeout | ถือจริงค่อยวิ่ง | hop กดมือ")
+say("v3.27 | เข้าไข่แบบ Rift | รอยืนยันก่อนวิ่ง | hop กดมือ")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
