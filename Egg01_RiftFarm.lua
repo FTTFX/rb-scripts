@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.30 -- สแกนครบ 3 / HOME→Rift→ไข่→Rift→HOME / Rejoin ไม่ใส่ JobId
+-- Egg01 Rift Farm v1.31 -- autoboot HOME+START / HOME→Rift→ไข่→Rift→HOME / Rejoin
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=70
@@ -740,23 +740,32 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.30 — VIA RIFT"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.31 — AUTOBOOT"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
 local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,hop,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;setClip(false);gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
-attachCarry(); attachEggFeed()
-if loadHomeSetting() then say(string.format("HOME โหลดจากเซิร์ฟก่อน @%.0f,%.0f,%.0f",S.home.X,S.home.Y,S.home.Z)) end
-rejectSameServerIfNeeded()
-say("เซิร์ฟนี้ JobId="..tostring(game.JobId):sub(1,8).."…")
-home.MouseButton1Click:Connect(function() local _,r=hr(); if r then S.home=r.Position; saveHomeSetting(); say("HOME ตั้งแล้ว (ฐาน)")end end)
-scan.MouseButton1Click:Connect(function() task.spawn(function() local n=refreshSnapshot(); say("SCAN eggDB="..tostring(n)); target() end) end)
-start.MouseButton1Click:Connect(function()
- if S.run then return end
- if not S.home then say("ยังไม่ได้ตั้ง HOME — ยืนที่ฐานแล้วกด HOME ก่อน AUTO"); return end
- S.run=true; S.missSince=nil; S.hopping=false; start.Text="AUTO"
- say("RIFT AUTO ON — HOME→Rift→ไข่→Rift→HOME | ไม่เจอ "..tostring(REJOIN_AFTER).."s → Rejoin")
+local function ensureHome(forceHere)
+ local _,r=hr()
+ if forceHere and r then
+  S.home=r.Position; saveHomeSetting()
+  say(string.format("HOME auto @%.0f,%.0f,%.0f",S.home.X,S.home.Y,S.home.Z))
+  return true
+ end
+ if S.home then return true end
+ if r then
+  S.home=r.Position; saveHomeSetting()
+  say(string.format("HOME auto (จุดยืน) @%.0f,%.0f,%.0f",S.home.X,S.home.Y,S.home.Z))
+  return true
+ end
+ return false
+end
+local function startAuto(reason)
+ if S.run or S.hopping then return false end
+ if not ensureHome(false) then say("ยังไม่มีตัวละคร — รอแล้ว auto ใหม่"); return false end
+ S.run=true; S.missSince=nil; start.Text="AUTO"
+ say((reason or "AUTO").." — HOME→Rift→ไข่→Rift→HOME | ไม่เจอ "..tostring(REJOIN_AFTER).."s → Rejoin")
  task.spawn(function()
   resolveRift()
   local n=refreshSnapshot(); say("eggDB โหลด "..tostring(n).." รายการ")
@@ -782,8 +791,31 @@ start.MouseButton1Click:Connect(function()
   end
   start.Text="START"
  end)
-end)
+ return true
+end
+attachCarry(); attachEggFeed()
+if loadHomeSetting() then say(string.format("HOME โหลดจากเซิร์ฟก่อน @%.0f,%.0f,%.0f",S.home.X,S.home.Y,S.home.Z)) end
+rejectSameServerIfNeeded()
+say("เซิร์ฟนี้ JobId="..tostring(game.JobId):sub(1,8).."…")
+home.MouseButton1Click:Connect(function() ensureHome(true) end)
+scan.MouseButton1Click:Connect(function() task.spawn(function() local n=refreshSnapshot(); say("SCAN eggDB="..tostring(n)); target() end) end)
+start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.30: HOME→Rift→ไข่→Rift→HOME | Rejoin กันเซิร์ฟเดิม | HOP")
+say("v1.31: เปิดแล้ว auto HOME+START | VIA RIFT | Rejoin")
+-- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
+task.spawn(function()
+ local t0=os.clock()
+ while os.clock()-t0<15 do
+  if S.hopping then return end
+  local _,r=hr()
+  if r then break end
+  task.wait(0.25)
+ end
+ if S.hopping then return end
+ if rejectSameServerIfNeeded() then return end
+ ensureHome(false)
+ task.wait(0.6)
+ if not S.hopping and not S.run then startAuto("autoboot") end
+end)
