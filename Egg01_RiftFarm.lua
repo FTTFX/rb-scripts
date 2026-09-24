@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.38 -- Shark Egg เทียบ name ด้วย (ไม่บังคับ cat) | hop 30s
+-- Egg01 Rift Farm v1.39 -- Shark=Finned Thresher alias | hop 30s
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local HS=game:GetService("HttpService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=30
@@ -486,6 +486,10 @@ end
 local function attachShift()
  return attachEggFeed()
 end
+-- ชื่อใน Rift ≠ AssetCategory ในฟิลด์ (เกมตั้งชื่อคนละแบบ)
+local NEED_ALIAS={
+ shark={"finnedthresher","thresher"},
+}
 local function eggMatchesNeed(e,needList)
  if not e then return end
  local cands={}
@@ -493,11 +497,14 @@ local function eggMatchesNeed(e,needList)
  if e.name and e.name~="" then cands[#cands+1]=e.name end
  if #cands==0 then return end
  for _,n in ipairs(needList) do
-  local nk=nameKey(n)
+  local keys={nameKey(n)}
+  local al=NEED_ALIAS[keys[1]]
+  if al then for _,a in ipairs(al) do keys[#keys+1]=nameKey(a) end end
   for _,cand in ipairs(cands) do
    local ck=nameKey(cand)
-   -- ตรงหลังตัด Egg แล้ว (Shark Egg ↔ Shark)
-   if nk~="" and nk==ck then return n,100,cand end
+   for _,nk in ipairs(keys) do
+    if nk~="" and nk==ck then return n,100,cand end
+   end
    local s=matchScore(n,cand)
    if s>=90 then return n,s,cand end
   end
@@ -963,7 +970,7 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.38 — NAME FIX"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.39 — SHARK=THRESHER"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
@@ -1036,7 +1043,7 @@ start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.38: Shark Egg↔Shark ได้ | จับคู่ cat+name | hop "..tostring(REJOIN_AFTER).."s")
+say("v1.39: Shark=Finned Thresher | hop "..tostring(REJOIN_AFTER).."s")
 -- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
 task.spawn(function()
  local t0=os.clock()
