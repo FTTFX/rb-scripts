@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.13 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ→hop เซิร์ฟอื่น | noclip
--- v3.13: hop JobId เลี่ยงเพื่อน (แบบ RiftFarm) | v3.12 rarity ไกลก่อน + กู้ไข่หลุด
+-- Egg01 Target Farm v3.14 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ 30s→hop | noclip
+-- v3.14: hop รอ 30s | v3.13 hop JobId เลี่ยงเพื่อน
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -28,7 +28,7 @@ local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local HOP_MISS_SEC = 20
+local HOP_MISS_SEC = 30
 local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {}, hopping = false, tpFailConn = nil, hopJobs = nil, hopIdx = 0 }
 _G.EGG01_TARGET_FARM = S
 
@@ -315,7 +315,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.13 — HOP"
+title.Text = "Egg01 Target Farm v3.14 — HOP 30s"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -1683,7 +1683,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.13 | hop เซิร์ฟ (เลี่ยงเพื่อน) | ลู่วิ่งไม่เจอ "..tostring(HOP_MISS_SEC).."s→hop | Div>Ete>Sec>Cos")
+say("v3.14 | hop รอ "..tostring(HOP_MISS_SEC).."s | เลี่ยงเพื่อน | Div>Ete>Sec>Cos")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
