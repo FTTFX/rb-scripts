@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.14 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- Egg01 Target Farm v3.15 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
 -- HOME→Rift→ไข่→Rift→HOME | ไม่เจอ=ลู่วิ่งรอ 30s→hop | noclip
--- v3.14: hop รอ 30s | v3.13 hop JobId เลี่ยงเพื่อน
+-- v3.15: default Sec+Ete+Div, MinScale 0.1 | v3.14 hop 30s
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -32,7 +32,7 @@ local HOP_MISS_SEC = 30
 local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {}, hopping = false, tpFailConn = nil, hopJobs = nil, hopIdx = 0 }
 _G.EGG01_TARGET_FARM = S
 
-local MIN_SCALE, ZONE = 1, "ALL"
+local MIN_SCALE, ZONE = 0.1, "ALL"
 local SCALE_CHOICES = { 0.1, 0.5, 1, 1.5, 2, 3, 5, 10 }
 local ZONE_CHOICES = { "ALL", "Forest", "Lake", "Desert", "Snow" }
 local RARITY_ORDER = { "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Cosmic", "Secret", "Eternal", "Divine" }
@@ -41,7 +41,7 @@ local RARITY_VALUE, RARITY_POINTS, SCALE_SQUARED_POINTS, DIST_POINTS = {}, 10000
 local selectedRarities = {}
 for i, rarity in ipairs(RARITY_ORDER) do
     RARITY_VALUE[rarity] = i
-    selectedRarities[rarity] = rarity == "Cosmic" or rarity == "Secret" or rarity == "Eternal" or rarity == "Divine"
+    selectedRarities[rarity] = rarity == "Secret" or rarity == "Eternal" or rarity == "Divine"
 end
 local HOME_R, STEAL_R, APPROACH_R, RECOVER_R, PROMPT_EXACT_R, RIFT_R, TREAD_R, RIFT_DEPTH = 60, 16, 5, 100, 18, 6, 12, -8
 local BRAKE_SECS = 0.12
@@ -315,7 +315,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.14 — HOP 30s"
+title.Text = "Egg01 Target Farm v3.15 — Sec/Ete/Div"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -355,9 +355,9 @@ zoneLabel.Size = UDim2.new(0, 160, 0, 16)
 zoneLabel.Text = "Zone"
 zoneLabel.Parent = panel
 
-local bScale = button("1.0 ▼", 10, 84, 74, Color3.fromRGB(40, 43, 49))
+local bScale = button("0.1 ▼", 10, 84, 74, Color3.fromRGB(40, 43, 49))
 local bZone = button("ALL ▼", 92, 84, 150, Color3.fromRGB(40, 43, 49))
-local bRarity = button("Cos,Sec,Ete,Div ▼", 250, 84, 72, Color3.fromRGB(110, 70, 170))
+local bRarity = button("Sec,Ete,Div ▼", 250, 84, 72, Color3.fromRGB(110, 70, 170))
 
 local scaleMenu = Instance.new("Frame", gui)
 scaleMenu.Size = UDim2.new(0, 74, 0, 0)
@@ -1683,7 +1683,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.14 | hop รอ "..tostring(HOP_MISS_SEC).."s | เลี่ยงเพื่อน | Div>Ete>Sec>Cos")
+say("v3.15 | default Sec+Ete+Div sc≥0.1 | hop "..tostring(HOP_MISS_SEC).."s")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
