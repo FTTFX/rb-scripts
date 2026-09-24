@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.24 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- autoboot | ยิง RF/prompt แล้ววิ่งเลย | มือว่าง→กู้ | hop กดมือ
--- v3.24: fire-and-go steal | v3.23 returnHome เช็คมือ | v3.22 ไม่ hold
+-- Egg01 Target Farm v3.26 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- ไปไข่ไกลไม่ timeout | ยิงแล้วต้องถือจริงค่อยวิ่ง | Claimed=เลิก
+-- v3.26: limit+hold-check | v3.25 Slot/drop | v3.24 fire-and-go
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -243,15 +243,18 @@ local function attachEggFeed()
     return #S.eggConns > 0
 end
 
--- ไข่ยังอยู่จุดหลุดจริงไหม: มีใน DB + State=Dropped + พิกัดใกล้จุดหลุด
+-- ไข่ยังกู้ได้ไหม: Dropped/Slot + มีพิกัด (Slot = ลงฐาน/พาด ไม่ใช่หาย)
 local function eggStillDropped(uid, dropPos)
     if not uid then return false, "ไม่มี UID" end
     local e = S.eggDB[tostring(uid)]
     if not e then return false, "หายจาก DB (ถูกเก็บ/หาย)" end
-    if e.state and e.state ~= "Dropped" then return false, "State=" .. e.state end
+    local st = e.state
+    if st and st ~= "Dropped" and st ~= "Slot" then
+        return false, "State=" .. st
+    end
     if dropPos and e.pos then
         local d = dist2(e.pos, dropPos)
-        if d > 25 then return false, string.format("ย้ายไป %.0f studs", d) end
+        if d > 40 then return false, string.format("ย้ายไป %.0f studs", d) end
     end
     return true
 end
@@ -317,7 +320,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.24 — AUTOBOOT"
+title.Text = "Egg01 Target Farm v3.26 — AUTOBOOT"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -860,7 +863,7 @@ local function riftDeepTarget(towardPos)
     return Vector3.new(rift.X + dir.X * RIFT_DEPTH, math.max(rift.Y, 70), rift.Z + dir.Z * RIFT_DEPTH), rift
 end
 
--- HOME/ลู่วิ่ง → Rift ก่อนเส้น → เป้า
+-- HOME/ลู่วิ่ง → Rift ก่อนเส้น → เป้า (ไกล=ไม่ชะลอ + limit ตามระยะ)
 local function goViaRift(dest, radius, limit, destLabel)
     if not dest then return false end
     local deep = select(1, riftDeepTarget(dest))
@@ -870,14 +873,15 @@ local function goViaRift(dest, radius, limit, destLabel)
     if dR > RIFT_R then
         say(string.format("ขั้น1 → Rift ลึก%+d @%.0f,%.0f,%.0f d=%.0f", RIFT_DEPTH, deep.X, deep.Y, deep.Z, dR))
         local lim1 = math.clamp(dR / 16 + 40, 50, 320)
-        local okR = walkTo(deep, RIFT_R, lim1, 55)
+        local okR = walkTo(deep, RIFT_R, lim1, dR > 120 and nil or 55)
         if not S.run then return false end
         say(okR and ("ถึง Rift ลึกแล้ว → " .. (destLabel or "เป้า")) or ("Rift ไม่สุด → ไปต่อ"))
     end
     local _, r2 = humRoot()
     local d2 = r2 and dist2(r2.Position, dest) or 9999
     say(string.format("ขั้น2 → %s d=%.0f", destLabel or "เป้า", d2))
-    local lim2 = limit or math.clamp(d2 / 14 + 60, 60, 400)
+    local lim2 = limit or math.clamp(d2 / 12 + 80, 90, 480)
+    -- ไกลไม่ชะลอทั้งทาง — ชะลอเฉพาะใกล้เป้า
     return walkTo(dest, radius or APPROACH_R, lim2, 55)
 end
 
@@ -1192,10 +1196,11 @@ local function attachCarryListener()
             else
                 if S.returning then
                     S.returnPaused = true
+                    S.stealGraceUntil = 0 -- หลุดจริง — กู้ทันที ไม่รอ grace
                     if not S.dropBrakeUsed then
                         S.dropBrakeUsed = true
                         stopMove()
-                        say("server: ไข่หลุดมือ — เบรกแล้วรอพิกัด")
+                        say("server: ไข่หลุดมือ — เบรกกู้ทันที")
                     else
                         say("server: ไข่หลุดมือ")
                     end
@@ -1224,17 +1229,18 @@ local function attachShiftListener()
         if os.clock() < (S.stealGraceUntil or 0) then return end
         if S.carrying or lookingLikeCarry() then return end
         local state = tostring(row.State or "")
-        if state ~= "Dropped" or tostring(row.Uid) ~= tostring(S.carriedUid) then return end
+        if (state ~= "Dropped" and state ~= "Slot") or tostring(row.Uid) ~= tostring(S.carriedUid) then return end
         local pos = posOf(row)
         if pos then
             S.droppedPos = pos
             S.carrying = false
             S.returnPaused = true
+            S.stealGraceUntil = 0
             if not S.dropBrakeUsed then
                 S.dropBrakeUsed = true
                 stopMove()
             end
-            say(string.format("UID %s หลุดมือ @%.0f,%.0f — กลับไปเก็บ", tostring(S.carriedUid), pos.X, pos.Z))
+            say(string.format("UID %s หลุด(%s) @%.0f,%.0f — กู้", tostring(S.carriedUid), state, pos.X, pos.Z))
         end
     end)
     S.conns[#S.conns + 1] = S.shiftConn
@@ -1357,45 +1363,44 @@ local function returnHome()
         end
 
         local inHand = lookingLikeCarry()
-        if S.expectedUid and not inHand and os.clock() >= (S.stealGraceUntil or 0) then
-            if S.carrying then
-                stopMove()
-                say('มือว่าง — กู้ไข่ทันที')
-            end
-            S.carrying = false
+        if inHand and S.carrying then
+            S.returnPaused = false
+        elseif inHand and not S.returnPaused then
+            S.carrying = true
+        end
+        local graceOk = os.clock() >= (S.stealGraceUntil or 0)
+        -- server บอกไม่ถือแล้ว = กู้เลย (ไม่สน lookingLikeCarry / ไม่รอ grace ถ้า returnPaused)
+        local needRecover = S.expectedUid and not S.carrying and (graceOk or S.returnPaused)
+        if needRecover then
             if not S.droppedPos then
                 local e = S.eggDB[tostring(S.carriedUid or S.expectedUid)]
                 S.droppedPos = (e and e.pos) or r.Position
             end
-        elseif inHand then
-            S.carrying = true
-            S.returnPaused = false
-        end
-
-        if not inHand and S.expectedUid and os.clock() >= (S.stealGraceUntil or 0) then
-            local dropPos = S.droppedPos
-            if not dropPos then
-                local e = S.eggDB[tostring(S.carriedUid or S.expectedUid)]
-                dropPos = (e and e.pos) or r.Position
-                S.droppedPos = dropPos
-            end
             say('ไข่หลุด — กู้ทันที')
-            local ok, why = recoverDroppedEgg(dropPos)
+            local ok, why = recoverDroppedEgg(S.droppedPos)
             if ok and (S.carrying or lookingLikeCarry()) then
                 S.carrying = true
                 S.returnPaused = false
                 S.droppedPos = nil
                 say('กู้ได้แล้ว — วิ่งกลับต่อ')
             else
-                local gone = tostring(why or ""):find("หาย", 1, true) or tostring(why or ""):find("State=", 1, true)
+                local w = tostring(why or "")
+                local gone = w:find("หายจาก DB", 1, true) or w:find("State=Carried", 1, true)
                 if gone then
-                    say('กู้ไม่ได้ (' .. tostring(why) .. ') — สแกนใหม่')
+                    say('กู้ไม่ได้ (' .. w .. ') — สแกนใหม่')
                     return false
                 end
-                say('กู้ไม่ติด (' .. tostring(why) .. ') — ลองใหม่')
+                say('กู้ไม่ติด (' .. w .. ') — ลองใหม่')
                 task.wait(0.25)
             end
-            -- ห้ามวิ่งบ้านตอนมือว่าง
+        elseif S.expectedUid and not inHand and not graceOk and S.carrying then
+            h, r = humRoot()
+            if not h or not r then return false end
+            local deep = select(1, riftDeepTarget(S.home))
+            if deep then
+                h:MoveTo(Vector3.new(deep.X, r.Position.Y, deep.Z))
+            end
+            task.wait(0.1)
         else
             h, r = humRoot()
             if not h or not r then return false end
@@ -1431,7 +1436,7 @@ local function returnHome()
     return false
 end
 
--- ยิง RF/prompt แล้ววิ่งเลย — โมเดลมาช้าไม่รอ; ยืนยันระหว่างทาง (returnHome)
+-- ยิง RF/prompt เร็ว — แต่ต้องถือจริง (UID/มือ) ค่อยวิ่งกลับ
 local function stealEggLikeRift(t)
     attachCarryListener()
     attachEggFeed()
@@ -1450,11 +1455,14 @@ local function stealEggLikeRift(t)
     stopMove()
     S.expectedUid, S.carryVerified, S.carryMismatchUid = t.uid, false, nil
     S.carrying = false
-    say('RF fire-and-go Uid=' .. tostring(t.uid))
+    say('RF Uid=' .. tostring(t.uid))
     tryAskCarry(t.uid)
+    local function heldOk()
+        return S.carryVerified or lookingLikeCarry()
+    end
     local t0 = os.clock()
-    while S.run and os.clock() - t0 < 0.2 do
-        if S.carryVerified or S.carryMismatchUid then break end
+    while S.run and os.clock() - t0 < 0.35 do
+        if heldOk() or S.carryMismatchUid then break end
         task.wait(0.05)
     end
     if S.carryMismatchUid then
@@ -1462,12 +1470,17 @@ local function stealEggLikeRift(t)
         tryDropHeld()
         return false
     end
-    if not S.carryVerified then
+    if not heldOk() then
         local pick = select(1, choosePrompt(t))
         if pick then
-            say('fp Steal — แล้ววิ่ง')
+            say('fp Steal')
             fireSteal(pick)
             tryAskCarry(t.uid)
+        end
+        t0 = os.clock()
+        while S.run and os.clock() - t0 < 0.7 do
+            if heldOk() or S.carryMismatchUid then break end
+            task.wait(0.05)
         end
     end
     if S.carryMismatchUid then
@@ -1475,8 +1488,12 @@ local function stealEggLikeRift(t)
         tryDropHeld()
         return false
     end
+    if not heldOk() then
+        say('ยังไม่ถือไข่ — ไม่วิ่งกลับเปล่า')
+        return false
+    end
     S.carrying = true
-    say('ยิงแล้ว — วิ่งกลับ (ยืนยันระหว่างทาง)')
+    say('ถือแล้ว — วิ่งกลับ')
     return true
 end
 
@@ -1484,10 +1501,13 @@ local function farmTarget(target)
     S.carrying, S.eggArea, S.hopUsed = false, target.area, false
     target.eggPos = target.pos
     say('ไปหา ' .. target.cat .. ' | HOME→Rift→ไข่')
-    local reachedTarget = goViaRift(target.pos, APPROACH_R, 120, target.cat)
+    local _, r = humRoot()
+    local dEgg = (r and target.pos) and dist2(r.Position, target.pos) or 2000
+    local lim = math.clamp(dEgg / 12 + 90, 120, 480)
+    local reachedTarget = goViaRift(target.pos, APPROACH_R, lim, target.cat)
     if not reachedTarget then
         say('ไปถึงไข่ไม่สำเร็จ')
-        S.eggDB[tostring(target.uid or "")] = nil -- ล้างเป้าเน่า ไม่ไล่ซ้ำ
+        S.eggDB[tostring(target.uid or "")] = nil
         return
     end
     stopMove()
@@ -1501,7 +1521,7 @@ local function farmTarget(target)
     end
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
     S.expectedUid = target.uid
-    S.stealGraceUntil = os.clock() + 3.5
+    S.stealGraceUntil = os.clock() + 1.2
     S.carrying = true
     if returnHome() then
         say('ถึง HOME — รอรอบถัดไป')
@@ -1717,7 +1737,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.24 | ยิงแล้ววิ่งเลย | มือว่าง→กู้ | hop กดมือ")
+say("v3.26 | ไกลไม่ timeout | ถือจริงค่อยวิ่ง | hop กดมือ")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
