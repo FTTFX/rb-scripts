@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.23 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- autoboot AUTO | เจอเป้า→เสียง+ฟาร์มทันที | มือว่าง→กู้ทันที | hop กดมือ
--- v3.23: returnHome เช็คมือ | v3.22 ไม่ hold | v3.19 MUTE
+-- Egg01 Target Farm v3.24 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- autoboot | ยิง RF/prompt แล้ววิ่งเลย | มือว่าง→กู้ | hop กดมือ
+-- v3.24: fire-and-go steal | v3.23 returnHome เช็คมือ | v3.22 ไม่ hold
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -317,7 +317,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.23 — AUTOBOOT"
+title.Text = "Egg01 Target Farm v3.24 — AUTOBOOT"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -919,19 +919,13 @@ local function leaveTreadmill()
     if not bottom or not d or d > 14 then return end
     S.tread = bottom
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
-    local h, r = humRoot()
-    say(string.format("เจอไข่ — กระโดดออกจากลู่วิ่ง d=%.0f", d))
+    local h = select(1, humRoot())
+    say(string.format("เจอไข่ — กระโดดออกลู่วิ่ง d=%.0f", d))
     if h then
         h.Jump = true
         pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
     end
-    task.wait(0.25)
-    if h and r then
-        local dir = Vector3.new(r.Position.X - bottom.Position.X, 0, r.Position.Z - bottom.Position.Z)
-        if dir.Magnitude < 1 then dir = r.CFrame.RightVector else dir = dir.Unit end
-        walkTo(r.Position + dir * 16, 3, 6, nil)
-    end
-    stopMove()
+    task.wait(0.12)
 end
 
 local function returnTreadmill()
@@ -1437,74 +1431,52 @@ local function returnHome()
     return false
 end
 
--- ยิงไข่แบบ RiftFarm one() / Egg01_MOTION_BRAKE.md
+-- ยิง RF/prompt แล้ววิ่งเลย — โมเดลมาช้าไม่รอ; ยืนยันระหว่างทาง (returnHome)
 local function stealEggLikeRift(t)
     attachCarryListener()
     attachEggFeed()
     local eggPos = t.pos
     local walkPos = nearestStealPos(eggPos) or eggPos
-    say(string.format('เข้าไข่ UID (rad=5 slow=55) @%.0f,%.0f', walkPos.X, walkPos.Z))
-    if not walkSlow(walkPos, 5, 22, 55) then
-        say('เข้าพิกัดไข่ไม่สำเร็จ')
-        return false
+    local _, r0 = humRoot()
+    if not (r0 and dist2(r0.Position, walkPos) <= 8) then
+        say(string.format('เข้าไข่ UID @%.0f,%.0f', walkPos.X, walkPos.Z))
+        if not walkSlow(walkPos, 5, 16, 55) then
+            say('เข้าพิกัดไข่ไม่สำเร็จ')
+            return false
+        end
+    else
+        say('ใกล้ไข่แล้ว — ยิงเลย')
     end
     stopMove()
     S.expectedUid, S.carryVerified, S.carryMismatchUid = t.uid, false, nil
     S.carrying = false
-    say('ลอง RF AskFieldEggCarry Uid=' .. tostring(t.uid))
+    say('RF fire-and-go Uid=' .. tostring(t.uid))
     tryAskCarry(t.uid)
-    do
-        local untilRf = os.clock() + 1.2
-        while S.run and os.clock() < untilRf and not S.carryVerified and not S.carryMismatchUid do
-            task.wait(0.05)
-        end
+    local t0 = os.clock()
+    while S.run and os.clock() - t0 < 0.2 do
+        if S.carryVerified or S.carryMismatchUid then break end
+        task.wait(0.05)
     end
     if S.carryMismatchUid then
         say('RF ได้คนละฟอง — ทิ้ง')
         tryDropHeld()
-        S.expectedUid = t.uid
-    end
-    if not S.carryVerified then
-        local pick, md, gap, detail = choosePrompt(t)
-        if not pick then
-            for _, off in ipairs({ Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0), Vector3.new(0, 0, 3), Vector3.new(0, 0, -3) }) do
-                if walkSlow(eggPos + off, 2, 2.5, 10) then
-                    pick, md, gap, detail = choosePrompt(t)
-                    if pick then break end
-                end
-            end
-        end
-        if pick then
-            local part = pick.Parent and (pick.Parent:IsA('BasePart') and pick.Parent or pick.Parent:FindFirstChildWhichIsA('BasePart', true))
-            if part then walkSlow(part.Position, 3.2, 6, 14); stopMove() end
-            pick, md, gap, detail = choosePrompt(t)
-            if pick then
-                say(string.format('fp Steal ใกล้ไข่ pd=%.2f gap=%.2f', md or -1, gap or -1))
-                fireSteal(pick)
-                tryAskCarry(t.uid)
-                local untilT = os.clock() + 2
-                while S.run and os.clock() < untilT and not S.carryVerified and not S.carryMismatchUid do
-                    task.wait(0.05)
-                end
-            else
-                say('ไม่เจอ Prompt หลังเข้าใกล้ (' .. tostring(detail) .. ')')
-            end
-        else
-            say('RF ไม่ติด + ไม่เจอ Prompt (' .. tostring(detail) .. ')')
-        end
-    end
-    if S.carryMismatchUid then
-        say('UID ผิดหลัง Steal — ทิ้ง ไม่วิ่งกลับผิดฟอง')
-        tryDropHeld()
         return false
     end
     if not S.carryVerified then
-        if S.carryAvailable or not S.carrying then
-            say('ยังไม่ถือ UID เป้า — ไม่วิ่งกลับ')
-            return false
+        local pick = select(1, choosePrompt(t))
+        if pick then
+            say('fp Steal — แล้ววิ่ง')
+            fireSteal(pick)
+            tryAskCarry(t.uid)
         end
     end
-    say('ถือไข่ UID เป้าแล้ว — วิ่งกลับ HOME')
+    if S.carryMismatchUid then
+        say('UID ผิด — ทิ้ง')
+        tryDropHeld()
+        return false
+    end
+    S.carrying = true
+    say('ยิงแล้ว — วิ่งกลับ (ยืนยันระหว่างทาง)')
     return true
 end
 
@@ -1529,7 +1501,7 @@ local function farmTarget(target)
     end
     S.carriedUid, S.droppedPos, S.carryLostAt, S.returning, S.returnPaused, S.dropBrakeUsed = target.uid, nil, 0, true, false, false
     S.expectedUid = target.uid
-    S.stealGraceUntil = os.clock() + 2.5
+    S.stealGraceUntil = os.clock() + 3.5
     S.carrying = true
     if returnHome() then
         say('ถึง HOME — รอรอบถัดไป')
@@ -1745,7 +1717,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.23 | มือว่าง→กู้ทันที | เสียง+ฟาร์มเลย | hop กดมือ")
+say("v3.24 | ยิงแล้ววิ่งเลย | มือว่าง→กู้ | hop กดมือ")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
