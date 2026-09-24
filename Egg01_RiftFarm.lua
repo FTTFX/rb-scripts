@@ -1,7 +1,7 @@
--- Egg01 Rift Farm v1.36 -- ชื่อตรง | ไม่เจอ→รอโหลด 15s ค่อย hop | STEAL FIX
+-- Egg01 Rift Farm v1.37 -- ชื่อตรง | ไม่เจอ→รอโหลด 30s ค่อย hop | STEAL FIX
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local HS=game:GetService("HttpService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
-local REJOIN_AFTER=15
+local REJOIN_AFTER=30
 local RIFT_R,RIFT_DEPTH=6,-8
 local FALLBACK_RIFT=Vector3.new(534.0,71.0,-340.0)
 local S={run=false,home=nil,gui=nil,carrying=false,carryConn=nil,eggConns={},clipConn=nil,clipParts={},eggDB={},skip={},expectedUid=nil,carryVerified=false,carryMismatch=false,lastMiss=nil,hunt=nil,carrySpeed=nil,missSince=nil,hopping=false,tpFailConn=nil,rift=nil,hopJobs=nil,hopIdx=0,netCache={}}; _G.EGG01_RIFT_FARM=S; local lines={}
@@ -1013,7 +1013,7 @@ start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.36: ไม่เจอ→รอโหลด "..tostring(REJOIN_AFTER).."s ค่อย hop | ชื่อตรง | HOP มือได้ทันที")
+say("v1.37: ไม่เจอ→รอโหลด "..tostring(REJOIN_AFTER).."s ค่อย hop | ชื่อตรง | HOP มือได้ทันที")
 -- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
 task.spawn(function()
  local t0=os.clock()
