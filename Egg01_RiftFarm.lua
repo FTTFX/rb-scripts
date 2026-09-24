@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.34 -- แก้ไม่ยิบ: กัน AskFieldEggCarry ปน + ไม่มี RE ก็ยิง Steal ต่อ
+-- Egg01 Rift Farm v1.35 -- ชื่อตรง Rift เท่านั้น (เลิก fuzzy fish) / STEAL FIX / hop
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local HS=game:GetService("HttpService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=0
@@ -212,7 +212,7 @@ local function lcsLen(a,b)
  end
  return best
 end
--- ตรงเป๊ะ / สลับคำ / อักษรติดกัน ≥4 (หรือ ≥3 ถ้าชื่อสั้น) — สแกนครบ 3 เป้า
+-- ตรงเป๊ะ / สลับคำครบเท่านั้น — ไม่ใช้ LCS/ชิ้นคำสั้น (fish→swordfish/parrotfish มั่ว)
 local function matchScore(need,cand)
  local wa,ka=wordsOf(need)
  local wb,kb=wordsOf(cand)
@@ -223,15 +223,14 @@ local function matchScore(need,cand)
   for i=1,#wa do if wa[i]~=wb[i] then ok=false break end end
   if ok then return 95 end
  end
- local na,nb=nameKey(need),nameKey(cand)
- local c=math.max(lcsLen(ka,kb), lcsLen(na,nb))
- local short=math.min(#na,#nb)
- if short<=0 then short=math.min(#ka,#kb) end
- if c>=4 then return 40+c end
- if c>=3 and short<=6 then return 35+c end
- -- ชิ้นคำ ≥4 ตัวอยู่ในอีกฝั่ง
- for _,w in ipairs(wa) do if #w>=4 and nb:find(w,1,true) then return 55 end end
- for _,w in ipairs(wb) do if #w>=4 and na:find(w,1,true) then return 55 end end
+ -- หลายคำ: ต้องครบทุกคำของ need ใน cand (เทียบทั้งคำ ไม่ใช่ substring)
+ if #wa>=2 then
+  local set={}
+  for _,w in ipairs(wb) do set[w]=true end
+  local all=true
+  for _,w in ipairs(wa) do if not set[w] then all=false break end end
+  if all and #wb==#wa then return 95 end
+ end
  return 0
 end
 local function amountNeeds(a)
@@ -256,7 +255,7 @@ local function rowMatchesNeed(row,needList)
    if s>bestS then bestN,bestS,bestC=n,s,candidate end
   end
  end
- if bestS>=50 then return bestN,bestS,bestC end
+ if bestS>=90 then return bestN,bestS,bestC end
 end
 local function findLabel(box,name)
  if not box then return end
@@ -493,7 +492,8 @@ local function eggMatchesNeed(e,needList)
   if nameKey(e.cat)==nameKey(n) then return n,100,e.cat end
   local s=matchScore(n,e.cat)
   if e.name then s=math.max(s,matchScore(n,e.name)) end
-  if s>=40 then return n,s,e.cat end
+  -- รับเฉพาะตรง/สลับคำครบ (≥90) — ไม่รับ fish≈swordfish
+  if s>=90 then return n,s,e.cat end
  end
 end
 local function nearestStealPos(eggPos)
@@ -940,7 +940,7 @@ local function one(t)
 end
 local gui=Instance.new("ScreenGui"); gui.Name="Egg01_RiftFarm"; gui.ResetOnSpawn=false; pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end); if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui") end; S.gui=gui
 local f=Instance.new("Frame",gui); f.Size=UDim2.new(0,360,0,185); f.Position=UDim2.new(0,12,.45,0); f.BackgroundColor3=Color3.fromRGB(25,15,40); f.BorderSizePixel=0; f.Active=true; f.Draggable=true; Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.34 — STEAL FIX"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f); title.Size=UDim2.new(1,-78,0,28); title.Position=UDim2.new(0,10,0,4); title.BackgroundTransparency=1; title.Text="Egg01 Rift Farm v1.35 — NAME EXACT"; title.TextColor3=Color3.fromRGB(220,170,255); title.Font=Enum.Font.GothamBold; title.TextSize=13; title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.new(0,62,0,28); z.Position=UDim2.new(0,x,0,36); z.Text=tx; z.BackgroundColor3=col; z.TextColor3=Color3.new(1,1,1); z.BorderSizePixel=0; z.Font=Enum.Font.GothamBold; z.TextSize=11; Instance.new("UICorner",z).CornerRadius=UDim.new(0,5); return z end
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
@@ -996,7 +996,7 @@ start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
 hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
 setClip(true)
-say("v1.34: แก้ไม่ยิบ — หา FieldEggCarry ถูกตัว + ไม่มี RE ก็ Steal ต่อ")
+say("v1.35: ชื่อตรง Rift เท่านั้น (เลิก fuzzy fish) | Steal fix | hop")
 -- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
 task.spawn(function()
  local t0=os.clock()
