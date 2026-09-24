@@ -1,6 +1,6 @@
--- Egg01 Target Farm v3.16 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
--- autoboot AUTO | ไม่เจอ 30s→hop | Sec+Ete+Div sc≥0.1
--- v3.16: เปิดแล้ว AUTO เอง | v3.15 default filters | v3.14 hop 30s
+-- Egg01 Target Farm v3.20 (ยิงไข่แบบ RiftFarm / MOTION_BRAKE)
+-- autoboot AUTO | เจอเป้า→เสียงปลุก 60s กด HOP | ปุ่ม SND ปิดเสียงได้
+-- v3.20: hold 60s บนลู่วิ่ง | v3.19 MUTE | v3.18 alert
 
 if _G.EGG01_TARGET_FARM then
     _G.EGG01_TARGET_FARM.run = false
@@ -24,12 +24,15 @@ local RS = game:GetService("ReplicatedStorage")
 local RunS = game:GetService("RunService")
 local TS = game:GetService("TeleportService")
 local HS = game:GetService("HttpService")
+local SoundS = game:GetService("SoundService")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
 local fp = fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 
-local HOP_MISS_SEC = 30
-local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {}, hopping = false, tpFailConn = nil, hopJobs = nil, hopIdx = 0 }
+local ALERT_SOUND_ID = "rbxassetid://4590662766"
+local ALERT_COOLDOWN = 8
+local ALERT_HOLD_SEC = 60 -- บนลู่วิ่ง: ปลุกซ้ำ รอให้มากด HOP ก่อนค่อยฟาร์ม
+local S = { gui = nil, conns = {}, run = false, home = nil, carrying = false, eggArea = nil, carryAvailable = false, carryConn = nil, shiftConn = nil, lastCarryScan = 0, lastShiftScan = 0, hopUsed = false, impactHopUsed = false, lastReturnDist = nil, returnPaused = false, dropBrakeUsed = false, skipped = {}, carriedUid = nil, expectedUid = nil, carryVerified = false, carryMismatchUid = nil, droppedPos = nil, carryLostAt = 0, returning = false, tread = nil, rift = nil, clipConn = nil, clipParts = {}, stealGraceUntil = 0, eggDB = {}, eggConns = {}, hopping = false, tpFailConn = nil, hopJobs = nil, hopIdx = 0, alertAt = 0, alertOn = true }
 _G.EGG01_TARGET_FARM = S
 
 local MIN_SCALE, ZONE = 0.1, "ALL"
@@ -300,7 +303,7 @@ if not gui.Parent then gui.Parent = PG end
 S.gui = gui
 
 local panel = Instance.new("Frame", gui)
-panel.Size = UDim2.new(0, 335, 0, 158)
+panel.Size = UDim2.new(0, 368, 0, 158)
 panel.Position = UDim2.new(0, 12, 0, 12)
 panel.BackgroundColor3 = Color3.fromRGB(20, 23, 28)
 panel.BackgroundTransparency = 0.1
@@ -315,7 +318,7 @@ title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "Egg01 Target Farm v3.16 — AUTOBOOT"
+title.Text = "Egg01 Target Farm v3.19 — AUTOBOOT"
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -331,13 +334,14 @@ local function button(text, x, y, w, color)
     return b
 end
 
-local bHome = button("HOME", 10, 35, 52, Color3.fromRGB(50, 100, 180))
-local bScan = button("SCAN", 68, 35, 52, Color3.fromRGB(55, 105, 165))
-local bStart = button("START", 126, 35, 52, Color3.fromRGB(35, 145, 75))
-local bStop = button("STOP", 184, 35, 48, Color3.fromRGB(165, 50, 55))
-local bHop = button("HOP", 238, 35, 52, Color3.fromRGB(120, 70, 30))
-local bCopy = button("CPY", 296, 35, 30, Color3.fromRGB(70, 70, 75))
-local bClose = button("X", 296, 4, 30, Color3.fromRGB(125, 45, 45))
+local bHome = button("HOME", 10, 35, 48, Color3.fromRGB(50, 100, 180))
+local bScan = button("SCAN", 62, 35, 48, Color3.fromRGB(55, 105, 165))
+local bStart = button("START", 114, 35, 48, Color3.fromRGB(35, 145, 75))
+local bStop = button("STOP", 166, 35, 44, Color3.fromRGB(165, 50, 55))
+local bHop = button("HOP", 214, 35, 44, Color3.fromRGB(120, 70, 30))
+local bAlert = button("SND", 262, 35, 44, Color3.fromRGB(40, 130, 100))
+local bCopy = button("CPY", 310, 35, 28, Color3.fromRGB(70, 70, 75))
+local bClose = button("X", 330, 4, 28, Color3.fromRGB(125, 45, 45))
 
 local scaleLabel = Instance.new("TextLabel", panel)
 scaleLabel.Size = UDim2.new(0, 75, 0, 16)
@@ -402,6 +406,42 @@ local function say(message)
     lines[#lines + 1] = tostring(message)
     if #lines > 100 then table.remove(lines, 1) end
     status.Text = tostring(message)
+end
+
+local function playTargetAlert(info)
+    if not S.alertOn then return end
+    local now = os.clock()
+    if now - (S.alertAt or 0) < ALERT_COOLDOWN then return end
+    S.alertAt = now
+    task.spawn(function()
+        for i = 1, 8 do
+            if not S.alertOn then break end
+            local s = Instance.new("Sound")
+            s.Name = "Egg01TargetAlert"
+            s.SoundId = ALERT_SOUND_ID
+            s.Volume = 1
+            s.PlaybackSpeed = 0.85 + (i % 2) * 0.35
+            s.Parent = SoundS
+            pcall(function() s:Play() end)
+            task.wait(0.35)
+            pcall(function() s:Destroy() end)
+            task.wait(0.1)
+        end
+    end)
+    if info then
+        say(string.format("ALERT %s %s sc=%.2f — %.0fs กด HOP หรือรอฟาร์ม", info.rar or "?", info.cat or "?", info.scale or 0, ALERT_HOLD_SEC))
+    end
+end
+
+local function syncAlertBtn()
+    if not bAlert or not bAlert.Parent then return end
+    if S.alertOn then
+        bAlert.Text = "SND"
+        bAlert.BackgroundColor3 = Color3.fromRGB(40, 130, 100)
+    else
+        bAlert.Text = "MUTE"
+        bAlert.BackgroundColor3 = Color3.fromRGB(70, 70, 75)
+    end
 end
 
 -- ===== Server hop (แบบ Egg01_RiftFarm) — เลี่ยงเซิร์ฟเดิม/เพื่อน =====
@@ -706,6 +746,7 @@ local function chooseTarget(quiet)
     for area in pairs(foundZones) do if area ~= "ALL" then ZONE_CHOICES[#ZONE_CHOICES + 1] = area end end
     table.sort(ZONE_CHOICES, function(a, b) if a == "ALL" then return true elseif b == "ALL" then return false else return a < b end end)
     if best then
+        playTargetAlert(best)
         if not quiet then
             say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f R=%.0f S=%.0f score=%.0f", best.rar, best.cat, best.scale, best.area, best.dist, best.rarityScore, best.scaleScore, best.score))
         end
@@ -922,7 +963,6 @@ end
 
 local function waitEggOnTread()
     local n, lastSay, lastMount, lastScan, lastDiag = 0, 0, 0, 0, 0
-    local missSince = os.clock()
     if not onTreadmill() then returnTreadmill() end
     while S.run do
         if os.clock() - lastScan >= 2 then
@@ -930,20 +970,39 @@ local function waitEggOnTread()
             local loud = os.clock() - lastDiag >= 10
             local target = chooseTarget(not loud)
             if target then
+                -- ปลุกซ้ำ ~ALERT_HOLD_SEC ให้ทันมากด HOP ก่อนค่อยออกไปฟาร์ม
+                local holdUntil = os.clock() + ALERT_HOLD_SEC
+                playTargetAlert(target)
+                while S.run and not S.hopping and os.clock() < holdUntil do
+                    local left = math.max(0, holdUntil - os.clock())
+                    if os.clock() - (S.alertAt or 0) >= ALERT_COOLDOWN then
+                        playTargetAlert(target)
+                    end
+                    if onTreadmill() then
+                        n = jogTreadTick(n)
+                        if os.clock() - lastSay >= 5 then
+                            say(string.format("ALERT %s sc=%.2f | กด HOP หรือฟาร์มใน %.0fs", target.rar, target.scale, left))
+                            lastSay = os.clock()
+                        end
+                        task.wait(0.45)
+                    else
+                        if os.clock() - lastMount >= 3 then
+                            returnTreadmill()
+                            lastMount = os.clock()
+                        end
+                        task.wait(1)
+                    end
+                end
+                if not S.run or S.hopping then return nil end
                 say(string.format("TARGET %s %s sc=%.2f zone=%s d=%.0f", target.rar, target.cat, target.scale, target.area, target.dist))
                 return target
             end
             if loud then lastDiag = os.clock() end
-            if os.clock() - missSince >= HOP_MISS_SEC then
-                rejoinServer("ลู่วิ่งไม่เจอเป้า " .. tostring(HOP_MISS_SEC) .. "s")
-                return nil
-            end
         end
         if onTreadmill() then
             n = jogTreadTick(n)
             if os.clock() - lastSay >= 20 then
-                local left = math.max(0, HOP_MISS_SEC - (os.clock() - missSince))
-                say(string.format("ลู่วิ่งรอไข่ | hop ใน %.0fs | %s", left, rarityText()))
+                say(string.format("ลู่วิ่งรอไข่ | เจอแล้วมีเสียงปลุก | %s", rarityText()))
                 lastSay = os.clock()
             end
             task.wait(0.45)
@@ -1521,7 +1580,7 @@ local function runOne(reason)
     end
     S.run = true
     bStart.Text = "AUTO"
-    say((reason or "AUTO") .. " — HOME→Rift→ไข่ | ไม่เจอ " .. tostring(HOP_MISS_SEC) .. "s→hop")
+    say((reason or "AUTO") .. " — HOME→Rift→ไข่ | hop กดมือ")
     resolveRift()
     task.spawn(function()
         while S.run do
@@ -1660,6 +1719,11 @@ bHop.MouseButton1Click:Connect(function()
     if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end
     rejoinServer("กด HOP")
 end)
+bAlert.MouseButton1Click:Connect(function()
+    S.alertOn = not S.alertOn
+    syncAlertBtn()
+    say(S.alertOn and "เสียงปลุก ON" or "เสียงปลุก MUTE")
+end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then pcall(clip, "=== Egg01 Target Farm v3.13 ===\n" .. table.concat(lines, "\n")) end
@@ -1694,7 +1758,7 @@ LP.CharacterAdded:Connect(function(ch)
 end)
 
 setClip(true)
-say("v3.16 | autoboot AUTO | Sec+Ete+Div sc≥0.1 | ไม่เจอ "..tostring(HOP_MISS_SEC).."s→hop")
+say("v3.20 | เจอเป้า→ปลุก 60s กด HOP | Sec+Ete+Div | SND | hop กดมือ")
 if loadHomeSetting() then
     say(string.format("HOME โหลด @%.0f,%.0f,%.0f", S.home.X, S.home.Y, S.home.Z))
 end
