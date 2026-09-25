@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v1.7
--- ตู้ฟัก: ไม่ซ้ำแถว + อ่าน rar จากป้าย
+-- Egg01 Egg Status Spy v1.8
+-- แก้ rar (Lua ไม่มี | ใน pattern) + ตู้ฟักไม่ซ้ำ
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -86,6 +86,18 @@ local function parseMut(blob)
     end
     local chance = blob:match("(%d+)%s*%%%s*[Ss]uccess")
     return mut, chance
+end
+
+-- Lua pattern ไม่มี | แบบ regex — เช็คทีละคำ
+local function parseRarity(blob)
+    local s = tostring(blob or "")
+    for _, r in ipairs({ "Eternal", "Divine", "Cosmic", "Secret", "Mythic", "Legendary", "Epic", "Rare" }) do
+        if s:find(r, 1, true) then return r end
+    end
+end
+
+local function parseIncome(blob)
+    return tostring(blob or ""):match("%$[%d%.]+[KMBT]?/s")
 end
 
 local function parseName(blob, tier, mut)
@@ -340,10 +352,8 @@ local function mineAssetsNear(maxD)
                 local tier, tierTh = parseTier(blob)
                 local mut, chance = parseMut(blob)
                 local name = parseName(blob, tier, mut)
-                local income = blob:match("%$[%d%.]+[KMBT]?/s")
-                local rarity = blob:match("%|%s*(Secret|Eternal|Divine|Cosmic|Mythic|Legendary)%s*$")
-                    or blob:match("%s(Secret|Eternal|Divine|Cosmic|Mythic|Legendary)%s*$")
-                    or blob:match("(Secret|Eternal|Divine|Cosmic|Mythic|Legendary)")
+                local income = parseIncome(blob)
+                local rarity = parseRarity(blob)
                 out[#out + 1] = {
                     name = name, tier = tier, tierTh = tierTh,
                     mut = mut, chance = chance, blob = blob,
@@ -414,7 +424,7 @@ end
 
 local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v1.7 — ตู้ฟักใกล้ตัว ===")
+    say("=== Egg Status Spy v1.8 — ตู้ฟักใกล้ตัว ===")
     say("UserId=" .. ME)
 
     say("สแกนตู้ฟัก...")
@@ -510,7 +520,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v1.7 — ตู้ฟัก"
+title.Text = "Egg01 Egg Status Spy v1.8 — ตู้ฟัก"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -558,7 +568,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v1.7 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Status Spy v1.8 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -568,4 +578,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v1.7 พร้อม — EGGS")
+say("v1.8 พร้อม — EGGS")
