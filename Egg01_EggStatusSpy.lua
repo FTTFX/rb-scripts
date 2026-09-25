@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v1.3
--- ไข่ของเรา: ชนิด / สี(Index) / สถานะ / mutation — แก้หา Packages.Networking
+-- Egg01 Egg Status Spy v1.4
+-- ไข่: ชนิด/สี/สถานะ — แยก Nest โซนแรก ≠ คอกบ้าน | จับคู่ NestId
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -206,6 +206,7 @@ local function snapshotMyEggs()
                     cat = tostring(row.AssetCategory or row.AssetName or "?"),
                     st = tostring(row.State or "?"),
                     scale = tonumber(row.AssetScale) or 0,
+                    nestScale = tonumber(row.NestScale) or 0,
                     mut = mutDetail(row.Mutations),
                     mutN = typeof(row.Mutations) == "table" and #row.Mutations or 0,
                     color = row.AssetColorIndex,
@@ -213,10 +214,12 @@ local function snapshotMyEggs()
                     eye = row.AssetEyeColor,
                     para = row.HasParasite,
                     nest = tostring(row.NestId or "-"),
+                    area = tostring(row.AreaId or "?"),
                     d = d,
                     p = p,
                     uid = uid,
                     raw = row,
+                    firstArea = uid:find("FirstAreaEgg_", 1, true) ~= nil,
                 }
             end
         end
@@ -322,57 +325,75 @@ end
 
 local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v1.3 — ไข่: ชนิด / สี / สถานะ ===")
+    say("=== Egg Status Spy v1.4 — ชนิด/สี/สถานะ ===")
     say("UserId=" .. ME)
+    say("หมายเหตุ: FirstAreaEgg_* = nest โซนแรก (Forest) ไม่ใช่คอกสัตว์บ้าน")
 
     local eggsSnap, err, rf = snapshotMyEggs()
-    say("--- ไข่ของเรา (Snapshot) ---")
     if rf then say("RF=" .. tostring(rf.Name)) end
     if not eggsSnap then
         say("Snapshot: " .. tostring(err))
-    elseif #eggsSnap == 0 then
-        say("(ไม่มีไข่ที่ผูก UserId ใน Snapshot)")
-    else
-        for i, e in ipairs(eggsSnap) do
-            -- ชนิด | สถานะ | ขนาด | สี(index) | mutation | nest
-            say(string.format(
-                "#%d ชนิด=%s | สถานะ=%s | ขนาด=%.2f | สีIndex=%s seed=%s | mut=%s | nest=%s | d=%.0f",
-                i, e.cat, e.st, e.scale,
-                tostring(e.color), tostring(e.seed),
-                e.mut, e.nest, e.d
-            ))
-            if e.para then say("    HasParasite=" .. tostring(e.para)) end
-        end
-        say("รวมไข่ = " .. #eggsSnap)
-        -- dump keys ใบแรกไว้เทียบสี/ฟิลด์
-        if eggsSnap[1] and eggsSnap[1].raw then
-            say("--- ฟิลด์ตัวอย่างใบ#1 ---")
-            say(dumpRowKeys(eggsSnap[1].raw))
+        say("=== DONE ===")
+        return
+    end
+
+    local near, far = {}, {}
+    for _, e in ipairs(eggsSnap) do
+        if e.d <= 100 then near[#near + 1] = e else far[#far + 1] = e end
+    end
+
+    local function printEgg(i, e, tag)
+        local eye = e.eye and ("#" .. tostring(e.eye)) or "-"
+        say(string.format(
+            "#%d%s ชนิด=%s | สถานะ=%s | โซน=%s | ขนาด=%.2f | สีIndex=%s eye=%s | mut=%s | nest=%s | d=%.0f",
+            i, tag or "", e.cat, e.st, e.area, e.scale,
+            tostring(e.color), eye, e.mut, e.nest, e.d
+        ))
+        if e.p then
+            say(string.format("    พิกัด %.0f, %.0f, %.0f%s",
+                e.p.X, e.p.Y, e.p.Z,
+                e.firstArea and " | Nestโซนแรก" or ""))
         end
     end
 
+    say(string.format("--- ไข่ใกล้ตัว (d≤100): %d ---", #near))
+    if #near == 0 then
+        say("(ไม่มีไข่ใกล้คอก/จุดยืน — ของใกล้ๆ น่าจะเป็นสัตว์ฟักแล้ว กด PETS)")
+    else
+        for i, e in ipairs(near) do printEgg(i, e, "") end
+    end
+
+    say(string.format("--- Nest โซนแรก / ไกล (d>100): %d ---", #far))
+    for i, e in ipairs(far) do
+        printEgg(i, e, e.firstArea and " [FirstArea]" or "")
+    end
+    say("รวมไข่ snapshot = " .. #eggsSnap)
+
+    -- จับคู่ NestId ตรงชื่อ Slot (ไม่ใช้ระยะ — กันจับผิดช่อง)
     local slots = mineFirstAreaSlots()
-    say(string.format("--- จับคู่ Slot คอก: %d ---", #slots))
+    say(string.format("--- FirstArea slots ↔ NestId: %d ---", #slots))
     for _, s in ipairs(slots) do
         local matched
-        if eggsSnap and s.p then
-            local bestD = 12
+        if eggsSnap then
             for _, e in ipairs(eggsSnap) do
-                if e.p then
-                    local d = (e.p - s.p).Magnitude
-                    if d < bestD then matched, bestD = e, d end
-                end
+                if e.nest == s.slot then matched = e; break end
             end
         end
         if matched then
-            say(string.format("  %s → %s | %s | สี=%s | mut=%s | sc=%.2f",
-                s.slot, matched.cat, matched.st, tostring(matched.color), matched.mut, matched.scale))
+            say(string.format("  %s → %s | สี=%s | mut=%s | sc=%.2f | d=%.0f | @%.0f,%.0f",
+                s.slot, matched.cat, tostring(matched.color), matched.mut, matched.scale, matched.d,
+                matched.p and matched.p.X or 0, matched.p and matched.p.Z or 0))
         else
-            say(string.format("  %s d=%.0f (ยังไม่จับคู่ snapshot)", s.slot, s.d))
+            say(string.format("  %s d=%.0f (ไม่มีใน snapshot)", s.slot, s.d))
         end
     end
 
-    say("=== DONE — ดูชนิด/สถานะ/สีIndex/mutation ด้านบน ===")
+    if eggsSnap[1] and eggsSnap[1].raw then
+        say("--- ฟิลด์ตัวอย่าง ---")
+        say(dumpRowKeys(eggsSnap[1].raw))
+    end
+    say("=== DONE ===")
+    say("ถ้าชนิดไม่ตรงภาพ: เดินไปพิกัดด้านบน แล้วเทียบช่อง — FirstArea ≠ คอกบ้าน")
 end
 
 local function scanPets()
@@ -419,7 +440,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v1.3 — ชนิด/สี/สถานะไข่"
+title.Text = "Egg01 Egg Status Spy v1.4 — Nestโซนแรก ≠ คอกบ้าน"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -467,7 +488,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v1.3 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Status Spy v1.4 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -477,4 +498,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v1.3 พร้อม — กด EGGS")
+say("v1.4 พร้อม — EGGS (แยกใกล้/FirstArea)")
