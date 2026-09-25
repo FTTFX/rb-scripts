@@ -482,7 +482,7 @@ local function scanEggs()
     end
 
     say("=== DONE ===")
-    say("ตู้ฟัก = แถวบน | Forest nest = แถวล่าง (อย่าเทียบกัน)"))
+    say("ตู้ฟัก = แถวบน | Forest nest = แถวล่าง (อย่าเทียบกัน)")
 end
 
 local function scanPets()
