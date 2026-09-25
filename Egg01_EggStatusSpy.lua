@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v1.2
--- เฉพาะไข่ของเรา (ตัดสัตว์ $/s) + คุณภาพเงิน/ทอง/รุ้ง + Mutation
+-- Egg01 Egg Status Spy v1.3
+-- ไข่ของเรา: ชนิด / สี(Index) / สถานะ / mutation — แก้หา Packages.Networking
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -124,17 +124,27 @@ local function isEggBlob(blob, name)
 end
 
 local function findNet(name, className)
-    local networking = RS:FindFirstChild("Shared") and RS.Shared:FindFirstChild("Networking")
+    -- เกมใส่ Networking ใต้ Packages (แบบ RiftFarm) — ไม่ใช่ Shared
+    local packages = RS:FindFirstChild("Packages")
+    local networking = packages and packages:FindFirstChild("Networking")
     local roots = { networking, RS }
+    local exact, fuzzy
     for _, root in ipairs(roots) do
         if root then
             for _, item in ipairs(root:GetDescendants()) do
-                if item.Name == name or item.Name:find(name, 1, true) then
-                    if not className or item.ClassName == className then return item end
+                if className and not item:IsA(className) then
+                    -- skip
+                else
+                    local n = item.Name
+                    local isExact = (n == name) or (n:sub(-#name - 1) == "/" .. name)
+                    local isFuzzy = (not isExact) and n:find(name, 1, true)
+                    if isExact then exact = exact or item
+                    elseif isFuzzy then fuzzy = fuzzy or item end
                 end
             end
         end
     end
+    return exact or fuzzy
 end
 
 local function posOf(row)
@@ -143,6 +153,76 @@ local function posOf(row)
         if typeof(v) == "CFrame" then return v.Position end
         if typeof(v) == "Vector3" then return v end
     end
+end
+
+local function mutDetail(mut)
+    if typeof(mut) ~= "table" then return tostring(mut or "-") end
+    if #mut == 0 then return "ไม่มี" end
+    local parts = {}
+    for i, m in ipairs(mut) do
+        if typeof(m) == "table" then
+            local name = m.Name or m.Id or m.Type or m.Mutation or m[1]
+            parts[#parts + 1] = tostring(name or ("#" .. i))
+        else
+            parts[#parts + 1] = tostring(m)
+        end
+        if #parts >= 4 then break end
+    end
+    return table.concat(parts, ",") .. (#mut > #parts and (" +" .. (#mut - #parts)) or "")
+end
+
+local function dumpRowKeys(row)
+    local keys = {}
+    for k, v in pairs(row) do
+        local t = typeof(v)
+        if t == "table" then
+            keys[#keys + 1] = tostring(k) .. "={}"
+        elseif t == "CFrame" or t == "Vector3" then
+            keys[#keys + 1] = tostring(k) .. "=<" .. t .. ">"
+        else
+            keys[#keys + 1] = tostring(k) .. "=" .. tostring(v)
+        end
+    end
+    table.sort(keys)
+    return table.concat(keys, ", ")
+end
+
+local function snapshotMyEggs()
+    local rf = findNet("AskFieldEggSnapshot", "RemoteFunction") or findNet("AskFieldEggSnapshot")
+    if not rf then return nil, "ไม่มี AskFieldEggSnapshot (Packages/Networking)" end
+    if not rf:IsA("RemoteFunction") then return nil, "เจอ " .. rf.ClassName .. " ชื่อ " .. rf.Name .. " ไม่ใช่ RF" end
+    local ok, result = pcall(function() return rf:InvokeServer() end)
+    if not ok or typeof(result) ~= "table" then return nil, tostring(result) end
+    local records = result.Records or result.records or result
+    if typeof(records) ~= "table" then return nil, "records ว่าง" end
+    local list, root = {}, hr()
+    for id, row in pairs(records) do
+        if typeof(row) == "table" then
+            local uid = tostring(row.Uid or id)
+            if uid:find(ME, 1, true) or tostring(row.OwnerUserId or "") == ME then
+                local p = posOf(row)
+                local d = (root and p) and (p - root.Position).Magnitude or 99999
+                list[#list + 1] = {
+                    cat = tostring(row.AssetCategory or row.AssetName or "?"),
+                    st = tostring(row.State or "?"),
+                    scale = tonumber(row.AssetScale) or 0,
+                    mut = mutDetail(row.Mutations),
+                    mutN = typeof(row.Mutations) == "table" and #row.Mutations or 0,
+                    color = row.AssetColorIndex,
+                    seed = row.AssetColorSeed,
+                    eye = row.AssetEyeColor,
+                    para = row.HasParasite,
+                    nest = tostring(row.NestId or "-"),
+                    d = d,
+                    p = p,
+                    uid = uid,
+                    raw = row,
+                }
+            end
+        end
+    end
+    table.sort(list, function(a, b) return tostring(a.nest) < tostring(b.nest) end)
+    return list, nil, rf
 end
 
 local function mineAssets(eggsOnly)
@@ -158,63 +238,22 @@ local function mineAssets(eggsOnly)
             local tier, tierTh = parseTier(blob)
             local mut, chance = parseMut(blob)
             local name = parseName(blob, tier, mut)
-            if eggsOnly and not isEggBlob(blob, name) then
-                -- skip pets
+            local pet = isPetBlob(blob)
+            if eggsOnly and (pet or not isEggBlob(blob, name)) then
+                -- skip
             else
                 local p = instPos(m)
                 local d = (root and p) and (p - root.Position).Magnitude or 99999
                 out[#out + 1] = {
-                    id = m.Name:sub(#prefix + 1, #prefix + 8),
-                    name = name,
-                    tier = tier,
-                    tierTh = tierTh,
-                    mut = mut,
-                    chance = chance,
-                    blob = blob,
-                    d = d,
-                    p = p,
-                    path = pathOf(m),
-                    model = m,
-                    pet = isPetBlob(blob),
+                    name = name, tier = tier, tierTh = tierTh,
+                    mut = mut, chance = chance, blob = blob,
+                    d = d, p = p, pet = pet,
                 }
             end
         end
     end
     table.sort(out, function(a, b) return a.d < b.d end)
     return out
-end
-
-local function snapshotMyEggs()
-    local rf = findNet("AskFieldEggSnapshot", "RemoteFunction") or findNet("AskFieldEggSnapshot")
-    if not rf or not rf:IsA("RemoteFunction") then return nil, "ไม่มี AskFieldEggSnapshot" end
-    local ok, result = pcall(function() return rf:InvokeServer() end)
-    if not ok or typeof(result) ~= "table" then return nil, tostring(result) end
-    local records = result.Records or result.records or result
-    if typeof(records) ~= "table" then return nil, "records ว่าง" end
-    local list, root = {}, hr()
-    for id, row in pairs(records) do
-        if typeof(row) == "table" then
-            local uid = tostring(row.Uid or id)
-            if uid:find(ME, 1, true) then
-                local mut = row.Mutations
-                local mutS = typeof(mut) == "table" and ("#" .. tostring(#mut)) or tostring(mut)
-                local p = posOf(row)
-                local d = (root and p) and (p - root.Position).Magnitude or 99999
-                list[#list + 1] = {
-                    cat = tostring(row.AssetCategory or "?"),
-                    st = tostring(row.State or "?"),
-                    scale = tonumber(row.AssetScale) or 0,
-                    mut = mutS,
-                    nest = tostring(row.NestId or "-"),
-                    d = d,
-                    p = p,
-                    uid = uid,
-                }
-            end
-        end
-    end
-    table.sort(list, function(a, b) return a.nest < b.nest end)
-    return list
 end
 
 local function nearbyMutPrompts()
@@ -283,70 +322,57 @@ end
 
 local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v1.2 — ไข่ของเราเท่านั้น ===")
+    say("=== Egg Status Spy v1.3 — ไข่: ชนิด / สี / สถานะ ===")
     say("UserId=" .. ME)
 
-    local eggsSnap, err = snapshotMyEggs()
-    say("--- Snapshot ไข่ (FirstArea / ของเรา) ---")
+    local eggsSnap, err, rf = snapshotMyEggs()
+    say("--- ไข่ของเรา (Snapshot) ---")
+    if rf then say("RF=" .. tostring(rf.Name)) end
     if not eggsSnap then
         say("Snapshot: " .. tostring(err))
     elseif #eggsSnap == 0 then
-        say("(ไม่มีไข่ใน Snapshot ที่ผูก UserId)")
+        say("(ไม่มีไข่ที่ผูก UserId ใน Snapshot)")
     else
         for i, e in ipairs(eggsSnap) do
-            local posS = e.p and string.format("%.0f,%.0f,%.0f", e.p.X, e.p.Y, e.p.Z) or "-"
-            say(string.format("#%d %s | %s sc=%.2f mut=%s nest=%s d=%.0f @%s",
-                i, e.st, e.cat, e.scale, e.mut, e.nest, e.d, posS))
+            -- ชนิด | สถานะ | ขนาด | สี(index) | mutation | nest
+            say(string.format(
+                "#%d ชนิด=%s | สถานะ=%s | ขนาด=%.2f | สีIndex=%s seed=%s | mut=%s | nest=%s | d=%.0f",
+                i, e.cat, e.st, e.scale,
+                tostring(e.color), tostring(e.seed),
+                e.mut, e.nest, e.d
+            ))
+            if e.para then say("    HasParasite=" .. tostring(e.para)) end
         end
-        say("รวมไข่ snapshot = " .. #eggsSnap)
+        say("รวมไข่ = " .. #eggsSnap)
+        -- dump keys ใบแรกไว้เทียบสี/ฟิลด์
+        if eggsSnap[1] and eggsSnap[1].raw then
+            say("--- ฟิลด์ตัวอย่างใบ#1 ---")
+            say(dumpRowKeys(eggsSnap[1].raw))
+        end
     end
 
     local slots = mineFirstAreaSlots()
-    say(string.format("--- AreaEggSlotsClient ของเรา: %d ---", #slots))
+    say(string.format("--- จับคู่ Slot คอก: %d ---", #slots))
     for _, s in ipairs(slots) do
         local matched
         if eggsSnap and s.p then
+            local bestD = 12
             for _, e in ipairs(eggsSnap) do
-                if e.p and (e.p - s.p).Magnitude < 8 then matched = e; break end
+                if e.p then
+                    local d = (e.p - s.p).Magnitude
+                    if d < bestD then matched, bestD = e, d end
+                end
             end
         end
         if matched then
-            say(string.format("  %s → %s sc=%.2f mut=%s d=%.0f",
-                s.slot, matched.cat, matched.scale, matched.mut, s.d))
+            say(string.format("  %s → %s | %s | สี=%s | mut=%s | sc=%.2f",
+                s.slot, matched.cat, matched.st, tostring(matched.color), matched.mut, matched.scale))
         else
-            local extra = #s.texts > 0 and (" | " .. table.concat(s.texts, " / ")) or " (ว่าง/ไม่มีป้าย)"
-            say(string.format("  %s d=%.0f%s", s.slot, s.d, extra))
+            say(string.format("  %s d=%.0f (ยังไม่จับคู่ snapshot)", s.slot, s.d))
         end
     end
 
-    local eggAssets = mineAssets(true)
-    say(string.format("--- ClientRendered แบบไข่ (ไม่มี $/s): %d ---", #eggAssets))
-    if #eggAssets == 0 then
-        say("(ไม่มี — ของในคอกส่วนใหญ่เป็นสัตว์ฟักแล้ว มีรายได้)")
-    end
-    local prompts = nearbyMutPrompts()
-    local byTier = {}
-    for i, a in ipairs(eggAssets) do
-        local pr = matchPrompt(a, prompts)
-        local mutS = a.mut or "-"
-        local chance = a.chance or "-"
-        if pr and (pr.obj:lower():find("scrambl") or pr.obj:lower():find("success")) then
-            mutS = a.mut or select(1, parseMut(pr.obj)) or mutS
-            chance = a.chance or pr.obj:match("(%d+)%s*%%") or chance
-        end
-        local enS = pr and (pr.en and "READY" or "DISABLED") or "?"
-        say(string.format("#%d [%s] %s | mut=%s chance=%s | %s | d=%.0f",
-            i, a.tierTh, a.name, tostring(mutS), tostring(chance), enS, a.d))
-        if a.blob ~= "" then say("    " .. a.blob) end
-        byTier[a.tier] = (byTier[a.tier] or 0) + 1
-    end
-    local parts = {}
-    for _, t in ipairs(TIERS) do
-        if byTier[t] then parts[#parts + 1] = (TIER_TH[t] or t) .. "=" .. byTier[t] end
-    end
-    if #parts > 0 then say("สรุปคุณภาพไข่: " .. table.concat(parts, " | ")) end
-
-    say("=== DONE ===")
+    say("=== DONE — ดูชนิด/สถานะ/สีIndex/mutation ด้านบน ===")
 end
 
 local function scanPets()
@@ -393,7 +419,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v1.2 — ไข่เท่านั้น + เงิน/ทอง/รุ้ง"
+title.Text = "Egg01 Egg Status Spy v1.3 — ชนิด/สี/สถานะไข่"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -433,7 +459,7 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "EGGS = ไข่ของเราเท่านั้น (ตัดสัตว์ $/s)\nPETS = สัตว์ในคอก"
+box.Text = "EGGS = ชนิด + สีIndex + สถานะ + mutation\nPETS = สัตว์ในคอก ($/s)"
 
 bEggs.MouseButton1Click:Connect(scanEggs)
 bPets.MouseButton1Click:Connect(scanPets)
@@ -441,7 +467,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v1.2 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Status Spy v1.3 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -451,4 +477,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v1.2 พร้อม — กด EGGS")
+say("v1.3 พร้อม — กด EGGS")
