@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v1.4
--- ไข่: ชนิด/สี/สถานะ — แยก Nest โซนแรก ≠ คอกบ้าน | จับคู่ NestId
+-- Egg01 Egg Status Spy v1.5
+-- ตู้ฟักใกล้ตัว (Apply Mutation) + FirstArea nest แยกคนละระบบ
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -323,77 +323,166 @@ local function mineFirstAreaSlots()
     return out
 end
 
+local function mineAssetsNear(maxD)
+    local folder = workspace:FindFirstChild("ClientRenderedAssets")
+    local out = {}
+    if not folder then return out end
+    local prefix = ME .. "_"
+    local root = hr()
+    if not root then return out end
+    for _, m in ipairs(folder:GetChildren()) do
+        if m.Name:sub(1, #prefix) == prefix then
+            local p = instPos(m)
+            local d = p and (p - root.Position).Magnitude or 99999
+            if d <= (maxD or 60) then
+                local texts = collectTexts(m)
+                local blob = table.concat(texts, " | ")
+                local tier, tierTh = parseTier(blob)
+                local mut, chance = parseMut(blob)
+                local name = parseName(blob, tier, mut)
+                -- รายได้จากป้าย
+                local income = blob:match("%$[%d%.]+[KMBT]?/s") or blob:match("%d%.[%d]+[KMBT]/s")
+                local rarity = blob:match("%|%s*(Secret|Eternal|Divine|Cosmic|Mythic|Legendary)%s*$")
+                    or blob:match("(Secret|Eternal|Divine|Cosmic|Mythic|Legendary)")
+                out[#out + 1] = {
+                    name = name, tier = tier, tierTh = tierTh,
+                    mut = mut, chance = chance, blob = blob,
+                    income = income, rarity = rarity,
+                    d = d, p = p, model = m,
+                }
+            end
+        end
+    end
+    table.sort(out, function(a, b) return a.d < b.d end)
+    return out
+end
+
+local function textsNearPos(pos, rad)
+    if not pos then return {} end
+    local texts, seen = {}, {}
+    for _, x in ipairs(workspace:GetDescendants()) do
+        if x:IsA("BillboardGui") or x:IsA("SurfaceGui") then
+            local adornee = x.Adornee or x.Parent
+            local p = instPos(adornee)
+            if p and (p - pos).Magnitude <= (rad or 12) then
+                for _, t in ipairs(collectTexts(x)) do
+                    if not seen[t] then seen[t] = true; texts[#texts + 1] = t end
+                end
+            end
+        end
+    end
+    return texts
+end
+
+local function scanIncubators()
+    -- ไข่/ตู้ฟักหน้าบ้าน: Prompt Apply Mutation + asset ของเราใกล้ๆ
+    local prompts = nearbyMutPrompts()
+    local assets = mineAssetsNear(70)
+    local rows = {}
+    for _, pr in ipairs(prompts) do
+        if pr.d <= 50 and tostring(pr.act):lower():find("mutation", 1, true) then
+            local best, bestD
+            for _, a in ipairs(assets) do
+                if a.p and pr.p then
+                    local d = (a.p - pr.p).Magnitude
+                    if d <= 20 and (not bestD or d < bestD) then
+                        best, bestD = a, d
+                    end
+                end
+            end
+            local nearTxt = table.concat(textsNearPos(pr.p, 14), " | ")
+            local blobAll = table.concat({ pr.obj or "", nearTxt, best and best.blob or "" }, " | ")
+            local mutP, chanceP = parseMut(blobAll)
+            local timer = blobAll:match("(%d+m%s*%d*s?)") or blobAll:match("(%d+%s*m%s*%d+%s*s)") or blobAll:match("(%d+:%d+)")
+            rows[#rows + 1] = {
+                d = pr.d,
+                en = pr.en,
+                obj = pr.obj,
+                act = pr.act,
+                asset = best,
+                gap = bestD,
+                mut = (best and best.mut) or mutP,
+                chance = (best and best.chance) or chanceP,
+                timer = timer,
+                nearTxt = nearTxt,
+            }
+        end
+    end
+    local used = {}
+    for _, r in ipairs(rows) do
+        if r.asset then used[r.asset] = true end
+    end
+    for _, a in ipairs(assets) do
+        if not used[a] and a.d <= 35 then
+            local low = a.blob:lower()
+            if low:find("scrambl") or low:find("mutat") or a.tier ~= "Normal" then
+                rows[#rows + 1] = {
+                    d = a.d, en = nil, obj = "-", act = "-",
+                    asset = a, gap = 0,
+                    mut = a.mut, chance = a.chance, timer = nil, nearTxt = "",
+                }
+            end
+        end
+    end
+    table.sort(rows, function(a, b) return a.d < b.d end)
+    return rows
+end
+
 local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v1.4 — ชนิด/สี/สถานะ ===")
+    say("=== Egg Status Spy v1.5 — ตู้ฟักใกล้ตัว + Nest Forest ===")
     say("UserId=" .. ME)
-    say("หมายเหตุ: FirstAreaEgg_* = nest โซนแรก (Forest) ไม่ใช่คอกสัตว์บ้าน")
 
+    -- 1) ของที่เห็นหน้าตู้ฟัก (ตรงภาพ)
+    local incs = scanIncubators()
+    say(string.format("--- ตู้ฟัก / Apply Mutation ใกล้ตัว: %d ---", #incs))
+    if #incs == 0 then
+        say("(ไม่เจอ Prompt Mutation ใน 50 studs — ยืนชิดไข่ในตู้แล้วกด EGGS ใหม่)")
+    end
+    for i, r in ipairs(incs) do
+        local a = r.asset
+        local status = r.en == true and "READY" or (r.en == false and "DISABLED" or "?")
+        if a then
+            say(string.format(
+                "#%d [%s/%s] %s | rar=%s | $=%s | mut=%s chance=%s | prompt=%s | timer=%s | obj=%q | d=%.0f",
+                i, a.tierTh, a.tier, a.name,
+                tostring(a.rarity or "-"), tostring(a.income or "-"),
+                tostring(r.mut or "-"), tostring(r.chance or "-"),
+                status, tostring(r.timer or "-"), tostring(r.obj or ""), r.d
+            ))
+            if r.nearTxt and r.nearTxt ~= "" then say("    UI: " .. r.nearTxt) end
+            if a.blob ~= "" then say("    ป้าย: " .. a.blob) end
+        else
+            say(string.format(
+                "#%d (ไม่จับคู่ชื่อ) prompt=%s | %q | %q | timer=%s | d=%.0f",
+                i, status, tostring(r.act), tostring(r.obj), tostring(r.timer or "-"), r.d
+            ))
+            if r.nearTxt and r.nearTxt ~= "" then say("    UI: " .. r.nearTxt) end
+        end
+    end
+
+    -- 2) FirstArea nest (คนละที่)
     local eggsSnap, err, rf = snapshotMyEggs()
+    say("--- Nest โซนแรก Forest (FirstArea) — คนละที่กับตู้ฟัก ---")
     if rf then say("RF=" .. tostring(rf.Name)) end
     if not eggsSnap then
         say("Snapshot: " .. tostring(err))
-        say("=== DONE ===")
-        return
-    end
-
-    local near, far = {}, {}
-    for _, e in ipairs(eggsSnap) do
-        if e.d <= 100 then near[#near + 1] = e else far[#far + 1] = e end
-    end
-
-    local function printEgg(i, e, tag)
-        local eye = e.eye and ("#" .. tostring(e.eye)) or "-"
-        say(string.format(
-            "#%d%s ชนิด=%s | สถานะ=%s | โซน=%s | ขนาด=%.2f | สีIndex=%s eye=%s | mut=%s | nest=%s | d=%.0f",
-            i, tag or "", e.cat, e.st, e.area, e.scale,
-            tostring(e.color), eye, e.mut, e.nest, e.d
-        ))
-        if e.p then
-            say(string.format("    พิกัด %.0f, %.0f, %.0f%s",
-                e.p.X, e.p.Y, e.p.Z,
-                e.firstArea and " | Nestโซนแรก" or ""))
-        end
-    end
-
-    say(string.format("--- ไข่ใกล้ตัว (d≤100): %d ---", #near))
-    if #near == 0 then
-        say("(ไม่มีไข่ใกล้คอก/จุดยืน — ของใกล้ๆ น่าจะเป็นสัตว์ฟักแล้ว กด PETS)")
     else
-        for i, e in ipairs(near) do printEgg(i, e, "") end
-    end
-
-    say(string.format("--- Nest โซนแรก / ไกล (d>100): %d ---", #far))
-    for i, e in ipairs(far) do
-        printEgg(i, e, e.firstArea and " [FirstArea]" or "")
-    end
-    say("รวมไข่ snapshot = " .. #eggsSnap)
-
-    -- จับคู่ NestId ตรงชื่อ Slot (ไม่ใช้ระยะ — กันจับผิดช่อง)
-    local slots = mineFirstAreaSlots()
-    say(string.format("--- FirstArea slots ↔ NestId: %d ---", #slots))
-    for _, s in ipairs(slots) do
-        local matched
-        if eggsSnap then
-            for _, e in ipairs(eggsSnap) do
-                if e.nest == s.slot then matched = e; break end
+        local n = 0
+        for _, e in ipairs(eggsSnap) do
+            if e.firstArea or e.d > 100 then
+                n = n + 1
+                say(string.format(
+                    "FA#%d %s | %s | mut=%s | สี=%s eye=#%s | nest=%s | d=%.0f",
+                    n, e.cat, e.st, e.mut, tostring(e.color), tostring(e.eye or "-"), e.nest, e.d
+                ))
             end
         end
-        if matched then
-            say(string.format("  %s → %s | สี=%s | mut=%s | sc=%.2f | d=%.0f | @%.0f,%.0f",
-                s.slot, matched.cat, tostring(matched.color), matched.mut, matched.scale, matched.d,
-                matched.p and matched.p.X or 0, matched.p and matched.p.Z or 0))
-        else
-            say(string.format("  %s d=%.0f (ไม่มีใน snapshot)", s.slot, s.d))
-        end
+        if n == 0 then say("(ไม่มี FirstArea)") end
     end
 
-    if eggsSnap[1] and eggsSnap[1].raw then
-        say("--- ฟิลด์ตัวอย่าง ---")
-        say(dumpRowKeys(eggsSnap[1].raw))
-    end
     say("=== DONE ===")
-    say("ถ้าชนิดไม่ตรงภาพ: เดินไปพิกัดด้านบน แล้วเทียบช่อง — FirstArea ≠ คอกบ้าน")
+    say("ตู้ฟัก = แถวบน | Forest nest = แถวล่าง (อย่าเทียบกัน)"))
 end
 
 local function scanPets()
@@ -440,7 +529,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v1.4 — Nestโซนแรก ≠ คอกบ้าน"
+title.Text = "Egg01 Egg Status Spy v1.5 — ตู้ฟักใกล้ตัว"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -488,7 +577,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v1.4 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Status Spy v1.5 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -498,4 +587,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v1.4 พร้อม — EGGS (แยกใกล้/FirstArea)")
+say("v1.5 พร้อม — EGGS = ตู้ฟักใกล้ตัวก่อน")
