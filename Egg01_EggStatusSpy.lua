@@ -1,23 +1,42 @@
--- Egg01 Egg Status Spy v5.3 — ขั้น3c: PenRoster.AskLiveSnapshot + AskEggRecord(uid)
+-- Egg01 Egg Status Spy v6.0
+-- ไข่คอก: PlacedEggRenders + PenRoster/AskLiveSnapshot + AskEggRecord
+-- แสดง: ชื่อ / $/s / mut / prompt READY|DISABLED
 
 if _G.EGG01_EGG_STATUS_SPY then
+    pcall(function()
+        for _, bb in pairs(_G.EGG01_EGG_STATUS_SPY.esp or {}) do pcall(function() bb:Destroy() end) end
+    end)
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
     for _, c in ipairs(_G.EGG01_EGG_STATUS_SPY.conns or {}) do pcall(function() c:Disconnect() end) end
+    _G.EGG01_EGG_STATUS_SPY.espToken = (_G.EGG01_EGG_STATUS_SPY.espToken or 0) + 1
 end
 
 local Players = game:GetService("Players")
 local RS = game:GetService("ReplicatedStorage")
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
-local S = { gui = nil, lines = {}, conns = {} }
+local S = { gui = nil, lines = {}, conns = {}, esp = {}, espOn = false, espToken = 0 }
 _G.EGG01_EGG_STATUS_SPY = S
 
 local ME = tostring(LP.UserId)
 local box
+local ESP_TAG = "Egg01_PlacedEggESP"
+
+local RARITY_RANK = {
+    common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5,
+    mythic = 6, cosmic = 7, secret = 8, eternal = 9, divine = 10,
+}
+local RARITY_COLOR = {
+    Common = Color3.fromRGB(190, 195, 205), Uncommon = Color3.fromRGB(75, 205, 105),
+    Rare = Color3.fromRGB(65, 135, 255), Epic = Color3.fromRGB(178, 78, 235),
+    Legendary = Color3.fromRGB(255, 196, 35), Mythic = Color3.fromRGB(245, 70, 95),
+    Cosmic = Color3.fromRGB(55, 220, 235), Secret = Color3.fromRGB(230, 65, 205),
+    Eternal = Color3.fromRGB(45, 220, 175), Divine = Color3.fromRGB(245, 238, 255),
+}
 
 local function say(x)
     S.lines[#S.lines + 1] = tostring(x)
-    if #S.lines > 320 then table.remove(S.lines, 1) end
+    if #S.lines > 200 then table.remove(S.lines, 1) end
     if box then box.Text = table.concat(S.lines, "\n") end
 end
 
@@ -40,27 +59,97 @@ local function instPos(inst)
     return p and p.Position
 end
 
-local function findNet(name, className)
-    local pkg = RS:FindFirstChild("Packages")
-    local net = pkg and pkg:FindFirstChild("Networking")
-    local exact, fuzzy
-    for _, root in ipairs({ net, RS }) do
-        if root then
-            for _, d in ipairs(root:GetDescendants()) do
-                if className and not d:IsA(className) then
-                    -- skip
-                else
-                    local n = d.Name
-                    if n == name or n:sub(-#name - 1) == "/" .. name then
-                        exact = exact or d
-                    elseif n:find(name, 1, true) then
-                        fuzzy = fuzzy or d
-                    end
+local function adorneePart(model)
+    if not model then return nil end
+    if model:IsA("BasePart") then return model end
+    return model.PrimaryPart or model:FindFirstChild("Hitbox") or model:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function cleanRarity(v)
+    local w = tostring(v or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if not RARITY_RANK[w] then return nil end
+    return w:sub(1, 1):upper() .. w:sub(2)
+end
+
+local rarityByCategory = {}
+local function mapRarities()
+    rarityByCategory = {}
+    pcall(function()
+        if not getgc then return end
+        for _, obj in ipairs(getgc(true)) do
+            if typeof(obj) == "table" then
+                local cat = rawget(obj, "AssetCategory") or rawget(obj, "Category")
+                local cfg = rawget(obj, "Config")
+                if cat and typeof(cfg) == "table" then
+                    local rar = cfg.Rarity
+                    local id = typeof(rar) == "table" and (rar._id or rar.Id or rar.Name) or rar
+                    local cleaned = cleanRarity(id)
+                    if cleaned then rarityByCategory[tostring(cat)] = cleaned end
                 end
             end
         end
+    end)
+end
+
+local function fmtMoney(n)
+    n = tonumber(n)
+    if not n then return "-" end
+    local abs, suf = math.abs(n), ""
+    if abs >= 1e12 then n, suf = n / 1e12, "T"
+    elseif abs >= 1e9 then n, suf = n / 1e9, "B"
+    elseif abs >= 1e6 then n, suf = n / 1e6, "M"
+    elseif abs >= 1e3 then n, suf = n / 1e3, "K" end
+    if suf == "" then return string.format("$%.0f/s", n) end
+    local s = string.format("%.1f", n):gsub("%.0$", "")
+    return "$" .. s .. suf .. "/s"
+end
+
+local function mutText(mut)
+    if typeof(mut) ~= "table" then return tostring(mut or "-") end
+    if #mut == 0 then
+        -- dict style?
+        local parts = {}
+        for k, v in pairs(mut) do
+            if typeof(v) == "table" then
+                parts[#parts + 1] = tostring(v.Name or v.Id or k)
+            elseif typeof(k) == "number" then
+                parts[#parts + 1] = tostring(v)
+            else
+                parts[#parts + 1] = tostring(k)
+            end
+            if #parts >= 4 then break end
+        end
+        return #parts > 0 and table.concat(parts, ",") or "-"
     end
-    return exact or fuzzy
+    local parts = {}
+    for i, m in ipairs(mut) do
+        if typeof(m) == "table" then
+            parts[#parts + 1] = tostring(m.Name or m.Id or m.Type or m.Mutation or "?")
+        else
+            parts[#parts + 1] = tostring(m)
+        end
+        if #parts >= 4 then break end
+    end
+    return table.concat(parts, ",")
+end
+
+local function findRF(pathHint, name)
+    local pkg = RS:FindFirstChild("Packages")
+    local net = pkg and pkg:FindFirstChild("Networking")
+    if not net then return nil end
+    local exact
+    for _, d in ipairs(net:GetDescendants()) do
+        if d:IsA("RemoteFunction") then
+            local n = d.Name
+            if pathHint and n:find(pathHint, 1, true) and n:find(name, 1, true) then
+                return d
+            end
+            if n == name or n:sub(-#name - 1) == "/" .. name then
+                exact = exact or d
+            end
+        end
+    end
+    return exact
 end
 
 local function listOurEggs()
@@ -73,7 +162,13 @@ local function listOurEggs()
         if m:IsA("Model") and m.Name:sub(1, #prefix) == prefix then
             local p = instPos(m)
             local d = (root and p) and (p - root.Position).Magnitude or 99999
-            out[#out + 1] = { model = m, uid = m.Name:sub(#prefix + 1), full = m.Name, p = p, d = d }
+            out[#out + 1] = {
+                model = m,
+                uid = m.Name:sub(#prefix + 1),
+                full = m.Name,
+                p = p,
+                d = d,
+            }
         end
     end
     table.sort(out, function(a, b) return a.d < b.d end)
@@ -103,291 +198,219 @@ local function promptsNear(pos, maxGap)
     return rows
 end
 
-local function shortVal(v, depth)
-    depth = depth or 0
-    local t = typeof(v)
-    if t == "table" then
-        if depth >= 2 then return "{…}" end
-        local n = 0
-        for _ in pairs(v) do n = n + 1 end
-        return "table#" .. n
-    elseif t == "CFrame" then
-        local p = v.Position
-        return string.format("CF(%.0f,%.0f,%.0f)", p.X, p.Y, p.Z)
-    elseif t == "Vector3" then
-        return string.format("V3(%.0f,%.0f,%.0f)", v.X, v.Y, v.Z)
-    elseif t == "string" then
-        return (#v > 80) and (v:sub(1, 80) .. "…") or v
-    end
-    return tostring(v)
-end
-
-local function dumpTable(row, indent, limit, acc)
-    acc = acc or { n = 0, lines = {} }
-    indent = indent or ""
-    if acc.n >= (limit or 60) then return acc end
-    if typeof(row) ~= "table" then
-        acc.n = acc.n + 1
-        acc.lines[#acc.lines + 1] = indent .. shortVal(row)
-        return acc
-    end
-    local keys = {}
-    for k in pairs(row) do keys[#keys + 1] = k end
-    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-    for _, k in ipairs(keys) do
-        if acc.n >= (limit or 60) then break end
-        local v = row[k]
-        if typeof(v) == "table" then
-            local n = 0
-            for _ in pairs(v) do n = n + 1 end
-            acc.n = acc.n + 1
-            acc.lines[#acc.lines + 1] = indent .. tostring(k) .. " = table#" .. n
-            if n > 0 and n <= 12 and #indent < 6 then
-                dumpTable(v, indent .. "  ", limit, acc)
-            elseif n > 0 and #indent < 4 then
-                -- sample first few
-                local i = 0
-                for k2, v2 in pairs(v) do
-                    i = i + 1
-                    if i > 3 or acc.n >= limit then break end
-                    acc.n = acc.n + 1
-                    if typeof(v2) == "table" then
-                        acc.lines[#acc.lines + 1] = indent .. "  [" .. tostring(k2) .. "] = table"
-                        dumpTable(v2, indent .. "    ", limit, acc)
-                    else
-                        acc.lines[#acc.lines + 1] = indent .. "  [" .. tostring(k2) .. "] = " .. shortVal(v2)
-                    end
-                end
-            end
-        else
-            acc.n = acc.n + 1
-            acc.lines[#acc.lines + 1] = indent .. tostring(k) .. " = " .. shortVal(v)
+local function bestPrompt(prompts)
+    local mut, hatch, skip
+    for _, pr in ipairs(prompts) do
+        local al = (pr.act .. " " .. pr.obj):lower()
+        if al:find("mutation", 1, true) or al:find("apply", 1, true) or al:find("scrambl", 1, true) then
+            if not mut or pr.gap < mut.gap then mut = pr end
+        elseif al:find("hatch", 1, true) then
+            if not hatch or pr.gap < hatch.gap then hatch = pr end
+        elseif al:find("skip", 1, true) or al:find("growth", 1, true) then
+            if not skip or pr.gap < skip.gap then skip = pr end
         end
     end
-    return acc
+    local pr = mut or hatch or skip
+    if not pr then return "-", nil end
+    local kind = mut and "Mut" or (hatch and "Hatch" or "Growth")
+    return kind .. ":" .. pr.status, pr
 end
 
-local INTEREST = {
-    "uid", "Uid", "UID", "id", "Id", "_id",
-    "name", "Name", "AssetCategory", "AssetName", "Category", "DisplayName",
-    "rarity", "Rarity", "AssetScale", "Scale", "State", "state",
-    "Mutation", "Mutations", "mut", "Income", "income", "Money", "Earnings",
-    "PerSecond", "Cash", "Value", "Tier", "Quality", "Color", "AssetColorIndex",
-}
+local function pullPenRecords()
+    local rf = findRF("PenRoster", "AskLiveSnapshot")
+    if not rf then return {}, "ไม่มี PenRoster/AskLiveSnapshot" end
+    local ok, res = pcall(function() return rf:InvokeServer() end)
+    if not ok or typeof(res) ~= "table" then return {}, tostring(res) end
+    local byUid = {}
+    for _, plot in pairs(res) do
+        if typeof(plot) == "table" and tostring(plot.OwnerUserId) == ME and typeof(plot.Records) == "table" then
+            for uid, row in pairs(plot.Records) do
+                if typeof(row) == "table" then
+                    local id = tostring(row.UID or row.Uid or uid)
+                    byUid[id] = row
+                end
+            end
+        end
+    end
+    return byUid, nil
+end
 
-local function pickFields(row)
-    if typeof(row) ~= "table" then return {} end
+local function pullEggWorldRecords()
+    local rf = findRF("EggWorld", "AskLiveSnapshot")
+    if not rf then return {} end
+    local ok, res = pcall(function() return rf:InvokeServer() end)
+    if not ok or typeof(res) ~= "table" then return {} end
+    local byUid = {}
+    for _, plot in pairs(res) do
+        if typeof(plot) == "table" and tostring(plot.OwnerUserId) == ME and typeof(plot.Records) == "table" then
+            for uid, row in pairs(plot.Records) do
+                if typeof(row) == "table" then
+                    local id = tostring(row.UID or row.Uid or uid)
+                    byUid[id] = row
+                end
+            end
+        end
+    end
+    return byUid
+end
+
+local function askEggRecord(uid)
+    local rf = findRF("EggWorld", "AskEggRecord") or findRF(nil, "AskEggRecord")
+    if not rf then return nil end
+    local ok, res = pcall(function() return rf:InvokeServer(uid) end)
+    if ok and typeof(res) == "table" then return res end
+    return nil
+end
+
+local function mergeRow(a, b)
+    if not a then return b end
+    if not b then return a end
     local out = {}
-    for _, k in ipairs(INTEREST) do
-        local v = row[k]
-        if v ~= nil then
-            if typeof(v) == "table" then
-                local parts = {}
-                for i, m in ipairs(v) do
-                    if typeof(m) == "table" then
-                        parts[#parts + 1] = tostring(m.Name or m.Id or m.Type or "?")
-                    else
-                        parts[#parts + 1] = tostring(m)
-                    end
-                    if #parts >= 4 then break end
-                end
-                if #parts == 0 then
-                    for kk, vv in pairs(v) do
-                        parts[#parts + 1] = tostring(kk) .. "=" .. shortVal(vv)
-                        if #parts >= 4 then break end
-                    end
-                end
-                out[#out + 1] = k .. "={" .. table.concat(parts, ",") .. "}"
-            else
-                out[#out + 1] = k .. "=" .. shortVal(v)
-            end
+    for k, v in pairs(a) do out[k] = v end
+    for k, v in pairs(b) do
+        if out[k] == nil or out[k] == "" then out[k] = v end
+        if k == "Mutations" and (not out[k] or (typeof(out[k]) == "table" and #out[k] == 0)) then
+            out[k] = v
         end
+        if k == "MoneyPerSecond" and (not out[k] or out[k] == 0) then out[k] = v end
+        if k == "AssetCategory" and (not out[k] or out[k] == "?") then out[k] = v end
     end
     return out
 end
 
-local function indexByUid(root, into, path)
-    into = into or {}
-    if typeof(root) ~= "table" then return into end
-    local uid = root.Uid or root.uid or root.UID or root.Id or root.id
-    if typeof(uid) == "string" and #uid >= 8 then
-        into[uid] = { row = root, path = path or "?" }
-        local short = uid:match("([%w%-]+)$")
-        if short then into[short] = into[short] or into[uid] end
+local function buildRows()
+    mapRarities()
+    local pen, penErr = pullPenRecords()
+    local world = pullEggWorldRecords()
+    local eggs = listOurEggs()
+    local rows = {}
+    for _, e in ipairs(eggs) do
+        local rec = mergeRow(pen[e.uid], world[e.uid])
+        rec = mergeRow(rec, askEggRecord(e.uid))
+        local cat = rec and tostring(rec.AssetCategory or rec.AssetName or "?") or "?"
+        local rar = rarityByCategory[cat]
+        local mut = rec and mutText(rec.Mutations) or "-"
+        local money = rec and (rec.MoneyPerSecond or rec.moneyPerSecond) or nil
+        -- ItemData may nest income
+        if not money and rec and typeof(rec.ItemData) == "table" then
+            money = rec.ItemData.MoneyPerSecond or rec.ItemData.Income
+            if cat == "?" then cat = tostring(rec.ItemData.AssetCategory or rec.ItemData.Name or cat) end
+            if mut == "-" then mut = mutText(rec.ItemData.Mutations) end
+        end
+        local pps = e.p and promptsNear(e.p, 12) or {}
+        local prompt, pr = bestPrompt(pps)
+        if pr and (pr.obj:lower():find("scrambl", 1, true)) and mut == "-" then
+            mut = "Scrambled"
+            local ch = pr.obj:match("(%d+)%s*%%")
+            if ch then mut = mut .. " " .. ch .. "%" end
+        end
+        rows[#rows + 1] = {
+            d = e.d, uid = e.uid, model = e.model, p = e.p,
+            name = cat, rar = rar or "-", mut = mut,
+            money = money, moneyS = fmtMoney(money),
+            scale = rec and tonumber(rec.AssetScale) or 0,
+            color = rec and rec.AssetColorIndex,
+            prompt = prompt, promptRaw = pr,
+            rec = rec,
+        }
     end
-    -- also key if dictionary keyed by uid
-    for k, v in pairs(root) do
-        if typeof(k) == "string" and #k >= 8 and typeof(v) == "table" then
-            if k:find("-") or #k >= 20 or k:find(ME, 1, true) then
-                into[k] = { row = v, path = (path or "") .. "/" .. k }
+    return rows, penErr
+end
+
+local function clearEsp()
+    for _, bb in pairs(S.esp) do pcall(function() bb:Destroy() end) end
+    S.esp = {}
+end
+
+local function makeEsp(part)
+    local bb = Instance.new("BillboardGui")
+    bb.Name = ESP_TAG
+    bb.Size = UDim2.new(0, 170, 0, 52)
+    bb.StudsOffset = Vector3.new(0, 3.2, 0)
+    bb.AlwaysOnTop = true
+    bb.MaxDistance = 200
+    bb.LightInfluence = 0
+    bb.Adornee = part
+    bb.Parent = part
+    local tl = Instance.new("TextLabel", bb)
+    tl.Name = "L"
+    tl.Size = UDim2.new(1, 0, 1, 0)
+    tl.BackgroundColor3 = Color3.new(0, 0, 0)
+    tl.BackgroundTransparency = 0.32
+    tl.Font = Enum.Font.GothamBold
+    tl.TextSize = 12
+    tl.TextWrapped = true
+    tl.TextStrokeTransparency = 0.4
+    Instance.new("UICorner", tl).CornerRadius = UDim.new(0, 4)
+    return bb, tl
+end
+
+local function refreshEsp(rows)
+    if not S.espOn then return end
+    rows = rows or select(1, buildRows())
+    local alive = {}
+    for _, r in ipairs(rows) do
+        local part = adorneePart(r.model)
+        if part then
+            alive[r.uid] = true
+            local bb = S.esp[r.uid]
+            local tl
+            if not bb or not bb.Parent then
+                bb, tl = makeEsp(part)
+                S.esp[r.uid] = bb
+            else
+                tl = bb:FindFirstChild("L")
+            end
+            if tl then
+                tl.Text = string.format("%s\n%s  %s\n%s · %s",
+                    r.name, r.moneyS, r.rar, r.mut, r.prompt)
+                local col = RARITY_COLOR[r.rar]
+                if r.prompt:find("READY", 1, true) then col = Color3.fromRGB(80, 255, 140)
+                elseif r.prompt:find("DISABLED", 1, true) then col = Color3.fromRGB(255, 120, 120) end
+                tl.TextColor3 = col or Color3.fromRGB(210, 235, 210)
             end
         end
-        if typeof(v) == "table" and (path or ""):len() < 40 then
-            indexByUid(v, into, (path or "") .. "/" .. tostring(k))
+    end
+    for uid, bb in pairs(S.esp) do
+        if not alive[uid] then
+            pcall(function() bb:Destroy() end)
+            S.esp[uid] = nil
         end
     end
-    return into
 end
 
-local function invokeRF(name, payload)
-    local rf = findNet(name, "RemoteFunction") or findNet(name)
-    if not rf or not rf:IsA("RemoteFunction") then return nil, "ไม่มี " .. name end
-    local ok, res = pcall(function()
-        if payload == nil then return rf:InvokeServer() end
-        return rf:InvokeServer(payload)
+local function startEspLoop()
+    S.espToken = (S.espToken or 0) + 1
+    local token = S.espToken
+    task.spawn(function()
+        while S.espOn and S.espToken == token and S.gui and S.gui.Parent do
+            pcall(function() refreshEsp() end)
+            task.wait(1.5)
+        end
     end)
-    if not ok then return nil, tostring(res), rf.Name end
-    return res, nil, rf.Name
 end
 
-local function matchEgg(uid, index)
-    return index[uid] or index[ME .. "_" .. uid]
+local function setEsp(on)
+    S.espOn = on and true or false
+    if not S.espOn then clearEsp() else startEspLoop() end
 end
 
 local function scan()
     S.lines = {}
-    say("=== Egg Spy v5.3 — PenRoster + EggRecord ===")
+    say("=== Egg Spy v6.0 — ไข่คอก ชื่อ/$/mut/READY ===")
     say("UserId=" .. ME)
-
-    local eggs = listOurEggs()
-    say(string.format("PlacedEggRenders=%d", #eggs))
-
-    -- 1) PenRoster AskLiveSnapshot
-    say("… RF/PenRoster/AskLiveSnapshot")
-    local pen, penErr, penName = invokeRF("AskLiveSnapshot")
-    -- อาจชน EggWorld AskLiveSnapshot — หาตัว PenRoster โดยตรง
-    do
-        local pkg = RS:FindFirstChild("Packages")
-        local net = pkg and pkg:FindFirstChild("Networking")
-        if net then
-            for _, d in ipairs(net:GetDescendants()) do
-                if d:IsA("RemoteFunction") and d.Name:find("PenRoster", 1, true) and d.Name:find("AskLiveSnapshot", 1, true) then
-                    local ok, res = pcall(function() return d:InvokeServer() end)
-                    say("PenRoster RF=" .. d.Name .. " ok=" .. tostring(ok) .. " typ=" .. typeof(res))
-                    if ok then pen, penErr, penName = res, nil, d.Name end
-                    break
-                end
-            end
-        end
+    local rows, err = buildRows()
+    if err then say("PenRoster: " .. tostring(err)) end
+    say(string.format("--- ไข่: %d | ESP=%s ---", #rows, S.espOn and "ON" or "OFF"))
+    for i, r in ipairs(rows) do
+        say(string.format(
+            "#%d [%s] %s | %s | mut=%s | %s | sc=%.2f | d=%.0f",
+            i, r.rar, r.name, r.moneyS, r.mut, r.prompt, r.scale, r.d
+        ))
+        say("    uid=" .. r.uid:sub(1, 18))
     end
-    if penErr and not pen then say("PenRoster err: " .. tostring(penErr)) end
-
-    local penIndex = {}
-    if typeof(pen) == "table" then
-        say("--- dump PenRoster snapshot (ย่อ) ---")
-        local acc = dumpTable(pen, "", 50)
-        for _, ln in ipairs(acc.lines) do say("  " .. ln) end
-        penIndex = indexByUid(pen)
-        local n = 0
-        for _ in pairs(penIndex) do n = n + 1 end
-        say("PenRoster uid-index≈" .. n)
-    end
-
-    -- 2) EggWorld AskLiveSnapshot แยก
-    say("… RF/EggWorld/AskLiveSnapshot")
-    do
-        local pkg = RS:FindFirstChild("Packages")
-        local net = pkg and pkg:FindFirstChild("Networking")
-        if net then
-            for _, d in ipairs(net:GetDescendants()) do
-                if d:IsA("RemoteFunction") and d.Name:find("EggWorld", 1, true) and d.Name:find("AskLiveSnapshot", 1, true) then
-                    local ok, res = pcall(function() return d:InvokeServer() end)
-                    say("EggWorld Live ok=" .. tostring(ok) .. " typ=" .. typeof(res))
-                    if ok and typeof(res) == "table" then
-                        local acc = dumpTable(res, "", 30)
-                        for _, ln in ipairs(acc.lines) do say("  " .. ln) end
-                        local idx = indexByUid(res)
-                        local n = 0
-                        for _ in pairs(idx) do n = n + 1 end
-                        say("EggWorld uid-index≈" .. n)
-                        for k, v in pairs(idx) do penIndex[k] = penIndex[k] or v end
-                    end
-                    break
-                end
-            end
-        end
-    end
-
-    -- 3) AskEggRecord ต่อ uid
-    say("--- AskEggRecord(uid string) ---")
-    local eggRf
-    do
-        local pkg = RS:FindFirstChild("Packages")
-        local net = pkg and pkg:FindFirstChild("Networking")
-        if net then
-            for _, d in ipairs(net:GetDescendants()) do
-                if d:IsA("RemoteFunction") and d.Name:find("AskEggRecord", 1, true) then
-                    eggRf = d
-                    say("RF=" .. d.Name)
-                    break
-                end
-            end
-        end
-    end
-
-    local recordHits = 0
-    for i, e in ipairs(eggs) do
-        local rec, recHow
-        if eggRf then
-            for _, payload in ipairs({ e.uid, e.full, ME .. "_" .. e.uid }) do
-                local ok, res = pcall(function() return eggRf:InvokeServer(payload) end)
-                if ok and res ~= nil then
-                    rec, recHow = res, "str:" .. tostring(payload):sub(1, 20)
-                    break
-                end
-            end
-            -- ลอง table
-            if not rec then
-                for _, payload in ipairs({
-                    { Uid = e.uid }, { uid = e.uid }, { Id = e.uid },
-                }) do
-                    local ok, res = pcall(function() return eggRf:InvokeServer(payload) end)
-                    if ok and typeof(res) == "table" then
-                        rec, recHow = res, "table"
-                        break
-                    end
-                end
-            end
-        end
-
-        local fromPen = matchEgg(e.uid, penIndex)
-        local pps = e.p and promptsNear(e.p, 12) or {}
-        local prompt = "-"
-        for _, pr in ipairs(pps) do
-            local al = pr.act:lower()
-            if al:find("hatch", 1, true) or al:find("growth", 1, true) or al:find("mut", 1, true) then
-                prompt = pr.status .. " " .. pr.act
-                break
-            end
-        end
-
-        say(string.format("#%d d=%.0f uid=%s | prompt=%s", i, e.d, e.uid:sub(1, 12), prompt))
-        if fromPen then
-            local fields = pickFields(fromPen.row)
-            say("    pen[" .. tostring(fromPen.path) .. "]: " .. (#fields > 0 and table.concat(fields, " | ") or dumpTable(fromPen.row, "", 8).lines[1] or "?"))
-            if #fields > 0 then recordHits = recordHits + 1 end
-        else
-            say("    pen: -")
-        end
-        if rec then
-            recordHits = recordHits + 1
-            if typeof(rec) == "table" then
-                local fields = pickFields(rec)
-                say("    record[" .. tostring(recHow) .. "]: " .. (#fields > 0 and table.concat(fields, " | ") or "table"))
-                if #fields == 0 then
-                    local acc = dumpTable(rec, "      ", 15)
-                    for _, ln in ipairs(acc.lines) do say(ln) end
-                end
-            else
-                say("    record[" .. tostring(recHow) .. "]: " .. shortVal(rec))
-            end
-        else
-            say("    record: -")
-        end
-    end
-
-    say(string.format("--- hits ที่มีฟิลด์น่าสนใจ ≈%d / eggs=%d ---", recordHits, #eggs))
     say("=== DONE ===")
+    if S.espOn then refreshEsp(rows) end
 end
 
 -- GUI
@@ -400,8 +423,8 @@ if not gui.Parent then gui.Parent = PG end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 680, 0, 400)
-f.Position = UDim2.new(0, 12, 0.14, 0)
+f.Size = UDim2.new(0, 640, 0, 360)
+f.Position = UDim2.new(0, 12, 0.18, 0)
 f.BackgroundColor3 = Color3.fromRGB(22, 28, 36)
 f.BorderSizePixel = 0
 f.Active = true
@@ -412,7 +435,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Spy v5.3 — PenRoster / EggRecord"
+title.Text = "Egg01 Spy v6.0 — ไข่คอก (PenRoster)"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -420,7 +443,7 @@ title.TextXAlignment = Enum.TextXAlignment.Left
 
 local function btn(tx, x, col)
     local b = Instance.new("TextButton", f)
-    b.Size = UDim2.new(0, 80, 0, 28)
+    b.Size = UDim2.new(0, 72, 0, 28)
     b.Position = UDim2.new(0, x, 0, 36)
     b.Text = tx
     b.BackgroundColor3 = col
@@ -432,13 +455,14 @@ local function btn(tx, x, col)
     return b
 end
 
-local bGo = btn("SCAN", 10, Color3.fromRGB(45, 110, 170))
-local bClear = btn("CLEAR", 96, Color3.fromRGB(70, 70, 75))
-local bCopy = btn("COPY", 182, Color3.fromRGB(70, 70, 75))
-local bClose = btn("X", 596, Color3.fromRGB(145, 50, 65))
+local bEggs = btn("EGGS", 10, Color3.fromRGB(45, 110, 170))
+local bEsp = btn("ESP OFF", 88, Color3.fromRGB(90, 70, 70))
+local bClear = btn("CLEAR", 166, Color3.fromRGB(70, 70, 75))
+local bCopy = btn("COPY", 244, Color3.fromRGB(70, 70, 75))
+local bClose = btn("X", 556, Color3.fromRGB(145, 50, 65))
 
 box = Instance.new("TextBox", f)
-box.Size = UDim2.new(1, -16, 0, 320)
+box.Size = UDim2.new(1, -16, 0, 280)
 box.Position = UDim2.new(0, 8, 0, 72)
 box.BackgroundColor3 = Color3.new(0, 0, 0)
 box.BackgroundTransparency = 0.2
@@ -451,21 +475,34 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "SCAN = PenRoster.AskLiveSnapshot + AskEggRecord(uid)"
+box.Text = "EGGS = ชื่อ / $/s / mut / Hatch|Mut READY\nESP = ป้ายบนหัวไข่"
 
-bGo.MouseButton1Click:Connect(scan)
+local function syncEspBtn()
+    bEsp.Text = S.espOn and "ESP ON" or "ESP OFF"
+    bEsp.BackgroundColor3 = S.espOn and Color3.fromRGB(40, 130, 90) or Color3.fromRGB(90, 70, 70)
+end
+
+bEggs.MouseButton1Click:Connect(scan)
+bEsp.MouseButton1Click:Connect(function()
+    setEsp(not S.espOn)
+    syncEspBtn()
+end)
 bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Spy v5.3 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Spy v6.0 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 bClose.MouseButton1Click:Connect(function()
+    S.espOn = false
+    S.espToken = (S.espToken or 0) + 1
+    clearEsp()
     gui:Destroy()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v5.3 — กด SCAN (PenRoster + EggRecord)")
+say("v6.0 พร้อม — EGGS = PenRoster + AskEggRecord | ESP เปิดได้")
+syncEspBtn()
