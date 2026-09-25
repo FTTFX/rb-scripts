@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v5.1 — ขั้น3: ชื่อ/$/mut/READY จาก Snapshot+Prompt+dump
--- ไข่ = PlacedEggRenders.{UserId}_*
+-- Egg01 Egg Status Spy v5.2 — ขั้น3b: หาแหล่งชื่อ/$/mut ของ PlacedEgg (ไม่ใช้ nearBB ทั้งแมพ)
+-- จาก v5.1: Snapshot ไม่มี UID ไข่คอก | DEEP=FX อย่างเดียว | Hatch/Skip = READY ได้
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -15,16 +15,10 @@ _G.EGG01_EGG_STATUS_SPY = S
 
 local ME = tostring(LP.UserId)
 local box
-local PROMPT_GAP = 14
-
-local RARITY_RANK = {
-    common = 1, uncommon = 2, rare = 3, epic = 4, legendary = 5,
-    mythic = 6, cosmic = 7, secret = 8, eternal = 9, divine = 10,
-}
 
 local function say(x)
     S.lines[#S.lines + 1] = tostring(x)
-    if #S.lines > 260 then table.remove(S.lines, 1) end
+    if #S.lines > 280 then table.remove(S.lines, 1) end
     if box then box.Text = table.concat(S.lines, "\n") end
 end
 
@@ -52,275 +46,6 @@ local function instPos(inst)
     return p and p.Position
 end
 
-local function cleanRarity(v)
-    local w = tostring(v or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if not RARITY_RANK[w] then return nil end
-    return w:sub(1, 1):upper() .. w:sub(2)
-end
-
-local function findNet(name)
-    local pkg = RS:FindFirstChild("Packages")
-    local net = pkg and pkg:FindFirstChild("Networking")
-    local exact, fuzzy
-    for _, root in ipairs({ net, RS }) do
-        if root then
-            for _, d in ipairs(root:GetDescendants()) do
-                local n = d.Name
-                if n == name or n:sub(-#name - 1) == "/" .. name then
-                    exact = exact or d
-                elseif n:find(name, 1, true) then
-                    fuzzy = fuzzy or d
-                end
-            end
-        end
-    end
-    return exact or fuzzy
-end
-
-local function mutText(mut)
-    if typeof(mut) ~= "table" or #mut == 0 then return "-" end
-    local parts = {}
-    for i, m in ipairs(mut) do
-        if typeof(m) == "table" then
-            parts[#parts + 1] = tostring(m.Name or m.Id or m.Type or m.Mutation or "?")
-        else
-            parts[#parts + 1] = tostring(m)
-        end
-        if #parts >= 4 then break end
-    end
-    return table.concat(parts, ",")
-end
-
-local function dumpRowBrief(row)
-    local keys = {}
-    for k, v in pairs(row) do
-        local t = typeof(v)
-        if t ~= "table" and t ~= "CFrame" and t ~= "Vector3" and t ~= "Instance" then
-            keys[#keys + 1] = tostring(k) .. "=" .. tostring(v)
-        elseif t == "table" and (k == "Mutations" or k == "mutations") then
-            keys[#keys + 1] = "Mutations=" .. mutText(v)
-        end
-    end
-    table.sort(keys)
-    return table.concat(keys, ", ")
-end
-
-local rarityByCategory = {}
-local function mapRarities()
-    rarityByCategory = {}
-    pcall(function()
-        if not getgc then return end
-        for _, obj in ipairs(getgc(true)) do
-            if typeof(obj) == "table" then
-                local cat = rawget(obj, "AssetCategory") or rawget(obj, "Category")
-                local cfg = rawget(obj, "Config")
-                if cat and typeof(cfg) == "table" then
-                    local rar = cfg.Rarity
-                    local id = typeof(rar) == "table" and (rar._id or rar.Id or rar.Name) or rar
-                    local cleaned = cleanRarity(id)
-                    if cleaned then rarityByCategory[tostring(cat)] = cleaned end
-                end
-            end
-        end
-    end)
-end
-
-local function posOfRow(row)
-    for _, k in ipairs({ "BottomCFrame", "BoundsCFrame", "CFrame", "Position" }) do
-        local v = row[k]
-        if typeof(v) == "CFrame" then return v.Position end
-        if typeof(v) == "Vector3" then return v end
-    end
-end
-
-local function pullSnapshot()
-    local rf = findNet("AskFieldEggSnapshot")
-    if not rf or not rf:IsA("RemoteFunction") then return {}, "ไม่มี AskFieldEggSnapshot" end
-    local ok, result = pcall(function() return rf:InvokeServer() end)
-    if not ok or typeof(result) ~= "table" then return {}, tostring(result) end
-    local records = result.Records or result.records or result
-    if typeof(records) ~= "table" then return {}, "records ว่าง" end
-    local byUid, n = {}, 0
-    for k, row in pairs(records) do
-        if typeof(row) == "table" then
-            local uid = tostring(row.Uid or k)
-            local cat = tostring(row.AssetCategory or row.AssetName or "?")
-            byUid[uid] = {
-                uid = uid,
-                cat = cat,
-                rar = rarityByCategory[cat],
-                scale = tonumber(row.AssetScale) or 0,
-                state = tostring(row.State or "?"),
-                mut = mutText(row.Mutations),
-                nest = tostring(row.NestId or "-"),
-                area = tostring(row.AreaId or "?"),
-                color = row.AssetColorIndex,
-                pos = posOfRow(row),
-                brief = dumpRowBrief(row),
-                raw = row,
-            }
-            -- index แบบสั้นด้วย
-            local short = uid:match("([%w%-]+)$") or uid
-            if short ~= uid then byUid[short] = byUid[short] or byUid[uid] end
-            n = n + 1
-        end
-    end
-    return byUid, nil, n
-end
-
-local function matchSnap(eggUid, byUid, eggPos)
-    -- ตรง uid / ชื่อเต็ม / บางส่วน
-    local full = ME .. "_" .. eggUid
-    local hit = byUid[eggUid] or byUid[full]
-    if hit then return hit, "uid" end
-    for uid, row in pairs(byUid) do
-        if typeof(uid) == "string" and (uid:find(eggUid, 1, true) or eggUid:find(uid, 1, true)) then
-            return row, "uid-fuzzy"
-        end
-    end
-    -- ตำแหน่งใกล้
-    if eggPos then
-        local best, bestD
-        for _, row in pairs(byUid) do
-            if row.pos and row.uid then
-                local d = (row.pos - eggPos).Magnitude
-                if d <= 8 and (not bestD or d < bestD) then
-                    best, bestD = row, d
-                end
-            end
-        end
-        if best then return best, string.format("pos:%.1f", bestD) end
-    end
-    return nil, nil
-end
-
-local function deepDumpModel(model, limit)
-    local lines = {}
-    local n = 0
-    local function add(s)
-        n = n + 1
-        if n <= limit then lines[#lines + 1] = s end
-    end
-    pcall(function()
-        for k, v in pairs(model:GetAttributes()) do
-            add("attr." .. tostring(k) .. "=" .. tostring(v))
-        end
-        for _, d in ipairs(model:GetDescendants()) do
-            if d:IsA("StringValue") or d:IsA("NumberValue") or d:IsA("IntValue") or d:IsA("BoolValue")
-                or d:IsA("ObjectValue") then
-                add(d.ClassName .. ":" .. d.Name .. "=" .. tostring(d.Value))
-            end
-            local attrs = d:GetAttributes()
-            for k, v in pairs(attrs) do
-                add(d.Name .. ".attr." .. tostring(k) .. "=" .. tostring(v))
-            end
-            if n >= limit then break end
-        end
-    end)
-    return lines, n
-end
-
-local function billboardsNear(pos, rad)
-    local texts, seen = {}, {}
-    if not pos then return texts end
-    pcall(function()
-        local params = OverlapParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        if LP.Character then params.FilterDescendantsInstances = { LP.Character } end
-        local parts = workspace:GetPartBoundsInRadius(pos, rad, params)
-        local hosts = {}
-        for _, part in ipairs(parts) do
-            local m = part:FindFirstAncestorWhichIsA("Model") or part
-            hosts[m] = true
-        end
-        for host in pairs(hosts) do
-            for _, d in ipairs(host:GetDescendants()) do
-                if d:IsA("BillboardGui") or d:IsA("SurfaceGui") then
-                    for _, t in ipairs(d:GetDescendants()) do
-                        if (t:IsA("TextLabel") or t:IsA("TextButton")) and t.Text ~= "" then
-                            local s = t.Text:gsub("%s+", " "):match("^%s*(.-)%s*$")
-                            if s and not seen[s] then
-                                seen[s] = true
-                                texts[#texts + 1] = s
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    return texts
-end
-
-local function promptsNear(pos, maxGap)
-    local rows, seen = {}, {}
-    if not pos then return rows end
-    pcall(function()
-        local params = OverlapParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        if LP.Character then params.FilterDescendantsInstances = { LP.Character } end
-        local parts = workspace:GetPartBoundsInRadius(pos, maxGap, params)
-        for _, part in ipairs(parts) do
-            local function take(pp, adornee)
-                if not pp or seen[pp] then return end
-                seen[pp] = true
-                local ap = adornee and adornee:IsA("BasePart") and adornee.Position or pos
-                rows[#rows + 1] = {
-                    en = pp.Enabled,
-                    status = pp.Enabled and "READY" or "DISABLED",
-                    act = tostring(pp.ActionText or ""),
-                    obj = tostring(pp.ObjectText or ""),
-                    gap = (ap - pos).Magnitude,
-                }
-            end
-            for _, ch in ipairs(part:GetChildren()) do
-                if ch:IsA("ProximityPrompt") then take(ch, part) end
-            end
-        end
-    end)
-    for _, ch in ipairs(workspace:GetChildren()) do
-        if ch.Name == "SmartPromptPart" and ch:IsA("BasePart") then
-            local gap = (ch.Position - pos).Magnitude
-            if gap <= maxGap then
-                local pp = ch:FindFirstChildWhichIsA("ProximityPrompt")
-                if pp and not seen[pp] then
-                    seen[pp] = true
-                    rows[#rows + 1] = {
-                        en = pp.Enabled,
-                        status = pp.Enabled and "READY" or "DISABLED",
-                        act = tostring(pp.ActionText or ""),
-                        obj = tostring(pp.ObjectText or ""),
-                        gap = gap,
-                    }
-                end
-            end
-        end
-    end
-    table.sort(rows, function(a, b) return a.gap < b.gap end)
-    return rows
-end
-
-local function classifyPrompts(prompts)
-    local mut, hatch, skip, other = nil, nil, nil, nil
-    for _, pr in ipairs(prompts) do
-        local al = (pr.act .. " " .. pr.obj):lower()
-        if al:find("mutation", 1, true) or al:find("apply", 1, true) or al:find("scrambl", 1, true) then
-            if not mut or pr.gap < mut.gap then mut = pr end
-        elseif al:find("hatch", 1, true) then
-            if not hatch or pr.gap < hatch.gap then hatch = pr end
-        elseif al:find("skip", 1, true) or al:find("growth", 1, true) then
-            if not skip or pr.gap < skip.gap then skip = pr end
-        else
-            if not other or pr.gap < other.gap then other = pr end
-        end
-    end
-    return mut, hatch, skip, other
-end
-
-local function parseIncome(blob)
-    return tostring(blob or ""):match("%$[%d%.]+[KMBT]?/s")
-end
-
 local function listOurEggs()
     local folder = workspace:FindFirstChild("PlacedEggRenders")
     local out = {}
@@ -331,94 +56,238 @@ local function listOurEggs()
         if m:IsA("Model") and m.Name:sub(1, #prefix) == prefix then
             local p = instPos(m)
             local d = (root and p) and (p - root.Position).Magnitude or 99999
-            out[#out + 1] = {
-                model = m,
-                uid = m.Name:sub(#prefix + 1),
-                full = m.Name,
-                p = p,
-                d = d,
-            }
+            out[#out + 1] = { model = m, uid = m.Name:sub(#prefix + 1), full = m.Name, p = p, d = d }
         end
     end
     table.sort(out, function(a, b) return a.d < b.d end)
     return out
 end
 
-local function scanEggs()
+local function promptsNearEgg(pos, maxGap)
+    local rows, seen = {}, {}
+    if not pos then return rows end
+    for _, ch in ipairs(workspace:GetChildren()) do
+        if ch.Name == "SmartPromptPart" and ch:IsA("BasePart") then
+            local gap = (ch.Position - pos).Magnitude
+            if gap <= maxGap then
+                local pp = ch:FindFirstChildWhichIsA("ProximityPrompt")
+                if pp and not seen[pp] then
+                    seen[pp] = true
+                    rows[#rows + 1] = {
+                        gap = gap,
+                        en = pp.Enabled,
+                        status = pp.Enabled and "READY" or "DISABLED",
+                        act = tostring(pp.ActionText or ""),
+                        obj = tostring(pp.ObjectText or ""),
+                    }
+                end
+            end
+        end
+    end
+    table.sort(rows, function(a, b) return a.gap < b.gap end)
+    return rows
+end
+
+-- Billboard เฉพาะใต้โมเดลไข่ / Adornee ในไข่ — ไม่กวาดทั้งโลก
+local function textsOnEgg(model)
+    local texts, seen = {}, {}
+    if not model then return texts end
+    pcall(function()
+        for _, d in ipairs(model:GetDescendants()) do
+            if (d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox")) and d.Text ~= "" then
+                local t = d.Text:gsub("%s+", " "):match("^%s*(.-)%s*$")
+                if t and not seen[t] then seen[t] = true; texts[#texts + 1] = t end
+            end
+        end
+    end)
+    return texts
+end
+
+local function listNetInteresting()
+    local pkg = RS:FindFirstChild("Packages")
+    local net = pkg and pkg:FindFirstChild("Networking")
+    local hits = {}
+    if not net then return hits end
+    local keys = { "Place", "Plot", "Stand", "Hatch", "Mutat", "Scrambl", "Egg", "Asset", "Pen", "Farm", "Incub" }
+    for _, d in ipairs(net:GetDescendants()) do
+        if d:IsA("RemoteFunction") or d:IsA("RemoteEvent") or d:IsA("UnreliableRemoteEvent") then
+            local n = d.Name
+            for _, k in ipairs(keys) do
+                if n:find(k, 1, true) then
+                    hits[#hits + 1] = d.ClassName .. " " .. n
+                    break
+                end
+            end
+        end
+    end
+    table.sort(hits)
+    return hits
+end
+
+local function tryInvokeNamed(name)
+    local pkg = RS:FindFirstChild("Packages")
+    local net = pkg and pkg:FindFirstChild("Networking")
+    if not net then return nil, "no net" end
+    local rf
+    for _, d in ipairs(net:GetDescendants()) do
+        if d:IsA("RemoteFunction") and (d.Name == name or d.Name:sub(-#name - 1) == "/" .. name or d.Name:find(name, 1, true)) then
+            rf = d
+            break
+        end
+    end
+    if not rf then return nil, "no RF" end
+    local results = {}
+    local payloads = { {}, nil, { Uid = "" }, "" }
+    for _, pay in ipairs(payloads) do
+        local ok, res = pcall(function()
+            if pay == nil then return rf:InvokeServer() end
+            return rf:InvokeServer(pay)
+        end)
+        results[#results + 1] = {
+            pay = pay == nil and "nil" or (typeof(pay) == "table" and "{}" or tostring(pay)),
+            ok = ok,
+            typ = typeof(res),
+            preview = ok and (typeof(res) == "table" and ("table#" .. (res.Records and "Records" or tostring((function()
+                local n = 0
+                for _ in pairs(res) do n = n + 1; if n > 3 then break end end
+                return n
+            end)()))) or tostring(res):sub(1, 80)) or tostring(res):sub(1, 80),
+            name = rf.Name,
+            res = ok and res or nil,
+        }
+        if ok and typeof(res) == "table" then break end
+    end
+    return results, rf.Name
+end
+
+local function tableHasUid(t, uid, depth, seen)
+    if depth > 4 or typeof(t) ~= "table" or seen[t] then return false end
+    seen[t] = true
+    for k, v in pairs(t) do
+        if typeof(k) == "string" and (k:find(uid, 1, true) or uid:find(k, 1, true)) then return true end
+        if typeof(v) == "string" and (v:find(uid, 1, true) or v == uid) then return true end
+        if typeof(v) == "table" and tableHasUid(v, uid, depth + 1, seen) then return true end
+    end
+    return false
+end
+
+local function summarizeHit(t, uid)
+    local keys, sample = {}, {}
+    for k, v in pairs(t) do
+        keys[#keys + 1] = tostring(k)
+        local ks = tostring(k):lower()
+        if ks:find("name", 1, true) or ks:find("cat", 1, true) or ks:find("rar", 1, true)
+            or ks:find("mut", 1, true) or ks:find("income", 1, true) or ks:find("money", 1, true)
+            or ks:find("scale", 1, true) or ks:find("state", 1, true) or ks == "uid" then
+            sample[#sample + 1] = tostring(k) .. "=" .. tostring(v):sub(1, 60)
+        end
+        if typeof(v) == "table" and (ks:find("mut", 1, true) or ks == "config") then
+            sample[#sample + 1] = tostring(k) .. "={table}"
+        end
+    end
+    table.sort(keys)
+    return sample, keys
+end
+
+local function searchGcForUid(uid)
+    local hits = {}
+    if not getgc then return hits, "ไม่มี getgc" end
+    local n = 0
+    pcall(function()
+        for _, obj in ipairs(getgc(true)) do
+            if typeof(obj) == "table" then
+                local seen = {}
+                if tableHasUid(obj, uid, 0, seen) then
+                    n = n + 1
+                    local sample, keys = summarizeHit(obj, uid)
+                    hits[#hits + 1] = { sample = sample, keys = keys, obj = obj }
+                    if #hits >= 8 then break end
+                end
+            end
+        end
+    end)
+    return hits, nil, n
+end
+
+local function scanProbe()
     S.lines = {}
-    say("=== Egg Spy v5.1 — ชื่อ/$/mut/READY ===")
+    say("=== Egg Spy v5.2 — หา data ไข่คอก ===")
     say("UserId=" .. ME)
-    mapRarities()
-    say("…ดึง AskFieldEggSnapshot")
-    local byUid, err, nSnap = pullSnapshot()
-    if err then say("Snapshot: " .. tostring(err)) else say("Snapshot records=" .. tostring(nSnap)) end
+    say("ข้อสรุป v5.1: Field Snapshot≠ไข่คอก | nearBB=ป้ายสัตว์ปน | DEEP=FX")
 
     local eggs = listOurEggs()
-    say(string.format("--- PlacedEggRenders ของเรา: %d ---", #eggs))
-
-    local matched = 0
+    say(string.format("--- PlacedEggRenders: %d ---", #eggs))
     for i, e in ipairs(eggs) do
-        local snap, how = matchSnap(e.uid, byUid, e.p)
-        local prompts = e.p and promptsNear(e.p, PROMPT_GAP) or {}
-        local mutP, hatchP, skipP = classifyPrompts(prompts)
-        local nearTxt = billboardsNear(e.p, 10)
-        local incomeFromBb = nil
-        for _, t in ipairs(nearTxt) do
-            incomeFromBb = incomeFromBb or parseIncome(t)
-        end
-
-        local name = snap and snap.cat or "?"
-        local rar = snap and snap.rar or "-"
-        local mut = snap and snap.mut or "-"
-        local income = incomeFromBb or "-"
-        local ready = "-"
-
-        if mutP then
-            ready = mutP.status
-            local m2 = mutP.obj:match("(%w+)")
-            if mutP.obj ~= "" then
-                local low = mutP.obj:lower()
-                if low:find("scrambl", 1, true) then mut = "Scrambled" end
-                local ch = mutP.obj:match("(%d+)%s*%%")
-                if ch then mut = mut .. " " .. ch .. "%" end
-                if mut == "-" then mut = mutP.obj end
+        local pps = e.p and promptsNearEgg(e.p, 12) or {}
+        local texts = textsOnEgg(e.model)
+        local promptLine = "-"
+        for _, pr in ipairs(pps) do
+            local al = (pr.act .. pr.obj):lower()
+            if al:find("hatch", 1, true) or al:find("growth", 1, true) or al:find("mut", 1, true) then
+                promptLine = pr.status .. " " .. pr.act
+                break
             end
-        elseif hatchP then
-            ready = "Hatch:" .. hatchP.status
-        elseif skipP then
-            ready = "Growth:" .. skipP.status
         end
-
-        if snap then matched = matched + 1 end
-
-        say(string.format(
-            "#%d d=%.0f | name=%s | rar=%s | $=%s | mut=%s | prompt=%s | uid=%s",
-            i, e.d, name, tostring(rar), tostring(income), tostring(mut), ready, e.uid:sub(1, 12)
-        ))
-        if snap then
-            say(string.format("    snap[%s] st=%s sc=%.2f nest=%s area=%s color=%s",
-                tostring(how), snap.state, snap.scale, snap.nest, snap.area, tostring(snap.color)))
-        else
-            say("    snap: (ไม่เจอ UID ใน Field Snapshot)")
+        if #pps > 0 and promptLine == "-" then
+            promptLine = pps[1].status .. " " .. pps[1].act
         end
-        if #nearTxt > 0 then say("    nearBB: " .. table.concat(nearTxt, " || ")) end
-        if mutP then say(string.format("    mutPP: %s act=%q obj=%q gap=%.1f", mutP.status, mutP.act, mutP.obj, mutP.gap)) end
-        if hatchP then say(string.format("    hatchPP: %s %q gap=%.1f", hatchP.status, hatchP.act, hatchP.gap)) end
-        if skipP then say(string.format("    growthPP: %s %q gap=%.1f", skipP.status, skipP.act, skipP.gap)) end
+        say(string.format("#%d d=%.0f uid=%s | onModelTexts=%d | prompt=%s",
+            i, e.d, e.uid:sub(1, 12), #texts, promptLine))
+        if #texts > 0 then say("    texts: " .. table.concat(texts, " || ")) end
+        for j = 1, math.min(3, #pps) do
+            local pr = pps[j]
+            say(string.format("    PP gap=%.1f %s act=%q obj=%q", pr.gap, pr.status, pr.act, pr.obj))
+        end
     end
 
-    say(string.format("--- matched Snapshot %d/%d ---", matched, #eggs))
+    say("--- Networking ที่เกี่ยวกับ Place/Plot/Hatch/Mutat/Egg ---")
+    local nets = listNetInteresting()
+    for i = 1, math.min(40, #nets) do say("  " .. nets[i]) end
+    if #nets > 40 then say("  ... +" .. (#nets - 40)) end
+    if #nets == 0 then say("  (ไม่เจอ)") end
 
-    -- dump ลึกไข่ใบแรกที่ใกล้สุด
+    -- ลอง RF ที่น่าจะมี inventory/placed
+    local tryNames = {
+        "AskPlacedEggSnapshot", "AskPlotEggSnapshot", "AskStandEggSnapshot",
+        "AskOwnedEggs", "AskPlayerEggs", "AskEggInventory", "AskPlaceEggSnapshot",
+        "AskHatchInfo", "AskEggRecord", "AskLiveSnapshot", "AskPlotSnapshot",
+        "AskStandSnapshot", "AskFarmSnapshot", "AskAssetSnapshot",
+    }
+    say("--- ลอง Invoke RF ที่ชื่อน่าจะเกี่ยว ---")
+    for _, name in ipairs(tryNames) do
+        local results, rfName = tryInvokeNamed(name)
+        if results then
+            for _, r in ipairs(results) do
+                say(string.format("  %s pay=%s ok=%s typ=%s → %s",
+                    tostring(rfName or name), r.pay, tostring(r.ok), r.typ, r.preview))
+            end
+        end
+    end
+
+    -- getgc หา uid ไข่ใกล้สุด
     if eggs[1] then
-        say("--- DEEP ไข่ใกล้สุด #" .. eggs[1].uid:sub(1, 12) .. " ---")
-        local lines, total = deepDumpModel(eggs[1].model, 40)
-        say("deep entries≈" .. tostring(total) .. " (โชว์ " .. #lines .. ")")
-        for _, ln in ipairs(lines) do say("  " .. ln) end
-        if #lines == 0 then say("  (ไม่มี attr/Value บนโมเดล)") end
+        local uid = eggs[1].uid
+        say("--- getgc ค้น uid ไข่ใกล้สุด " .. uid:sub(1, 12) .. " ---")
+        local hits, err = searchGcForUid(uid)
+        if err then say(err) end
+        say("hits=" .. #hits)
+        for i, h in ipairs(hits) do
+            say(string.format("  GC#%d keys(%d): %s", i, #h.keys, table.concat(h.keys, ","):sub(1, 120)))
+            if #h.sample > 0 then say("    sample: " .. table.concat(h.sample, " | ")) end
+        end
+        if #hits == 0 then say("  (ไม่เจอ table ที่มี uid นี้ใน getgc)") end
+
+        -- ลองค้น full name ด้วย
+        say("--- getgc ค้น full " .. eggs[1].full:sub(1, 24) .. "… ---")
+        local hits2 = searchGcForUid(eggs[1].full)
+        say("hits=" .. #hits2)
+        for i, h in ipairs(hits2) do
+            say(string.format("  GC#%d keys(%d): %s", i, #h.keys, table.concat(h.keys, ","):sub(1, 120)))
+            if #h.sample > 0 then say("    sample: " .. table.concat(h.sample, " | ")) end
+        end
     end
 
-    say("=== DONE ===")
+    say("=== DONE — ส่งล็อกมา เพื่อชี้แหล่งชื่อ/$/mut ===")
 end
 
 -- GUI
@@ -443,7 +312,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Spy v5.1 — ชื่อ/$/mut/READY"
+title.Text = "Egg01 Spy v5.2 — หา data ไข่คอก"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -451,7 +320,7 @@ title.TextXAlignment = Enum.TextXAlignment.Left
 
 local function btn(tx, x, col)
     local b = Instance.new("TextButton", f)
-    b.Size = UDim2.new(0, 72, 0, 28)
+    b.Size = UDim2.new(0, 80, 0, 28)
     b.Position = UDim2.new(0, x, 0, 36)
     b.Text = tx
     b.BackgroundColor3 = col
@@ -463,9 +332,9 @@ local function btn(tx, x, col)
     return b
 end
 
-local bEggs = btn("EGGS", 10, Color3.fromRGB(45, 110, 170))
-local bClear = btn("CLEAR", 88, Color3.fromRGB(70, 70, 75))
-local bCopy = btn("COPY", 166, Color3.fromRGB(70, 70, 75))
+local bProbe = btn("PROBE", 10, Color3.fromRGB(45, 110, 170))
+local bClear = btn("CLEAR", 96, Color3.fromRGB(70, 70, 75))
+local bCopy = btn("COPY", 182, Color3.fromRGB(70, 70, 75))
 local bClose = btn("X", 576, Color3.fromRGB(145, 50, 65))
 
 box = Instance.new("TextBox", f)
@@ -482,14 +351,14 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "EGGS = PlacedEgg + Snapshot + Prompt\nหา name / $ / mut / READY|DISABLED"
+box.Text = "PROBE = Networking + getgc(uid)\nหาแหล่งชื่อ/$/mut ของไข่คอก"
 
-bEggs.MouseButton1Click:Connect(scanEggs)
+bProbe.MouseButton1Click:Connect(scanProbe)
 bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Spy v5.1 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Spy v5.2 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -499,4 +368,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v5.1 — กด EGGS (Snapshot + Prompt + DEEP)")
+say("v5.2 — กด PROBE (ไม่กวาด nearBB ทั้งแมพ)")
