@@ -19,7 +19,9 @@
 | `Egg01_StealRangeSpy.lua` | วัดระยะ Steal + ดัมพ์ Carry/Shifted | — |
 | `Egg01_RaritySpy.lua` | ค้น config/getgc สำหรับ map `AssetCategory→rarity` โดยตรง | v1.5 |
 | `Egg01_Auto.lua` | เดินทิ้ง/เก็บ + GUI drop/pick + `STEAL_RANGE=16` | v3.3 |
-| `Egg01_TargetFarm.lua` | เลือก Scale+Zone+Rarity → วิ่งตรงกลับ HOME; ไข่หลุดมือ HOP14 เก็บแล้ววิ่งต่อ | v1.3 |
+| `Egg01_TargetFarm.lua` | HOME→Rift→ไข่ | rarity ไกลก่อน | hop เซิร์ฟเลี่ยงเพื่อน | **v3.13** |
+| `Egg01_RiftFarm.lua` | Rift 3 เป้า / จับแม่น / ไม่เจอ→hop เลย / ค้าง→กระโดด | **v1.33** |
+| `Egg01_RiftFarm.md` | โน้ต path + hop/TeleportSetting + บทเรียน 772/เซิร์ฟเพื่อน | — |
 | `Egg01_MoveSpy.lua` | ทดสอบกลับ HOME; HOP14 stable / HOP16 edge + ตรวจ rollback | v1.4 SAFE |
 | `Egg01_UidStealTest.lua` | ทดสอบขโมยด้วย UID table / Snapshot row / EggCmds wrapper ทีละคำขอ | v1.0 |
 | `Egg01_TreadmillAuto.lua` | หา TreadmillBottom ใกล้สุด → เดินไป → วิ่งบนเครื่อง 45 วินาที | v1.0 |
