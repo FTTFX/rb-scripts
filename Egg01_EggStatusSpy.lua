@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v1.1
--- เฉพาะของเรา (UserId) + คุณภาพ (เงิน/ทอง/รุ้ง) + Mutation / Success Chance
+-- Egg01 Egg Status Spy v1.2
+-- เฉพาะไข่ของเรา (ตัดสัตว์ $/s) + คุณภาพเงิน/ทอง/รุ้ง + Mutation
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -90,7 +90,6 @@ end
 
 local function parseName(blob, tier, mut)
     local s = blob
-    -- ตัด prefix คุณภาพ / mutation ออก เหลือชื่อสัตว์
     for _, t in ipairs(TIERS) do
         s = s:gsub("^%s*" .. t .. "%s*%+?%s*", "")
         s = s:gsub("%s*" .. t .. "%s*%+?%s*", " ")
@@ -99,12 +98,54 @@ local function parseName(blob, tier, mut)
     s = s:gsub("%s*Scrambled%s+Mutation%s*", " ")
     s = s:gsub("%s*Mutation%s*", " ")
     s = s:gsub("%s*Disabled%s*", " ")
+    -- ตัดรายได้ / rarity ท้ายป้ายสัตว์
+    s = s:gsub("%s*%$[%d%.]+[KMBT]?/s.*$", "")
+    s = s:gsub("%s*%|%s*.*$", "")
     s = s:gsub("%s+", " "):match("^%s*(.-)%s*$") or ""
     if s == "" or s:lower() == (tier or ""):lower() then return "?" end
     return s
 end
 
-local function mineAssets()
+local function isPetBlob(blob)
+    -- สัตว์ในคอกมีรายได้ $x/s — ไข่ไม่มี
+    return tostring(blob):find("%$[%d%.]+[KMBT]?/s") ~= nil
+        or tostring(blob):find("%d%.[%d]+[KMBT]/s") ~= nil
+end
+
+local function isEggBlob(blob, name)
+    local low = (tostring(blob) .. " " .. tostring(name or "")):lower()
+    if isPetBlob(blob) then return false end
+    if low:find("egg", 1, true) then return true end
+    -- ไม่มีรายได้ + มี mutation/disabled → น่าจะไข่
+    if low:find("scrambl", 1, true) or low:find("mutat", 1, true) or low:find("disabled", 1, true) then
+        return true
+    end
+    return false
+end
+
+local function findNet(name, className)
+    local networking = RS:FindFirstChild("Shared") and RS.Shared:FindFirstChild("Networking")
+    local roots = { networking, RS }
+    for _, root in ipairs(roots) do
+        if root then
+            for _, item in ipairs(root:GetDescendants()) do
+                if item.Name == name or item.Name:find(name, 1, true) then
+                    if not className or item.ClassName == className then return item end
+                end
+            end
+        end
+    end
+end
+
+local function posOf(row)
+    for _, k in ipairs({ "BottomCFrame", "BoundsCFrame", "CFrame", "Position" }) do
+        local v = row[k]
+        if typeof(v) == "CFrame" then return v.Position end
+        if typeof(v) == "Vector3" then return v end
+    end
+end
+
+local function mineAssets(eggsOnly)
     local folder = workspace:FindFirstChild("ClientRenderedAssets")
     local out = {}
     if not folder then return out end
@@ -117,25 +158,63 @@ local function mineAssets()
             local tier, tierTh = parseTier(blob)
             local mut, chance = parseMut(blob)
             local name = parseName(blob, tier, mut)
-            local p = instPos(m)
-            local d = (root and p) and (p - root.Position).Magnitude or 99999
-            out[#out + 1] = {
-                id = m.Name:sub(#prefix + 1, #prefix + 8),
-                name = name,
-                tier = tier,
-                tierTh = tierTh,
-                mut = mut,
-                chance = chance,
-                blob = blob,
-                d = d,
-                p = p,
-                path = pathOf(m),
-                model = m,
-            }
+            if eggsOnly and not isEggBlob(blob, name) then
+                -- skip pets
+            else
+                local p = instPos(m)
+                local d = (root and p) and (p - root.Position).Magnitude or 99999
+                out[#out + 1] = {
+                    id = m.Name:sub(#prefix + 1, #prefix + 8),
+                    name = name,
+                    tier = tier,
+                    tierTh = tierTh,
+                    mut = mut,
+                    chance = chance,
+                    blob = blob,
+                    d = d,
+                    p = p,
+                    path = pathOf(m),
+                    model = m,
+                    pet = isPetBlob(blob),
+                }
+            end
         end
     end
     table.sort(out, function(a, b) return a.d < b.d end)
     return out
+end
+
+local function snapshotMyEggs()
+    local rf = findNet("AskFieldEggSnapshot", "RemoteFunction") or findNet("AskFieldEggSnapshot")
+    if not rf or not rf:IsA("RemoteFunction") then return nil, "ไม่มี AskFieldEggSnapshot" end
+    local ok, result = pcall(function() return rf:InvokeServer() end)
+    if not ok or typeof(result) ~= "table" then return nil, tostring(result) end
+    local records = result.Records or result.records or result
+    if typeof(records) ~= "table" then return nil, "records ว่าง" end
+    local list, root = {}, hr()
+    for id, row in pairs(records) do
+        if typeof(row) == "table" then
+            local uid = tostring(row.Uid or id)
+            if uid:find(ME, 1, true) then
+                local mut = row.Mutations
+                local mutS = typeof(mut) == "table" and ("#" .. tostring(#mut)) or tostring(mut)
+                local p = posOf(row)
+                local d = (root and p) and (p - root.Position).Magnitude or 99999
+                list[#list + 1] = {
+                    cat = tostring(row.AssetCategory or "?"),
+                    st = tostring(row.State or "?"),
+                    scale = tonumber(row.AssetScale) or 0,
+                    mut = mutS,
+                    nest = tostring(row.NestId or "-"),
+                    d = d,
+                    p = p,
+                    uid = uid,
+                }
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.nest < b.nest end)
+    return list
 end
 
 local function nearbyMutPrompts()
@@ -144,13 +223,16 @@ local function nearbyMutPrompts()
     for _, x in ipairs(workspace:GetDescendants()) do
         if x:IsA("ProximityPrompt") then
             local act = tostring(x.ActionText or "")
-            if act:lower():find("mutation", 1, true) or act:lower():find("apply", 1, true) then
+            local obj = tostring(x.ObjectText or "")
+            local al, ol = act:lower(), obj:lower()
+            -- เฉพาะ prompt ไข่ / mutation บนไข่ (ไม่โชว์ CLAIM กลุ่ม)
+            if al:find("mutation", 1, true) or ol:find("egg", 1, true) or (al:find("steal", 1, true) and ol:find("egg", 1, true)) then
                 local part = x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart", true))
                 local p = part and part.Position
                 local d = (root and p) and (p - root.Position).Magnitude or 99999
                 rows[#rows + 1] = {
                     d = d, en = x.Enabled,
-                    act = act, obj = tostring(x.ObjectText or ""),
+                    act = act, obj = obj,
                     p = p,
                 }
             end
@@ -166,7 +248,7 @@ local function matchPrompt(asset, prompts)
     for _, pr in ipairs(prompts) do
         if pr.p then
             local d = (pr.p - asset.p).Magnitude
-            if d <= 18 and (not best or d < best.d) then
+            if d <= 12 and (not best or d < best.d) then
                 best = { d = d, en = pr.en, obj = pr.obj, act = pr.act }
             end
         end
@@ -190,6 +272,7 @@ local function mineFirstAreaSlots()
                 slot = slot,
                 texts = texts,
                 d = d,
+                p = p,
                 name = m.Name,
             }
         end
@@ -198,53 +281,93 @@ local function mineFirstAreaSlots()
     return out
 end
 
-local function scanMine()
+local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v1.1 — ของเราเท่านั้น ===")
+    say("=== Egg Status Spy v1.2 — ไข่ของเราเท่านั้น ===")
     say("UserId=" .. ME)
 
-    local assets = mineAssets()
-    local prompts = nearbyMutPrompts()
-    say(string.format("--- สัตว์/ไข่ในคอกของเรา: %d ---", #assets))
-    if #assets == 0 then
-        say("(ไม่เจอ ClientRenderedAssets." .. ME .. "_*)")
-    end
-    for i, a in ipairs(assets) do
-        local pr = matchPrompt(a, prompts)
-        local mutS = a.mut or (pr and parseMut(pr.obj or "")) or "-"
-        local chance = a.chance or (pr and pr.obj and pr.obj:match("(%d+)%s*%%")) or "-"
-        local enS = pr and (pr.en and "READY" or "DISABLED") or "?"
-        say(string.format(
-            "#%d [%s/%s] %s | mut=%s chance=%s%% | prompt=%s | d=%.0f",
-            i, a.tierTh, a.tier, a.name, tostring(mutS), tostring(chance), enS, a.d
-        ))
-        if a.blob ~= "" then say("    " .. a.blob) end
+    local eggsSnap, err = snapshotMyEggs()
+    say("--- Snapshot ไข่ (FirstArea / ของเรา) ---")
+    if not eggsSnap then
+        say("Snapshot: " .. tostring(err))
+    elseif #eggsSnap == 0 then
+        say("(ไม่มีไข่ใน Snapshot ที่ผูก UserId)")
+    else
+        for i, e in ipairs(eggsSnap) do
+            local posS = e.p and string.format("%.0f,%.0f,%.0f", e.p.X, e.p.Y, e.p.Z) or "-"
+            say(string.format("#%d %s | %s sc=%.2f mut=%s nest=%s d=%.0f @%s",
+                i, e.st, e.cat, e.scale, e.mut, e.nest, e.d, posS))
+        end
+        say("รวมไข่ snapshot = " .. #eggsSnap)
     end
 
-    -- สรุปนับคุณภาพ
+    local slots = mineFirstAreaSlots()
+    say(string.format("--- AreaEggSlotsClient ของเรา: %d ---", #slots))
+    for _, s in ipairs(slots) do
+        local matched
+        if eggsSnap and s.p then
+            for _, e in ipairs(eggsSnap) do
+                if e.p and (e.p - s.p).Magnitude < 8 then matched = e; break end
+            end
+        end
+        if matched then
+            say(string.format("  %s → %s sc=%.2f mut=%s d=%.0f",
+                s.slot, matched.cat, matched.scale, matched.mut, s.d))
+        else
+            local extra = #s.texts > 0 and (" | " .. table.concat(s.texts, " / ")) or " (ว่าง/ไม่มีป้าย)"
+            say(string.format("  %s d=%.0f%s", s.slot, s.d, extra))
+        end
+    end
+
+    local eggAssets = mineAssets(true)
+    say(string.format("--- ClientRendered แบบไข่ (ไม่มี $/s): %d ---", #eggAssets))
+    if #eggAssets == 0 then
+        say("(ไม่มี — ของในคอกส่วนใหญ่เป็นสัตว์ฟักแล้ว มีรายได้)")
+    end
+    local prompts = nearbyMutPrompts()
     local byTier = {}
-    for _, a in ipairs(assets) do
+    for i, a in ipairs(eggAssets) do
+        local pr = matchPrompt(a, prompts)
+        local mutS = a.mut or "-"
+        local chance = a.chance or "-"
+        if pr and (pr.obj:lower():find("scrambl") or pr.obj:lower():find("success")) then
+            mutS = a.mut or select(1, parseMut(pr.obj)) or mutS
+            chance = a.chance or pr.obj:match("(%d+)%s*%%") or chance
+        end
+        local enS = pr and (pr.en and "READY" or "DISABLED") or "?"
+        say(string.format("#%d [%s] %s | mut=%s chance=%s | %s | d=%.0f",
+            i, a.tierTh, a.name, tostring(mutS), tostring(chance), enS, a.d))
+        if a.blob ~= "" then say("    " .. a.blob) end
         byTier[a.tier] = (byTier[a.tier] or 0) + 1
     end
     local parts = {}
     for _, t in ipairs(TIERS) do
         if byTier[t] then parts[#parts + 1] = (TIER_TH[t] or t) .. "=" .. byTier[t] end
     end
-    if #parts > 0 then say("สรุปคุณภาพ: " .. table.concat(parts, " | ")) end
+    if #parts > 0 then say("สรุปคุณภาพไข่: " .. table.concat(parts, " | ")) end
 
-    say("--- Mutation prompts ใกล้ๆ (ทุกคน) เฉพาะอ้างอิง ---")
-    for i = 1, math.min(8, #prompts) do
-        local pr = prompts[i]
-        say(string.format("  d=%.0f en=%s %q | %q", pr.d, tostring(pr.en), pr.act, pr.obj))
+    say("=== DONE ===")
+end
+
+local function scanPets()
+    S.lines = {}
+    say("=== สัตว์ในคอกของเรา (มี $/s) ===")
+    local pets = mineAssets(false)
+    local n = 0
+    local byTier = {}
+    for _, a in ipairs(pets) do
+        if a.pet then
+            n = n + 1
+            byTier[a.tier] = (byTier[a.tier] or 0) + 1
+            say(string.format("#%d [%s] %s | d=%.0f", n, a.tierTh, a.name, a.d))
+            say("    " .. a.blob)
+        end
     end
-
-    local slots = mineFirstAreaSlots()
-    say(string.format("--- FirstArea slots ของเรา: %d ---", #slots))
-    for _, s in ipairs(slots) do
-        local extra = #s.texts > 0 and (" | " .. table.concat(s.texts, " / ")) or ""
-        say(string.format("  %s d=%.0f%s", s.slot, s.d, extra))
+    local parts = {}
+    for _, t in ipairs(TIERS) do
+        if byTier[t] then parts[#parts + 1] = (TIER_TH[t] or t) .. "=" .. byTier[t] end
     end
-
+    say("รวมสัตว์=" .. n .. ( #parts > 0 and (" | " .. table.concat(parts, " | ")) or ""))
     say("=== DONE ===")
 end
 
@@ -270,11 +393,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v1.1 — ของเรา + เงิน/ทอง/รุ้ง"
-title.TextColor3 = Color3.fromRGB(160, 230, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 13
-title.TextXAlignment = Enum.TextXAlignment.Left
+title.Text = "Egg01 Egg Status Spy v1.2 — ไข่เท่านั้น + เงิน/ทอง/รุ้ง"
 
 local function btn(tx, x, col)
     local b = Instance.new("TextButton", f)
@@ -290,9 +409,10 @@ local function btn(tx, x, col)
     return b
 end
 
-local bScan = btn("MINE", 10, Color3.fromRGB(45, 110, 170))
-local bClear = btn("CLEAR", 88, Color3.fromRGB(70, 70, 75))
-local bCopy = btn("COPY", 166, Color3.fromRGB(70, 70, 75))
+local bEggs = btn("EGGS", 10, Color3.fromRGB(45, 110, 170))
+local bPets = btn("PETS", 88, Color3.fromRGB(90, 70, 140))
+local bClear = btn("CLEAR", 166, Color3.fromRGB(70, 70, 75))
+local bCopy = btn("COPY", 244, Color3.fromRGB(70, 70, 75))
 local bClose = btn("X", 556, Color3.fromRGB(145, 50, 65))
 
 box = Instance.new("TextBox", f)
@@ -309,14 +429,15 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "กด MINE = เฉพาะของเรา + คุณภาพ (เงิน/ทอง/รุ้ง) + Scrambled/%"
+box.Text = "EGGS = ไข่ของเราเท่านั้น (ตัดสัตว์ $/s)\nPETS = สัตว์ในคอก"
 
-bScan.MouseButton1Click:Connect(scanMine)
+bEggs.MouseButton1Click:Connect(scanEggs)
+bPets.MouseButton1Click:Connect(scanPets)
 bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v1.1 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Status Spy v1.2 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -326,4 +447,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v1.1 พร้อม — กด MINE")
+say("v1.2 พร้อม — กด EGGS")
