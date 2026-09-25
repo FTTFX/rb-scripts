@@ -1,5 +1,4 @@
--- Egg01 Egg Status Spy v4.0 — ขั้น1: โมเดลใกล้ตัวก่อน
--- ไม่เดา Prompt ทั้งแมพ / ไม่ ESP — Dump โครงสร้างรอบตัวแล้วค่อยสืบไข่
+-- Egg01 Egg Status Spy v4.1 — ขั้น1: โมเดลใกล้ตัว (ไม่ GetDescendants ทั้งแมพ)
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -14,9 +13,8 @@ _G.EGG01_EGG_STATUS_SPY = S
 
 local ME = tostring(LP.UserId)
 local box
-local NEAR_D = 25
-local MAX_MODELS = 20
-local MAX_DESC_LINES = 40
+local NEAR_D = 40
+local MAX_MODELS = 25
 
 local function say(x)
     S.lines[#S.lines + 1] = tostring(x)
@@ -49,13 +47,17 @@ local function interestingName(n)
         or low:find("scrambl", 1, true) or low:find("prompt", 1, true)
         or low:find("smart", 1, true) or low:find("incub", 1, true)
         or low:find("nest", 1, true) or low:find("slot", 1, true)
+        or low:find("stand", 1, true) or low:find("pen", 1, true)
+        or low:find("farm", 1, true) or low:find("plot", 1, true)
 end
 
 local function collectTexts(root, limit)
     local texts, seen = {}, {}
     if not root then return texts end
     local n = 0
-    for _, d in ipairs(root:GetDescendants()) do
+    local ok, desc = pcall(function() return root:GetDescendants() end)
+    if not ok or not desc then return texts end
+    for _, d in ipairs(desc) do
         if (d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox")) and d.Text ~= "" then
             local t = d.Text:gsub("%s+", " "):match("^%s*(.-)%s*$")
             if t and #t > 0 and not seen[t] then
@@ -69,64 +71,96 @@ local function collectTexts(root, limit)
     return texts
 end
 
--- โมเดล/โฟลเดอร์/พาร์ท "ราก" ใกล้ตัว (ไม่นับ Character / Camera)
+local function addNear(out, seen, inst, rootPos, maxD)
+    if not inst or seen[inst] then return end
+    local char = LP.Character
+    if char and (inst == char or inst:IsDescendantOf(char)) then return end
+    local p = instPos(inst)
+    if not p then return end
+    local d = (p - rootPos).Magnitude
+    if d > maxD then return end
+    seen[inst] = true
+    out[#out + 1] = { inst = inst, d = d, p = p }
+end
+
+-- สแกนเฉพาะชั้นตื้น — ห้าม workspace:GetDescendants()
 local function nearRoots(maxD)
     local root = hr()
     local out, seen = {}, {}
     if not root then return out end
-    local char = LP.Character
+    local rp = root.Position
 
-    local function consider(inst)
-        if not inst or seen[inst] then return end
-        if char and (inst == char or inst:IsDescendantOf(char)) then return end
-        if inst:IsA("Camera") or inst.Name == "Camera" then return end
-        local p = instPos(inst)
-        if not p then return end
-        local d = (p - root.Position).Magnitude
-        if d > maxD then return end
-        seen[inst] = true
-        out[#out + 1] = { inst = inst, d = d, p = p }
-    end
-
-    -- ClientRenderedAssets ของเรา / คนอื่นใกล้ตัว
+    say("…สแกน ClientRenderedAssets")
     local cra = workspace:FindFirstChild("ClientRenderedAssets")
     if cra then
         for _, m in ipairs(cra:GetChildren()) do
-            consider(m)
+            addNear(out, seen, m, rp, maxD)
+        end
+        say(string.format("  CRA children=%d near=%d", #cra:GetChildren(), #out))
+    else
+        say("  (ไม่มี ClientRenderedAssets)")
+    end
+
+    say("…สแกน AreaEggSlotsClient")
+    local slots = workspace:FindFirstChild("AreaEggSlotsClient")
+    if slots then
+        for _, m in ipairs(slots:GetChildren()) do
+            addNear(out, seen, m, rp, maxD)
         end
     end
 
-    -- SmartPromptPart / ชื่อน่าสนใจ ใน workspace ชั้นบน + ลูกใกล้ๆ
+    say("…สแกน workspace ชั้นบน + ลูก 1 ชั้น")
     for _, ch in ipairs(workspace:GetChildren()) do
         if interestingName(ch.Name) or ch.Name == "SmartPromptPart" then
-            consider(ch)
+            addNear(out, seen, ch, rp, maxD)
         end
-        -- พาร์ทเดี่ยวชื่อ SmartPromptPart อาจกระจาย
-        if ch:IsA("Folder") or ch:IsA("Model") then
-            for _, sub in ipairs(ch:GetChildren()) do
+        -- SmartPromptPart มักเป็น Part กระจายใต้โฟลเดอร์
+        local okKids, kids = pcall(function() return ch:GetChildren() end)
+        if okKids then
+            for _, sub in ipairs(kids) do
+                if sub.Name == "SmartPromptPart" or interestingName(sub.Name) then
+                    addNear(out, seen, sub, rp, maxD)
+                end
+                -- ชั้น 2 เฉพาะชื่อน่าสนใจ
                 if interestingName(sub.Name) or sub.Name == "SmartPromptPart" then
-                    consider(sub)
+                    local ok2, kids2 = pcall(function() return sub:GetChildren() end)
+                    if ok2 then
+                        for _, s2 in ipairs(kids2) do
+                            if s2.Name == "SmartPromptPart" or interestingName(s2.Name) then
+                                addNear(out, seen, s2, rp, maxD)
+                            end
+                        end
+                    end
                 end
             end
         end
     end
 
-    -- เผื่อ SmartPromptPart เป็น Instance กระจาย: เก็บจาก descendants แต่จำกัด
-    local ok, desc = pcall(function() return workspace:GetDescendants() end)
-    if ok and desc then
-        local added = 0
-        for _, x in ipairs(desc) do
-            if x.Name == "SmartPromptPart" or (x:IsA("ProximityPrompt") and interestingName(x.ActionText)) then
-                local host = x:IsA("ProximityPrompt") and (x.Parent or x) or x
-                -- ใช้ ancestor Model ถ้ามี
-                local model = host:FindFirstAncestorWhichIsA("Model") or host
-                consider(model)
-                consider(host)
-                added = added + 1
-                if added > 80 then break end
+    -- Overlap: BasePart ในรัศมี (เร็วกว่า GetDescendants)
+    say("…OverlapParams รัศมี " .. maxD)
+    pcall(function()
+        local params = OverlapParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        if LP.Character then params.FilterDescendantsInstances = { LP.Character } end
+        local parts = workspace:GetPartBoundsInRadius(rp, maxD, params)
+        local nPart = 0
+        for _, part in ipairs(parts) do
+            nPart = nPart + 1
+            -- โฮสต์ = Model บรรพบุรุษ หรือตัวพาร์ท
+            local host = part:FindFirstAncestorWhichIsA("Model") or part
+            addNear(out, seen, host, rp, maxD)
+            if part.Name == "SmartPromptPart" or interestingName(part.Name) then
+                addNear(out, seen, part, rp, maxD)
+            end
+            -- Prompt ใต้พาร์ท
+            for _, ch in ipairs(part:GetChildren()) do
+                if ch:IsA("ProximityPrompt") then
+                    addNear(out, seen, part, rp, maxD)
+                end
             end
         end
-    end
+        say(string.format("  overlap parts=%d hosts_total=%d", nPart, #out))
+    end)
 
     table.sort(out, function(a, b) return a.d < b.d end)
     return out
@@ -138,8 +172,9 @@ local function dumpModel(entry, idx)
     local prompts, flags = {}, {}
     local descCount = 0
     pcall(function()
-        for _, d in ipairs(m:GetDescendants()) do
-            descCount = descCount + 1
+        local desc = m:GetDescendants()
+        descCount = #desc
+        for _, d in ipairs(desc) do
             if d:IsA("ProximityPrompt") then
                 prompts[#prompts + 1] = {
                     act = tostring(d.ActionText or ""),
@@ -156,7 +191,7 @@ local function dumpModel(entry, idx)
         end
     end)
 
-    local mine = m.Name:sub(1, #ME + 1) == (ME .. "_")
+    local mine = tostring(m.Name):sub(1, #ME + 1) == (ME .. "_")
     say(string.format(
         "===== NEAR#%d d=%.1f %s %s%s =====",
         idx, entry.d, m.ClassName, m.Name, mine and " [OURS]" or ""
@@ -188,18 +223,17 @@ local function dumpModel(entry, idx)
         say("  flags: " .. table.concat(show, ", ") .. (#flags > 15 and (" +" .. (#flags - 15)) or ""))
     end
 
-    -- ลูกชั้นบน
     local kids = {}
     for _, ch in ipairs(m:GetChildren()) do
         kids[#kids + 1] = ch.ClassName .. ":" .. ch.Name
-        if #kids >= 20 then break end
+        if #kids >= 24 then break end
     end
     if #kids > 0 then say("  children: " .. table.concat(kids, ", ")) end
 end
 
 local function scanNear()
     S.lines = {}
-    say("=== Egg Spy v4.0 — ขั้น1 NEAR (โมเดลใกล้ตัว) ===")
+    say("=== Egg Spy v4.1 — ขั้น1 NEAR (โมเดลใกล้ตัว) ===")
     say("UserId=" .. ME .. " | radius=" .. NEAR_D)
     local root = hr()
     if not root then
@@ -209,19 +243,44 @@ local function scanNear()
     end
     say(string.format("HRP=%.0f,%.0f,%.0f", root.Position.X, root.Position.Y, root.Position.Z))
 
-    local list = nearRoots(NEAR_D)
-    say(string.format("--- โมเดล/โฮสต์ ใน %.0f studs: %d (โชว์สูงสุด %d) ---", NEAR_D, #list, MAX_MODELS))
+    local ok, listOrErr = pcall(nearRoots, NEAR_D)
+    if not ok then
+        say("nearRoots error: " .. tostring(listOrErr))
+        say("=== DONE ===")
+        return
+    end
+    local list = listOrErr
+    say(string.format("--- พบใกล้ตัว: %d (โชว์สูงสุด %d) ---", #list, MAX_MODELS))
 
     local n = math.min(MAX_MODELS, #list)
     if n == 0 then
-        say("(ว่าง — เดินเข้าใกล้ไข่/ตู้ในคอก แล้วกด NEAR อีกครั้ง)")
+        say("(ว่าง — เดินชิดไข่/สัตว์ในคอก แล้วกด NEAR)")
+        -- ช่วย debug: CRA ใกล้สุดแม้เกินรัศมี
+        local cra = workspace:FindFirstChild("ClientRenderedAssets")
+        if cra then
+            local best
+            for _, m in ipairs(cra:GetChildren()) do
+                if tostring(m.Name):sub(1, #ME + 1) == (ME .. "_") then
+                    local p = instPos(m)
+                    if p then
+                        local d = (p - root.Position).Magnitude
+                        if not best or d < best.d then best = { m = m, d = d } end
+                    end
+                end
+            end
+            if best then
+                say(string.format("CRA ของเราใกล้สุด: d=%.0f %s", best.d, best.m.Name))
+            else
+                say("CRA ของเรา: ไม่เจอ")
+            end
+        end
     end
     for i = 1, n do
-        local ok, err = pcall(dumpModel, list[i], i)
-        if not ok then say("  dump error: " .. tostring(err)) end
+        local okD, err = pcall(dumpModel, list[i], i)
+        if not okD then say("  dump error: " .. tostring(err)) end
     end
 
-    say("=== DONE — ส่งล็อกนี้มา เพื่อสืบว่าไข่อยู่ชั้นไหนในโมเดล ===")
+    say("=== DONE — ส่งล็อกมาเพื่อสืบโครงสร้างไข่ ===")
 end
 
 -- GUI
@@ -246,7 +305,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Spy v4.0 — ขั้น1: โมเดลใกล้ตัว"
+title.Text = "Egg01 Spy v4.1 — NEAR โมเดลใกล้ตัว"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -285,14 +344,14 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "ยืนใกล้ไข่ในคอก → กด NEAR → COPY ส่งล็อก\nขั้น1 = ดูโมเดลใกล้ตัวก่อน ยังไม่ ESP"
+box.Text = "ยืนชิดไข่ → NEAR → COPY\nv4.1 ไม่สแกน GetDescendants ทั้งแมพ"
 
 bNear.MouseButton1Click:Connect(scanNear)
 bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Spy v4.0 NEAR ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Spy v4.1 NEAR ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -302,4 +361,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v4.0 ขั้น1 — ยืนใกล้ไข่ แล้วกด NEAR")
+say("v4.1 — ยืนชิดไข่ แล้วกด NEAR")
