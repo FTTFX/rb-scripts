@@ -1,6 +1,5 @@
--- Egg01 Egg Status Spy v6.0
--- ไข่คอก: PlacedEggRenders + PenRoster/AskLiveSnapshot + AskEggRecord
--- แสดง: ชื่อ / $/s / mut / prompt READY|DISABLED
+-- Egg01 Egg Status Spy v6.1
+-- ไข่คอก: อ่านง่าย — ชื่อ / สี(คุณภาพ) / rar / sc / mut / prompt
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function()
@@ -32,6 +31,25 @@ local RARITY_COLOR = {
     Legendary = Color3.fromRGB(255, 196, 35), Mythic = Color3.fromRGB(245, 70, 95),
     Cosmic = Color3.fromRGB(55, 220, 235), Secret = Color3.fromRGB(230, 65, 205),
     Eternal = Color3.fromRGB(45, 220, 175), Divine = Color3.fromRGB(245, 238, 255),
+}
+
+-- คุณภาพสีไข่ (เงิน/ทอง/รุ้ง) — จาก Mutations / ItemData / ColorIndex
+local QUALITY_TH = {
+    Rainbow = "รุ้ง", Divine = "ดีไวน์", Diamond = "เพชร",
+    Golden = "ทอง", Gold = "ทอง", Silver = "เงิน", Bronze = "ทองแดง",
+    Shiny = "ไชน์", Galaxy = "กาแล็กซี", Neon = "นีออน",
+    Dark = "ดาร์ก", Crystal = "คริสตัล", Normal = "ปกติ",
+}
+local QUALITY_COLOR = {
+    Rainbow = Color3.fromRGB(255, 120, 220), Golden = Color3.fromRGB(255, 200, 60),
+    Gold = Color3.fromRGB(255, 200, 60), Silver = Color3.fromRGB(200, 210, 230),
+    Diamond = Color3.fromRGB(140, 220, 255), Neon = Color3.fromRGB(80, 255, 180),
+    Normal = Color3.fromRGB(210, 235, 210),
+}
+-- AssetColorIndex ที่เจอบ่อย (1=ปกติ เป็นค่าเริ่ม)
+local COLOR_INDEX_QUALITY = {
+    [1] = "Normal", [2] = "Silver", [3] = "Golden", [4] = "Rainbow",
+    [5] = "Diamond", [6] = "Galaxy",
 }
 
 local function say(x)
@@ -107,7 +125,6 @@ end
 local function mutText(mut)
     if typeof(mut) ~= "table" then return tostring(mut or "-") end
     if #mut == 0 then
-        -- dict style?
         local parts = {}
         for k, v in pairs(mut) do
             if typeof(v) == "table" then
@@ -131,6 +148,32 @@ local function mutText(mut)
         if #parts >= 4 then break end
     end
     return table.concat(parts, ",")
+end
+
+local function parseQuality(rec, mutStr)
+    local blob = (mutStr or "") .. " "
+    if rec then
+        blob = blob .. tostring(rec.Quality or rec.Tier or rec.Variant or "") .. " "
+        if typeof(rec.ItemData) == "table" then
+            local id = rec.ItemData
+            blob = blob .. tostring(id.Quality or id.Tier or id.Variant or id.Name or "") .. " "
+        end
+        if typeof(rec.Mutations) == "table" then
+            blob = blob .. mutText(rec.Mutations) .. " "
+        end
+    end
+    local low = blob:lower()
+    for _, q in ipairs({ "Rainbow", "Divine", "Diamond", "Golden", "Gold", "Silver", "Bronze", "Galaxy", "Neon", "Crystal", "Shiny" }) do
+        if low:find(q:lower(), 1, true) then
+            return q, QUALITY_TH[q] or q
+        end
+    end
+    local idx = rec and tonumber(rec.AssetColorIndex)
+    if idx and COLOR_INDEX_QUALITY[idx] then
+        local q = COLOR_INDEX_QUALITY[idx]
+        return q, QUALITY_TH[q] or q
+    end
+    return "Normal", "ปกติ"
 end
 
 local function findRF(pathHint, name)
@@ -304,12 +347,14 @@ local function buildRows()
             local ch = pr.obj:match("(%d+)%s*%%")
             if ch then mut = mut .. " " .. ch .. "%" end
         end
+        local qEn, qTh = parseQuality(rec, mut)
         rows[#rows + 1] = {
             d = e.d, uid = e.uid, model = e.model, p = e.p,
             name = cat, rar = rar or "-", mut = mut,
             money = money, moneyS = fmtMoney(money),
             scale = rec and tonumber(rec.AssetScale) or 0,
             color = rec and rec.AssetColorIndex,
+            quality = qEn, qualityTh = qTh,
             prompt = prompt, promptRaw = pr,
             rec = rec,
         }
@@ -325,7 +370,7 @@ end
 local function makeEsp(part)
     local bb = Instance.new("BillboardGui")
     bb.Name = ESP_TAG
-    bb.Size = UDim2.new(0, 170, 0, 52)
+    bb.Size = UDim2.new(0, 168, 0, 58)
     bb.StudsOffset = Vector3.new(0, 3.2, 0)
     bb.AlwaysOnTop = true
     bb.MaxDistance = 200
@@ -362,11 +407,11 @@ local function refreshEsp(rows)
                 tl = bb:FindFirstChild("L")
             end
             if tl then
-                tl.Text = string.format("%s\n%s  %s\n%s · %s",
-                    r.name, r.moneyS, r.rar, r.mut, r.prompt)
-                local col = RARITY_COLOR[r.rar]
+                tl.Text = string.format("%s\n[%s] %s  sc=%.2f\n%s · %s",
+                    r.name, r.qualityTh, r.rar, r.scale, r.mut, r.prompt)
+                local col = QUALITY_COLOR[r.quality] or RARITY_COLOR[r.rar]
                 if r.prompt:find("READY", 1, true) then col = Color3.fromRGB(80, 255, 140)
-                elseif r.prompt:find("DISABLED", 1, true) then col = Color3.fromRGB(255, 120, 120) end
+                elseif r.prompt:find("DISABLED", 1, true) then col = Color3.fromRGB(255, 140, 140) end
                 tl.TextColor3 = col or Color3.fromRGB(210, 235, 210)
             end
         end
@@ -397,18 +442,19 @@ end
 
 local function scan()
     S.lines = {}
-    say("=== Egg Spy v6.0 — ไข่คอก ชื่อ/$/mut/READY ===")
+    say("=== Egg Spy v6.1 — อ่านง่าย ===")
     say("UserId=" .. ME)
     local rows, err = buildRows()
     if err then say("PenRoster: " .. tostring(err)) end
-    say(string.format("--- ไข่: %d | ESP=%s ---", #rows, S.espOn and "ON" or "OFF"))
+    say(string.format("--- ไข่ %d ฟอง | ESP=%s ---", #rows, S.espOn and "ON" or "OFF"))
+    say("")
     for i, r in ipairs(rows) do
-        say(string.format(
-            "#%d [%s] %s | %s | mut=%s | %s | sc=%.2f | d=%.0f",
-            i, r.rar, r.name, r.moneyS, r.mut, r.prompt, r.scale, r.d
-        ))
-        say("    uid=" .. r.uid:sub(1, 18))
+        -- แถวหลักอ่านง่าย
+        say(string.format("#%d  %s", i, r.name))
+        say(string.format("    สี=%s | rar=%s | sc=%.2f", r.qualityTh, r.rar, r.scale))
+        say(string.format("    mut=%s | %s | d=%.0f", r.mut, r.prompt, r.d))
     end
+    say("")
     say("=== DONE ===")
     if S.espOn then refreshEsp(rows) end
 end
@@ -435,7 +481,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Spy v6.0 — ไข่คอก (PenRoster)"
+title.Text = "Egg01 Spy v6.1 — สี/sc/mut อ่านง่าย"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -475,7 +521,7 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "EGGS = ชื่อ / $/s / mut / Hatch|Mut READY\nESP = ป้ายบนหัวไข่"
+box.Text = "EGGS = ชื่อ · สี(คุณภาพ) · rar · sc · mut · prompt\nESP = ป้ายบนหัว"
 
 local function syncEspBtn()
     bEsp.Text = S.espOn and "ESP ON" or "ESP OFF"
@@ -491,7 +537,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Spy v6.0 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Spy v6.1 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -504,5 +550,5 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v6.0 พร้อม — EGGS = PenRoster + AskEggRecord | ESP เปิดได้")
+say("v6.1 — กด EGGS (สี + sc อ่านง่าย)")
 syncEspBtn()
