@@ -108,7 +108,15 @@ local CASES = {
 --------------------------------------------------------------------
 -- GUI
 --------------------------------------------------------------------
-local parentGui = (gethui and gethui()) or game:GetService("CoreGui")
+local parentGui
+local okEnv, hui = pcall(function()
+	return (gethui and gethui()) or game:GetService("CoreGui")
+end)
+if okEnv and hui then
+	parentGui = hui
+else
+	parentGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
+end
 
 local old = parentGui:FindFirstChild("RemoteGuardTestGUI")
 if old then old:Destroy() end
@@ -241,3 +249,6 @@ main.Size = UDim2.fromOffset(420, math.max(430, y + 20))
 
 log("พร้อม — กด RUN ALL หรือปุ่มเคส 1-7", INFO)
 log("REJECT ที่ถูกต้อง: too_far / invalid_id / state / rate / cooldown", INFO)
+
+-- ค้างสคริปต์ไว้ (Studio: กัน script จบ → GUI โดนเก็บ)
+while gui.Parent do task.wait(1) end
