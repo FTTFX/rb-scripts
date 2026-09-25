@@ -1,4 +1,4 @@
--- Egg01 Egg Status Spy v4.1 — ขั้น1: โมเดลใกล้ตัว (ไม่ GetDescendants ทั้งแมพ)
+-- Egg01 Egg Status Spy v4.2 — ขั้น1: โมเดลใกล้ตัว (fix Folder PrimaryPart)
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -35,9 +35,18 @@ end
 local function instPos(inst)
     if not inst then return nil end
     if inst:IsA("BasePart") then return inst.Position end
+    if inst:IsA("Model") then
+        local ok, piv = pcall(function() return inst:GetPivot() end)
+        if ok and piv then return piv.Position end
+        local pp = inst.PrimaryPart
+        if pp then return pp.Position end
+        local p = inst:FindFirstChildWhichIsA("BasePart", true)
+        return p and p.Position
+    end
+    -- Folder / อื่นๆ — ห้ามแตะ PrimaryPart
     local ok, piv = pcall(function() return inst:GetPivot() end)
     if ok and piv then return piv.Position end
-    local p = inst.PrimaryPart or inst:FindFirstChildWhichIsA("BasePart", true)
+    local p = inst:FindFirstChildWhichIsA("BasePart", true)
     return p and p.Position
 end
 
@@ -233,7 +242,7 @@ end
 
 local function scanNear()
     S.lines = {}
-    say("=== Egg Spy v4.1 — ขั้น1 NEAR (โมเดลใกล้ตัว) ===")
+    say("=== Egg Spy v4.2 — ขั้น1 NEAR (โมเดลใกล้ตัว) ===")
     say("UserId=" .. ME .. " | radius=" .. NEAR_D)
     local root = hr()
     if not root then
@@ -305,7 +314,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Spy v4.1 — NEAR โมเดลใกล้ตัว"
+title.Text = "Egg01 Spy v4.2 — NEAR โมเดลใกล้ตัว"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -344,14 +353,14 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "ยืนชิดไข่ → NEAR → COPY\nv4.1 ไม่สแกน GetDescendants ทั้งแมพ"
+box.Text = "ยืนชิดไข่ → NEAR → COPY\nv4.2 fix Folder PrimaryPart"
 
 bNear.MouseButton1Click:Connect(scanNear)
 bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Spy v4.1 NEAR ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Spy v4.2 NEAR ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -361,4 +370,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v4.1 — ยืนชิดไข่ แล้วกด NEAR")
+say("v4.2 — ยืนชิดไข่ แล้วกด NEAR")
