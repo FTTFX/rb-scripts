@@ -1,11 +1,10 @@
--- Egg01 Egg Status Spy v2.0
--- คอก: สแกน + ESP บนหัว ($ / mut)
+-- Egg01 Egg Status Spy v3.1
+-- ไข่ในคอก = มี Apply Mutation Prompt เท่านั้น (READY / DISABLED)
+-- ไม่เกาะสัตว์ฟักแล้วที่ไม่มี prompt
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function()
-        for _, bb in pairs(_G.EGG01_EGG_STATUS_SPY.esp or {}) do
-            pcall(function() bb:Destroy() end)
-        end
+        for _, bb in pairs(_G.EGG01_EGG_STATUS_SPY.esp or {}) do pcall(function() bb:Destroy() end) end
     end)
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
     for _, c in ipairs(_G.EGG01_EGG_STATUS_SPY.conns or {}) do pcall(function() c:Disconnect() end) end
@@ -20,9 +19,9 @@ _G.EGG01_EGG_STATUS_SPY = S
 
 local ME = tostring(LP.UserId)
 local box
-local ESP_TAG = "Egg01_PenESP"
-local ESP_MAX_D = 120
-local ESP_REFRESH = 1.25
+local ESP_TAG = "Egg01_IncubatorESP"
+local SCAN_D = 100
+local ESP_REFRESH = 1.2
 
 local TIERS = {
     "Rainbow", "Divine", "Diamond", "Golden", "Gold", "Silver", "Bronze",
@@ -40,13 +39,12 @@ local TIER_COLOR = {
     Golden = Color3.fromRGB(255, 200, 60),
     Gold = Color3.fromRGB(255, 200, 60),
     Silver = Color3.fromRGB(200, 210, 230),
-    Bronze = Color3.fromRGB(200, 140, 80),
     Normal = Color3.fromRGB(210, 235, 210),
 }
 
 local function say(x)
     S.lines[#S.lines + 1] = tostring(x)
-    if #S.lines > 180 then table.remove(S.lines, 1) end
+    if #S.lines > 160 then table.remove(S.lines, 1) end
     if box then box.Text = table.concat(S.lines, "\n") end
 end
 
@@ -88,21 +86,19 @@ end
 local function parseTier(blob)
     local low = blob:lower()
     for _, t in ipairs(TIERS) do
-        if low:find(t:lower(), 1, true) then
-            return t, TIER_TH[t] or t
-        end
+        if low:find(t:lower(), 1, true) then return t, TIER_TH[t] or t end
     end
     return "Normal", "ปกติ"
 end
 
 local function parseMut(blob)
-    local low = blob:lower()
+    local low = tostring(blob or ""):lower()
     local mut
     if low:find("scrambled", 1, true) then mut = "Scrambled"
     elseif low:find("disabled", 1, true) then mut = "Disabled"
     elseif low:find("mutation", 1, true) then mut = "Mutation"
     end
-    local chance = blob:match("(%d+)%s*%%%s*[Ss]uccess")
+    local chance = tostring(blob or ""):match("(%d+)%s*%%%s*[Ss]uccess")
     return mut, chance
 end
 
@@ -134,57 +130,30 @@ local function parseName(blob, tier)
     return s
 end
 
-local function isPetBlob(blob)
-    return tostring(blob):find("%$[%d%.]+[KMBT]?/s") ~= nil
-        or tostring(blob):find("%d%.[%d]+[KMBT]/s") ~= nil
-end
-
-local function mineAssets()
-    local folder = workspace:FindFirstChild("ClientRenderedAssets")
-    local out = {}
-    if not folder then return out end
-    local prefix = ME .. "_"
-    local root = hr()
-    for _, m in ipairs(folder:GetChildren()) do
-        if m.Name:sub(1, #prefix) == prefix then
-            local texts = collectTexts(m)
-            local blob = table.concat(texts, " | ")
-            local tier, tierTh = parseTier(blob)
-            local mut, chance = parseMut(blob)
-            local name = parseName(blob, tier)
-            local p = instPos(m)
-            local d = (root and p) and (p - root.Position).Magnitude or 99999
-            out[#out + 1] = {
-                name = name, tier = tier, tierTh = tierTh,
-                mut = mut, chance = chance, blob = blob,
-                d = d, p = p, pet = isPetBlob(blob),
-            }
-        end
-    end
-    table.sort(out, function(a, b) return a.d < b.d end)
-    return out
-end
-
-local function nearbyMutPrompts(maxD)
+-- Prompt Apply Mutation ใกล้ตัว = ไข่จริง
+local function mutationPrompts(maxD)
     local root = hr()
     local rows = {}
     if not root then return rows end
-    maxD = maxD or 55
     local ok, desc = pcall(function() return workspace:GetDescendants() end)
     if not ok or not desc then return rows end
     for _, x in ipairs(desc) do
         if x:IsA("ProximityPrompt") then
-            local act = tostring(x.ActionText or "")
-            local al = act:lower()
-            if al:find("mutation", 1, true) or al:find("apply", 1, true) then
-                local part = x.Parent and (x.Parent:IsA("BasePart") and x.Parent or x.Parent:FindFirstChildWhichIsA("BasePart", true))
+            local act = tostring(x.ActionText or ""):lower()
+            local obj = tostring(x.ObjectText or ""):lower()
+            if act:find("mutation", 1, true) or act:find("apply", 1, true)
+                or obj:find("scrambl", 1, true) or obj:find("mutation", 1, true) then
+                local part = x.Parent and (x.Parent:IsA("BasePart") and x.Parent
+                    or x.Parent:FindFirstChildWhichIsA("BasePart", true))
                 local p = part and part.Position
                 local d = p and (p - root.Position).Magnitude or 99999
-                if d <= maxD then
+                if d <= (maxD or SCAN_D) then
                     rows[#rows + 1] = {
-                        d = d, en = x.Enabled,
-                        act = act, obj = tostring(x.ObjectText or ""),
-                        p = p,
+                        prompt = x, part = part, p = p, d = d,
+                        en = x.Enabled,
+                        status = x.Enabled and "READY" or "DISABLED",
+                        act = tostring(x.ActionText or ""),
+                        obj = tostring(x.ObjectText or ""),
                     }
                 end
             end
@@ -205,88 +174,89 @@ local function mineAssetsNear(maxD)
         if m.Name:sub(1, #prefix) == prefix then
             local p = instPos(m)
             local d = p and (p - root.Position).Magnitude or 99999
-            if d <= (maxD or 60) then
+            if d <= (maxD or SCAN_D) then
                 local texts = collectTexts(m)
                 local blob = table.concat(texts, " | ")
                 local tier, tierTh = parseTier(blob)
-                local mut, chance = parseMut(blob)
-                local name = parseName(blob, tier)
-                local income = parseIncome(blob)
-                local rarity = parseRarity(blob)
                 out[#out + 1] = {
-                    name = name, tier = tier, tierTh = tierTh,
-                    mut = mut, chance = chance, blob = blob,
-                    income = income, rarity = rarity,
-                    d = d, p = p, model = m,
+                    model = m, p = p, d = d, blob = blob,
+                    name = parseName(blob, tier),
+                    tier = tier, tierTh = tierTh,
+                    mut = select(1, parseMut(blob)),
+                    chance = select(2, parseMut(blob)),
+                    income = parseIncome(blob),
+                    rarity = parseRarity(blob),
                 }
             end
         end
     end
-    table.sort(out, function(a, b) return a.d < b.d end)
     return out
 end
 
-local function enrichWithPrompts(assets, prompts)
-    local byModel = {}
-    for _, a in ipairs(assets) do
-        byModel[a.model] = {
-            d = a.d, en = nil, obj = "-",
-            asset = a, mut = a.mut, chance = a.chance,
-        }
-    end
+-- จับคู่ prompt ↔ asset ของเรา — คืนเฉพาะที่มี prompt (ไข่)
+local function scanEggsOnly()
+    local prompts = mutationPrompts(SCAN_D + 20)
+    local assets = mineAssetsNear(SCAN_D + 20)
+    local usedAsset, rows = {}, {}
+
     for _, pr in ipairs(prompts) do
         local best, bestD
         for _, a in ipairs(assets) do
-            if a.p and pr.p then
+            if a.p and pr.p and not usedAsset[a.model] then
                 local d = (a.p - pr.p).Magnitude
                 if d <= 25 and (not bestD or d < bestD) then
                     best, bestD = a, d
                 end
             end
         end
-        local mutP, chanceP = parseMut(pr.obj or "")
-        if best and byModel[best.model] then
-            local cur = byModel[best.model]
-            if not cur.en or pr.en == true then cur.en = pr.en end
-            if pr.obj and pr.obj ~= "" then cur.obj = pr.obj end
-            if mutP then cur.mut = mutP end
-            if chanceP then cur.chance = chanceP end
+        local mutP, chanceP = parseMut(pr.obj)
+        if best then
+            usedAsset[best.model] = true
+            rows[#rows + 1] = {
+                d = pr.d, status = pr.status, en = pr.en,
+                obj = pr.obj, act = pr.act, prompt = pr.prompt,
+                gap = bestD,
+                mut = mutP or best.mut, chance = chanceP or best.chance,
+                asset = best, model = best.model, p = best.p or pr.p,
+            }
+        else
+            -- prompt ไม่มีชื่อคู่ ยังนับเป็นไข่
+            rows[#rows + 1] = {
+                d = pr.d, status = pr.status, en = pr.en,
+                obj = pr.obj, act = pr.act, prompt = pr.prompt,
+                gap = 0, mut = mutP, chance = chanceP,
+                asset = nil, model = pr.part, p = pr.p,
+            }
         end
     end
-    local rows = {}
-    for _, r in pairs(byModel) do rows[#rows + 1] = r end
     table.sort(rows, function(a, b) return a.d < b.d end)
     return rows
 end
 
-local function scanIncubators()
-    return enrichWithPrompts(mineAssetsNear(100), nearbyMutPrompts(80))
-end
-
 local function clearEsp()
-    for _, bb in pairs(S.esp) do
-        pcall(function() bb:Destroy() end)
-    end
+    for _, bb in pairs(S.esp) do pcall(function() bb:Destroy() end) end
     S.esp = {}
-    -- ล้างค้างจากรอบก่อน
     for _, d in ipairs(workspace:GetDescendants()) do
         if d.Name == ESP_TAG then pcall(function() d:Destroy() end) end
     end
 end
 
-local function espColor(tier, mut)
-    if mut == "Scrambled" then return Color3.fromRGB(120, 255, 200) end
-    if mut == "Disabled" then return Color3.fromRGB(180, 100, 100) end
-    return TIER_COLOR[tier] or Color3.fromRGB(210, 235, 210)
+local function espColor(row)
+    if row.status == "READY" then return Color3.fromRGB(80, 255, 140) end
+    if row.status == "DISABLED" then return Color3.fromRGB(255, 120, 120) end
+    local a = row.asset
+    if a and a.mut == "Scrambled" then return Color3.fromRGB(120, 255, 200) end
+    if a then return TIER_COLOR[a.tier] or Color3.fromRGB(210, 235, 210) end
+    return Color3.fromRGB(200, 220, 255)
 end
 
-local function makeEspLabel(part)
+local function makeEsp(part)
     local bb = Instance.new("BillboardGui")
     bb.Name = ESP_TAG
-    bb.Size = UDim2.new(0, 160, 0, 48)
-    bb.StudsOffset = Vector3.new(0, 3.2, 0)
+    bb.Size = UDim2.new(0, 170, 0, 52)
+    bb.StudsOffset = Vector3.new(0, 3.4, 0)
     bb.AlwaysOnTop = true
-    bb.MaxDistance = 220
+    bb.MaxDistance = 180
     bb.LightInfluence = 0
     bb.Adornee = part
     bb.Parent = part
@@ -295,8 +265,7 @@ local function makeEspLabel(part)
     tl.Name = "L"
     tl.Size = UDim2.new(1, 0, 1, 0)
     tl.BackgroundColor3 = Color3.new(0, 0, 0)
-    tl.BackgroundTransparency = 0.35
-    tl.TextColor3 = Color3.fromRGB(220, 255, 220)
+    tl.BackgroundTransparency = 0.32
     tl.Font = Enum.Font.GothamBold
     tl.TextSize = 12
     tl.TextWrapped = true
@@ -307,49 +276,44 @@ end
 
 local function refreshEsp()
     if not S.espOn then return end
-    local assets = mineAssetsNear(ESP_MAX_D)
-    local rows = enrichWithPrompts(assets, nearbyMutPrompts(ESP_MAX_D))
+    local rows = scanEggsOnly()
     local alive = {}
 
     for _, r in ipairs(rows) do
-        local a = r.asset
-        if a and a.model then
-            local part = adorneePart(a.model)
-            if part then
-                alive[a.model] = true
-                local bb = S.esp[a.model]
-                local tl
-                if not bb or not bb.Parent then
-                    bb, tl = makeEspLabel(part)
-                    S.esp[a.model] = bb
-                else
-                    if bb.Adornee ~= part then bb.Adornee = part; bb.Parent = part end
-                    tl = bb:FindFirstChild("L")
-                end
-                if tl then
-                    local mutLine = "-"
-                    if r.mut then
-                        mutLine = r.mut
-                        if r.chance then mutLine = mutLine .. " " .. r.chance .. "%" end
-                        if r.en == true then mutLine = mutLine .. " READY"
-                        elseif r.en == false then mutLine = mutLine .. " OFF" end
-                    end
-                    tl.Text = string.format("%s\n%s  %s\n%s",
-                        a.name or "?",
-                        tostring(a.income or "-"),
-                        tostring(a.rarity or ""),
-                        mutLine
-                    )
-                    tl.TextColor3 = espColor(a.tier, r.mut)
-                end
+        local part = adorneePart(r.model) or (r.prompt and r.prompt.Parent
+            and (r.prompt.Parent:IsA("BasePart") and r.prompt.Parent
+                or r.prompt.Parent:FindFirstChildWhichIsA("BasePart", true)))
+        if part then
+            local key = r.model or part
+            alive[key] = true
+            local bb = S.esp[key]
+            local tl
+            if not bb or not bb.Parent then
+                bb, tl = makeEsp(part)
+                S.esp[key] = bb
+            else
+                if bb.Adornee ~= part then bb.Adornee = part; bb.Parent = part end
+                tl = bb:FindFirstChild("L")
+            end
+            if tl then
+                local a = r.asset
+                local name = a and a.name or "?"
+                local income = a and a.income or "-"
+                local rar = a and a.rarity or ""
+                local mutLine = tostring(r.mut or "-")
+                if r.chance then mutLine = mutLine .. " " .. r.chance .. "%" end
+                tl.Text = string.format("%s\n%s  %s\n%s · %s",
+                    name, tostring(income), tostring(rar),
+                    mutLine, r.status)
+                tl.TextColor3 = espColor(r)
             end
         end
     end
 
-    for model, bb in pairs(S.esp) do
-        if not alive[model] then
+    for key, bb in pairs(S.esp) do
+        if not alive[key] then
             pcall(function() bb:Destroy() end)
-            S.esp[model] = nil
+            S.esp[key] = nil
         end
     end
 end
@@ -367,67 +331,42 @@ end
 
 local function setEsp(on)
     S.espOn = on and true or false
-    if not S.espOn then
-        clearEsp()
-    else
-        startEspLoop()
-    end
+    if not S.espOn then clearEsp() else startEspLoop() end
 end
 
 local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v2.0 — คอก + ESP ===")
+    say("=== Egg Status Spy v3.1 — ไข่ = Mutation Prompt ===")
     say("UserId=" .. ME)
-
-    say("สแกนคอก (≤100 studs)...")
-    local okInc, incs = pcall(scanIncubators)
-    if not okInc then
-        say("คอก error: " .. tostring(incs))
-        incs = {}
+    local ok, rows = pcall(scanEggsOnly)
+    if not ok then
+        say("error: " .. tostring(rows))
+        say("=== DONE ===")
+        return
     end
-    say(string.format("--- ของเราในคอก: %d ---", #incs))
-    if #incs == 0 then
-        say("(ไม่เจอ ClientRenderedAssets ของเราใน 100 studs)")
+    local nR, nD = 0, 0
+    for _, r in ipairs(rows) do
+        if r.status == "READY" then nR = nR + 1 elseif r.status == "DISABLED" then nD = nD + 1 end
     end
-    for i, r in ipairs(incs) do
+    say(string.format("--- ไข่ (มี Prompt): %d | READY=%d DISABLED=%d ---", #rows, nR, nD))
+    if #rows == 0 then say("(ไม่เจอ Apply Mutation ในระยะ)") end
+    for i, r in ipairs(rows) do
         local a = r.asset
-        local status = r.en == true and "READY" or (r.en == false and "DISABLED" or (r.obj == "-" and "-" or "?"))
         if a then
             say(string.format(
-                "#%d [%s] %s | rar=%s | %s | mut=%s %%=%s | mutPrompt=%s | d=%.0f",
+                "#%d [%s] %s | rar=%s | %s | mut=%s %%=%s | prompt=%s | d=%.0f",
                 i, a.tierTh, a.name,
                 tostring(a.rarity or "-"), tostring(a.income or "-"),
                 tostring(r.mut or "-"), tostring(r.chance or "-"),
-                status, r.d
+                r.status, r.d
             ))
             if a.blob ~= "" then say("    " .. a.blob) end
+            if r.obj ~= "" then say("    obj=" .. r.obj) end
         else
-            say(string.format("#%d (prompt เปล่า) %s | %q | d=%.0f", i, status, tostring(r.obj), r.d))
+            say(string.format("#%d (ไม่มีชื่อ) prompt=%s | %q | d=%.0f", i, r.status, tostring(r.obj), r.d))
         end
     end
-    say("ESP=" .. (S.espOn and "ON" or "OFF") .. " | บนหัว = ชื่อ / $ / mut")
-    say("=== DONE ===")
-end
-
-local function scanPets()
-    S.lines = {}
-    say("=== สัตว์ในคอกของเรา (มี $/s) ===")
-    local pets = mineAssets()
-    local n = 0
-    local byTier = {}
-    for _, a in ipairs(pets) do
-        if a.pet then
-            n = n + 1
-            byTier[a.tier] = (byTier[a.tier] or 0) + 1
-            say(string.format("#%d [%s] %s | d=%.0f", n, a.tierTh, a.name, a.d))
-            say("    " .. a.blob)
-        end
-    end
-    local parts = {}
-    for _, t in ipairs(TIERS) do
-        if byTier[t] then parts[#parts + 1] = (TIER_TH[t] or t) .. "=" .. byTier[t] end
-    end
-    say("รวมสัตว์=" .. n .. (#parts > 0 and (" | " .. table.concat(parts, " | ")) or ""))
+    say("ESP=" .. (S.espOn and "ON" or "OFF"))
     say("=== DONE ===")
 end
 
@@ -441,7 +380,7 @@ if not gui.Parent then gui.Parent = PG end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 640, 0, 360)
+f.Size = UDim2.new(0, 620, 0, 340)
 f.Position = UDim2.new(0, 12, 0.18, 0)
 f.BackgroundColor3 = Color3.fromRGB(22, 28, 36)
 f.BorderSizePixel = 0
@@ -453,7 +392,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v2.0 — ESP คอก"
+title.Text = "Egg01 Egg Spy v3.1 — Prompt READY/DISABLED เท่านั้น"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -474,14 +413,13 @@ local function btn(tx, x, col)
 end
 
 local bEggs = btn("EGGS", 10, Color3.fromRGB(45, 110, 170))
-local bPets = btn("PETS", 88, Color3.fromRGB(90, 70, 140))
-local bEsp = btn("ESP ON", 166, Color3.fromRGB(40, 130, 90))
-local bClear = btn("CLEAR", 244, Color3.fromRGB(70, 70, 75))
-local bCopy = btn("COPY", 322, Color3.fromRGB(70, 70, 75))
-local bClose = btn("X", 556, Color3.fromRGB(145, 50, 65))
+local bEsp = btn("ESP ON", 88, Color3.fromRGB(40, 130, 90))
+local bClear = btn("CLEAR", 166, Color3.fromRGB(70, 70, 75))
+local bCopy = btn("COPY", 244, Color3.fromRGB(70, 70, 75))
+local bClose = btn("X", 536, Color3.fromRGB(145, 50, 65))
 
 box = Instance.new("TextBox", f)
-box.Size = UDim2.new(1, -16, 0, 280)
+box.Size = UDim2.new(1, -16, 0, 260)
 box.Position = UDim2.new(0, 8, 0, 72)
 box.BackgroundColor3 = Color3.new(0, 0, 0)
 box.BackgroundTransparency = 0.2
@@ -494,7 +432,7 @@ box.ClearTextOnFocus = false
 box.TextWrapped = false
 box.TextXAlignment = Enum.TextXAlignment.Left
 box.TextYAlignment = Enum.TextYAlignment.Top
-box.Text = "EGGS = สแกนคอก\nESP = ป้ายบนหัว ชื่อ / $ / mut"
+box.Text = "ไข่ = มี Apply Mutation\nREADY=เขียว DISABLED=แดง"
 
 local function syncEspBtn()
     bEsp.Text = S.espOn and "ESP ON" or "ESP OFF"
@@ -502,7 +440,6 @@ local function syncEspBtn()
 end
 
 bEggs.MouseButton1Click:Connect(scanEggs)
-bPets.MouseButton1Click:Connect(scanPets)
 bEsp.MouseButton1Click:Connect(function()
     setEsp(not S.espOn)
     syncEspBtn()
@@ -511,7 +448,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v2.0 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Spy v3.1 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -524,6 +461,6 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v2.0 พร้อม — ESP เปิดอัตโนมัติบนหัวคอก")
+say("v3.1 — ไข่ = Mutation Prompt (READY/DISABLED) เท่านั้น")
 setEsp(true)
 syncEspBtn()
