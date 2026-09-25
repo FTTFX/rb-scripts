@@ -1,5 +1,5 @@
--- Egg01 Egg Status Spy v1.8
--- แก้ rar (Lua ไม่มี | ใน pattern) + ตู้ฟักไม่ซ้ำ
+-- Egg01 Egg Status Spy v1.9
+-- คอก: โชว์ครบทุกตัวใน 100 studs (ไม่กรองแค่มี Mutation)
 
 if _G.EGG01_EGG_STATUS_SPY then
     pcall(function() _G.EGG01_EGG_STATUS_SPY.gui:Destroy() end)
@@ -368,89 +368,90 @@ local function mineAssetsNear(maxD)
 end
 
 local function scanIncubators()
-    local prompts = nearbyMutPrompts(55)
-    local assets = mineAssetsNear(70)
-    local rows = {}
-    -- จับคู่ prompt → asset แล้วยุบเหลือ 1 แถวต่อ asset (กันซ้ำ)
+    -- โชว์ทุกตัวของเราในระยะคอก + ผูก Mutation prompt ถ้ามี
+    local prompts = nearbyMutPrompts(80)
+    local assets = mineAssetsNear(100)
     local byModel = {}
+
+    for _, a in ipairs(assets) do
+        byModel[a.model] = {
+            d = a.d, en = nil, obj = "-", act = "-",
+            asset = a, gap = 0,
+            mut = a.mut, chance = a.chance,
+            timer = nil, nearTxt = a.blob,
+        }
+    end
+
     for _, pr in ipairs(prompts) do
         local best, bestD
         for _, a in ipairs(assets) do
             if a.p and pr.p then
                 local d = (a.p - pr.p).Magnitude
-                if d <= 22 and (not bestD or d < bestD) then
+                if d <= 25 and (not bestD or d < bestD) then
                     best, bestD = a, d
                 end
             end
         end
-        local key = best and best.model or ("prompt:" .. tostring(pr.d))
-        local mutP, chanceP = parseMut((pr.obj or "") .. " | " .. (best and best.blob or ""))
-        local cur = byModel[key]
-        if not cur or pr.d < cur.d then
-            byModel[key] = {
-                d = best and best.d or pr.d,
-                en = pr.en, obj = pr.obj, act = pr.act,
-                asset = best, gap = bestD,
-                mut = (best and best.mut) or mutP,
-                chance = chanceP or (best and best.chance),
-                timer = nil, nearTxt = best and best.blob or "",
-            }
+        local mutP, chanceP = parseMut(pr.obj or "")
+        if best then
+            local cur = byModel[best.model]
+            if cur then
+                if not cur.en or pr.en == true then cur.en = pr.en end
+                if pr.obj and pr.obj ~= "" then cur.obj = pr.obj end
+                if mutP then cur.mut = mutP end
+                if chanceP then cur.chance = chanceP end
+                cur.act = pr.act
+                cur.gap = bestD
+            end
         else
-            -- รวมสถานะ: ถ้ามี READY ให้โชว์ READY
-            if pr.en == true then cur.en = true end
-            if chanceP then cur.chance = chanceP end
-            if mutP then cur.mut = mutP end
-            if pr.obj and pr.obj ~= "" then cur.obj = pr.obj end
-        end
-    end
-    for _, r in pairs(byModel) do rows[#rows + 1] = r end
-    local used = {}
-    for _, r in ipairs(rows) do if r.asset then used[r.asset.model] = true end end
-    for _, a in ipairs(assets) do
-        if not used[a.model] and a.d <= 30 then
-            local low = a.blob:lower()
-            if low:find("scrambl", 1, true) or low:find("mutat", 1, true) or a.tier ~= "Normal" then
-                rows[#rows + 1] = {
-                    d = a.d, en = nil, obj = "-", act = "-",
-                    asset = a, gap = 0,
-                    mut = a.mut, chance = a.chance, timer = nil, nearTxt = a.blob,
+            -- prompt ไม่มีชื่อคู่ — เก็บแยก
+            local key = "orphan:" .. string.format("%.0f", pr.d)
+            if not byModel[key] or pr.d < byModel[key].d then
+                byModel[key] = {
+                    d = pr.d, en = pr.en, obj = pr.obj, act = pr.act,
+                    asset = nil, gap = 0,
+                    mut = mutP, chance = chanceP,
+                    timer = nil, nearTxt = "",
                 }
             end
         end
     end
+
+    local rows = {}
+    for _, r in pairs(byModel) do rows[#rows + 1] = r end
     table.sort(rows, function(a, b) return a.d < b.d end)
     return rows
 end
 
 local function scanEggs()
     S.lines = {}
-    say("=== Egg Status Spy v1.8 — ตู้ฟักใกล้ตัว ===")
+    say("=== Egg Status Spy v1.9 — คอกครบในระยะ ===")
     say("UserId=" .. ME)
 
-    say("สแกนตู้ฟัก...")
+    say("สแกนคอก (≤100 studs)...")
     local okInc, incs = pcall(scanIncubators)
     if not okInc then
-        say("ตู้ฟัก error: " .. tostring(incs))
+        say("คอก error: " .. tostring(incs))
         incs = {}
     end
-    say(string.format("--- ตู้ฟัก / Apply Mutation ใกล้ตัว: %d ---", #incs))
+    say(string.format("--- ของเราในคอก: %d ---", #incs))
     if #incs == 0 then
-        say("(ไม่เจอใน 55 studs — ยืนชิดไข่แล้วกด EGGS)")
+        say("(ไม่เจอ ClientRenderedAssets ของเราใน 100 studs)")
     end
     for i, r in ipairs(incs) do
         local a = r.asset
-        local status = r.en == true and "READY" or (r.en == false and "DISABLED" or "?")
+        local status = r.en == true and "READY" or (r.en == false and "DISABLED" or (r.obj == "-" and "-" or "?"))
         if a then
             say(string.format(
-                "#%d [%s] %s | rar=%s | $=%s | mut=%s %%=%s | %s | obj=%q | d=%.0f",
+                "#%d [%s] %s | rar=%s | %s | mut=%s %%=%s | mutPrompt=%s | d=%.0f",
                 i, a.tierTh, a.name,
                 tostring(a.rarity or "-"), tostring(a.income or "-"),
                 tostring(r.mut or "-"), tostring(r.chance or "-"),
-                status, tostring(r.obj or ""), r.d
+                status, r.d
             ))
             if a.blob ~= "" then say("    " .. a.blob) end
         else
-            say(string.format("#%d (ไม่มีชื่อ) %s | %q | d=%.0f", i, status, tostring(r.obj), r.d))
+            say(string.format("#%d (prompt เปล่า) %s | %q | d=%.0f", i, status, tostring(r.obj), r.d))
         end
     end
 
@@ -520,7 +521,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Egg Status Spy v1.8 — ตู้ฟัก"
+title.Text = "Egg01 Egg Status Spy v1.9 — คอกครบ"
 title.TextColor3 = Color3.fromRGB(160, 230, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 13
@@ -568,7 +569,7 @@ bClear.MouseButton1Click:Connect(function() S.lines = {}; box.Text = "" end)
 bCopy.MouseButton1Click:Connect(function()
     local clip = setclipboard or toclipboard
     if clip then
-        pcall(clip, "=== Egg01 Egg Status Spy v1.8 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(clip, "=== Egg01 Egg Status Spy v1.9 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
@@ -578,4 +579,4 @@ bClose.MouseButton1Click:Connect(function()
     _G.EGG01_EGG_STATUS_SPY = nil
 end)
 
-say("v1.8 พร้อม — EGGS")
+say("v1.9 พร้อม — EGGS = ทุกตัวในคอก ≤100")
