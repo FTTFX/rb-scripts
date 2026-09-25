@@ -394,6 +394,10 @@ title.Size = UDim2.new(1, -20, 0, 28)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
 title.Text = "Egg01 Egg Status Spy v1.2 — ไข่เท่านั้น + เงิน/ทอง/รุ้ง"
+title.TextColor3 = Color3.fromRGB(160, 230, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 13
+title.TextXAlignment = Enum.TextXAlignment.Left
 
 local function btn(tx, x, col)
     local b = Instance.new("TextButton", f)
