@@ -1,5 +1,5 @@
--- Egg01 Motion Lab v3.1 — วัดวิ่งจริงก่อน → CF ที่ความเร็วนั้น / +10%
--- ลำดับ: 1) วัดวิ่ง  2) ใช้ CF  3) กด +10% แล้วใช้ CF อีกว่าจะกระตุกไหม
+-- Egg01 Motion Lab v3.2 — วัดวิ่ง / CF / สลับ MoveTo↔CF(+10%) ทุก 1 วิ
+-- ลำดับ: 1) วัดวิ่ง  2) ใช้ CF  3) สลับ1วิ = MoveTo 1s แล้ว CF@MoveTo+10% 1s วน
 
 if _G.EGG01_MOTION_LAB then
     _G.EGG01_MOTION_LAB.run = false
@@ -26,6 +26,8 @@ _G.EGG01_MOTION_LAB = S
 
 local logBox
 local MEASURE_DIST = 80 -- studs วิ่งวัด
+local ALT_SEC = 1       -- สลับโหมดทุกกี่วินาที
+local ALT_CF_MULT = 1.1 -- CF = ความเร็ว MoveTo × 1.1
 
 local function say(m)
     S.lines[#S.lines + 1] = tostring(m)
@@ -282,6 +284,127 @@ local function goCf(destXZ, tag)
     end)
 end
 
+-- ③ สลับ MoveTo 1วิ ↔ CF@(MoveTo+10%) 1วิ จนถึงเป้า
+local function runAlt(destXZ, tag)
+    local h, r = hr()
+    if not h or not r then say("ไม่มีตัว"); return end
+    local useClip = S.wantClip == true
+    if useClip then setClip(true) end
+    S.run = true
+    local dest = surfaceOf(destXZ)
+    local live = S.realSpeed -- อัปเดตจากช่วง MoveTo
+    local snapTotal, stutterTotal = 0, 0
+    local seg = 0
+
+    say(string.format(
+        "=== %s ALT MoveTo↔CF(+%.0f%%) ทุก %.0fs d=%.0f ===",
+        tag or "ALT", (ALT_CF_MULT - 1) * 100, ALT_SEC, (dest - r.Position).Magnitude
+    ))
+
+    task.spawn(function()
+        local tAll = os.clock()
+        while S.run do
+            h, r = hr()
+            if not h or not r or h.Health <= 0 then say("ตัวเปลี่ยน/ตาย"); break end
+            local rem0 = (dest - r.Position).Magnitude
+            if rem0 <= 3 then break end
+
+            -- —— ช่วง MoveTo ——
+            seg = seg + 1
+            say(string.format("[%d] MoveTo %.0fs rem=%.0f", seg, ALT_SEC, rem0))
+            h:MoveTo(dest)
+            local t0 = os.clock()
+            local last = r.Position
+            local samples, sumInst = 0, 0
+            while S.run and (os.clock() - t0) < ALT_SEC do
+                local dt = RunS.Heartbeat:Wait()
+                if dt <= 0 then dt = 1 / 60 end
+                h, r = hr()
+                if not h or not r then break end
+                if (dest - r.Position).Magnitude <= 3 then break end
+                local step = Vector3.new(r.Position.X - last.X, 0, r.Position.Z - last.Z).Magnitude
+                last = r.Position
+                local inst = step / dt
+                samples = samples + 1
+                sumInst = sumInst + inst
+            end
+            if samples > 0 then
+                live = sumInst / samples
+                S.realSpeed = live
+            end
+            -- หยุด MoveTo ก่อนสลับ CF
+            h, r = hr()
+            if h and r then
+                h:MoveTo(r.Position)
+                h:Move(Vector3.zero)
+                r.AssemblyLinearVelocity = Vector3.zero
+            end
+            if not S.run then break end
+            if r and (dest - r.Position).Magnitude <= 3 then break end
+
+            local base = live or S.realSpeed
+            if not base or base < 1 then
+                say("ยังวัดความเร็ว MoveTo ไม่ได้ — ข้าม CF"); break
+            end
+            local cfSpeed = base * ALT_CF_MULT
+
+            -- —— ช่วง CF = MoveTo+10% ——
+            seg = seg + 1
+            say(string.format("[%d] CF@%.1f (+10%% จาก MoveTo %.1f) %.0fs", seg, cfSpeed, base, ALT_SEC))
+            local t1 = os.clock()
+            local snap, stutter = 0, 0
+            while S.run and (os.clock() - t1) < ALT_SEC do
+                h, r = hr()
+                if not h or not r or h.Health <= 0 then break end
+                local remain = dest - r.Position
+                local rem = remain.Magnitude
+                if rem <= 2.5 then break end
+                local dt = RunS.Heartbeat:Wait()
+                if dt <= 0 then dt = 1 / 60 end
+                local step = math.min(rem, cfSpeed * dt)
+                local dir = remain.Unit
+                local target = Vector3.new(
+                    r.Position.X + dir.X * step,
+                    floorY(r.Position) + 3.2,
+                    r.Position.Z + dir.Z * step
+                )
+                local before = r.Position
+                r.CFrame = CFrame.new(target, target + Vector3.new(dir.X, 0, dir.Z))
+                r.AssemblyLinearVelocity = Vector3.zero
+                r.AssemblyAngularVelocity = Vector3.zero
+                h, r = hr()
+                if r then
+                    local moved = (r.Position - before).Magnitude
+                    local drift = (r.Position - target).Magnitude
+                    if drift > 4 then snap = snap + 1; stutter = stutter + 1 end
+                    if step > 0.5 and moved < step * 0.35 then
+                        snap = snap + 1; stutter = stutter + 1
+                    end
+                end
+            end
+            snapTotal = snapTotal + snap
+            stutterTotal = stutterTotal + stutter
+            if snap > 0 then
+                say(string.format("  ⚠ CF snap=%d stutter=%d", snap, stutter))
+            end
+        end
+
+        h, r = hr()
+        local err = r and (r.Position - dest).Magnitude or 999
+        say(string.format(
+            "ALT จบ %.1fs err=%.1f snap=%d stutter=%d live=%.1f",
+            os.clock() - tAll, err, snapTotal, stutterTotal, live or -1
+        ))
+        if snapTotal == 0 and err <= 6 then
+            say("ผ่าน — สลับ MoveTo/CF ไม่กระตุก")
+        else
+            say("มี snap/err — ดูช่วง CF")
+        end
+        if useClip then setClip(false) end
+        S.run = false
+    end)
+end
+
 -- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "Egg01_MotionLab"
@@ -292,8 +415,8 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 560, 0, 310)
-f.Position = UDim2.new(0, 12, 0.38, 0)
+f.Size = UDim2.new(0, 560, 0, 340)
+f.Position = UDim2.new(0, 12, 0.36, 0)
 f.BackgroundColor3 = Color3.fromRGB(24, 32, 40)
 f.BorderSizePixel = 0
 f.Active = true
@@ -304,7 +427,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -16, 0, 26)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Motion Lab v3.1 — วัดวิ่ง → CF / +10%"
+title.Text = "Egg01 Motion Lab v3.2 — วัด / CF / สลับ MoveTo↔CF+10% ทุก1วิ"
 title.TextColor3 = Color3.fromRGB(120, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
@@ -327,27 +450,28 @@ end
 -- แถว1: วัด / CF / +% / HOME
 local bMeasure = button("① วัดวิ่ง", 10, 34, 78, Color3.fromRGB(50, 110, 160))
 local bCf = button("② ใช้ CF", 92, 34, 72, Color3.fromRGB(40, 140, 95))
-S.boostBtn = button("+0%", 168, 34, 52, Color3.fromRGB(180, 120, 40))
-local bResetBoost = button("=100%", 224, 34, 52, Color3.fromRGB(90, 90, 70))
-local bHome = button("HOME", 280, 34, 52, Color3.fromRGB(45, 105, 165))
-local bStop = button("STOP", 336, 34, 48, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 388, 34, 48, Color3.fromRGB(75, 75, 80))
-local bClip = button("CLIP", 440, 34, 48, Color3.fromRGB(100, 90, 50))
-local bInfo = button("INFO", 492, 34, 48, Color3.fromRGB(70, 90, 110))
+local bAlt = button("③ สลับ1วิ", 168, 34, 78, Color3.fromRGB(140, 80, 160))
+S.boostBtn = button("+0%", 250, 34, 48, Color3.fromRGB(180, 120, 40))
+local bResetBoost = button("=100%", 302, 34, 48, Color3.fromRGB(90, 90, 70))
+local bHome = button("HOME", 354, 34, 48, Color3.fromRGB(45, 105, 165))
+local bStop = button("STOP", 406, 34, 44, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 454, 34, 44, Color3.fromRGB(75, 75, 80))
+local bClip = button("CLIP", 502, 34, 44, Color3.fromRGB(100, 90, 50))
 
 local hint = Instance.new("TextLabel", f)
-hint.Size = UDim2.new(1, -20, 0, 26)
-hint.Position = UDim2.new(0, 10, 0, 68)
+hint.Size = UDim2.new(1, -20, 0, 40)
+hint.Position = UDim2.new(0, 10, 0, 64)
 hint.BackgroundTransparency = 1
-hint.Text = "① วัดวิ่ง(MoveTo 80) → ② ใช้ CF(=ความจริง) → กด +% แล้ว ② อีกว่าจะกระตุกไหม"
+hint.Text = "① วัดวิ่ง  ② CF(boost)  ③ สลับ1วิ = MoveTo 1s ↔ CF@(MoveTo+10%) 1s วนถึงเป้า\nHOME=เป้า | ไม่มี HOME = ไปข้างหน้า 80"
 hint.TextColor3 = Color3.fromRGB(190, 210, 220)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
 hint.TextXAlignment = Enum.TextXAlignment.Left
+hint.TextYAlignment = Enum.TextYAlignment.Top
 
 logBox = Instance.new("TextLabel", f)
-logBox.Size = UDim2.new(1, -16, 0, 200)
-logBox.Position = UDim2.new(0, 8, 0, 98)
+logBox.Size = UDim2.new(1, -16, 0, 210)
+logBox.Position = UDim2.new(0, 8, 0, 108)
 logBox.BackgroundColor3 = Color3.new(0, 0, 0)
 logBox.BackgroundTransparency = 0.2
 logBox.TextColor3 = Color3.fromRGB(180, 245, 190)
@@ -375,6 +499,13 @@ bCf.MouseButton1Click:Connect(function()
     local dest, tag = destForCf()
     if not dest then say("ไม่มีเป้า"); return end
     goCf(dest, tag)
+end)
+
+bAlt.MouseButton1Click:Connect(function()
+    if S.run then say("กำลังทำงาน"); return end
+    local dest, tag = destForCf()
+    if not dest then say("ไม่มีเป้า"); return end
+    runAlt(dest, "ALT" .. (tag or ""))
 end)
 
 S.boostBtn.MouseButton1Click:Connect(function()
@@ -419,26 +550,15 @@ bClip.MouseButton1Click:Connect(function()
     say("wantClip=" .. tostring(S.wantClip))
 end)
 
-bInfo.MouseButton1Click:Connect(function()
-    local h = select(1, hr())
-    say(string.format(
-        "WS=%.1f | real=%.1f | boost=+%.0f%% | CF cap=%s",
-        h and h.WalkSpeed or -1,
-        S.realSpeed or -1,
-        (S.boost - 1) * 100,
-        cfCap() and string.format("%.1f", cfCap()) or "?"
-    ))
-end)
-
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== Egg01 Motion Lab v3.1 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== Egg01 Motion Lab v3.2 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
 refreshBoostLabel()
-say("v3.1 ลำดับ: ① วัดวิ่ง → ② ใช้ CF → กด +% (+10) แล้ว ② อีก")
-say("มี HOME = CF ไป HOME | ไม่มี = CF ไปข้างหน้า 80")
+say("v3.2 ③ สลับ1วิ = MoveTo 1s ↔ CF@(ความเร็วMoveTo+10%) 1s")
+say("HOME → ไปจุดเริ่ม → ③ | หรือไม่มี HOME = ข้างหน้า 80")
