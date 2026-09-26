@@ -1,5 +1,5 @@
--- Egg01 Attack Chase Test v1.5
--- AUTO: กด 1 ถือไม้ตลอด + Noclip + กระโดดออกลู่วิ่ง แล้วไล่ตีเป้าที่ติ๊ก
+-- Egg01 Attack Chase Test v1.6
+-- AUTO: กด 1 ถือไม้ตลอด + Noclip + กระโดด+เดินหน้าออกลู่วิ่ง (ไม่ดัน velocity)
 if _G.EGG01_ATTACK_CHASE then
     _G.EGG01_ATTACK_CHASE.run = false
     pcall(function()
@@ -126,18 +126,17 @@ local function jumpOffTread()
     S.lastJump = os.clock()
     if _G.EGG01_TREADMILL then _G.EGG01_TREADMILL.run = false end
     h.Sit = false
-    h.Jump = true
-    pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
     local dir = (r.Position - bottom.Position)
     dir = Vector3.new(dir.X, 0, dir.Z)
-    if dir.Magnitude < 1 then dir = r.CFrame.LookVector else dir = dir.Unit end
-    local goal = r.Position + dir * 40
+    if dir.Magnitude < 1 then dir = Vector3.new(r.CFrame.LookVector.X, 0, r.CFrame.LookVector.Z) end
+    if dir.Magnitude < 0.1 then dir = Vector3.new(0, 0, -1) else dir = dir.Unit end
+    local goal = r.Position + dir * 50
+    -- กระโดด + เดินหน้าอย่างเดียว (ไม่ดัน velocity)
+    h.Jump = true
+    pcall(function() h:ChangeState(Enum.HumanoidStateType.Jumping) end)
     h:MoveTo(Vector3.new(goal.X, r.Position.Y, goal.Z))
-    pcall(function()
-        local v = r.AssemblyLinearVelocity
-        r.AssemblyLinearVelocity = Vector3.new(dir.X * 36, math.max(v.Y, 36), dir.Z * 36)
-    end)
-    say(string.format("กระโดดออกลู่วิ่ง d=%.0f", d))
+    pcall(function() h:Move(dir, false) end)
+    say(string.format("กระโดด+เดินหน้า ออกลู่วิ่ง d=%.0f", d))
 end
 
 local gui = Instance.new("ScreenGui")
@@ -154,7 +153,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 local title = Instance.new("TextLabel", panel)
 title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -45, 0, 27), UDim2.new(0, 10, 0, 4), 1
 title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment =
-    "Egg01 Attack Chase Test v1.5", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
+    "Egg01 Attack Chase Test v1.6", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -327,7 +326,7 @@ bClear.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
-    if c then pcall(c, "=== Egg01 Attack Chase Test v1.5 ===\n" .. table.concat(S.lines, "\n")) end
+    if c then pcall(c, "=== Egg01 Attack Chase Test v1.6 ===\n" .. table.concat(S.lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
 bClose.MouseButton1Click:Connect(function()
@@ -343,4 +342,4 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 renderList()
-say("v1.5 LIST→ติ๊ก→START | กด1ถือไม้ + noclip + กระโดดออกลู่")
+say("v1.6 LIST→ติ๊ก→START | กด1ถือไม้ + noclip + กระโดด+เดินหน้าออกลู่")
