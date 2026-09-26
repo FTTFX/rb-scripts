@@ -1,6 +1,6 @@
--- Egg01 Motion Lab v2.1 — เทสใต้พื้นด้วย CFrame (ตามแผนภาพ)
--- ขั้น: ลงใต้พื้น → เลื่อน 1→2 ใต้ดิน → โผล่ผิว
--- หมายเหตุ: โหมดนี้ใช้ CFrame จงใจเพื่อเทสเท่านั้น — อย่าใส่ในฟาร์มหลัก
+-- Egg01 Motion Lab v3.0 — CFrame บนพื้น ความเร็ว ≤ WalkSpeed จริง
+-- ไอเดีย: ย้ายด้วย CFrame แต่ไม่เร็วเกินตัวละคร → ลดโอกาสเซิร์ฟดึงกลับ
+-- เทสเท่านั้น — อย่าใส่ในฟาร์มหลักจนกว่าจะผ่าน snap/err
 
 if _G.EGG01_MOTION_LAB then
     _G.EGG01_MOTION_LAB.run = false
@@ -16,15 +16,14 @@ local LP = Players.LocalPlayer
 
 local S = {
     run = false, gui = nil, lines = {},
-    home = nil, mark1 = nil,
+    home = nil,
     clip = false, clipConn = nil, clipParts = {},
 }
 _G.EGG01_MOTION_LAB = S
 
 local logBox
-local DEPTH = 12
-local STEP = 18 -- studs ต่อท่อน CFrame ใต้ดิน
-local STEP_WAIT = 0.05
+-- mult ≤1 = ไม่เกิน WalkSpeed | 1 = เท่าความเร็วจริง
+local SPEED_MULT = 1.0
 
 local function say(m)
     S.lines[#S.lines + 1] = tostring(m)
@@ -71,129 +70,118 @@ local function floorY(pos)
     if LP.Character then params.FilterDescendantsInstances = { LP.Character } end
     local hit = workspace:Raycast(origin, Vector3.new(0, -120, 0), params)
     if hit then return hit.Position.Y end
-    return pos.Y - 3
-end
-
-local function underOf(xz, depth)
-    depth = depth or DEPTH
-    local fy = floorY(xz)
-    return Vector3.new(xz.X, fy - depth, xz.Z)
+    return pos.Y
 end
 
 local function surfaceOf(xz)
     local fy = floorY(xz)
-    return Vector3.new(xz.X, fy + 4, xz.Z)
+    return Vector3.new(xz.X, fy + 3.2, xz.Z)
 end
 
--- CFrame ย้ายทีละท่อน (ไม่กระโดดระยะไกลทีเดียว — ดูว่าเซิร์ฟดึงกลับไหม)
-local function cfGo(goal, label)
+local function readMult()
+    local m = tonumber(S.multBox and S.multBox.Text) or SPEED_MULT
+    return math.clamp(m, 0.25, 1.0) -- ห้ามเกิน 1.0 = ไม่เร็วกว่าตัวละคร
+end
+
+-- CFrame ตาม Heartbeat ความเร็ว ≤ WalkSpeed * mult
+local function cfWalk(goal, label)
     local h, r = hr()
     if not h or not r then return false, "ไม่มีตัว" end
-    local start = r.Position
-    local dist = (goal - start).Magnitude
-    local steps = math.max(1, math.ceil(dist / STEP))
-    local snap = 0
-    local t0 = os.clock()
-    say(string.format("%s CFrame → (%.0f,%.0f,%.0f) d=%.0f steps=%d", label or "CF", goal.X, goal.Y, goal.Z, dist, steps))
 
-    for i = 1, steps do
-        if not S.run then return false, "STOP" end
+    local ws = math.max(1, h.WalkSpeed)
+    local mult = readMult()
+    local speed = ws * mult
+    local start = r.Position
+    -- เป้าเกาะพื้น (Y จากเรย์) ถ้า goal ให้มาแล้วก็ใช้
+    local dest = goal
+    local dist = (dest - start).Magnitude
+    local eta = dist / speed
+    local snap = 0
+    local maxInst = 0
+    local t0 = os.clock()
+
+    say(string.format(
+        "%s CF@WS → (%.0f,%.0f,%.0f) d=%.0f WS=%.1f×%.2f=%.1f eta=%.1fs",
+        label or "CF", dest.X, dest.Y, dest.Z, dist, ws, mult, speed, eta
+    ))
+
+    -- หยุด MoveTo ค้าง
+    pcall(function()
+        h:MoveTo(r.Position)
+        h:Move(Vector3.zero)
+    end)
+
+    local traveled = 0
+    while S.run do
         h, r = hr()
         if not h or not r or h.Health <= 0 then return false, "ตัวเปลี่ยน/ตาย" end
-        local alpha = i / steps
-        local target = start:Lerp(goal, alpha)
+
+        local remain = dest - r.Position
+        local rem = remain.Magnitude
+        if rem <= 2.5 then break end
+
+        local dt = RunS.Heartbeat:Wait()
+        if dt <= 0 then dt = 1 / 60 end
+        -- เพดานต่อเฟรม = WalkSpeed*mult*dt (ไม่เกินความเร็วจริง)
+        local step = math.min(rem, speed * dt)
+        local dir = remain.Unit
+        local target = r.Position + dir * step
+        -- เกาะพื้นระหว่างทาง (กันจม/ลอย)
+        target = Vector3.new(target.X, floorY(target) + 3.2, target.Z)
+
         local before = r.Position
-        r.CFrame = CFrame.new(target) * (r.CFrame - r.CFrame.Position)
+        r.CFrame = CFrame.new(target, target + Vector3.new(dir.X, 0, dir.Z))
         r.AssemblyLinearVelocity = Vector3.zero
         r.AssemblyAngularVelocity = Vector3.zero
-        task.wait(STEP_WAIT)
+
         h, r = hr()
         if r then
+            local moved = (r.Position - before).Magnitude
+            local expect = step
             local drift = (r.Position - target).Magnitude
-            if drift > 6 then snap = snap + 1 end
-            -- เซิร์ฟดันขึ้นจากใต้ดิน
-            if target.Y < floorY(target) - 4 and r.Position.Y > target.Y + 5 then
-                snap = snap + 1
+            if drift > 4 then snap = snap + 1 end
+            -- ความเร็ว瞬时 (studs/s) — ถ้าสูงกว่า WS มาก = แปลก
+            local inst = moved / math.max(dt, 1 / 240)
+            if inst > maxInst then maxInst = inst end
+            traveled = traveled + moved
+            if expect > 0.5 and moved < expect * 0.35 then
+                snap = snap + 1 -- น่าจะถูกเซิร์ฟดึง
             end
         end
     end
-    -- snap ท้ายให้ตรงเป้า
+
     h, r = hr()
-    if r then
-        r.CFrame = CFrame.new(goal) * (r.CFrame - r.CFrame.Position)
+    if r and S.run then
+        r.CFrame = CFrame.new(dest) * (r.CFrame - r.CFrame.Position)
         r.AssemblyLinearVelocity = Vector3.zero
     end
-    task.wait(0.08)
+    task.wait(0.06)
     h, r = hr()
-    local final = r and r.Position or goal
-    local err = (final - goal).Magnitude
-    return err <= 8, string.format(
-        "%s done %.2fs err=%.1f snap=%d Y=%.1f",
-        label or "CF", os.clock() - t0, err, snap, final.Y
+    local final = r and r.Position or dest
+    local err = (final - dest).Magnitude
+    local elapsed = os.clock() - t0
+    local avg = elapsed > 0 and (traveled / elapsed) or 0
+    return err <= 6, string.format(
+        "%s done %.2fs err=%.1f snap=%d avg=%.1f max=%.1f (cap=%.1f)",
+        label or "CF", elapsed, err, snap, avg, maxInst, speed
     )
 end
 
---[[
-  แผนภาพ:
-    บนดิน ──↓── ① ใต้พื้น ════→ ② ใต้พื้น ──↑── บนดิน (เป้า)
-]]
-local function runTunnelTo(destXZ, tag)
+local function goTo(destXZ, tag)
     local h, r = hr()
     if not h or not r then say("ไม่มีตัว"); return end
-    local depth = math.clamp(tonumber(S.depthBox and S.depthBox.Text) or DEPTH, 4, 40)
-    local step = math.clamp(tonumber(S.stepBox and S.stepBox.Text) or STEP, 4, 60)
-
-    -- อัปเดตค่าจากกล่อง
-    STEP = step
-
-    setClip(true)
+    local useClip = S.wantClip == true
+    if useClip then setClip(true) end
     S.run = true
-    say(string.format("=== %s CFrame tunnel depth=%d step=%d ===", tag or "TUNNEL", depth, step))
+    local dest = surfaceOf(destXZ)
+    say(string.format("=== %s surface CF@WS mult=%.2f clip=%s ===",
+        tag or "GO", readMult(), tostring(useClip)))
 
     task.spawn(function()
-        local p0 = r.Position
-        local under1 = underOf(p0, depth)           -- จุด ① ใต้จุดเริ่ม
-        local under2 = underOf(destXZ, depth)       -- จุด ② ใต้เป้า
-        local top2 = surfaceOf(destXZ)              -- โผล่ผิวที่เป้า
-
-        -- ↓ ลงใต้พื้น
-        local ok1, m1 = cfGo(under1, "① DIG")
-        say(m1)
-        if not ok1 or not S.run then S.run = false; setClip(false); return end
-        S.mark1 = under1
-
-        -- → เลื่อนใต้ดิน ①→②
-        local ok2, m2 = cfGo(under2, "①→② UNDER")
-        say(m2)
-        if not ok2 or not S.run then S.run = false; setClip(false); return end
-
-        -- ↑ โผล่ผิว
-        local ok3, m3 = cfGo(top2, "② SURFACE")
-        say(m3)
-
-        local _, root = hr()
-        if root then
-            local fy = floorY(root.Position)
-            say(string.format("จบ Y=%.1f floor=%.1f Δ=%.1f | ok=%s/%s/%s",
-                root.Position.Y, fy, fy - root.Position.Y,
-                tostring(ok1), tostring(ok2), tostring(ok3)))
-        end
-        setClip(false)
-        say("clip=OFF | เทส CFrame เสร็จ — ดู snap/err ว่าเซิร์ฟดึงไหม")
-        S.run = false
-    end)
-end
-
-local function digOnly()
-    local h, r = hr()
-    if not h or not r then return end
-    local depth = math.clamp(tonumber(S.depthBox and S.depthBox.Text) or DEPTH, 4, 40)
-    STEP = math.clamp(tonumber(S.stepBox and S.stepBox.Text) or STEP, 4, 60)
-    setClip(true)
-    S.run = true
-    task.spawn(function()
-        local ok, msg = cfGo(underOf(r.Position, depth), "DIG-ONLY")
+        local ok, msg = cfWalk(dest, tag or "GO")
         say(msg)
+        say(ok and "ผ่าน (err≤6)" or "ไม่ผ่าน — ดู snap/err")
+        if useClip then setClip(false) end
         S.run = false
     end)
 end
@@ -210,7 +198,7 @@ S.gui = gui
 local f = Instance.new("Frame", gui)
 f.Size = UDim2.new(0, 540, 0, 300)
 f.Position = UDim2.new(0, 12, 0.40, 0)
-f.BackgroundColor3 = Color3.fromRGB(28, 24, 40)
+f.BackgroundColor3 = Color3.fromRGB(24, 32, 40)
 f.BorderSizePixel = 0
 f.Active = true
 f.Draggable = true
@@ -220,8 +208,8 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -16, 0, 26)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Motion Lab v2.1 — CFrame ใต้พื้น (เทส)  ↓①→②↑"
-title.TextColor3 = Color3.fromRGB(255, 180, 120)
+title.Text = "Egg01 Motion Lab v3.0 — CFrame ≤ WalkSpeed (พื้น)"
+title.TextColor3 = Color3.fromRGB(120, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -241,39 +229,29 @@ local function button(t, x, y, w, c)
 end
 
 local bHome = button("HOME", 10, 34, 52, Color3.fromRGB(45, 105, 165))
-local bDig = button("① DIG", 66, 34, 58, Color3.fromRGB(120, 70, 140))
-local bTunnel = button("↓①→②↑ HOME", 128, 34, 110, Color3.fromRGB(180, 80, 50))
-local bFar = button("↓①→②↑ HERE", 242, 34, 100, Color3.fromRGB(160, 90, 40))
-local bStop = button("STOP", 346, 34, 52, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 402, 34, 48, Color3.fromRGB(75, 75, 80))
-local bClip = button("CLIP", 454, 34, 48, Color3.fromRGB(100, 90, 50))
+local bGoHome = button("CF→HOME", 66, 34, 80, Color3.fromRGB(40, 130, 100))
+local bAhead = button("CF→AHEAD80", 150, 34, 100, Color3.fromRGB(50, 120, 90))
+local bStop = button("STOP", 254, 34, 52, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 310, 34, 48, Color3.fromRGB(75, 75, 80))
+local bClip = button("CLIP", 362, 34, 48, Color3.fromRGB(100, 90, 50))
+local bShowWS = button("WS?", 414, 34, 48, Color3.fromRGB(70, 90, 110))
 
-S.depthBox = Instance.new("TextBox", f)
-S.depthBox.Size = UDim2.new(0, 44, 0, 26)
-S.depthBox.Position = UDim2.new(0, 10, 0, 68)
-S.depthBox.Text = tostring(DEPTH)
-S.depthBox.BackgroundColor3 = Color3.fromRGB(55, 70, 85)
-S.depthBox.TextColor3 = Color3.new(1, 1, 1)
-S.depthBox.Font = Enum.Font.GothamBold
-S.depthBox.TextSize = 12
-S.depthBox.ClearTextOnFocus = false
-
-S.stepBox = Instance.new("TextBox", f)
-S.stepBox.Size = UDim2.new(0, 44, 0, 26)
-S.stepBox.Position = UDim2.new(0, 110, 0, 68)
-S.stepBox.Text = tostring(STEP)
-S.stepBox.BackgroundColor3 = Color3.fromRGB(55, 70, 85)
-S.stepBox.TextColor3 = Color3.new(1, 1, 1)
-S.stepBox.Font = Enum.Font.GothamBold
-S.stepBox.TextSize = 12
-S.stepBox.ClearTextOnFocus = false
+S.multBox = Instance.new("TextBox", f)
+S.multBox.Size = UDim2.new(0, 52, 0, 26)
+S.multBox.Position = UDim2.new(0, 10, 0, 68)
+S.multBox.Text = "1.0"
+S.multBox.BackgroundColor3 = Color3.fromRGB(55, 70, 85)
+S.multBox.TextColor3 = Color3.new(1, 1, 1)
+S.multBox.Font = Enum.Font.GothamBold
+S.multBox.TextSize = 12
+S.multBox.ClearTextOnFocus = false
 
 local hint = Instance.new("TextLabel", f)
-hint.Size = UDim2.new(0, 360, 0, 26)
-hint.Position = UDim2.new(0, 160, 0, 68)
+hint.Size = UDim2.new(0, 460, 0, 26)
+hint.Position = UDim2.new(0, 70, 0, 68)
 hint.BackgroundTransparency = 1
-hint.Text = "depth | step(studs/ท่อน) — CFrame ทีละท่อน ดู snap/err"
-hint.TextColor3 = Color3.fromRGB(200, 190, 210)
+hint.Text = "mult (0.25–1.0) × WalkSpeed — ห้ามเกิน 1 | Heartbeat CFrame เกาะพื้น"
+hint.TextColor3 = Color3.fromRGB(190, 210, 220)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
 hint.TextXAlignment = Enum.TextXAlignment.Left
@@ -295,29 +273,24 @@ bHome.MouseButton1Click:Connect(function()
     local _, r = hr()
     if r then
         S.home = r.Position
-        say(string.format("HOME=(%.0f,%.0f,%.0f) ← จุด② โผล่ที่นี่", r.Position.X, r.Position.Y, r.Position.Z))
+        say(string.format("HOME=(%.0f,%.0f,%.0f)", r.Position.X, r.Position.Y, r.Position.Z))
     end
 end)
 
-bDig.MouseButton1Click:Connect(function()
+bGoHome.MouseButton1Click:Connect(function()
     if S.run then say("กำลังวิ่ง"); return end
-    digOnly()
+    if not S.home then say("กด HOME ก่อน"); return end
+    goTo(S.home, "→HOME")
 end)
 
-bTunnel.MouseButton1Click:Connect(function()
-    if S.run then say("กำลังวิ่ง"); return end
-    if not S.home then say("กด HOME ที่เป้าโผล่ก่อน"); return end
-    runTunnelTo(S.home, "→HOME")
-end)
-
-bFar.MouseButton1Click:Connect(function()
+bAhead.MouseButton1Click:Connect(function()
     if S.run then say("กำลังวิ่ง"); return end
     local _, r = hr()
     if not r then return end
-    -- เป้า = เดินหน้า 80 studs ตาม look
     local look = r.CFrame.LookVector
-    local dest = r.Position + Vector3.new(look.X, 0, look.Z).Unit * 80
-    runTunnelTo(dest, "→AHEAD80")
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) else flat = flat.Unit end
+    goTo(r.Position + flat * 80, "→AHEAD80")
 end)
 
 bStop.MouseButton1Click:Connect(function()
@@ -326,21 +299,29 @@ bStop.MouseButton1Click:Connect(function()
 end)
 
 bClip.MouseButton1Click:Connect(function()
-    setClip(not S.clip)
-    bClip.Text = S.clip and "CLIP ON" or "CLIP"
-    bClip.BackgroundColor3 = S.clip and Color3.fromRGB(40, 130, 90) or Color3.fromRGB(100, 90, 50)
-    say("clip=" .. tostring(S.clip))
+    S.wantClip = not S.wantClip
+    bClip.Text = S.wantClip and "CLIP ON" or "CLIP"
+    bClip.BackgroundColor3 = S.wantClip and Color3.fromRGB(40, 130, 90) or Color3.fromRGB(100, 90, 50)
+    say("wantClip=" .. tostring(S.wantClip) .. " (เปิดตอนกด CF)")
+end)
+
+bShowWS.MouseButton1Click:Connect(function()
+    local h, r = hr()
+    if h and r then
+        say(string.format("WS=%.1f pos=(%.0f,%.0f,%.0f) mult=%.2f → cap=%.1f",
+            h.WalkSpeed, r.Position.X, r.Position.Y, r.Position.Z, readMult(), h.WalkSpeed * readMult()))
+    end
 end)
 
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== Egg01 Motion Lab v2.1 CFrame UNDER ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== Egg01 Motion Lab v3.0 CF@WS ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
-say("v2.1 CFrame ใต้พื้น (เทสเท่านั้น)")
-say("HOME ที่จุดโผล่ → ไปจุดเริ่ม → ↓①→②↑ HOME")
-say("หรือ ↓①→②↑ HERE = โผล่ข้างหน้า 80 studs")
+say("v3.0 CFrame บนพื้น ≤ WalkSpeed")
+say("HOME → ไปจุดอื่น → CF→HOME | หรือ CF→AHEAD80")
+say("ดู avg/max ต้องไม่เกิน cap | snap สูง = เซิร์ฟดึง")
