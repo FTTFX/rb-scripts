@@ -1,17 +1,28 @@
--- Egg01 Attack Chase Test v1.4
--- ติ๊กชื่อเป้าหมายหลายคน แล้ว AUTO ไล่ตีทีละคน/ครั้งและวนรายการต่อเนื่อง
+-- Egg01 Attack Chase Test v1.4.1
+-- เหมือน v1.4 + กด 1 ถืออาวุธตลอด + Noclip (ไม่ดัน velocity / ไม่กระโดดออกลู่)
 if _G.EGG01_ATTACK_CHASE then
     _G.EGG01_ATTACK_CHASE.run = false
+    pcall(function()
+        if _G.EGG01_ATTACK_CHASE.clipConn then _G.EGG01_ATTACK_CHASE.clipConn:Disconnect() end
+    end)
     pcall(function() _G.EGG01_ATTACK_CHASE.gui:Destroy() end)
 end
 
 local Players = game:GetService("Players")
+local RunS = game:GetService("RunService")
+local VIM
+pcall(function() VIM = game:GetService("VirtualInputManager") end)
+
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
-local S = { gui = nil, run = false, selected = nil, lastHit = 0, lines = {}, picked = {}, menu = nil }
+local S = {
+    gui = nil, run = false, selected = nil, lastHit = 0, lines = {}, picked = {}, menu = nil,
+    clipConn = nil, clipParts = {}, lastKey = 0,
+}
 _G.EGG01_ATTACK_CHASE = S
 
 local RANGE, COOLDOWN = 9, .85
+local KEY1_EVERY = 0.4
 
 local function mine()
     local c = LP.Character
@@ -23,12 +34,73 @@ local function targetParts(p)
     return c and c:FindFirstChildOfClass("Humanoid"), c and c:FindFirstChild("HumanoidRootPart")
 end
 
-local function bat()
+local function findBat()
     local c = LP.Character
-    if not c then return nil end
-    for _, v in ipairs(c:GetChildren()) do
-        if v:IsA("Tool") and v.Name:lower():find("bat", 1, true) then return v end
+    if c then
+        for _, v in ipairs(c:GetChildren()) do
+            if v:IsA("Tool") and v.Name:lower():find("bat", 1, true) then return v, "hand" end
+        end
     end
+    local bp = LP:FindFirstChildOfClass("Backpack")
+    if bp then
+        for _, v in ipairs(bp:GetChildren()) do
+            if v:IsA("Tool") and v.Name:lower():find("bat", 1, true) then return v, "bag" end
+        end
+    end
+    return nil
+end
+
+local function pressOne()
+    if VIM then
+        pcall(function()
+            VIM:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+            task.wait(0.03)
+            VIM:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+        end)
+    elseif keypress and keyrelease then
+        pcall(function()
+            keypress(0x31)
+            task.wait(0.03)
+            keyrelease(0x31)
+        end)
+    end
+end
+
+local function ensureBat()
+    local tool, where = findBat()
+    if tool and where == "hand" then return tool end
+    pressOne()
+    local h = select(1, mine())
+    if tool and where == "bag" and h then
+        pcall(function() h:EquipTool(tool) end)
+    end
+    tool = select(1, findBat())
+    return tool and tool.Parent == LP.Character and tool or nil
+end
+
+local function setClip(on)
+    if not on then
+        if S.clipConn then pcall(function() S.clipConn:Disconnect() end); S.clipConn = nil end
+        for part, was in pairs(S.clipParts) do
+            if part and part.Parent then pcall(function() part.CanCollide = was end) end
+        end
+        S.clipParts = {}
+        return
+    end
+    if S.clipConn then return end
+    local function apply(ch)
+        if not ch then return end
+        for _, p in ipairs(ch:GetDescendants()) do
+            if p:IsA("BasePart") then
+                if S.clipParts[p] == nil then S.clipParts[p] = p.CanCollide end
+                p.CanCollide = false
+            end
+        end
+    end
+    apply(LP.Character)
+    S.clipConn = RunS.Stepped:Connect(function()
+        if S.run then apply(LP.Character) end
+    end)
 end
 
 local gui = Instance.new("ScreenGui")
@@ -44,7 +116,8 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 
 local title = Instance.new("TextLabel", panel)
 title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -45, 0, 27), UDim2.new(0, 10, 0, 4), 1
-title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment = "Egg01 Attack Chase Test v1.4", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
+title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment =
+    "Egg01 Attack Chase Test v1.4.1", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -63,10 +136,12 @@ local bClose = button("X", 365, 4, 32, Color3.fromRGB(125, 45, 45))
 
 local targetLabel = Instance.new("TextLabel", panel)
 targetLabel.Size, targetLabel.Position, targetLabel.BackgroundTransparency = UDim2.new(1, -20, 0, 22), UDim2.new(0, 10, 0, 74), 1
-targetLabel.TextColor3, targetLabel.Font, targetLabel.TextSize, targetLabel.TextXAlignment = Color3.fromRGB(255, 220, 105), Enum.Font.GothamBold, 12, Enum.TextXAlignment.Left
+targetLabel.TextColor3, targetLabel.Font, targetLabel.TextSize, targetLabel.TextXAlignment =
+    Color3.fromRGB(255, 220, 105), Enum.Font.GothamBold, 12, Enum.TextXAlignment.Left
 targetLabel.Text = "ติ๊กชื่อจาก LIST ก่อน START"
 local status = targetLabel:Clone()
-status.Position, status.Size, status.TextColor3, status.TextWrapped, status.TextYAlignment = UDim2.new(0, 10, 0, 100), UDim2.new(1, -20, 0, 35), Color3.fromRGB(150, 235, 165), true, Enum.TextYAlignment.Top
+status.Position, status.Size, status.TextColor3, status.TextWrapped, status.TextYAlignment =
+    UDim2.new(0, 10, 0, 100), UDim2.new(1, -20, 0, 35), Color3.fromRGB(150, 235, 165), true, Enum.TextYAlignment.Top
 status.Parent = panel
 
 local menu = Instance.new("ScrollingFrame", gui)
@@ -76,8 +151,7 @@ menu.CanvasSize, menu.AutomaticCanvasSize = UDim2.new(), Enum.AutomaticSize.Y
 Instance.new("UICorner", menu).CornerRadius = UDim.new(0, 6)
 S.menu = menu
 
-local listLayout = Instance.new("UIListLayout", menu)
-listLayout.Padding = UDim.new(0, 2)
+Instance.new("UIListLayout", menu).Padding = UDim.new(0, 2)
 local listPad = Instance.new("UIPadding", menu)
 listPad.PaddingTop, listPad.PaddingBottom = UDim.new(0, 3), UDim.new(0, 3)
 
@@ -146,21 +220,37 @@ local function renderList()
     end
 end
 
+local function cleanup()
+    S.run = false
+    setClip(false)
+end
+
 local function run()
     if S.run then return end
     if #chosenList() == 0 then say("ติ๊กชื่ออย่างน้อย 1 คนจาก LIST") return end
     local h, r = mine()
     if not h or not r then say("ไม่พบตัวละครเรา") return end
-    if not bat() then say("ถือ Bat ก่อน แล้วค่อย START") return end
-    S.run, S.lastHit = true, 0
+    S.run, S.lastHit, S.lastKey = true, 0, 0
     bStart.Text = "AUTO"
+    setClip(true)
+    ensureBat()
+
     task.spawn(function()
-        say("AUTO ON — วนตี " .. tostring(#chosenList()) .. " คน")
+        say("AUTO ON — กด1ถืออาวุธ + noclip | วนตี " .. tostring(#chosenList()) .. " คน")
         while S.run do
             local mh, mr = mine()
-            local tool = bat()
             if not mh or not mr then say("ไม่พบตัวละครเรา") break end
-            if not tool then say("Bat หลุดมือ") break end
+
+            if os.clock() - S.lastKey >= KEY1_EVERY then
+                S.lastKey = os.clock()
+                ensureBat()
+            end
+            local tool = ensureBat()
+            if not tool then
+                task.wait(0.15)
+                continue
+            end
+
             local target = S.selected
             local th, tr = targetParts(target)
             if not target or not S.picked[target.UserId] or not th or not tr or th.Health <= 0 then
@@ -174,26 +264,40 @@ local function run()
                 local ok, err = pcall(function() tool:Activate() end)
                 S.lastHit = os.clock()
                 say(ok and string.format("ตี %s d=%.1f → เป้าถัดไป", target.Name, d) or "Activate error: " .. tostring(err))
-                advanceTarget() -- ฟาดหนึ่งครั้งแล้วหมุนรายชื่อทันที
+                advanceTarget()
             end
             task.wait(.12)
         end
-        S.run, bStart.Text = false, "START"
+        cleanup()
+        bStart.Text = "START"
     end)
 end
 
 bList.MouseButton1Click:Connect(function() renderList(); menu.Visible = not menu.Visible end)
 bStart.MouseButton1Click:Connect(run)
-bStop.MouseButton1Click:Connect(function() S.run = false; say("STOP") end)
-bClear.MouseButton1Click:Connect(function() S.picked, S.selected = {}, nil; renderList(); targetLabel.Text = "ติ๊กชื่อจาก LIST ก่อน START"; say("ล้างรายชื่อเป้า") end)
+bStop.MouseButton1Click:Connect(function() cleanup(); say("STOP") end)
+bClear.MouseButton1Click:Connect(function()
+    S.picked, S.selected = {}, nil
+    renderList()
+    targetLabel.Text = "ติ๊กชื่อจาก LIST ก่อน START"
+    say("ล้างรายชื่อเป้า")
+end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
-    if c then pcall(c, "=== Egg01 Attack Chase Test v1.4 ===\n" .. table.concat(S.lines, "\n")) end
+    if c then pcall(c, "=== Egg01 Attack Chase Test v1.4.1 ===\n" .. table.concat(S.lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
-bClose.MouseButton1Click:Connect(function() S.run = false; gui:Destroy(); _G.EGG01_ATTACK_CHASE = nil end)
+bClose.MouseButton1Click:Connect(function()
+    cleanup()
+    gui:Destroy()
+    _G.EGG01_ATTACK_CHASE = nil
+end)
 Players.PlayerAdded:Connect(function() if menu.Visible then renderList() end end)
-Players.PlayerRemoving:Connect(function(p) S.picked[p.UserId] = nil; if S.selected == p then S.selected = nil end; if menu.Visible then renderList() end end)
+Players.PlayerRemoving:Connect(function(p)
+    S.picked[p.UserId] = nil
+    if S.selected == p then S.selected = nil end
+    if menu.Visible then renderList() end
+end)
 
 renderList()
-say("LIST → ติ๊กชื่อ → START | ตีทีละครั้งแล้ววนชื่อถัดไป")
+say("v1.4.1 LIST→ติ๊ก→START | กด1ถืออาวุธ + noclip (ไม่มี velocity)")
