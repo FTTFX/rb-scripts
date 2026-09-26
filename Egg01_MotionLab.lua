@@ -16,12 +16,13 @@ local LP = Players.LocalPlayer
 local S = {
     run = false, gui = nil, lines = {},
     home = nil,
+    lockWS = nil, -- WalkSpeed ก่อนถือไข่
     clip = false, clipConn = nil, clipParts = {},
 }
 _G.EGG01_MOTION_LAB = S
 
 local logBox
--- เป้าความเร็ว = WalkSpeed × 1.1 (ไม่ยึด base ต้นทางที่ต่ำ)
+-- เป้า = lockWS × 1.1 (จำก่อนถือ — ไม่ตาม WS ที่เกมลดตอนถือไข่)
 local HOLD_MULT = 1.1
 local VEL_MULT = 1.1
 
@@ -35,6 +36,12 @@ end
 local function hr()
     local c = LP.Character
     return c and c:FindFirstChildOfClass("Humanoid"), c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function capFromLock(mult)
+    local h = select(1, hr())
+    local base = S.lockWS or (h and h.WalkSpeed) or 16
+    return math.max(8, base * (mult or 1.1)), base
 end
 
 local function floorY(pos)
@@ -109,8 +116,13 @@ local function hybridGo(destXZ, tag)
                 h:MoveTo(dest)
             else
                 if not hold then
-                    hold = math.max(8, h.WalkSpeed * HOLD_MULT)
-                    say(string.format("hold=%.1f (=WS×%.0f%%) WS=%.1f", hold, HOLD_MULT * 100, h.WalkSpeed))
+                    local base
+                    hold, base = capFromLock(HOLD_MULT)
+                    if not S.lockWS then
+                        say("ยังไม่ LOCK WS — ใช้ WS ปัจจุบันชั่วคราว")
+                    end
+                    say(string.format("hold=%.1f (lockWS=%.1f ×%.0f%%) nowWS=%.1f",
+                        hold, base, HOLD_MULT * 100, h.WalkSpeed))
                 end
 
                 local dir = flatRem.Unit
@@ -190,9 +202,7 @@ local function hybridGo(destXZ, tag)
 end
 
 --[[
-  MoveTo + velocity @ WS+10%:
-  ทุกเฟรมบังคับ AssemblyLinearVelocity = dir * (WalkSpeed*1.1)
-  ไม่ใช้ CFrame ย้ายตำแหน่ง
+  MoveTo + velocity @ lockWS×1.1 (ไม่ตาม WS ที่ลดตอนถือไข่)
 ]]
 local function velBoostGo(destXZ, tag)
     local h, r = hr()
@@ -200,16 +210,19 @@ local function velBoostGo(destXZ, tag)
 
     local dest = surfaceOf(destXZ)
     S.run = true
-    say(string.format("=== %s MoveTo+VEL@WS+%.0f%% → (%.0f,%.0f,%.0f) ===",
-        tag or "VEL", (VEL_MULT - 1) * 100, dest.X, dest.Y, dest.Z))
+    local targetSpd, base = capFromLock(VEL_MULT)
+    say(string.format("=== %s MoveTo+VEL@lock×%.0f%% → (%.0f,%.0f,%.0f) ===",
+        tag or "VEL", VEL_MULT * 100, dest.X, dest.Y, dest.Z))
+    if not S.lockWS then
+        say("ยังไม่ LOCK WS — ใช้ WS ปัจจุบันชั่วคราว กด LOCK ก่อนถือไข่")
+    end
+    say(string.format("vel=%.1f (lockWS=%.1f) nowWS=%.1f", targetSpd, base, h.WalkSpeed))
 
     task.spawn(function()
         local pushN, snap = 0, 0
         local t0 = os.clock()
         local last = r.Position
         local traveled = 0
-        local targetSpd = math.max(8, h.WalkSpeed * VEL_MULT)
-        say(string.format("vel=%.1f (=WS×%.0f%%) WS=%.1f", targetSpd, VEL_MULT * 100, h.WalkSpeed))
 
         h:MoveTo(dest)
 
@@ -227,8 +240,8 @@ local function velBoostGo(destXZ, tag)
             h, r = hr()
             if not h or not r then break end
 
-            -- อัปเดตตาม WS ปัจจุบัน (อาจเปลี่ยนตอนถือไข่)
-            targetSpd = math.max(8, h.WalkSpeed * VEL_MULT)
+            -- คงเป้าจาก lock ไม่ลดตาม nowWS
+            targetSpd = select(1, capFromLock(VEL_MULT))
 
             local moved = flat(r.Position - last).Magnitude
             traveled = traveled + moved
@@ -264,11 +277,12 @@ local function velBoostGo(destXZ, tag)
         local elapsed = os.clock() - t0
         local avg = elapsed > 0 and (traveled / elapsed) or 0
         say(string.format(
-            "%s จบ %.1fs err=%.1f push=%d snap=%d avg=%.1f (cap=%.1f)",
-            tag or "VEL", elapsed, err, pushN, snap, avg, targetSpd
+            "%s จบ %.1fs err=%.1f push=%d snap=%d avg=%.1f (cap=%.1f) nowWS=%.1f",
+            tag or "VEL", elapsed, err, pushN, snap, avg, targetSpd,
+            h and h.WalkSpeed or -1
         ))
         if err <= 5 and snap < 8 then
-            say("ผ่าน — MoveTo+VEL@WS+10% ใช้ได้")
+            say("ผ่าน — ล็อกความเร็วก่อนถือได้")
         else
             say("มี snap/err — เซิร์ฟอาจตัด velocity")
         end
@@ -286,7 +300,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 480, 0, 260)
+f.Size = UDim2.new(0, 440, 0, 260)
 f.Position = UDim2.new(0, 12, 0.42, 0)
 f.BackgroundColor3 = Color3.fromRGB(22, 30, 38)
 f.BorderSizePixel = 0
@@ -298,7 +312,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -12, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "MotionLab v4.2 — เป้า WS×110% (ครอป / VEL)"
+title.Text = "MotionLab v4.3 — LOCK WS ก่อนถือ → ×1.1"
 title.TextColor3 = Color3.fromRGB(130, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
@@ -318,17 +332,18 @@ local function button(t, x, y, w, c)
     return b
 end
 
-local bHome = button("HOME", 10, 34, 64, Color3.fromRGB(45, 105, 165))
-local bGo = button("GO ครอป", 80, 34, 78, Color3.fromRGB(40, 140, 95))
-local bVel = button("VEL+10%", 164, 34, 78, Color3.fromRGB(160, 100, 40))
-local bStop = button("STOP", 248, 34, 64, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 318, 34, 64, Color3.fromRGB(75, 75, 80))
+local bLock = button("LOCK WS", 10, 34, 72, Color3.fromRGB(70, 120, 160))
+local bHome = button("HOME", 88, 34, 56, Color3.fromRGB(45, 105, 165))
+local bGo = button("GO ครอป", 150, 34, 72, Color3.fromRGB(40, 140, 95))
+local bVel = button("VEL+10%", 228, 34, 72, Color3.fromRGB(160, 100, 40))
+local bStop = button("STOP", 306, 34, 56, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 368, 34, 56, Color3.fromRGB(75, 75, 80))
 
 local hint = Instance.new("TextLabel", f)
 hint.Size = UDim2.new(1, -16, 0, 22)
 hint.Position = UDim2.new(0, 10, 0, 68)
 hint.BackgroundTransparency = 1
-hint.Text = "HOME → GOครอป / VEL+10% = เป้า WalkSpeed×1.1"
+hint.Text = "LOCK WS (ก่อนถือ) → ถือไข่ → HOMEเป้า → VEL/ครอป @lock×1.1"
 hint.TextColor3 = Color3.fromRGB(180, 200, 210)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
@@ -346,6 +361,13 @@ logBox.TextXAlignment = Enum.TextXAlignment.Left
 logBox.TextYAlignment = Enum.TextYAlignment.Top
 logBox.TextWrapped = true
 logBox.ClipsDescendants = true
+
+bLock.MouseButton1Click:Connect(function()
+    local h = select(1, hr())
+    if not h then say("ไม่มีตัว"); return end
+    S.lockWS = h.WalkSpeed
+    say(string.format("LOCK WS=%.1f → เป้าผลัก=%.1f", S.lockWS, S.lockWS * VEL_MULT))
+end)
 
 bHome.MouseButton1Click:Connect(function()
     local _, r = hr()
@@ -383,11 +405,11 @@ end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== MotionLab v4.2 WS×110% ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== MotionLab v4.3 lockWS×1.1 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
-say("v4.2 เป้า = WalkSpeed × 1.1")
-say("HOME → VEL+10% หรือ GO ครอป")
+say("v4.3 LOCK WS ก่อนถือ → VEL/ครอป ใช้ lock×1.1")
+say("ลำดับ: LOCK → ถือไข่ใหญ่ → HOME → VEL+10%")
