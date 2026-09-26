@@ -1,6 +1,5 @@
--- Egg01 Motion Lab v3.0 — CFrame บนพื้น ความเร็ว ≤ WalkSpeed จริง
--- ไอเดีย: ย้ายด้วย CFrame แต่ไม่เร็วเกินตัวละคร → ลดโอกาสเซิร์ฟดึงกลับ
--- เทสเท่านั้น — อย่าใส่ในฟาร์มหลักจนกว่าจะผ่าน snap/err
+-- Egg01 Motion Lab v3.1 — วัดวิ่งจริงก่อน → CF ที่ความเร็วนั้น / +10%
+-- ลำดับ: 1) วัดวิ่ง  2) ใช้ CF  3) กด +10% แล้วใช้ CF อีกว่าจะกระตุกไหม
 
 if _G.EGG01_MOTION_LAB then
     _G.EGG01_MOTION_LAB.run = false
@@ -17,13 +16,16 @@ local LP = Players.LocalPlayer
 local S = {
     run = false, gui = nil, lines = {},
     home = nil,
+    realSpeed = nil,   -- studs/s จากวัดวิ่งจริง
+    wsAtMeasure = nil,
+    boost = 1.0,       -- 1.0 = เท่าจริง | 1.1 = +10%
     clip = false, clipConn = nil, clipParts = {},
+    wantClip = false,
 }
 _G.EGG01_MOTION_LAB = S
 
 local logBox
--- mult ≤1 = ไม่เกิน WalkSpeed | 1 = เท่าความเร็วจริง
-local SPEED_MULT = 1.0
+local MEASURE_DIST = 80 -- studs วิ่งวัด
 
 local function say(m)
     S.lines[#S.lines + 1] = tostring(m)
@@ -74,38 +76,131 @@ local function floorY(pos)
 end
 
 local function surfaceOf(xz)
-    local fy = floorY(xz)
-    return Vector3.new(xz.X, fy + 3.2, xz.Z)
+    return Vector3.new(xz.X, floorY(xz) + 3.2, xz.Z)
 end
 
-local function readMult()
-    local m = tonumber(S.multBox and S.multBox.Text) or SPEED_MULT
-    return math.clamp(m, 0.25, 1.0) -- ห้ามเกิน 1.0 = ไม่เร็วกว่าตัวละคร
+local function flatLook(r)
+    local look = r.CFrame.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude < 0.1 then return Vector3.new(0, 0, -1) end
+    return flat.Unit
 end
 
--- CFrame ตาม Heartbeat ความเร็ว ≤ WalkSpeed * mult
+local function refreshBoostLabel()
+    if S.boostBtn then
+        local pct = math.floor((S.boost - 1) * 100 + 0.5)
+        S.boostBtn.Text = string.format("+%d%%", pct)
+    end
+end
+
+local function cfCap()
+    if not S.realSpeed then return nil end
+    return S.realSpeed * S.boost
+end
+
+-- ① วัดความเร็ววิ่งจริงด้วย MoveTo (ไม่ใช้ CFrame)
+local function measureRun()
+    local h, r = hr()
+    if not h or not r then say("ไม่มีตัว"); return end
+    S.run = true
+    local start = r.Position
+    local dir = flatLook(r)
+    local dest = surfaceOf(start + dir * MEASURE_DIST)
+    local ws = h.WalkSpeed
+    say(string.format("=== วัดวิ่ง MoveTo d=%d WS=%.1f ===", MEASURE_DIST, ws))
+
+    task.spawn(function()
+        h:MoveTo(dest)
+        local t0 = os.clock()
+        local last = start
+        local traveled = 0
+        local samples, sumInst = 0, 0
+        local maxInst = 0
+        local warmed = false
+
+        while S.run do
+            h, r = hr()
+            if not h or not r or h.Health <= 0 then say("ตัวเปลี่ยน/ตาย"); break end
+            local flatPos = Vector3.new(r.Position.X, start.Y, r.Position.Z)
+            local flatDest = Vector3.new(dest.X, start.Y, dest.Z)
+            local rem = (flatDest - flatPos).Magnitude
+            if rem <= 4 then break end
+
+            local dt = RunS.Heartbeat:Wait()
+            if dt <= 0 then dt = 1 / 60 end
+            h, r = hr()
+            if not r then break end
+            local now = r.Position
+            local step = Vector3.new(now.X - last.X, 0, now.Z - last.Z).Magnitude
+            last = now
+            -- ข้ามช่วงเร่งต้นทาง ~0.15s
+            if os.clock() - t0 > 0.15 then
+                warmed = true
+                traveled = traveled + step
+                local inst = step / dt
+                if inst > maxInst then maxInst = inst end
+                samples = samples + 1
+                sumInst = sumInst + inst
+            end
+            -- timeout กันค้าง
+            if os.clock() - t0 > 12 then say("วัด timeout"); break end
+        end
+
+        pcall(function()
+            h = select(1, hr())
+            r = select(2, hr())
+            if h and r then
+                h:MoveTo(r.Position)
+                h:Move(Vector3.zero)
+                r.AssemblyLinearVelocity = Vector3.zero
+            end
+        end)
+
+        local elapsed = os.clock() - t0
+        local avgInst = samples > 0 and (sumInst / samples) or 0
+        -- ใช้ avg จากช่วง warmed เป็นความเร็วจริง (กันเร่ง/เบรกปลายทาง)
+        local measured = avgInst
+        if measured < 1 then
+            -- fallback: ระยะรวม / เวลา
+            local endP = select(2, hr())
+            local d = endP and Vector3.new(endP.Position.X - start.X, 0, endP.Position.Z - start.Z).Magnitude or 0
+            measured = elapsed > 0 and (d / elapsed) or 0
+        end
+
+        S.realSpeed = measured
+        S.wsAtMeasure = ws
+        S.boost = 1.0
+        refreshBoostLabel()
+        say(string.format(
+            "วิ่งจริง avg=%.1f max=%.1f WS=%.1f (%.2fs n=%d)",
+            measured, maxInst, ws, elapsed, samples
+        ))
+        say(string.format("ตั้ง CF base=%.1f boost=0%% → กด「ใช้ CF」หรือ「+%%」ก่อน", measured))
+        S.run = false
+    end)
+end
+
+-- ② CFrame ที่ความเร็ว = realSpeed * boost
 local function cfWalk(goal, label)
     local h, r = hr()
     if not h or not r then return false, "ไม่มีตัว" end
+    local base = S.realSpeed
+    if not base or base < 1 then return false, "ยังไม่วัดวิ่ง — กด「วัดวิ่ง」ก่อน" end
 
-    local ws = math.max(1, h.WalkSpeed)
-    local mult = readMult()
-    local speed = ws * mult
-    local start = r.Position
-    -- เป้าเกาะพื้น (Y จากเรย์) ถ้า goal ให้มาแล้วก็ใช้
+    local speed = base * S.boost
     local dest = goal
-    local dist = (dest - start).Magnitude
+    local dist = (dest - r.Position).Magnitude
     local eta = dist / speed
     local snap = 0
     local maxInst = 0
     local t0 = os.clock()
+    local stutter = 0 -- เฟรมที่ drift/ดึง
 
     say(string.format(
-        "%s CF@WS → (%.0f,%.0f,%.0f) d=%.0f WS=%.1f×%.2f=%.1f eta=%.1fs",
-        label or "CF", dest.X, dest.Y, dest.Z, dist, ws, mult, speed, eta
+        "%s CF → (%.0f,%.0f,%.0f) d=%.0f base=%.1f ×%.0f%% =%.1f eta=%.1fs",
+        label or "CF", dest.X, dest.Y, dest.Z, dist, base, (S.boost - 1) * 100, speed, eta
     ))
 
-    -- หยุด MoveTo ค้าง
     pcall(function()
         h:MoveTo(r.Position)
         h:Move(Vector3.zero)
@@ -122,11 +217,9 @@ local function cfWalk(goal, label)
 
         local dt = RunS.Heartbeat:Wait()
         if dt <= 0 then dt = 1 / 60 end
-        -- เพดานต่อเฟรม = WalkSpeed*mult*dt (ไม่เกินความเร็วจริง)
         local step = math.min(rem, speed * dt)
         local dir = remain.Unit
         local target = r.Position + dir * step
-        -- เกาะพื้นระหว่างทาง (กันจม/ลอย)
         target = Vector3.new(target.X, floorY(target) + 3.2, target.Z)
 
         local before = r.Position
@@ -137,15 +230,14 @@ local function cfWalk(goal, label)
         h, r = hr()
         if r then
             local moved = (r.Position - before).Magnitude
-            local expect = step
             local drift = (r.Position - target).Magnitude
-            if drift > 4 then snap = snap + 1 end
-            -- ความเร็ว瞬时 (studs/s) — ถ้าสูงกว่า WS มาก = แปลก
+            if drift > 4 then snap = snap + 1; stutter = stutter + 1 end
             local inst = moved / math.max(dt, 1 / 240)
             if inst > maxInst then maxInst = inst end
             traveled = traveled + moved
-            if expect > 0.5 and moved < expect * 0.35 then
-                snap = snap + 1 -- น่าจะถูกเซิร์ฟดึง
+            if step > 0.5 and moved < step * 0.35 then
+                snap = snap + 1
+                stutter = stutter + 1
             end
         end
     end
@@ -161,26 +253,30 @@ local function cfWalk(goal, label)
     local err = (final - dest).Magnitude
     local elapsed = os.clock() - t0
     local avg = elapsed > 0 and (traveled / elapsed) or 0
-    return err <= 6, string.format(
-        "%s done %.2fs err=%.1f snap=%d avg=%.1f max=%.1f (cap=%.1f)",
-        label or "CF", elapsed, err, snap, avg, maxInst, speed
+    local ok = err <= 6 and snap == 0
+    return ok, string.format(
+        "%s done %.2fs err=%.1f snap=%d stutter=%d avg=%.1f max=%.1f (cap=%.1f)",
+        label or "CF", elapsed, err, snap, stutter, avg, maxInst, speed
     )
 end
 
-local function goTo(destXZ, tag)
-    local h, r = hr()
-    if not h or not r then say("ไม่มีตัว"); return end
+local function goCf(destXZ, tag)
+    if not S.realSpeed then say("กด「วัดวิ่ง」ก่อน"); return end
     local useClip = S.wantClip == true
     if useClip then setClip(true) end
     S.run = true
     local dest = surfaceOf(destXZ)
-    say(string.format("=== %s surface CF@WS mult=%.2f clip=%s ===",
-        tag or "GO", readMult(), tostring(useClip)))
+    say(string.format("=== %s CF boost=+%.0f%% cap=%.1f clip=%s ===",
+        tag or "GO", (S.boost - 1) * 100, cfCap(), tostring(useClip)))
 
     task.spawn(function()
         local ok, msg = cfWalk(dest, tag or "GO")
         say(msg)
-        say(ok and "ผ่าน (err≤6)" or "ไม่ผ่าน — ดู snap/err")
+        if ok then
+            say("ผ่าน — ไม่กระตุก")
+        else
+            say("กระตุก/ดึง — ลด boost หรือใช้เท่าจริง")
+        end
         if useClip then setClip(false) end
         S.run = false
     end)
@@ -196,8 +292,8 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 540, 0, 300)
-f.Position = UDim2.new(0, 12, 0.40, 0)
+f.Size = UDim2.new(0, 560, 0, 310)
+f.Position = UDim2.new(0, 12, 0.38, 0)
 f.BackgroundColor3 = Color3.fromRGB(24, 32, 40)
 f.BorderSizePixel = 0
 f.Active = true
@@ -208,7 +304,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -16, 0, 26)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "Egg01 Motion Lab v3.0 — CFrame ≤ WalkSpeed (พื้น)"
+title.Text = "Egg01 Motion Lab v3.1 — วัดวิ่ง → CF / +10%"
 title.TextColor3 = Color3.fromRGB(120, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
@@ -228,37 +324,30 @@ local function button(t, x, y, w, c)
     return b
 end
 
-local bHome = button("HOME", 10, 34, 52, Color3.fromRGB(45, 105, 165))
-local bGoHome = button("CF→HOME", 66, 34, 80, Color3.fromRGB(40, 130, 100))
-local bAhead = button("CF→AHEAD80", 150, 34, 100, Color3.fromRGB(50, 120, 90))
-local bStop = button("STOP", 254, 34, 52, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 310, 34, 48, Color3.fromRGB(75, 75, 80))
-local bClip = button("CLIP", 362, 34, 48, Color3.fromRGB(100, 90, 50))
-local bShowWS = button("WS?", 414, 34, 48, Color3.fromRGB(70, 90, 110))
-
-S.multBox = Instance.new("TextBox", f)
-S.multBox.Size = UDim2.new(0, 52, 0, 26)
-S.multBox.Position = UDim2.new(0, 10, 0, 68)
-S.multBox.Text = "1.0"
-S.multBox.BackgroundColor3 = Color3.fromRGB(55, 70, 85)
-S.multBox.TextColor3 = Color3.new(1, 1, 1)
-S.multBox.Font = Enum.Font.GothamBold
-S.multBox.TextSize = 12
-S.multBox.ClearTextOnFocus = false
+-- แถว1: วัด / CF / +% / HOME
+local bMeasure = button("① วัดวิ่ง", 10, 34, 78, Color3.fromRGB(50, 110, 160))
+local bCf = button("② ใช้ CF", 92, 34, 72, Color3.fromRGB(40, 140, 95))
+S.boostBtn = button("+0%", 168, 34, 52, Color3.fromRGB(180, 120, 40))
+local bResetBoost = button("=100%", 224, 34, 52, Color3.fromRGB(90, 90, 70))
+local bHome = button("HOME", 280, 34, 52, Color3.fromRGB(45, 105, 165))
+local bStop = button("STOP", 336, 34, 48, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 388, 34, 48, Color3.fromRGB(75, 75, 80))
+local bClip = button("CLIP", 440, 34, 48, Color3.fromRGB(100, 90, 50))
+local bInfo = button("INFO", 492, 34, 48, Color3.fromRGB(70, 90, 110))
 
 local hint = Instance.new("TextLabel", f)
-hint.Size = UDim2.new(0, 460, 0, 26)
-hint.Position = UDim2.new(0, 70, 0, 68)
+hint.Size = UDim2.new(1, -20, 0, 26)
+hint.Position = UDim2.new(0, 10, 0, 68)
 hint.BackgroundTransparency = 1
-hint.Text = "mult (0.25–1.0) × WalkSpeed — ห้ามเกิน 1 | Heartbeat CFrame เกาะพื้น"
+hint.Text = "① วัดวิ่ง(MoveTo 80) → ② ใช้ CF(=ความจริง) → กด +% แล้ว ② อีกว่าจะกระตุกไหม"
 hint.TextColor3 = Color3.fromRGB(190, 210, 220)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
 hint.TextXAlignment = Enum.TextXAlignment.Left
 
 logBox = Instance.new("TextLabel", f)
-logBox.Size = UDim2.new(1, -16, 0, 190)
-logBox.Position = UDim2.new(0, 8, 0, 100)
+logBox.Size = UDim2.new(1, -16, 0, 200)
+logBox.Position = UDim2.new(0, 8, 0, 98)
 logBox.BackgroundColor3 = Color3.new(0, 0, 0)
 logBox.BackgroundTransparency = 0.2
 logBox.TextColor3 = Color3.fromRGB(180, 245, 190)
@@ -269,28 +358,53 @@ logBox.TextYAlignment = Enum.TextYAlignment.Top
 logBox.TextWrapped = true
 logBox.ClipsDescendants = true
 
+local function destForCf()
+    if S.home then return S.home, "→HOME" end
+    local _, r = hr()
+    if not r then return nil end
+    return r.Position + flatLook(r) * 80, "→AHEAD80"
+end
+
+bMeasure.MouseButton1Click:Connect(function()
+    if S.run then say("กำลังทำงาน"); return end
+    measureRun()
+end)
+
+bCf.MouseButton1Click:Connect(function()
+    if S.run then say("กำลังทำงาน"); return end
+    local dest, tag = destForCf()
+    if not dest then say("ไม่มีเป้า"); return end
+    goCf(dest, tag)
+end)
+
+S.boostBtn.MouseButton1Click:Connect(function()
+    -- +10% ต่อครั้ง สูงสุด +50%
+    if S.boost >= 1.5 then
+        say("boost สูงสุด +50% แล้ว")
+        return
+    end
+    S.boost = math.min(1.5, math.floor(S.boost * 10 + 1.01) / 10) -- 1.0→1.1→1.2…
+    refreshBoostLabel()
+    local cap = cfCap()
+    if S.realSpeed then
+        say(string.format("boost=+%.0f%% → CF cap=%.1f (base=%.1f)", (S.boost - 1) * 100, cap, S.realSpeed))
+    else
+        say(string.format("boost=+%.0f%% (ยังไม่วัดวิ่ง)", (S.boost - 1) * 100))
+    end
+end)
+
+bResetBoost.MouseButton1Click:Connect(function()
+    S.boost = 1.0
+    refreshBoostLabel()
+    say("boost=0% (=ความเร็วจริง)")
+end)
+
 bHome.MouseButton1Click:Connect(function()
     local _, r = hr()
     if r then
         S.home = r.Position
-        say(string.format("HOME=(%.0f,%.0f,%.0f)", r.Position.X, r.Position.Y, r.Position.Z))
+        say(string.format("HOME=(%.0f,%.0f,%.0f) ← เป้า CF", r.Position.X, r.Position.Y, r.Position.Z))
     end
-end)
-
-bGoHome.MouseButton1Click:Connect(function()
-    if S.run then say("กำลังวิ่ง"); return end
-    if not S.home then say("กด HOME ก่อน"); return end
-    goTo(S.home, "→HOME")
-end)
-
-bAhead.MouseButton1Click:Connect(function()
-    if S.run then say("กำลังวิ่ง"); return end
-    local _, r = hr()
-    if not r then return end
-    local look = r.CFrame.LookVector
-    local flat = Vector3.new(look.X, 0, look.Z)
-    if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) else flat = flat.Unit end
-    goTo(r.Position + flat * 80, "→AHEAD80")
 end)
 
 bStop.MouseButton1Click:Connect(function()
@@ -302,26 +416,29 @@ bClip.MouseButton1Click:Connect(function()
     S.wantClip = not S.wantClip
     bClip.Text = S.wantClip and "CLIP ON" or "CLIP"
     bClip.BackgroundColor3 = S.wantClip and Color3.fromRGB(40, 130, 90) or Color3.fromRGB(100, 90, 50)
-    say("wantClip=" .. tostring(S.wantClip) .. " (เปิดตอนกด CF)")
+    say("wantClip=" .. tostring(S.wantClip))
 end)
 
-bShowWS.MouseButton1Click:Connect(function()
-    local h, r = hr()
-    if h and r then
-        say(string.format("WS=%.1f pos=(%.0f,%.0f,%.0f) mult=%.2f → cap=%.1f",
-            h.WalkSpeed, r.Position.X, r.Position.Y, r.Position.Z, readMult(), h.WalkSpeed * readMult()))
-    end
+bInfo.MouseButton1Click:Connect(function()
+    local h = select(1, hr())
+    say(string.format(
+        "WS=%.1f | real=%.1f | boost=+%.0f%% | CF cap=%s",
+        h and h.WalkSpeed or -1,
+        S.realSpeed or -1,
+        (S.boost - 1) * 100,
+        cfCap() and string.format("%.1f", cfCap()) or "?"
+    ))
 end)
 
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== Egg01 Motion Lab v3.0 CF@WS ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== Egg01 Motion Lab v3.1 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
-say("v3.0 CFrame บนพื้น ≤ WalkSpeed")
-say("HOME → ไปจุดอื่น → CF→HOME | หรือ CF→AHEAD80")
-say("ดู avg/max ต้องไม่เกิน cap | snap สูง = เซิร์ฟดึง")
+refreshBoostLabel()
+say("v3.1 ลำดับ: ① วัดวิ่ง → ② ใช้ CF → กด +% (+10) แล้ว ② อีก")
+say("มี HOME = CF ไป HOME | ไม่มี = CF ไปข้างหน้า 80")
