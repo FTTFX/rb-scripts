@@ -1,28 +1,18 @@
--- Egg01 Attack Chase Test v1.4.1
--- เหมือน v1.4 + กด 1 ถืออาวุธตลอด + Noclip (ไม่ดัน velocity / ไม่กระโดดออกลู่)
+-- Egg01 Attack Chase Test v1.4.2
+-- ฐาน v1.4 + ถือไม้แบบเงียบ (Humanoid:EquipTool อย่างเดียว — ไม่กดปุ่ม / ไม่ noclip)
 if _G.EGG01_ATTACK_CHASE then
     _G.EGG01_ATTACK_CHASE.run = false
-    pcall(function()
-        if _G.EGG01_ATTACK_CHASE.clipConn then _G.EGG01_ATTACK_CHASE.clipConn:Disconnect() end
-    end)
     pcall(function() _G.EGG01_ATTACK_CHASE.gui:Destroy() end)
 end
 
 local Players = game:GetService("Players")
-local RunS = game:GetService("RunService")
-local VIM
-pcall(function() VIM = game:GetService("VirtualInputManager") end)
-
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
-local S = {
-    gui = nil, run = false, selected = nil, lastHit = 0, lines = {}, picked = {}, menu = nil,
-    clipConn = nil, clipParts = {}, lastKey = 0,
-}
+local S = { gui = nil, run = false, selected = nil, lastHit = 0, lines = {}, picked = {}, menu = nil, lastEquip = 0 }
 _G.EGG01_ATTACK_CHASE = S
 
 local RANGE, COOLDOWN = 9, .85
-local KEY1_EVERY = 0.4
+local EQUIP_EVERY = 0.6
 
 local function mine()
     local c = LP.Character
@@ -50,57 +40,17 @@ local function findBat()
     return nil
 end
 
-local function pressOne()
-    if VIM then
-        pcall(function()
-            VIM:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-            task.wait(0.03)
-            VIM:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-        end)
-    elseif keypress and keyrelease then
-        pcall(function()
-            keypress(0x31)
-            task.wait(0.03)
-            keyrelease(0x31)
-        end)
-    end
-end
-
+-- ถือไม้เงียบ: EquipTool อย่างเดียว ไม่ส่งปุ่ม
 local function ensureBat()
     local tool, where = findBat()
     if tool and where == "hand" then return tool end
-    pressOne()
-    local h = select(1, mine())
-    if tool and where == "bag" and h then
-        pcall(function() h:EquipTool(tool) end)
+    if tool and where == "bag" then
+        local h = select(1, mine())
+        if h then pcall(function() h:EquipTool(tool) end) end
+        tool = select(1, findBat())
+        if tool and tool.Parent == LP.Character then return tool end
     end
-    tool = select(1, findBat())
-    return tool and tool.Parent == LP.Character and tool or nil
-end
-
-local function setClip(on)
-    if not on then
-        if S.clipConn then pcall(function() S.clipConn:Disconnect() end); S.clipConn = nil end
-        for part, was in pairs(S.clipParts) do
-            if part and part.Parent then pcall(function() part.CanCollide = was end) end
-        end
-        S.clipParts = {}
-        return
-    end
-    if S.clipConn then return end
-    local function apply(ch)
-        if not ch then return end
-        for _, p in ipairs(ch:GetDescendants()) do
-            if p:IsA("BasePart") then
-                if S.clipParts[p] == nil then S.clipParts[p] = p.CanCollide end
-                p.CanCollide = false
-            end
-        end
-    end
-    apply(LP.Character)
-    S.clipConn = RunS.Stepped:Connect(function()
-        if S.run then apply(LP.Character) end
-    end)
+    return nil
 end
 
 local gui = Instance.new("ScreenGui")
@@ -117,7 +67,7 @@ Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 8)
 local title = Instance.new("TextLabel", panel)
 title.Size, title.Position, title.BackgroundTransparency = UDim2.new(1, -45, 0, 27), UDim2.new(0, 10, 0, 4), 1
 title.Text, title.TextColor3, title.Font, title.TextSize, title.TextXAlignment =
-    "Egg01 Attack Chase Test v1.4.1", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
+    "Egg01 Attack Chase Test v1.4.2", Color3.new(1, 1, 1), Enum.Font.GothamBold, 14, Enum.TextXAlignment.Left
 
 local function button(text, x, y, w, color)
     local b = Instance.new("TextButton", panel)
@@ -220,34 +170,28 @@ local function renderList()
     end
 end
 
-local function cleanup()
-    S.run = false
-    setClip(false)
-end
-
 local function run()
     if S.run then return end
     if #chosenList() == 0 then say("ติ๊กชื่ออย่างน้อย 1 คนจาก LIST") return end
     local h, r = mine()
     if not h or not r then say("ไม่พบตัวละครเรา") return end
-    S.run, S.lastHit, S.lastKey = true, 0, 0
+    if not ensureBat() then say("หา Bat ในมือ/กระเป๋าไม่เจอ") return end
+    S.run, S.lastHit, S.lastEquip = true, 0, 0
     bStart.Text = "AUTO"
-    setClip(true)
-    ensureBat()
-
     task.spawn(function()
-        say("AUTO ON — กด1ถืออาวุธ + noclip | วนตี " .. tostring(#chosenList()) .. " คน")
+        say("AUTO ON — ถือไม้เงียบ (EquipTool) | วนตี " .. tostring(#chosenList()) .. " คน")
         while S.run do
             local mh, mr = mine()
             if not mh or not mr then say("ไม่พบตัวละครเรา") break end
 
-            if os.clock() - S.lastKey >= KEY1_EVERY then
-                S.lastKey = os.clock()
+            if os.clock() - S.lastEquip >= EQUIP_EVERY then
+                S.lastEquip = os.clock()
                 ensureBat()
             end
             local tool = ensureBat()
             if not tool then
-                task.wait(0.15)
+                say("Bat หลุด — รอ EquipTool")
+                task.wait(0.2)
                 continue
             end
 
@@ -268,14 +212,13 @@ local function run()
             end
             task.wait(.12)
         end
-        cleanup()
-        bStart.Text = "START"
+        S.run, bStart.Text = false, "START"
     end)
 end
 
 bList.MouseButton1Click:Connect(function() renderList(); menu.Visible = not menu.Visible end)
 bStart.MouseButton1Click:Connect(run)
-bStop.MouseButton1Click:Connect(function() cleanup(); say("STOP") end)
+bStop.MouseButton1Click:Connect(function() S.run = false; say("STOP") end)
 bClear.MouseButton1Click:Connect(function()
     S.picked, S.selected = {}, nil
     renderList()
@@ -284,14 +227,10 @@ bClear.MouseButton1Click:Connect(function()
 end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
-    if c then pcall(c, "=== Egg01 Attack Chase Test v1.4.1 ===\n" .. table.concat(S.lines, "\n")) end
+    if c then pcall(c, "=== Egg01 Attack Chase Test v1.4.2 ===\n" .. table.concat(S.lines, "\n")) end
     bCopy.Text = "OK"; task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
 end)
-bClose.MouseButton1Click:Connect(function()
-    cleanup()
-    gui:Destroy()
-    _G.EGG01_ATTACK_CHASE = nil
-end)
+bClose.MouseButton1Click:Connect(function() S.run = false; gui:Destroy(); _G.EGG01_ATTACK_CHASE = nil end)
 Players.PlayerAdded:Connect(function() if menu.Visible then renderList() end end)
 Players.PlayerRemoving:Connect(function(p)
     S.picked[p.UserId] = nil
@@ -300,4 +239,4 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 
 renderList()
-say("v1.4.1 LIST→ติ๊ก→START | กด1ถืออาวุธ + noclip (ไม่มี velocity)")
+say("v1.4.2 LIST→ติ๊ก→START | ถือไม้เงียบ EquipTool (ไม่กด1/ไม่noclip)")
