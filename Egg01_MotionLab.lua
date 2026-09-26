@@ -1,6 +1,5 @@
--- Egg01 Motion Lab v4.0 — MoveTo + CFrame ครอป (คงความเร็ว / กันกระแทก)
--- ไอเดีย: MoveTo เดินตามเกม แต่ทุกเฟรม CF ดันให้ความเร็วไม่ตก + ไม่ปลิวจากแรงนอก
--- ปุ่มน้อย: HOME | GO | STOP | COPY
+-- Egg01 Motion Lab v4.1 — MoveTo+CF ครอป / MoveTo+velocity+10%
+-- ปุ่ม: HOME | GO ครอป | VEL+10% | STOP | COPY
 
 if _G.EGG01_MOTION_LAB then
     _G.EGG01_MOTION_LAB.run = false
@@ -190,6 +189,113 @@ local function hybridGo(destXZ, tag)
     end)
 end
 
+--[[
+  MoveTo + velocity +10%:
+  วัดความเร็ว MoveTo ต้นทาง → ทุกเฟรมบังคับ AssemblyLinearVelocity = dir * (base*1.1)
+  ไม่ใช้ CFrame ย้ายตำแหน่ง (เทสผลักอย่างเดียว)
+]]
+local VEL_MULT = 1.1
+
+local function velBoostGo(destXZ, tag)
+    local h, r = hr()
+    if not h or not r then say("ไม่มีตัว"); return end
+
+    local dest = surfaceOf(destXZ)
+    S.run = true
+    say(string.format("=== %s MoveTo+VEL+%.0f%% → (%.0f,%.0f,%.0f) ===",
+        tag or "VEL", (VEL_MULT - 1) * 100, dest.X, dest.Y, dest.Z))
+
+    task.spawn(function()
+        local base = nil
+        local pushN, snap = 0, 0
+        local t0 = os.clock()
+        local last = r.Position
+        local warmSum, warmN = 0, 0
+        local traveled = 0
+
+        h:MoveTo(dest)
+
+        while S.run do
+            h, r = hr()
+            if not h or not r or h.Health <= 0 then say("ตัวเปลี่ยน/ตาย"); break end
+
+            local flatRem = flat(dest - r.Position)
+            local rem = flatRem.Magnitude
+            if rem <= 3 then break end
+
+            local dt = RunS.Heartbeat:Wait()
+            if dt <= 0 then dt = 1 / 60 end
+
+            h, r = hr()
+            if not h or not r then break end
+
+            local moved = flat(r.Position - last).Magnitude
+            traveled = traveled + moved
+            last = r.Position
+            local elapsed = os.clock() - t0
+
+            if elapsed < 0.35 then
+                if elapsed > 0.08 then
+                    warmSum = warmSum + (moved / dt)
+                    warmN = warmN + 1
+                end
+                h:MoveTo(dest)
+            else
+                if not base then
+                    base = math.max(8, warmN > 0 and (warmSum / warmN) or h.WalkSpeed)
+                    say(string.format("base=%.1f → vel=%.1f (+10%%) WS=%.1f", base, base * VEL_MULT, h.WalkSpeed))
+                end
+
+                local dir = flatRem.Unit
+                local targetSpd = base * VEL_MULT
+                -- ผลัก: ตั้ง velocity ตามทิศเป้า (คง Y จากของเดิมเล็กน้อย)
+                local vy = r.AssemblyLinearVelocity.Y
+                r.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpd, vy, dir.Z * targetSpd)
+                pushN = pushN + 1
+
+                -- รีเฟรช MoveTo
+                if pushN % 20 == 1 then
+                    h:MoveTo(dest)
+                end
+
+                -- ตรวจโดนดึง: เคลื่อนน้อยกว่าที่ velocity ควรให้
+                local expect = targetSpd * dt * 0.35
+                if moved < expect and rem > 10 then
+                    snap = snap + 1
+                end
+                -- ปลิวถอยหลังแรง
+                local along = flat(r.AssemblyLinearVelocity):Dot(dir)
+                if along < targetSpd * 0.4 then
+                    -- บังคับซ้ำแรงขึ้นหนึ่งเฟรม
+                    r.AssemblyLinearVelocity = dir * targetSpd
+                end
+            end
+        end
+
+        h, r = hr()
+        if h and r then
+            h:MoveTo(r.Position)
+            h:Move(Vector3.zero)
+            r.AssemblyLinearVelocity = Vector3.zero
+        end
+        local final = r and r.Position or dest
+        local err = flat(final - dest).Magnitude
+        local elapsed = os.clock() - t0
+        local avg = elapsed > 0 and (traveled / elapsed) or 0
+        say(string.format(
+            "%s จบ %.1fs err=%.1f push=%d snap=%d avg=%.1f (cap=%.1f)",
+            tag or "VEL", elapsed, err, pushN, snap, avg,
+            base and (base * VEL_MULT) or -1
+        ))
+        if err <= 5 and snap < 8 then
+            say("ผ่าน — MoveTo+VEL+10% ใช้ได้")
+        else
+            say("มี snap/err — เซิร์ฟอาจตัด velocity")
+        end
+        S.run = false
+    end)
+end
+
 -- GUI ปุ่มน้อย
 local gui = Instance.new("ScreenGui")
 gui.Name = "Egg01_MotionLab"
@@ -200,7 +306,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 420, 0, 260)
+f.Size = UDim2.new(0, 480, 0, 260)
 f.Position = UDim2.new(0, 12, 0.42, 0)
 f.BackgroundColor3 = Color3.fromRGB(22, 30, 38)
 f.BorderSizePixel = 0
@@ -212,7 +318,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -12, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "MotionLab v4 — MoveTo + CF ครอป (กันช้า/ปลิว)"
+title.Text = "MotionLab v4.1 — CFครอป / VEL+10%"
 title.TextColor3 = Color3.fromRGB(130, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
@@ -227,21 +333,22 @@ local function button(t, x, y, w, c)
     b.TextColor3 = Color3.new(1, 1, 1)
     b.BorderSizePixel = 0
     b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
+    b.TextSize = 11
     Instance.new("UICorner", b).CornerRadius = UDim.new(0, 5)
     return b
 end
 
-local bHome = button("HOME", 10, 34, 70, Color3.fromRGB(45, 105, 165))
-local bGo = button("GO ครอป", 88, 34, 90, Color3.fromRGB(40, 140, 95))
-local bStop = button("STOP", 186, 34, 70, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 264, 34, 70, Color3.fromRGB(75, 75, 80))
+local bHome = button("HOME", 10, 34, 64, Color3.fromRGB(45, 105, 165))
+local bGo = button("GO ครอป", 80, 34, 78, Color3.fromRGB(40, 140, 95))
+local bVel = button("VEL+10%", 164, 34, 78, Color3.fromRGB(160, 100, 40))
+local bStop = button("STOP", 248, 34, 64, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 318, 34, 64, Color3.fromRGB(75, 75, 80))
 
 local hint = Instance.new("TextLabel", f)
 hint.Size = UDim2.new(1, -16, 0, 22)
 hint.Position = UDim2.new(0, 10, 0, 68)
 hint.BackgroundTransparency = 1
-hint.Text = "HOME ที่เป้า → ไปจุดเริ่ม → GO | MoveTo + CF คงความเร็ว"
+hint.Text = "HOME → GOครอป=CF | VEL+10%=MoveTo+velocity×1.1"
 hint.TextColor3 = Color3.fromRGB(180, 200, 210)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
@@ -274,6 +381,12 @@ bGo.MouseButton1Click:Connect(function()
     hybridGo(S.home, "→HOME")
 end)
 
+bVel.MouseButton1Click:Connect(function()
+    if S.run then say("กำลังวิ่ง"); return end
+    if not S.home then say("กด HOME ที่เป้าก่อน"); return end
+    velBoostGo(S.home, "VEL→HOME")
+end)
+
 bStop.MouseButton1Click:Connect(function()
     S.run = false
     local h, r = hr()
@@ -290,11 +403,11 @@ end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== MotionLab v4 MoveTo+CF crop ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== MotionLab v4.1 ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
-say("v4 MoveTo + CF ครอป")
-say("HOME → GO = เดินค้างความเร็ว กันปลิว")
+say("v4.1 HOME → VEL+10% = MoveTo + velocity×1.1")
+say("เปรียบกับ GO ครอป (CF) ได้")
