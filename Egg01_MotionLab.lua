@@ -21,8 +21,9 @@ local S = {
 _G.EGG01_MOTION_LAB = S
 
 local logBox
--- เป้าความเร็ว = max(วัดจาก MoveTo ช่วงแรก, WalkSpeed*0.9) — CF ครอปให้ไม่ต่ำกว่านี้
-local HOLD_MULT = 1.0 -- 1.0 = เท่าความเร็วจริงตอนเริ่มวิ่ง
+-- เป้าความเร็ว = WalkSpeed × 1.1 (ไม่ยึด base ต้นทางที่ต่ำ)
+local HOLD_MULT = 1.1
+local VEL_MULT = 1.1
 
 local function say(m)
     S.lines[#S.lines + 1] = tostring(m)
@@ -108,9 +109,8 @@ local function hybridGo(destXZ, tag)
                 h:MoveTo(dest)
             else
                 if not hold then
-                    local avg = warmN > 0 and (warmSum / warmN) or h.WalkSpeed
-                    hold = math.max(8, avg * HOLD_MULT)
-                    say(string.format("hold=%.1f (จาก MoveTo ต้นทาง) WS=%.1f", hold, h.WalkSpeed))
+                    hold = math.max(8, h.WalkSpeed * HOLD_MULT)
+                    say(string.format("hold=%.1f (=WS×%.0f%%) WS=%.1f", hold, HOLD_MULT * 100, h.WalkSpeed))
                 end
 
                 local dir = flatRem.Unit
@@ -190,28 +190,26 @@ local function hybridGo(destXZ, tag)
 end
 
 --[[
-  MoveTo + velocity +10%:
-  วัดความเร็ว MoveTo ต้นทาง → ทุกเฟรมบังคับ AssemblyLinearVelocity = dir * (base*1.1)
-  ไม่ใช้ CFrame ย้ายตำแหน่ง (เทสผลักอย่างเดียว)
+  MoveTo + velocity @ WS+10%:
+  ทุกเฟรมบังคับ AssemblyLinearVelocity = dir * (WalkSpeed*1.1)
+  ไม่ใช้ CFrame ย้ายตำแหน่ง
 ]]
-local VEL_MULT = 1.1
-
 local function velBoostGo(destXZ, tag)
     local h, r = hr()
     if not h or not r then say("ไม่มีตัว"); return end
 
     local dest = surfaceOf(destXZ)
     S.run = true
-    say(string.format("=== %s MoveTo+VEL+%.0f%% → (%.0f,%.0f,%.0f) ===",
+    say(string.format("=== %s MoveTo+VEL@WS+%.0f%% → (%.0f,%.0f,%.0f) ===",
         tag or "VEL", (VEL_MULT - 1) * 100, dest.X, dest.Y, dest.Z))
 
     task.spawn(function()
-        local base = nil
         local pushN, snap = 0, 0
         local t0 = os.clock()
         local last = r.Position
-        local warmSum, warmN = 0, 0
         local traveled = 0
+        local targetSpd = math.max(8, h.WalkSpeed * VEL_MULT)
+        say(string.format("vel=%.1f (=WS×%.0f%%) WS=%.1f", targetSpd, VEL_MULT * 100, h.WalkSpeed))
 
         h:MoveTo(dest)
 
@@ -229,46 +227,29 @@ local function velBoostGo(destXZ, tag)
             h, r = hr()
             if not h or not r then break end
 
+            -- อัปเดตตาม WS ปัจจุบัน (อาจเปลี่ยนตอนถือไข่)
+            targetSpd = math.max(8, h.WalkSpeed * VEL_MULT)
+
             local moved = flat(r.Position - last).Magnitude
             traveled = traveled + moved
             last = r.Position
-            local elapsed = os.clock() - t0
 
-            if elapsed < 0.35 then
-                if elapsed > 0.08 then
-                    warmSum = warmSum + (moved / dt)
-                    warmN = warmN + 1
-                end
+            local dir = flatRem.Unit
+            local vy = r.AssemblyLinearVelocity.Y
+            r.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpd, vy, dir.Z * targetSpd)
+            pushN = pushN + 1
+
+            if pushN % 20 == 1 then
                 h:MoveTo(dest)
-            else
-                if not base then
-                    base = math.max(8, warmN > 0 and (warmSum / warmN) or h.WalkSpeed)
-                    say(string.format("base=%.1f → vel=%.1f (+10%%) WS=%.1f", base, base * VEL_MULT, h.WalkSpeed))
-                end
+            end
 
-                local dir = flatRem.Unit
-                local targetSpd = base * VEL_MULT
-                -- ผลัก: ตั้ง velocity ตามทิศเป้า (คง Y จากของเดิมเล็กน้อย)
-                local vy = r.AssemblyLinearVelocity.Y
-                r.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpd, vy, dir.Z * targetSpd)
-                pushN = pushN + 1
-
-                -- รีเฟรช MoveTo
-                if pushN % 20 == 1 then
-                    h:MoveTo(dest)
-                end
-
-                -- ตรวจโดนดึง: เคลื่อนน้อยกว่าที่ velocity ควรให้
-                local expect = targetSpd * dt * 0.35
-                if moved < expect and rem > 10 then
-                    snap = snap + 1
-                end
-                -- ปลิวถอยหลังแรง
-                local along = flat(r.AssemblyLinearVelocity):Dot(dir)
-                if along < targetSpd * 0.4 then
-                    -- บังคับซ้ำแรงขึ้นหนึ่งเฟรม
-                    r.AssemblyLinearVelocity = dir * targetSpd
-                end
+            local expect = targetSpd * dt * 0.35
+            if moved < expect and rem > 10 then
+                snap = snap + 1
+            end
+            local along = flat(r.AssemblyLinearVelocity):Dot(dir)
+            if along < targetSpd * 0.4 then
+                r.AssemblyLinearVelocity = dir * targetSpd
             end
         end
 
@@ -284,11 +265,10 @@ local function velBoostGo(destXZ, tag)
         local avg = elapsed > 0 and (traveled / elapsed) or 0
         say(string.format(
             "%s จบ %.1fs err=%.1f push=%d snap=%d avg=%.1f (cap=%.1f)",
-            tag or "VEL", elapsed, err, pushN, snap, avg,
-            base and (base * VEL_MULT) or -1
+            tag or "VEL", elapsed, err, pushN, snap, avg, targetSpd
         ))
         if err <= 5 and snap < 8 then
-            say("ผ่าน — MoveTo+VEL+10% ใช้ได้")
+            say("ผ่าน — MoveTo+VEL@WS+10% ใช้ได้")
         else
             say("มี snap/err — เซิร์ฟอาจตัด velocity")
         end
@@ -318,7 +298,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -12, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "MotionLab v4.1 — CFครอป / VEL+10%"
+title.Text = "MotionLab v4.2 — เป้า WS×110% (ครอป / VEL)"
 title.TextColor3 = Color3.fromRGB(130, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
@@ -348,7 +328,7 @@ local hint = Instance.new("TextLabel", f)
 hint.Size = UDim2.new(1, -16, 0, 22)
 hint.Position = UDim2.new(0, 10, 0, 68)
 hint.BackgroundTransparency = 1
-hint.Text = "HOME → GOครอป=CF | VEL+10%=MoveTo+velocity×1.1"
+hint.Text = "HOME → GOครอป / VEL+10% = เป้า WalkSpeed×1.1"
 hint.TextColor3 = Color3.fromRGB(180, 200, 210)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
@@ -403,11 +383,11 @@ end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== MotionLab v4.1 ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== MotionLab v4.2 WS×110% ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
-say("v4.1 HOME → VEL+10% = MoveTo + velocity×1.1")
-say("เปรียบกับ GO ครอป (CF) ได้")
+say("v4.2 เป้า = WalkSpeed × 1.1")
+say("HOME → VEL+10% หรือ GO ครอป")
