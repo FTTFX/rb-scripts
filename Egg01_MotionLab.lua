@@ -291,30 +291,38 @@ local function velBoostGo(destXZ, tag)
 end
 
 --[[
-  วาป (CFrame) ที่ความเร็ว = lockWS เท่าๆ กัน (ไม่ ×1.1)
-  วัด net = ระยะเข้าใกล้เป้า / เวลา — ไม่นับระยะสั่น
+  mode "out"  = ขาไปตัวเปล่า — วาป @ (lockWS|nowWS) × 1.2
+  mode "back" = ขากลับถือไข่ — วาป @ nowWS ทุกเฟรม (ตามเซิร์ฟ)
 ]]
-local function warpGo(destXZ, tag)
+local OUT_MULT = 1.2
+
+local function warpGo(destXZ, tag, mode)
     local h, r = hr()
     if not h or not r then say("ไม่มีตัว"); return end
 
     local dest = surfaceOf(destXZ)
-    local cap = S.lockWS or h.WalkSpeed
-    if not S.lockWS then
-        say(string.format("ยังไม่ LOCK — ใช้ nowWS=%.1f เป็น cap", h.WalkSpeed))
-        cap = h.WalkSpeed
+    mode = mode or "back"
+    local fixedCap = nil
+    if mode == "out" then
+        local base = S.lockWS or h.WalkSpeed
+        fixedCap = base * OUT_MULT
+        if not S.lockWS then
+            say(string.format("ยังไม่ LOCK — ใช้ nowWS×1.2 = %.1f", fixedCap))
+        end
     end
+
     S.run = true
-    say(string.format("=== %s WARP@%.0f (lock=เท่า) → (%.0f,%.0f,%.0f) ===",
-        tag or "WARP", cap, dest.X, dest.Y, dest.Z))
-    say(string.format("cap=%.1f nowWS=%.1f", cap, h.WalkSpeed))
+    say(string.format("=== %s WARP %s → (%.0f,%.0f,%.0f) ===",
+        tag or "WARP", mode == "out" and ("ไป@×120%=" .. string.format("%.0f", fixedCap)) or "กลับ@nowWS",
+        dest.X, dest.Y, dest.Z))
+    say(string.format("nowWS=%.1f lock=%s", h.WalkSpeed, S.lockWS and string.format("%.1f", S.lockWS) or "-"))
 
     task.spawn(function()
         local t0 = os.clock()
         local startDist = flat(dest - r.Position).Magnitude
         local snap = 0
+        local lastCap = fixedCap or h.WalkSpeed
 
-        -- หยุด MoveTo ค้าง
         pcall(function()
             h:MoveTo(r.Position)
             h:Move(Vector3.zero)
@@ -333,6 +341,15 @@ local function warpGo(destXZ, tag)
 
             h, r = hr()
             if not h or not r then break end
+
+            local cap
+            if mode == "out" then
+                cap = fixedCap
+            else
+                -- ขากลับ: ตามที่เซิร์ฟกำหนดตอนนี้
+                cap = math.max(8, h.WalkSpeed)
+            end
+            lastCap = cap
 
             local dir = flatRem.Unit
             local step = math.min(rem, cap * dt)
@@ -368,21 +385,21 @@ local function warpGo(destXZ, tag)
         local net = math.max(0, startDist - err)
         local netAvg = net / elapsed
         say(string.format(
-            "%s จบ %.1fs err=%.1f snap=%d netAvg=%.1f (cap=%.1f) nowWS=%.1f",
-            tag or "WARP", elapsed, err, snap, netAvg, cap, h and h.WalkSpeed or -1
+            "%s จบ %.1fs err=%.1f snap=%d netAvg=%.1f (cap≈%.1f) nowWS=%.1f",
+            tag or "WARP", elapsed, err, snap, netAvg, lastCap, h and h.WalkSpeed or -1
         ))
         if err <= 5 and snap < 8 then
-            say("ผ่าน — วาป@lock ใช้ได้")
+            say(mode == "out" and "ผ่าน — ขาไป ×120%" or "ผ่าน — ขากลับตามเซิร์ฟ")
         elseif not S.run then
             say("STOP — ดู netAvg/snap")
         else
-            say("snap/err สูง — เซิร์ฟดึง")
+            say("snap/err / ตาย — เกินเพดานเซิร์ฟ?")
         end
         S.run = false
     end)
 end
 
--- GUI ปุ่มน้อย
+-- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "Egg01_MotionLab"
 gui.ResetOnSpawn = false
@@ -392,7 +409,7 @@ if not gui.Parent then gui.Parent = LP:WaitForChild("PlayerGui") end
 S.gui = gui
 
 local f = Instance.new("Frame", gui)
-f.Size = UDim2.new(0, 500, 0, 270)
+f.Size = UDim2.new(0, 480, 0, 270)
 f.Position = UDim2.new(0, 12, 0.42, 0)
 f.BackgroundColor3 = Color3.fromRGB(22, 30, 38)
 f.BorderSizePixel = 0
@@ -404,7 +421,7 @@ local title = Instance.new("TextLabel", f)
 title.Size = UDim2.new(1, -12, 0, 24)
 title.Position = UDim2.new(0, 10, 0, 4)
 title.BackgroundTransparency = 1
-title.Text = "MotionLab v4.4 — LOCK + วาป@cap (เท่า lock)"
+title.Text = "MotionLab v4.5 — ไป@×120% / กลับ@nowWS"
 title.TextColor3 = Color3.fromRGB(130, 220, 255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 12
@@ -424,18 +441,18 @@ local function button(t, x, y, w, c)
     return b
 end
 
-local bLock = button("LOCK WS", 10, 34, 68, Color3.fromRGB(70, 120, 160))
-local bHome = button("HOME", 84, 34, 52, Color3.fromRGB(45, 105, 165))
-local bWarp = button("วาป@cap", 142, 34, 72, Color3.fromRGB(180, 90, 50))
-local bVel = button("VEL+10%", 220, 34, 68, Color3.fromRGB(160, 100, 40))
-local bStop = button("STOP", 294, 34, 52, Color3.fromRGB(165, 50, 55))
-local bCopy = button("COPY", 352, 34, 52, Color3.fromRGB(75, 75, 80))
+local bLock = button("LOCK", 10, 34, 56, Color3.fromRGB(70, 120, 160))
+local bHome = button("HOME", 72, 34, 56, Color3.fromRGB(45, 105, 165))
+local bOut = button("ไป +20%", 134, 34, 78, Color3.fromRGB(40, 150, 100))
+local bBack = button("กลับ@เซิร์ฟ", 218, 34, 90, Color3.fromRGB(180, 100, 50))
+local bStop = button("STOP", 314, 34, 56, Color3.fromRGB(165, 50, 55))
+local bCopy = button("COPY", 376, 34, 56, Color3.fromRGB(75, 75, 80))
 
 local hint = Instance.new("TextLabel", f)
-hint.Size = UDim2.new(1, -16, 0, 36)
+hint.Size = UDim2.new(1, -16, 0, 40)
 hint.Position = UDim2.new(0, 10, 0, 66)
 hint.BackgroundTransparency = 1
-hint.Text = "LOCK (ก่อนถือ) → ถือไข่ → HOME → วาป@cap = CFrame ความเร็วเท่า lock (เช่น 300)\nดู netAvg (คืบหน้าจริง) ไม่ใช่ระยะสั่น"
+hint.Text = "LOCK → ไป+20% = วาป lock×1.2 (ตัวเปล่า)\nถือไข่ → กลับ@เซิร์ฟ = วาปตาม nowWS ทุกเฟรม"
 hint.TextColor3 = Color3.fromRGB(180, 200, 210)
 hint.Font = Enum.Font.Gotham
 hint.TextSize = 11
@@ -443,8 +460,8 @@ hint.TextXAlignment = Enum.TextXAlignment.Left
 hint.TextYAlignment = Enum.TextYAlignment.Top
 
 logBox = Instance.new("TextLabel", f)
-logBox.Size = UDim2.new(1, -16, 0, 150)
-logBox.Position = UDim2.new(0, 8, 0, 108)
+logBox.Size = UDim2.new(1, -16, 0, 148)
+logBox.Position = UDim2.new(0, 8, 0, 110)
 logBox.BackgroundColor3 = Color3.new(0, 0, 0)
 logBox.BackgroundTransparency = 0.2
 logBox.TextColor3 = Color3.fromRGB(180, 245, 190)
@@ -459,7 +476,7 @@ bLock.MouseButton1Click:Connect(function()
     local h = select(1, hr())
     if not h then say("ไม่มีตัว"); return end
     S.lockWS = h.WalkSpeed
-    say(string.format("LOCK WS=%.1f → วาป cap=%.1f (เท่า)", S.lockWS, S.lockWS))
+    say(string.format("LOCK=%.1f → ไป cap=%.1f (+20%%)", S.lockWS, S.lockWS * OUT_MULT))
 end)
 
 bHome.MouseButton1Click:Connect(function()
@@ -470,16 +487,16 @@ bHome.MouseButton1Click:Connect(function()
     end
 end)
 
-bWarp.MouseButton1Click:Connect(function()
+bOut.MouseButton1Click:Connect(function()
     if S.run then say("กำลังวิ่ง"); return end
     if not S.home then say("กด HOME ที่เป้าก่อน"); return end
-    warpGo(S.home, "WARP→HOME")
+    warpGo(S.home, "ไป→HOME", "out")
 end)
 
-bVel.MouseButton1Click:Connect(function()
+bBack.MouseButton1Click:Connect(function()
     if S.run then say("กำลังวิ่ง"); return end
     if not S.home then say("กด HOME ที่เป้าก่อน"); return end
-    velBoostGo(S.home, "VEL→HOME")
+    warpGo(S.home, "กลับ→HOME", "back")
 end)
 
 bStop.MouseButton1Click:Connect(function()
@@ -498,11 +515,11 @@ end)
 bCopy.MouseButton1Click:Connect(function()
     local c = setclipboard or toclipboard
     if c then
-        pcall(c, "=== MotionLab v4.4 WARP@cap ===\n" .. table.concat(S.lines, "\n"))
+        pcall(c, "=== MotionLab v4.5 ไป/กลับ ===\n" .. table.concat(S.lines, "\n"))
         bCopy.Text = "OK"
         task.delay(1, function() if bCopy.Parent then bCopy.Text = "COPY" end end)
     end
 end)
 
-say("v4.4 วาป@cap = CFrame ความเร็วเท่า LOCK (ไม่ +10%)")
-say("LOCK → ถือไข่ → HOME → วาป@cap")
+say("v4.5 ไป+20% (ตัวเปล่า) / กลับ@เซิร์ฟ (ถือไข่=nowWS)")
+say("LOCK → ไป+20% | ถือไข่ → กลับ@เซิร์ฟ")
