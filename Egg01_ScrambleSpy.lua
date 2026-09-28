@@ -9,6 +9,8 @@ local function path(x)local ok,s=pcall(function()return x:GetFullName()end);retu
 local function attrs(x)local out={};for k,v in pairs(x:GetAttributes())do out[#out+1]=k.."="..tostring(v)end;table.sort(out);return #out>0 and table.concat(out,", ")or ""end
 local function fmt(v)if typeof(v)=="Instance"then return "<"..path(v)..">" elseif typeof(v)=="table"then local o={};local n=0;for k,x in pairs(v)do n=n+1;if n>8 then o[#o+1]="...";break end;o[#o+1]=tostring(k).."="..(typeof(x)=="table"and"{..}"or tostring(x))end;return "{"..table.concat(o,", ").."}" else return tostring(v)end end
 local KEYS={"scramble","lab","mutat","fuse","merge","experiment","machine","incubat","splice"}
+local NOISE={"ProfileDelta","CoinsGathered","AwayEarnings","Ping","FieldEggShifted","Treadmill","Trials/Refresh"}
+local function noisy(n)for _,k in ipairs(NOISE)do if n:find(k,1,true)then return true end end end
 local function hit(s)s=tostring(s):lower();for _,k in ipairs(KEYS)do if s:find(k,1,true)then return k end end end
 local function bpos(x)if x:IsA("BasePart")then return x.Position end;if x:IsA("Model")then local ok,cf=pcall(function()return x:GetPivot()end);if ok then return cf.Position end end;local p=x:FindFirstAncestorWhichIsA("BasePart");return p and p.Position end
 
@@ -88,14 +90,14 @@ local function watch()
     end
     for _,x in ipairs(RS:GetDescendants())do
         if x:IsA("RemoteEvent")or x:IsA("UnreliableRemoteEvent")then
-            S.conns[#S.conns+1]=x.OnClientEvent:Connect(function(...)local a={...};local o={};for i=1,math.min(#a,5)do o[i]=fmt(a[i])end;say("S→C "..x.Name.." ("..table.concat(o,", ")..")")end)
+            S.conns[#S.conns+1]=x.OnClientEvent:Connect(function(...)if noisy(x.Name)then return end;local a={...};local o={};for i=1,math.min(#a,5)do o[i]=fmt(a[i])end;say("S→C "..x.Name.." ("..table.concat(o,", ")..")")end)
         end
     end
     if hookmetamethod and getnamecallmethod and not oldNC then
         oldNC=hookmetamethod(game,"__namecall",function(self,...)
             if S.watching and not(checkcaller and checkcaller())then
                 local m=getnamecallmethod()
-                if m=="FireServer"or m=="InvokeServer"then
+                if(m=="FireServer"or m=="InvokeServer")and not noisy(self.Name)then
                     local a={...};task.spawn(function()local o={};for i=1,math.min(#a,5)do o[i]=fmt(a[i])end;say("C→S "..m.." "..self.Name.." ("..table.concat(o,", ")..")")end)
                 end
             end
@@ -106,7 +108,7 @@ end
 
 local gui=Instance.new("ScreenGui");gui.Name="Egg01_ScrambleSpy";gui.ResetOnSpawn=false;gui.DisplayOrder=1030;pcall(function()gui.Parent=(gethui and gethui())or game:GetService("CoreGui")end);if not gui.Parent then gui.Parent=LP:WaitForChild("PlayerGui")end
 local f=Instance.new("Frame",gui);f.Size=UDim2.new(0,680,0,380);f.Position=UDim2.new(0,12,.18,0);f.BackgroundColor3=Color3.fromRGB(18,32,22);f.BorderSizePixel=0;f.Active=true;f.Draggable=true;Instance.new("UICorner",f).CornerRadius=UDim.new(0,8)
-local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-50,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Dr.Scramble Lab Spy v1.0";title.TextColor3=Color3.fromRGB(190,255,120);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
+local title=Instance.new("TextLabel",f);title.Size=UDim2.new(1,-50,0,30);title.Position=UDim2.new(0,10,0,3);title.BackgroundTransparency=1;title.Text="Egg01 Dr.Scramble Lab Spy v1.1";title.TextColor3=Color3.fromRGB(190,255,120);title.Font=Enum.Font.GothamBold;title.TextSize=14;title.TextXAlignment=Enum.TextXAlignment.Left
 local function b(t,x,w,c)local z=Instance.new("TextButton",f);z.Size=UDim2.new(0,w,0,30);z.Position=UDim2.new(0,x,0,38);z.Text=t;z.BackgroundColor3=c;z.TextColor3=Color3.new(1,1,1);z.BorderSizePixel=0;z.Font=Enum.Font.GothamBold;z.TextSize=11;Instance.new("UICorner",z).CornerRadius=UDim.new(0,5);return z end
 local near=b("NEAR",10,74,Color3.fromRGB(50,100,180));local dumpB=b("DUMP",90,74,Color3.fromRGB(35,145,75));local watchB=b("WATCH",170,74,Color3.fromRGB(130,95,45));local clear=b("CLEAR",250,74,Color3.fromRGB(75,75,80));local copy=b("COPY",330,74,Color3.fromRGB(75,75,80));local close=b("X",630,34,Color3.fromRGB(145,50,65))
 box=Instance.new("TextBox",f);box.Size=UDim2.new(1,-16,0,300);box.Position=UDim2.new(0,8,0,76);box.BackgroundColor3=Color3.new(0,0,0);box.BackgroundTransparency=.2;box.TextColor3=Color3.fromRGB(185,245,190);box.Font=Enum.Font.Code;box.TextSize=10;box.TextEditable=false;box.MultiLine=true;box.ClearTextOnFocus=false;box.TextWrapped=false;box.TextXAlignment=Enum.TextXAlignment.Left;box.TextYAlignment=Enum.TextYAlignment.Top
