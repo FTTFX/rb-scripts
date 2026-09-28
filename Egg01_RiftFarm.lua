@@ -1,4 +1,4 @@
--- Egg01 Rift Farm v1.39 -- Shark=Finned Thresher alias | hop 30s
+-- Egg01 Rift Farm v1.40 -- no server hop
 if _G.EGG01_RIFT_FARM then _G.EGG01_RIFT_FARM.run=false; pcall(function() _G.EGG01_RIFT_FARM.carryConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.shiftConn:Disconnect() end); pcall(function() _G.EGG01_RIFT_FARM.clipConn:Disconnect() end); if _G.EGG01_RIFT_FARM.eggConns then for _,c in ipairs(_G.EGG01_RIFT_FARM.eggConns) do pcall(function() c:Disconnect() end) end end; pcall(function() if _G.EGG01_RIFT_FARM.tpFailConn then _G.EGG01_RIFT_FARM.tpFailConn:Disconnect() end end); pcall(function() _G.EGG01_RIFT_FARM.gui:Destroy() end) end
 local P=game:GetService("Players"); local RS=game:GetService("ReplicatedStorage"); local RunS=game:GetService("RunService"); local TS=game:GetService("TeleportService"); local HS=game:GetService("HttpService"); local LP=P.LocalPlayer; local fp=fireproximityprompt or (getgenv and getgenv().fireproximityprompt)
 local REJOIN_AFTER=30
@@ -13,8 +13,7 @@ local function setClip(on)
   for part,was in pairs(S.clipParts) do if part and part.Parent then pcall(function() part.CanCollide=was end) end end
   S.clipParts={}; return
  end
- if S.clipConn then return end
- local function apply(ch)
+ if S.clipำำำำไction apply(ch)
   if not ch then return end
   for _,p in ipairs(ch:GetDescendants()) do
    if p:IsA("BasePart") then
@@ -975,7 +974,7 @@ local function b(tx,x,col) local z=Instance.new("TextButton",f); z.Size=UDim2.ne
 local home=b("HOME",10,Color3.fromRGB(50,100,180)); local scan=b("SCAN",78,Color3.fromRGB(50,100,180)); local start=b("START",146,Color3.fromRGB(35,145,75)); local halt=b("STOP",214,Color3.fromRGB(165,50,55)); local hop=b("HOP",282,Color3.fromRGB(120,70,30))
 local fold=b("−",292,Color3.fromRGB(85,65,115)); local close=b("X",326,Color3.fromRGB(145,50,65)); fold.Size=UDim2.new(0,28,0,24); fold.Position=UDim2.new(0,292,0,4); close.Size=UDim2.new(0,28,0,24); close.Position=UDim2.new(0,326,0,4)
 log=Instance.new("TextLabel",f); log.Size=UDim2.new(1,-16,0,105); log.Position=UDim2.new(0,8,0,72); log.BackgroundTransparency=.2; log.BackgroundColor3=Color3.new(0,0,0); log.TextColor3=Color3.fromRGB(180,245,190); log.Font=Enum.Font.Code; log.TextSize=10; log.TextXAlignment=Enum.TextXAlignment.Left; log.TextYAlignment=Enum.TextYAlignment.Top; log.TextWrapped=true; log.ClipsDescendants=true
-local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,hop,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;setClip(false);gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
+local folded=false; fold.MouseButton1Click:Connect(function() folded=not folded; f.Size=UDim2.new(0,360,0,folded and 32 or 185); for _,v in ipairs({home,scan,start,halt,log}) do v.Visible=not folded end; fold.Text=folded and "+" or "−" end); close.MouseButton1Click:Connect(function()S.run=false;setClip(false);gui:Destroy();_G.EGG01_RIFT_FARM=nil end)
 local function ensureHome(forceHere)
  local _,r=hr()
  if forceHere and r then
@@ -1006,13 +1005,10 @@ local function startAuto(reason)
    elseif t and t.hunt then
     S.missSince=S.missSince or os.clock()
     local left=REJOIN_AFTER-(os.clock()-S.missSince)
-    if left<=0 then
-     rejoinServer("ไม่เจอเป้าหลังโหลด "..tostring(REJOIN_AFTER).."s — hop")
-     break
-    end
-    if not S.lastMissSay or os.clock()-(S.lastMissSay or 0)>=4 then
+    if left<=0 then S.missSince=os.clock() end
+    if not S.lastMissSay or os.clock()-(S.lastMissSay or 0)>=8 then
      S.lastMissSay=os.clock()
-     say(string.format("ยังไม่เจอเป้า — รอโหลด/สแกน อีก %.0fs ค่อย hop",left))
+     say("ยังไม่เจอเป้า — รอต่อ (ไม่ hop)")
     end
     -- ระหว่างรอ: ยืน/ไปโซนสั้นๆ + รีเฟรช snapshot
     if t.wait then
@@ -1035,15 +1031,14 @@ local function startAuto(reason)
 end
 attachCarry(); attachEggFeed()
 if loadHomeSetting() then say(string.format("HOME โหลดจากเซิร์ฟก่อน @%.0f,%.0f,%.0f",S.home.X,S.home.Y,S.home.Z)) end
-rejectSameServerIfNeeded()
 say("เซิร์ฟนี้ JobId="..tostring(game.JobId):sub(1,8).."…")
 home.MouseButton1Click:Connect(function() ensureHome(true) end)
 scan.MouseButton1Click:Connect(function() task.spawn(function() local n=refreshSnapshot(); say("SCAN eggDB="..tostring(n)); target() end) end)
 start.MouseButton1Click:Connect(function() startAuto("กด START") end)
 halt.MouseButton1Click:Connect(function()S.run=false;stop();say("STOP")end)
-hop.MouseButton1Click:Connect(function() if S.carrying then say("ถือไข่อยู่ — ไม่ HOP"); return end; rejoinServer("กด HOP") end)
+hop.Visible=false
 setClip(true)
-say("v1.39: Shark=Finned Thresher | hop "..tostring(REJOIN_AFTER).."s")
+say("v1.40: ไม่ hop เซิร์ฟ")
 -- เปิดโปรแกรม = ตั้ง HOME (ถ้ายังไม่มี) + START เอง
 task.spawn(function()
  local t0=os.clock()
@@ -1054,7 +1049,6 @@ task.spawn(function()
   task.wait(0.25)
  end
  if S.hopping then return end
- if rejectSameServerIfNeeded() then return end
  ensureHome(false)
  task.wait(0.6)
  if not S.hopping and not S.run then startAuto("autoboot") end
